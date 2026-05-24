@@ -2,6 +2,7 @@ import type {
   Instance,
   InstanceCreate,
   InstanceStatus,
+  PulledImage,
   RegistryImage,
   ServiceTemplate,
   TemplateCreate,
@@ -30,6 +31,12 @@ export const api = {
     request<Instance>(`/instances/${id}/start`, { method: "POST" }),
   stopInstance: (id: string) =>
     request<Instance>(`/instances/${id}/stop`, { method: "POST" }),
+  pauseInstance: (id: string) =>
+    request<Instance>(`/instances/${id}/pause`, { method: "POST" }),
+  unpauseInstance: (id: string) =>
+    request<Instance>(`/instances/${id}/unpause`, { method: "POST" }),
+  updateInstance: (id: string, data: { name?: string; env_overrides?: Record<string, string>; session_config?: Record<string, unknown> }) =>
+    request<Instance>(`/instances/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteInstance: (id: string, removeVolumes = false) =>
     request<void>(`/instances/${id}?remove_volumes=${removeVolumes}`, { method: "DELETE" }),
   getInstanceStatus: (id: string) =>
@@ -42,6 +49,8 @@ export const api = {
   listTemplates: () => request<ServiceTemplate[]>("/templates"),
   createTemplate: (data: TemplateCreate) =>
     request<ServiceTemplate>("/templates", { method: "POST", body: JSON.stringify(data) }),
+  updateTemplate: (id: string, data: Partial<TemplateCreate>) =>
+    request<ServiceTemplate>(`/templates/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteTemplate: (id: string) => request<void>(`/templates/${id}`, { method: "DELETE" }),
 
   listRegistryImages: (params?: { category?: string; search?: string }) => {
@@ -54,4 +63,8 @@ export const api = {
   getRegistryImage: (name: string) => request<RegistryImage>(`/registry/images/${name}`),
 
   getGpuInfo: () => request<{ available: boolean; type: string | null; devices: string[] }>("/system/gpu"),
+
+  listImages: () => request<PulledImage[]>("/images"),
+  deleteImage: (id: string) => request<void>(`/images/${id}`, { method: "DELETE" }),
+  purgeImages: () => request<void>("/images", { method: "DELETE" }),
 };

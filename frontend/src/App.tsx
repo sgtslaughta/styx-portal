@@ -6,12 +6,15 @@ import { TemplateGrid } from "@/components/templates/template-grid";
 import { RegistryBrowser } from "@/components/templates/registry-browser";
 import { LaunchModal } from "@/components/templates/launch-modal";
 import { InstanceDetail } from "@/components/instances/instance-detail";
+import { ImageManager } from "@/components/system/image-manager";
+import { useTemplates } from "@/hooks/use-templates";
 import { cn } from "@/lib/utils";
 import type { Instance, ServiceTemplate, RegistryImage } from "@/lib/types";
 
 export default function App() {
+  const { data: templates } = useTemplates();
   const [activeTab, setActiveTab] = useState("instances");
-  const [templateSubTab, setTemplateSubTab] = useState("registry");
+  const [templateSubTab, setTemplateSubTab] = useState<string | null>(null);
   const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null);
   const [launchRegistry, setLaunchRegistry] = useState<RegistryImage | null>(null);
   const [launchTemplate, setLaunchTemplate] = useState<ServiceTemplate | null>(null);
@@ -36,6 +39,8 @@ export default function App() {
     setActiveTab("instances");
   }
 
+  const resolvedSubTab = templateSubTab ?? (templates?.length ? "my-templates" : "registry");
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <Header />
@@ -50,16 +55,21 @@ export default function App() {
               { id: "registry", label: "LinuxServer Registry" },
               { id: "my-templates", label: "My Templates" },
             ].map((tab) => (
-              <button key={tab.id} onClick={() => setTemplateSubTab(tab.id)} className={cn("rounded-lg px-3 py-1.5 text-sm font-medium transition-colors", templateSubTab === tab.id ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")}>
+              <button key={tab.id} onClick={() => setTemplateSubTab(tab.id)} className={cn("rounded-lg px-3 py-1.5 text-sm font-medium transition-colors", resolvedSubTab === tab.id ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")}>
                 {tab.label}
               </button>
             ))}
           </div>
-          <div className={templateSubTab === "registry" ? "" : "hidden"}>
+          <div className={resolvedSubTab === "registry" ? "" : "hidden"}>
             <RegistryBrowser onImport={handleImportRegistry} />
           </div>
-          <div className={templateSubTab === "my-templates" ? "" : "hidden"}>
+          <div className={resolvedSubTab === "my-templates" ? "" : "hidden"}>
             <TemplateGrid onLaunch={handleLaunchTemplate} />
+          </div>
+        </div>
+        <div className={activeTab === "system" ? "" : "hidden"}>
+          <div className="mx-auto max-w-3xl space-y-6">
+            <ImageManager />
           </div>
         </div>
       </main>

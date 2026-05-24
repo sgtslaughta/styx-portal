@@ -11,7 +11,7 @@ from sqlmodel import select
 from app.config import Settings
 from app.database import init_db, async_session
 from app.models import Instance as InstanceModel
-from app.routers import templates, instances, registry
+from app.routers import templates, instances, registry, images
 from app.services.docker_manager import DockerManager
 from app.services.session_monitor import SessionMonitor
 
@@ -54,6 +54,29 @@ async def lifespan(app: FastAPI):
     app.state.admin_token = admin_token
     logger.warning(f"\n{'='*60}\n  ADMIN TOKEN: {admin_token}\n{'='*60}\n")
 
+    # Sync instance states — mark stale instances as stopped
+    docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
+    async with async_session() as session:
+        result = await session.exec(
+            select(InstanceModel).where(
+                InstanceModel.status.in_(["running", "idle", "paused", "pulling", "starting"])
+            )
+        )
+        active = result.all()
+        for inst in active:
+            if inst.container_id:
+                status = await asyncio.to_thread(docker.get_container_status, inst.container_id)
+                if status["status"] == "paused" and inst.status == "paused":
+                    pass
+                elif status["status"] in ("not_found", "exited"):
+                    logger.info(f"Instance {inst.name} container gone, marking stopped")
+                    inst.status = "stopped"
+                    session.add(inst)
+            else:
+                inst.status = "stopped"
+                session.add(inst)
+        await session.commit()
+
     # Write initial Traefik routes on startup
     from app.services.route_writer import write_routes
     from app.models import ServiceTemplate
@@ -90,6 +113,7 @@ app.add_middleware(
 app.include_router(templates.router, prefix="/api/templates", tags=["templates"])
 app.include_router(instances.router, prefix="/api/instances", tags=["instances"])
 app.include_router(registry.router, prefix="/api/registry/images", tags=["registry"])
+app.include_router(images.router, prefix="/api/images", tags=["images"])
 
 
 @app.get("/api/health")

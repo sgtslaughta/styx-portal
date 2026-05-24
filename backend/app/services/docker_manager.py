@@ -59,7 +59,6 @@ class DockerManager:
             "volumes": volumes,
             "detach": True,
             "network": self._network_name,
-            "ports": {f"{port}/tcp": None},
             "privileged": privileged,
             "security_opt": ["seccomp=unconfined", "apparmor=unconfined"],
             "sysctls": {"net.ipv4.ip_unprivileged_port_start": "0"},
@@ -94,6 +93,13 @@ class DockerManager:
         container = self._client.containers.create(**kwargs)
         return container.id
 
+    def image_exists(self, image: str) -> bool:
+        try:
+            self._client.images.get(image)
+            return True
+        except docker.errors.ImageNotFound:
+            return False
+
     def start_container(self, container_id: str) -> None:
         container = self._client.containers.get(container_id)
         container.start()
@@ -101,6 +107,14 @@ class DockerManager:
     def stop_container(self, container_id: str) -> None:
         container = self._client.containers.get(container_id)
         container.stop()
+
+    def pause_container(self, container_id: str) -> None:
+        container = self._client.containers.get(container_id)
+        container.pause()
+
+    def unpause_container(self, container_id: str) -> None:
+        container = self._client.containers.get(container_id)
+        container.unpause()
 
     def remove_container(self, container_id: str) -> None:
         container = self._client.containers.get(container_id)
@@ -130,3 +144,14 @@ class DockerManager:
     def remove_volume(self, name: str) -> None:
         volume = self._client.volumes.get(name)
         volume.remove()
+
+    def remove_image(self, image: str) -> None:
+        self._client.images.remove(image, force=True)
+
+    def get_image_info(self, image: str) -> dict | None:
+        try:
+            img = self._client.images.get(image)
+            size_mb = img.attrs.get("Size", 0) // (1024 * 1024)
+            return {"size_mb": size_mb, "id": img.id}
+        except docker.errors.ImageNotFound:
+            return None

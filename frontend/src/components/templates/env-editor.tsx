@@ -31,12 +31,12 @@ export function EnvEditor({ value, onChange, descriptions }: EnvEditorProps) {
   return (
     <div className="space-y-2">
       {entries.map(([key, val], i) => (
-        <div key={i} className="flex items-start gap-2">
-          <div className="flex-1">
+        <div key={i} className="flex items-start gap-2 min-w-0">
+          <div className="flex-1 min-w-0">
             <Input value={key} onChange={(e) => update(key, e.target.value, val)} placeholder="KEY" className="font-mono text-xs" />
-            {descriptions?.[key] && <p className="mt-0.5 text-[10px] text-muted-foreground">{descriptions[key]}</p>}
+            {descriptions?.[key] && <p className="mt-0.5 text-[10px] text-muted-foreground truncate">{descriptions[key]}</p>}
           </div>
-          <Input value={val} onChange={(e) => update(key, key, e.target.value)} placeholder="value" className="flex-1 font-mono text-xs" />
+          <Input value={val} onChange={(e) => update(key, key, e.target.value)} placeholder="value" className="flex-1 min-w-0 font-mono text-xs" />
           <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => remove(key)}>
             <Trash2 className="h-3 w-3" />
           </Button>

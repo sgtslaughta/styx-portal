@@ -1,5 +1,6 @@
-import { useState, useRef } from "react";
-import { Search, Star, Download, ExternalLink } from "lucide-react";
+import { useState, useRef, useCallback } from "react";
+import { motion } from "framer-motion";
+import { Search, Star, Download, ExternalLink, Maximize2, Minimize2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -66,25 +67,52 @@ export function RegistryBrowser({ onImport }: RegistryBrowserProps) {
 function RegistryCard({ image: img, onImport }: { image: RegistryImage; onImport: (img: RegistryImage) => void }) {
   const [showPreview, setShowPreview] = useState(false);
   const [previewReady, setPreviewReady] = useState(false);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [previewPos, setPreviewPos] = useState({ x: 0, y: 0 });
+  const [spinIcon, setSpinIcon] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const hasHoveredRef = useRef(false);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function handleMouseEnter() {
+  function cancelDismiss() {
+    if (dismissTimer.current) { clearTimeout(dismissTimer.current); dismissTimer.current = null; }
+  }
+
+  const handleMouseEnter = useCallback(() => {
+    cancelDismiss();
+    if (!hasHoveredRef.current) {
+      hasHoveredRef.current = true;
+      setSpinIcon(true);
+      setTimeout(() => setSpinIcon(false), 600);
+    }
     if (img.project_url) {
       hoverTimer.current = setTimeout(() => setShowPreview(true), 800);
     }
-  }
+  }, [img.project_url]);
 
   function handleMouseMove(e: React.MouseEvent) {
-    setMousePos({ x: e.clientX, y: e.clientY });
+    if (!showPreview) {
+      setPreviewPos({
+        x: Math.min(e.clientX + 16, window.innerWidth - 520),
+        y: Math.min(e.clientY - 200, window.innerHeight - 420),
+      });
+    }
+  }
+
+  function scheduleDismiss() {
+    cancelDismiss();
+    dismissTimer.current = setTimeout(() => {
+      setShowPreview(false);
+      setPreviewReady(false);
+      setExpanded(false);
+    }, 300);
   }
 
   function handleMouseLeave() {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
     if (loadTimer.current) clearTimeout(loadTimer.current);
-    setShowPreview(false);
-    setPreviewReady(false);
+    scheduleDismiss();
   }
 
   function handleIframeLoad() {
@@ -104,7 +132,14 @@ function RegistryCard({ image: img, onImport }: { image: RegistryImage; onImport
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >
-      <img src={img.project_logo} alt={img.name} className="h-10 w-10 rounded-md object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+      <motion.img
+        src={img.project_logo}
+        alt={img.name}
+        className="h-10 w-10 rounded-md object-contain"
+        animate={spinIcon ? { rotate: 360, scale: [1, 1.2, 1] } : { rotate: 0 }}
+        transition={spinIcon ? { duration: 0.6, ease: "easeOut" } : { duration: 0 }}
+        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+      />
       <div className="flex-1 overflow-hidden">
         <h4 className="truncate text-sm font-semibold">{img.name}</h4>
         <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{img.description}</p>
@@ -128,18 +163,34 @@ function RegistryCard({ image: img, onImport }: { image: RegistryImage; onImport
 
       {showPreview && img.project_url && (
         <div
-          className={`fixed z-50 overflow-hidden rounded-lg border border-border bg-card shadow-2xl transition-opacity duration-150 ${previewReady ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+          className={`fixed z-50 overflow-hidden rounded-lg border border-border bg-card shadow-2xl transition-all duration-200 ${previewReady ? "opacity-100" : "opacity-0 pointer-events-none"}`}
           style={{
-            left: Math.min(mousePos.x + 16, window.innerWidth - 520),
-            top: Math.min(mousePos.y - 200, window.innerHeight - 420),
-            width: 500,
-            height: 400,
+            left: expanded ? Math.min(previewPos.x, window.innerWidth - 770) : previewPos.x,
+            top: expanded ? Math.min(previewPos.y, window.innerHeight - 620) : previewPos.y,
+            width: expanded ? 750 : 500,
+            height: expanded ? 600 : 400,
           }}
-          onClick={(e) => { e.stopPropagation(); window.open(img.project_url, "_blank"); }}
+          onMouseEnter={cancelDismiss}
+          onMouseLeave={scheduleDismiss}
         >
-          <div className="flex items-center justify-between border-b border-border px-3 py-1.5 cursor-pointer">
-            <span className="text-[10px] text-muted-foreground truncate">{img.project_url}</span>
-            <ExternalLink className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+          <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
+            <span className="text-[10px] text-muted-foreground truncate cursor-pointer" onClick={(e) => { e.stopPropagation(); window.open(img.project_url, "_blank"); }}>{img.project_url}</span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                className="rounded p-0.5 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+                onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+                title={expanded ? "Shrink" : "Expand"}
+              >
+                {expanded ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
+              </button>
+              <button
+                className="rounded p-0.5 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
+                onClick={(e) => { e.stopPropagation(); window.open(img.project_url, "_blank"); }}
+                title="Open in new tab"
+              >
+                <ExternalLink className="h-3 w-3" />
+              </button>
+            </div>
           </div>
           <iframe
             src={img.project_url}

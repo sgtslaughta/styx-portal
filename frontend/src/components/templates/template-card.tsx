@@ -24,7 +24,11 @@ export function TemplateCard({ template, onLaunch }: TemplateCardProps) {
   return (
     <div className="overflow-hidden rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary/50">
       <div className="mb-3 flex items-start gap-3">
-        <span className="text-2xl">{template.icon ?? "📦"}</span>
+        {template.icon?.startsWith("http") ? (
+          <img src={template.icon} alt="" className="h-8 w-8 rounded object-contain" />
+        ) : (
+          <span className="text-2xl">{template.icon ?? "📦"}</span>
+        )}
         <div className="flex-1">
           <h3 className="font-semibold">{template.display_name}</h3>
           <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{template.description}</p>

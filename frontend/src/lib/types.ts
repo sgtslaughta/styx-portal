@@ -21,6 +21,7 @@ export interface ServiceTemplate {
   shm_size: string | null;
   volumes: { name: string; mount: string }[];
   internal_port: number;
+  internal_protocol: string;
   category: string | null;
   tags: string[];
   session_config: SessionConfig;
@@ -34,7 +35,7 @@ export interface Instance {
   name: string;
   subdomain: string;
   container_id: string | null;
-  status: "created" | "creating" | "pulling" | "starting" | "running" | "idle" | "stopping" | "stopped" | "error";
+  status: "created" | "creating" | "pulling" | "starting" | "running" | "idle" | "paused" | "stopping" | "stopped" | "error";
   env_overrides: Record<string, string>;
   volume_names: string[];
   created_at: string;
@@ -64,11 +65,15 @@ export interface RegistryImage {
   stable: boolean;
   tags: { tag: string; desc: string }[];
   config: {
+    application_setup?: string;
     env_vars: { name: string; value: string; desc: string; optional: boolean }[];
     volumes: { path: string; host_path: string; desc: string; optional: boolean }[];
-    ports: { container: string; host_port: string; desc: string; optional: boolean }[];
+    ports: { external: string; internal: string; desc: string; optional: boolean }[];
+    custom?: { name: string; name_compose: string; value: string; desc: string; optional: boolean }[];
+    security_opt?: { run_var: string; compose_var: string; desc: string; optional: boolean }[];
   };
   architectures: { arch: string; tag: string }[];
+  changelog?: { date: string; desc: string }[];
   github_url: string;
   project_url: string;
 }
@@ -95,7 +100,15 @@ export interface TemplateCreate {
   shm_size?: string;
   volumes?: { name: string; mount: string }[];
   internal_port?: number;
+  internal_protocol?: string;
   category?: string;
   tags?: string[];
   session_config?: Partial<SessionConfig>;
+}
+
+export interface PulledImage {
+  id: string;
+  image: string;
+  size_mb: number | null;
+  pulled_at: string;
 }

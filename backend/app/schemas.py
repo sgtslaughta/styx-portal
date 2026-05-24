@@ -49,6 +49,12 @@ class InstanceCreate(BaseModel):
     session_config: dict[str, Any] | None = None
 
 
+class InstanceUpdate(BaseModel):
+    name: str | None = None
+    env_overrides: dict[str, str] | None = None
+    session_config: dict[str, Any] | None = None
+
+
 class SessionConfigUpdate(BaseModel):
     idle_timeout: str | None = None
     grace_period: str | None = None

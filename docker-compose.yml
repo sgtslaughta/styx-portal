@@ -12,9 +12,9 @@ services:
   traefik:
     image: traefik:v3.4
     restart: unless-stopped
-    ports:
-      - "80:80"
-      - "8080:8080"
+    # ports:
+    #   - "80:80"       # Uncomment for local access without Cloudflare
+    #   - "8080:8080"   # Traefik dashboard
     volumes:
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - traefik-dynamic:/etc/traefik/dynamic:ro
@@ -25,6 +25,9 @@ services:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
     command: tunnel run
+    depends_on:
+      - traefik
+      - frontend
     environment:
       - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN}
     networks:
@@ -47,6 +50,8 @@ services:
       - screenshots:/app/data/screenshots
       - traefik-dynamic:/app/traefik-dynamic
       - ./templates:/app/templates:ro
+    devices:
+      - /dev/dri:/dev/dri
     networks:
       - selkies-hub
 

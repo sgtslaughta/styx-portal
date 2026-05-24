@@ -1,0 +1,29 @@
+{
+  "name": "blank",
+  "display_name": "Blank Desktop",
+  "image": "ghcr.io/linuxserver/baseimage-selkies:debiantrixie",
+  "icon": "📄",
+  "description": "Minimal desktop — clean slate with a single persistent volume",
+  "env_vars": {
+    "PUID": "1000",
+    "PGID": "1000"
+  },
+  "gpu_enabled": false,
+  "gpu_count": 0,
+  "memory_limit": "2g",
+  "cpu_limit": "1.0",
+  "shm_size": "512m",
+  "volumes": [
+    {"name": "{instance_id}-home", "mount": "/config"}
+  ],
+  "internal_port": 3001,
+  "category": "desktop",
+  "tags": ["minimal", "blank"],
+  "session_config": {
+    "idle_timeout": "30m",
+    "grace_period": "5m",
+    "timeout_action": "stop",
+    "never_timeout": false,
+    "max_session_duration": null
+  }
+}

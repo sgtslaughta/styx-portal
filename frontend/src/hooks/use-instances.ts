@@ -34,6 +34,31 @@ export function useStopInstance() {
   });
 }
 
+export function usePauseInstance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.pauseInstance(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["instances"] }),
+  });
+}
+
+export function useUnpauseInstance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.unpauseInstance(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["instances"] }),
+  });
+}
+
+export function useUpdateInstance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: { name?: string; env_overrides?: Record<string, string>; session_config?: Record<string, unknown> } }) =>
+      api.updateInstance(id, data),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["instances"] }),
+  });
+}
+
 export function useDeleteInstance() {
   const qc = useQueryClient();
   return useMutation({
@@ -47,7 +72,7 @@ export function useInstanceStats(id: string, enabled: boolean) {
   return useQuery({
     queryKey: ["instance-stats", id],
     queryFn: () => api.getInstanceStats(id),
-    refetchInterval: 10000,
+    refetchInterval: 5000,
     enabled,
   });
 }

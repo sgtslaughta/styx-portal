@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 const STATUS_STYLES: Record<string, { dot: string; text: string }> = {
   running: { dot: "bg-success", text: "text-success" },
   idle: { dot: "bg-warning", text: "text-warning" },
+  paused: { dot: "bg-amber-500", text: "text-amber-500" },
   stopped: { dot: "bg-muted-foreground", text: "text-muted-foreground" },
   error: { dot: "bg-destructive", text: "text-destructive" },
   creating: { dot: "bg-primary", text: "text-primary" },

@@ -74,3 +74,12 @@ class SessionEvent(SQLModel, table=True):
     event_type: str
     details: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     timestamp: datetime = Field(default_factory=_now)
+
+
+class PulledImage(SQLModel, table=True):
+    __tablename__ = "pulled_images"
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    image: str = Field(unique=True, index=True)
+    size_mb: int | None = None
+    pulled_at: datetime = Field(default_factory=_now)
