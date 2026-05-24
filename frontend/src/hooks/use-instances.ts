@@ -42,3 +42,12 @@ export function useDeleteInstance() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["instances"] }),
   });
 }
+
+export function useInstanceStats(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["instance-stats", id],
+    queryFn: () => api.getInstanceStats(id),
+    refetchInterval: 10000,
+    enabled,
+  });
+}

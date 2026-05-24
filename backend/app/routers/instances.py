@@ -288,6 +288,43 @@ async def get_instance_status(
     )
 
 
+@router.get("/{instance_id}/stats")
+async def get_instance_stats(
+    instance_id: str,
+    session: AsyncSession = Depends(get_session),
+    docker: DockerManager = Depends(get_docker_manager),
+):
+    instance = await session.get(Instance, instance_id)
+    if not instance:
+        raise HTTPException(404, "Instance not found")
+    if not instance.container_id or instance.status not in ("running", "idle"):
+        return {"cpu_percent": 0, "memory_mb": 0, "memory_limit_mb": 0, "memory_percent": 0}
+
+    raw = docker.get_container_stats(instance.container_id)
+    if not raw:
+        return {"cpu_percent": 0, "memory_mb": 0, "memory_limit_mb": 0, "memory_percent": 0}
+
+    cpu_delta = raw.get("cpu_stats", {}).get("cpu_usage", {}).get("total_usage", 0) - \
+                raw.get("precpu_stats", {}).get("cpu_usage", {}).get("total_usage", 0)
+    system_delta = raw.get("cpu_stats", {}).get("system_cpu_usage", 0) - \
+                   raw.get("precpu_stats", {}).get("system_cpu_usage", 0)
+    num_cpus = raw.get("cpu_stats", {}).get("online_cpus", 1)
+    cpu_percent = (cpu_delta / system_delta * num_cpus * 100) if system_delta > 0 else 0
+
+    mem_usage = raw.get("memory_stats", {}).get("usage", 0)
+    mem_limit = raw.get("memory_stats", {}).get("limit", 1)
+    memory_mb = mem_usage / (1024 * 1024)
+    memory_limit_mb = mem_limit / (1024 * 1024)
+    memory_percent = (mem_usage / mem_limit * 100) if mem_limit > 0 else 0
+
+    return {
+        "cpu_percent": round(cpu_percent, 1),
+        "memory_mb": round(memory_mb),
+        "memory_limit_mb": round(memory_limit_mb),
+        "memory_percent": round(memory_percent, 1),
+    }
+
+
 @router.post("/{instance_id}/keepalive", response_model=Instance)
 async def keepalive(instance_id: str, session: AsyncSession = Depends(get_session)):
     instance = await session.get(Instance, instance_id)

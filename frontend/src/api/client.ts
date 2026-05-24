@@ -36,7 +36,8 @@ export const api = {
     request<InstanceStatus>(`/instances/${id}/status`),
   keepalive: (id: string) =>
     request<Instance>(`/instances/${id}/keepalive`, { method: "POST" }),
-  screenshotUrl: (id: string) => `${BASE}/instances/${id}/screenshot`,
+  getInstanceStats: (id: string) =>
+    request<{ cpu_percent: number; memory_mb: number; memory_limit_mb: number; memory_percent: number }>(`/instances/${id}/stats`),
 
   listTemplates: () => request<ServiceTemplate[]>("/templates"),
   createTemplate: (data: TemplateCreate) =>

@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { StatusBadge } from "./status-badge";
 import { formatDuration } from "@/lib/utils";
-import { useStartInstance, useStopInstance, useDeleteInstance } from "@/hooks/use-instances";
+import { useStartInstance, useStopInstance, useDeleteInstance, useInstanceStats } from "@/hooks/use-instances";
 import { toast } from "sonner";
 import type { Instance } from "@/lib/types";
 
@@ -24,6 +24,7 @@ export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
   const destroy = useDeleteInstance();
 
   const isRunning = instance.status === "running" || instance.status === "idle";
+  const { data: stats } = useInstanceStats(instance.id, isRunning);
   const idleSeconds = instance.last_activity
     ? (Date.now() - new Date(instance.last_activity).getTime()) / 1000
     : null;
@@ -90,7 +91,7 @@ export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
           </DropdownMenu>
         </div>
 
-        <div className="mb-3 flex items-center gap-3">
+        <div className="mb-2 flex items-center gap-3">
           <StatusBadge status={instance.status} />
           {isRunning && idleSeconds != null && (
             <span className="text-xs text-muted-foreground">
@@ -98,6 +99,13 @@ export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
             </span>
           )}
         </div>
+
+        {isRunning && stats && (
+          <div className="mb-3 flex items-center gap-3 text-[10px] text-muted-foreground">
+            <span>CPU {stats.cpu_percent}%</span>
+            <span>RAM {stats.memory_mb}MB / {stats.memory_limit_mb}MB ({stats.memory_percent}%)</span>
+          </div>
+        )}
 
         {isRunning ? (
           <Button size="sm" className="w-full" onClick={(e) => { e.stopPropagation(); handleConnect(); }}>
