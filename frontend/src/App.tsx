@@ -5,13 +5,14 @@ import { InstanceGrid } from "@/components/instances/instance-grid";
 import { TemplateGrid } from "@/components/templates/template-grid";
 import { RegistryBrowser } from "@/components/templates/registry-browser";
 import { LaunchModal } from "@/components/templates/launch-modal";
+import { InstanceDetail } from "@/components/instances/instance-detail";
 import { cn } from "@/lib/utils";
 import type { Instance, ServiceTemplate, RegistryImage } from "@/lib/types";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("instances");
   const [templateSubTab, setTemplateSubTab] = useState("registry");
-  const [_selectedInstance, setSelectedInstance] = useState<Instance | null>(null);
+  const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null);
   const [launchRegistry, setLaunchRegistry] = useState<RegistryImage | null>(null);
   const [launchTemplate, setLaunchTemplate] = useState<ServiceTemplate | null>(null);
   const [launchOpen, setLaunchOpen] = useState(false);
@@ -61,6 +62,7 @@ export default function App() {
         )}
       </main>
       <LaunchModal open={launchOpen} onClose={closeLaunchModal} registryImage={launchRegistry} template={launchTemplate} />
+      <InstanceDetail instance={selectedInstance} onClose={() => setSelectedInstance(null)} />
     </div>
   );
 }
