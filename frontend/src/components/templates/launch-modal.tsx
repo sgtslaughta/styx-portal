@@ -30,8 +30,8 @@ export function LaunchModal({ open, onClose, registryImage, template }: LaunchMo
   const envDescriptions: Record<string, string> = {};
   if (registryImage?.config?.env_vars) {
     for (const v of registryImage.config.env_vars) {
-      prefillEnv[v.name] = v.default ?? "";
-      envDescriptions[v.name] = v.description ?? "";
+      prefillEnv[v.name] = v.value ?? "";
+      envDescriptions[v.name] = v.desc ?? "";
     }
   } else if (template?.env_vars) {
     Object.assign(prefillEnv, template.env_vars);
@@ -40,7 +40,7 @@ export function LaunchModal({ open, onClose, registryImage, template }: LaunchMo
   const prefillVolumes: { name: string; mount: string }[] = [];
   if (registryImage?.config?.volumes) {
     for (const v of registryImage.config.volumes) {
-      prefillVolumes.push({ name: `{instance_id}${v.container.replace(/\//g, "-")}`, mount: v.container });
+      prefillVolumes.push({ name: `{instance_id}${v.path.replace(/\//g, "-")}`, mount: v.path });
     }
   } else if (template?.volumes) {
     prefillVolumes.push(...template.volumes);

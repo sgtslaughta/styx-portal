@@ -63,9 +63,9 @@ export interface RegistryImage {
   version: string;
   stable: boolean;
   config: {
-    env_vars: { name: string; default: string; description: string }[];
-    volumes: { container: string; description: string }[];
-    ports: { container: string; description: string }[];
+    env_vars: { name: string; value: string; desc: string; optional: boolean }[];
+    volumes: { path: string; host_path: string; desc: string; optional: boolean }[];
+    ports: { container: string; host_port: string; desc: string; optional: boolean }[];
   };
   architectures: { arch: string; tag: string }[];
   github_url: string;
