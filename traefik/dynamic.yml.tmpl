@@ -10,3 +10,39 @@ http:
           - X-Authentik-Email
           - X-Authentik-Name
           - X-Authentik-Uid
+
+  routers:
+    frontend:
+      rule: "Host(\`${DOMAIN}\`)"
+      entryPoints:
+        - web
+      middlewares:
+        - authentik
+      service: frontend
+
+    api:
+      rule: "Host(\`api.${DOMAIN}\`)"
+      entryPoints:
+        - web
+      middlewares:
+        - authentik
+      service: api
+
+    dashboard:
+      rule: "Host(\`traefik.${DOMAIN}\`)"
+      entryPoints:
+        - web
+      middlewares:
+        - authentik
+      service: api@internal
+
+  services:
+    frontend:
+      loadBalancer:
+        servers:
+          - url: "http://frontend:3000"
+
+    api:
+      loadBalancer:
+        servers:
+          - url: "http://backend:8000"

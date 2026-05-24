@@ -56,6 +56,14 @@ async def _session_monitor_loop():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    # Write initial Traefik routes on startup
+    from app.services.route_writer import write_routes
+    async with async_session() as session:
+        result = await session.exec(
+            select(InstanceModel).where(InstanceModel.status.in_(["running", "idle"]))
+        )
+        running = result.all()
+        write_routes([{"id": i.id, "subdomain": i.subdomain, "port": 3001} for i in running])
     task = asyncio.create_task(_session_monitor_loop())
     yield
     task.cancel()

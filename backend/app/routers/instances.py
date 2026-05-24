@@ -10,6 +10,7 @@ from app.database import get_session
 from app.models import Instance, ServiceTemplate, SessionEvent
 from app.schemas import InstanceCreate, SessionConfigUpdate, InstanceStatus
 from app.services.docker_manager import DockerManager
+from app.services.route_writer import write_routes
 from app.services.screenshot import ScreenshotService
 from app.services.traefik_labels import generate_traefik_labels
 
@@ -26,6 +27,18 @@ def get_screenshot_service() -> ScreenshotService:
         cache_dir=_settings.SCREENSHOT_CACHE_DIR,
         docker_manager=get_docker_manager(),
     )
+
+
+async def _refresh_routes(session: AsyncSession):
+    result = await session.exec(
+        select(Instance).where(Instance.status.in_(["running", "idle"]))
+    )
+    running = result.all()
+    instances_data = [
+        {"id": i.id, "subdomain": i.subdomain, "port": 3001}
+        for i in running
+    ]
+    write_routes(instances_data)
 
 
 @router.get("", response_model=list[Instance])
@@ -110,6 +123,7 @@ async def create_instance(
     session.add(event)
     await session.commit()
     await session.refresh(instance)
+    await _refresh_routes(session)
     return instance
 
 
@@ -145,6 +159,7 @@ async def start_instance(
     session.add(event)
     await session.commit()
     await session.refresh(instance)
+    await _refresh_routes(session)
     return instance
 
 
@@ -168,6 +183,7 @@ async def stop_instance(
     session.add(event)
     await session.commit()
     await session.refresh(instance)
+    await _refresh_routes(session)
     return instance
 
 
@@ -193,6 +209,7 @@ async def delete_instance(
     session.add(event)
     await session.delete(instance)
     await session.commit()
+    await _refresh_routes(session)
     return Response(status_code=204)
 
 
