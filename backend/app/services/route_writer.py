@@ -17,38 +17,20 @@ def write_routes(instances: list[dict], domain: str | None = None):
 
     config: dict = {
         "http": {
-            "middlewares": {
-                "authentik": {
-                    "forwardAuth": {
-                        "address": f"http://{_settings.AUTHENTIK_MIDDLEWARE.split('@')[0]}/outpost.goauthentication.com/auth/traefik",
-                        "trustForwardHeader": True,
-                        "authResponseHeaders": [
-                            "X-Authentik-Username",
-                            "X-Authentik-Groups",
-                            "X-Authentik-Email",
-                            "X-Authentik-Name",
-                            "X-Authentik-Uid",
-                        ],
-                    }
-                }
-            },
             "routers": {
                 "frontend": {
                     "rule": f"Host(`{domain}`)",
                     "entryPoints": ["web"],
-                    "middlewares": ["authentik"],
                     "service": "frontend",
                 },
                 "api": {
                     "rule": f"Host(`api.{domain}`)",
                     "entryPoints": ["web"],
-                    "middlewares": ["authentik"],
                     "service": "api",
                 },
                 "dashboard": {
                     "rule": f"Host(`traefik.{domain}`)",
                     "entryPoints": ["web"],
-                    "middlewares": ["authentik"],
                     "service": "api@internal",
                 },
             },
@@ -72,7 +54,6 @@ def write_routes(instances: list[dict], domain: str | None = None):
         config["http"]["routers"][inst_id] = {
             "rule": f"Host(`{subdomain}.{domain}`)",
             "entryPoints": ["web"],
-            "middlewares": ["authentik"],
             "service": inst_id,
         }
         config["http"]["services"][inst_id] = {

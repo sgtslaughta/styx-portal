@@ -1,5 +1,8 @@
 import asyncio
+import logging
+import secrets
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +16,7 @@ from app.services.docker_manager import DockerManager
 from app.services.screenshot import ScreenshotService
 from app.services.session_monitor import SessionMonitor
 
+logger = logging.getLogger("selkies-hub")
 _settings = Settings()
 
 
@@ -56,6 +60,18 @@ async def _session_monitor_loop():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+
+    # Generate or load admin token
+    token_path = Path(_settings.SCREENSHOT_CACHE_DIR).parent / ".admin_token"
+    if token_path.exists():
+        admin_token = token_path.read_text().strip()
+    else:
+        admin_token = secrets.token_urlsafe(32)
+        token_path.parent.mkdir(parents=True, exist_ok=True)
+        token_path.write_text(admin_token)
+    app.state.admin_token = admin_token
+    logger.warning(f"\n{'='*60}\n  ADMIN TOKEN: {admin_token}\n{'='*60}\n")
+
     # Write initial Traefik routes on startup
     from app.services.route_writer import write_routes
     async with async_session() as session:
@@ -64,6 +80,7 @@ async def lifespan(app: FastAPI):
         )
         running = result.all()
         write_routes([{"id": i.id, "subdomain": i.subdomain, "port": 3001} for i in running])
+
     task = asyncio.create_task(_session_monitor_loop())
     yield
     task.cancel()
