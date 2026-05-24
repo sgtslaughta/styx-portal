@@ -6,3 +6,4 @@ __pycache__/
 data/
 .superpowers/
 .ruff_cache/
+plans/

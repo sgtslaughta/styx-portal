@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 from sqlmodel import Session as DBSession, create_engine, SQLModel
 
-from app.models import ServiceTemplate, Instance, SessionEvent
+from app.models import ServiceTemplate, Instance
 from app.services.session_monitor import SessionMonitor
 
 
