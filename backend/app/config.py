@@ -9,5 +9,6 @@ class Settings(BaseSettings):
     SELKIES_DEFAULT_PORT: int = 3001
     TEMPLATES_DIR: str = "/app/templates"
     SCREENSHOT_CACHE_DIR: str = "/app/data/screenshots"
+    AUTHENTIK_MIDDLEWARE: str = "authentik@file"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}

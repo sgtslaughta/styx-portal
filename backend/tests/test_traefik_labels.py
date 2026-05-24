@@ -11,34 +11,24 @@ def test_basic_labels():
     )
     assert labels["traefik.enable"] == "true"
     assert labels["traefik.http.routers.abc123.rule"] == "Host(`dev.example.com`)"
-    assert labels["traefik.http.routers.abc123.entrypoints"] == "websecure"
+    assert labels["traefik.http.routers.abc123.entrypoints"] == "web"
     assert labels["traefik.http.services.abc123.loadbalancer.server.port"] == "3001"
+    assert labels["traefik.http.routers.abc123.middlewares"] == "authentik@file"
     assert labels["selkies-hub.managed"] == "true"
     assert labels["selkies-hub.instance-id"] == "abc123"
     assert labels["selkies-hub.template"] == "dev-desktop"
 
 
-def test_labels_include_auth_middleware():
+def test_labels_custom_middleware():
     labels = generate_traefik_labels(
         instance_id="xyz",
         subdomain="work",
         domain="my.site",
         port=3001,
         template_name="workstation",
-        auth_middleware="authentik@docker",
+        auth_middleware="custom-auth@file",
     )
-    assert labels["traefik.http.routers.xyz.middlewares"] == "authentik@docker"
-
-
-def test_labels_no_auth_middleware():
-    labels = generate_traefik_labels(
-        instance_id="xyz",
-        subdomain="work",
-        domain="my.site",
-        port=3001,
-        template_name="workstation",
-    )
-    assert "traefik.http.routers.xyz.middlewares" not in labels
+    assert labels["traefik.http.routers.xyz.middlewares"] == "custom-auth@file"
 
 
 def test_labels_custom_port():
