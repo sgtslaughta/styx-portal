@@ -6,6 +6,7 @@ networks:
 volumes:
   db-data:
   traefik-certs:
+  screenshots:
 
 services:
   traefik:
@@ -48,6 +49,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - db-data:/app/data
+      - screenshots:/app/data/screenshots
       - ./templates:/app/templates:ro
     networks:
       - selkies-hub
@@ -56,3 +58,16 @@ services:
       - traefik.http.routers.api.rule=Host(`api.${DOMAIN}`)
       - traefik.http.routers.api.entrypoints=websecure
       - traefik.http.services.api.loadbalancer.server.port=8000
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    networks:
+      - selkies-hub
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.frontend.rule=Host(`${DOMAIN}`)
+      - traefik.http.routers.frontend.entrypoints=websecure
+      - traefik.http.services.frontend.loadbalancer.server.port=3000
