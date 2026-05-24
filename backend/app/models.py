@@ -31,6 +31,7 @@ class ServiceTemplate(SQLModel, table=True):
     shm_size: str | None = None
     volumes: list[dict[str, str]] = Field(default_factory=list, sa_column=Column(JSON))
     internal_port: int = 3001
+    internal_protocol: str = "https"
     category: str | None = None
     tags: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     session_config: dict[str, Any] = Field(

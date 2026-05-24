@@ -74,12 +74,21 @@ async def lifespan(app: FastAPI):
 
     # Write initial Traefik routes on startup
     from app.services.route_writer import write_routes
+    from app.models import ServiceTemplate
     async with async_session() as session:
         result = await session.exec(
             select(InstanceModel).where(InstanceModel.status.in_(["running", "idle"]))
         )
         running = result.all()
-        write_routes([{"id": i.id, "subdomain": i.subdomain, "port": 3001} for i in running])
+        instances_data = []
+        for i in running:
+            tmpl = await session.get(ServiceTemplate, i.template_id)
+            instances_data.append({
+                "id": i.id, "subdomain": i.subdomain,
+                "port": tmpl.internal_port if tmpl else 3001,
+                "protocol": tmpl.internal_protocol if tmpl else "https",
+            })
+        write_routes(instances_data)
 
     task = asyncio.create_task(_session_monitor_loop())
     yield

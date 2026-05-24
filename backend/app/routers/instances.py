@@ -35,10 +35,15 @@ async def _refresh_routes(session: AsyncSession):
         select(Instance).where(Instance.status.in_(["running", "idle"]))
     )
     running = result.all()
-    instances_data = [
-        {"id": i.id, "subdomain": i.subdomain, "port": 3001}
-        for i in running
-    ]
+    instances_data = []
+    for i in running:
+        tmpl = await session.get(ServiceTemplate, i.template_id)
+        instances_data.append({
+            "id": i.id,
+            "subdomain": i.subdomain,
+            "port": tmpl.internal_port if tmpl else 3001,
+            "protocol": tmpl.internal_protocol if tmpl else "https",
+        })
     write_routes(instances_data)
 
 

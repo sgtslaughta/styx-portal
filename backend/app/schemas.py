@@ -16,6 +16,7 @@ class TemplateCreate(BaseModel):
     shm_size: str | None = None
     volumes: list[dict[str, str]] = []
     internal_port: int = 3001
+    internal_protocol: str = "https"
     category: str | None = None
     tags: list[str] = []
     session_config: dict[str, Any] | None = None
@@ -34,6 +35,7 @@ class TemplateUpdate(BaseModel):
     shm_size: str | None = None
     volumes: list[dict[str, str]] | None = None
     internal_port: int | None = None
+    internal_protocol: str | None = None
     category: str | None = None
     tags: list[str] | None = None
     session_config: dict[str, Any] | None = None

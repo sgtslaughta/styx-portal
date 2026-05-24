@@ -58,6 +58,7 @@ def write_routes(instances: list[dict], domain: str | None = None):
         inst_id = inst["id"]
         subdomain = inst["subdomain"]
         port = inst.get("port", 3001)
+        protocol = inst.get("protocol", "https")
         container_name = f"selkies-{subdomain}"
 
         strip_mw = f"strip-{subdomain}"
@@ -72,12 +73,12 @@ def write_routes(instances: list[dict], domain: str | None = None):
             "service": inst_id,
             "priority": 50,
         }
-        config["http"]["services"][inst_id] = {
-            "loadBalancer": {
-                "servers": [{"url": f"https://{container_name}:{port}"}],
-                "serversTransport": "selkies-transport",
-            }
+        svc_config: dict = {
+            "servers": [{"url": f"{protocol}://{container_name}:{port}"}],
         }
+        if protocol == "https":
+            svc_config["serversTransport"] = "selkies-transport"
+        config["http"]["services"][inst_id] = {"loadBalancer": svc_config}
 
     out_file = out_dir / "routes.yml"
     out_file.write_text(yaml.dump(config, default_flow_style=False))
