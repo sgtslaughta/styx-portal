@@ -49,6 +49,11 @@ def write_routes(instances: list[dict], domain: str | None = None):
         }
     }
 
+    # ServersTransport for skipping TLS verification on Selkies containers
+    config["http"]["serversTransports"] = {
+        "selkies-transport": {"insecureSkipVerify": True}
+    }
+
     for inst in instances:
         inst_id = inst["id"]
         subdomain = inst["subdomain"]
@@ -68,7 +73,10 @@ def write_routes(instances: list[dict], domain: str | None = None):
             "priority": 50,
         }
         config["http"]["services"][inst_id] = {
-            "loadBalancer": {"servers": [{"url": f"http://{container_name}:{port}"}]}
+            "loadBalancer": {
+                "servers": [{"url": f"https://{container_name}:{port}"}],
+                "serversTransport": "selkies-transport",
+            }
         }
 
     out_file = out_dir / "routes.yml"
