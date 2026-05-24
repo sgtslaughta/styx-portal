@@ -59,9 +59,13 @@ export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
       onClick={() => onSelect(instance)}
     >
       <div className="relative aspect-video w-full bg-secondary flex items-center justify-center">
-        <div className="text-4xl">
-          {instance.status === "pulling" ? "⏳" : icon ?? "🖥️"}
-        </div>
+        {instance.status === "pulling" ? (
+          <div className="text-4xl">⏳</div>
+        ) : icon?.startsWith("http") ? (
+          <img src={icon} alt={instance.name} className="h-16 w-16 object-contain" />
+        ) : (
+          <div className="text-4xl">{icon ?? "🖥️"}</div>
+        )}
       </div>
 
       <div className="p-4">
