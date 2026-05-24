@@ -83,18 +83,18 @@ export function InstanceCard({ instance, onSelect }: InstanceCardProps) {
                 <MoreHorizontal className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
               {isRunning && (
-                <DropdownMenuItem onClick={handleStop}>
+                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleStop(); }}>
                   <Square className="mr-2 h-3 w-3" /> Stop
                 </DropdownMenuItem>
               )}
               {!isRunning && (
-                <DropdownMenuItem onClick={handleStart}>
+                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleStart(); }}>
                   <Play className="mr-2 h-3 w-3" /> Start
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem onClick={handleDestroy} className="text-destructive">
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleDestroy(); }} className="text-destructive">
                 <Trash2 className="mr-2 h-3 w-3" /> Destroy
               </DropdownMenuItem>
             </DropdownMenuContent>

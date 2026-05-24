@@ -15,7 +15,7 @@ def test_screenshot_cache_dir_created():
 def test_capture_screenshot(mock_httpx):
     mock_response = MagicMock()
     mock_response.status_code = 200
-    mock_response.content = b"\x89PNG fake image data"
+    mock_response.content = b"\x89PNG" + b"x" * 200
     mock_httpx.get.return_value = mock_response
 
     mock_docker = MagicMock()
@@ -36,7 +36,7 @@ def test_capture_screenshot(mock_httpx):
         assert result is True
         cached = Path(tmpdir) / "instance-123.png"
         assert cached.exists()
-        assert cached.read_bytes() == b"\x89PNG fake image data"
+        assert cached.read_bytes() == b"\x89PNG" + b"x" * 200
 
 
 @patch("app.services.screenshot.httpx")

@@ -23,13 +23,44 @@ class ScreenshotService:
             if not ip:
                 return False
 
-            resp = httpx.get(f"http://{ip}:{port}/screenshot", timeout=10)
-            if resp.status_code != 200:
-                return False
+            # Try HTTPS first (Selkies containers use self-signed HTTPS)
+            for scheme in ("https", "http"):
+                try:
+                    resp = httpx.get(
+                        f"{scheme}://{ip}:{port}/screenshot",
+                        timeout=5,
+                        verify=False,
+                    )
+                    if resp.status_code == 200 and len(resp.content) > 100:
+                        path = self._cache_dir / f"{instance_id}.png"
+                        path.write_bytes(resp.content)
+                        return True
+                except httpx.HTTPError:
+                    continue
 
-            path = self._cache_dir / f"{instance_id}.png"
-            path.write_bytes(resp.content)
-            return True
+            # Fallback: try docker exec with grim (Wayland screenshot tool)
+            try:
+                exit_code, output = container.exec_run(
+                    "grim -t png /tmp/screenshot.png",
+                    environment={"XDG_RUNTIME_DIR": "/run/user/1000", "WAYLAND_DISPLAY": "wayland-0"},
+                )
+                if exit_code == 0:
+                    bits, _ = container.get_archive("/tmp/screenshot.png")
+                    # Docker get_archive returns a tar stream
+                    import tarfile
+                    import io
+                    tar_stream = io.BytesIO(b"".join(bits))
+                    with tarfile.open(fileobj=tar_stream) as tar:
+                        member = tar.getmembers()[0]
+                        f = tar.extractfile(member)
+                        if f:
+                            path = self._cache_dir / f"{instance_id}.png"
+                            path.write_bytes(f.read())
+                            return True
+            except Exception:
+                pass
+
+            return False
         except Exception:
             return False
 
