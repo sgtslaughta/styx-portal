@@ -33,6 +33,8 @@ class DockerManager:
             "network": self._network_name,
             "ports": {f"{port}/tcp": None},
             "privileged": privileged,
+            "security_opt": ["apparmor=unconfined"],
+            "sysctls": {"net.ipv4.ip_unprivileged_port_start": "0"},
         }
         if gpu_enabled:
             kwargs["device_requests"] = [
