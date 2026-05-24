@@ -69,7 +69,6 @@ function RegistryCard({ image: img, onImport }: { image: RegistryImage; onImport
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   function handleMouseEnter() {
     if (img.project_url) {
@@ -89,24 +88,7 @@ function RegistryCard({ image: img, onImport }: { image: RegistryImage; onImport
   }
 
   function handleIframeLoad() {
-    // Check after a short delay if content actually rendered
-    // (X-Frame-Options blocks still fire onLoad but show blank page)
-    loadTimer.current = setTimeout(() => {
-      try {
-        const iframe = iframeRef.current;
-        if (!iframe) return;
-        // Try to access content — will throw if blocked by CORS/X-Frame-Options
-        const doc = iframe.contentDocument;
-        if (doc && doc.body && doc.body.innerHTML.length > 50) {
-          setPreviewReady(true);
-        } else {
-          setShowPreview(false);
-        }
-      } catch {
-        // Cross-origin — can't check content, but page loaded (assume OK)
-        setPreviewReady(true);
-      }
-    }, 500);
+    loadTimer.current = setTimeout(() => setPreviewReady(true), 300);
   }
 
   function handleIframeError() {
@@ -160,7 +142,6 @@ function RegistryCard({ image: img, onImport }: { image: RegistryImage; onImport
             <ExternalLink className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
           </div>
           <iframe
-            ref={iframeRef}
             src={img.project_url}
             className="h-[calc(100%-28px)] w-full"
             sandbox="allow-scripts allow-same-origin"
