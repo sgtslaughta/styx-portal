@@ -17,7 +17,8 @@ def _fetch_images() -> list[dict]:
 
     resp = httpx.get(LSIO_API_URL, timeout=30)
     resp.raise_for_status()
-    _cache["data"] = resp.json()
+    body = resp.json()
+    _cache["data"] = body["data"] if isinstance(body, dict) and "data" in body else body
     _cache["fetched_at"] = now
     return _cache["data"]
 
