@@ -113,3 +113,9 @@ app.include_router(registry.router, prefix="/api/registry/images", tags=["regist
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/api/system/gpu")
+async def system_gpu():
+    from app.services.docker_manager import detect_gpu
+    return detect_gpu()

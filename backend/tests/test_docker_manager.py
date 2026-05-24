@@ -91,7 +91,8 @@ def test_get_container_status_not_found(mock_docker):
     assert status["status"] == "not_found"
 
 
-def test_create_container_with_gpu(mock_docker):
+@patch("app.services.docker_manager.detect_gpu", return_value={"available": True, "type": "nvidia", "devices": ["/dev/dri/renderD128"]})
+def test_create_container_with_gpu(mock_detect, mock_docker):
     manager, client = mock_docker
     mock_container = MagicMock()
     mock_container.id = "gpu-container"

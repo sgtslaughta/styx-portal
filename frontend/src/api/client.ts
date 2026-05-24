@@ -51,4 +51,6 @@ export const api = {
     return request<RegistryImage[]>(`/registry/images${q ? `?${q}` : ""}`);
   },
   getRegistryImage: (name: string) => request<RegistryImage>(`/registry/images/${name}`),
+
+  getGpuInfo: () => request<{ available: boolean; type: string | null; devices: string[] }>("/system/gpu"),
 };

@@ -1,6 +1,34 @@
+import os
+from pathlib import Path
+
 import docker
 import docker.errors
 from docker.types import DeviceRequest
+
+
+def detect_gpu() -> dict:
+    """Detect available GPU on host."""
+    result = {"available": False, "type": None, "devices": []}
+
+    dri_path = Path("/dev/dri")
+    if dri_path.exists():
+        devices = [str(d) for d in dri_path.iterdir()]
+        if devices:
+            result["available"] = True
+            result["devices"] = devices
+            # Check for NVIDIA
+            if Path("/dev/nvidia0").exists() or os.path.exists("/proc/driver/nvidia"):
+                result["type"] = "nvidia"
+            else:
+                result["type"] = "intel/amd"
+
+    # Also check for NVIDIA without /dev/dri
+    if not result["available"] and Path("/dev/nvidia0").exists():
+        result["available"] = True
+        result["type"] = "nvidia"
+        result["devices"] = ["/dev/nvidia0"]
+
+    return result
 
 
 class DockerManager:
@@ -33,14 +61,26 @@ class DockerManager:
             "network": self._network_name,
             "ports": {f"{port}/tcp": None},
             "privileged": privileged,
-            "security_opt": ["apparmor=unconfined"],
+            "security_opt": ["seccomp=unconfined", "apparmor=unconfined"],
             "sysctls": {"net.ipv4.ip_unprivileged_port_start": "0"},
         }
         if gpu_enabled:
-            kwargs["device_requests"] = [
-                DeviceRequest(count=gpu_count, capabilities=[["gpu"]])
-            ]
-            kwargs["environment"]["NVIDIA_DRIVER_CAPABILITIES"] = "all"
+            gpu_info = detect_gpu()
+            if gpu_info["type"] == "nvidia":
+                kwargs["device_requests"] = [
+                    DeviceRequest(
+                        count=gpu_count,
+                        capabilities=[["compute", "video", "graphics", "utility"]],
+                    )
+                ]
+                kwargs["environment"]["NVIDIA_DRIVER_CAPABILITIES"] = "all"
+                kwargs["environment"]["NVIDIA_VISIBLE_DEVICES"] = "all"
+            # Mount /dev/dri for Intel/AMD/VA-API
+            if Path("/dev/dri").exists():
+                kwargs["devices"] = ["/dev/dri:/dev/dri"]
+            # Auto GPU detection env for Selkies containers
+            kwargs["environment"]["AUTO_GPU"] = "true"
+
         if memory_limit:
             kwargs["mem_limit"] = memory_limit
         if shm_size:
