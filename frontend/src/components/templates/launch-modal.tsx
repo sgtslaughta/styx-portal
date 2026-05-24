@@ -24,7 +24,8 @@ export function LaunchModal({ open, onClose, registryImage, template }: LaunchMo
   const createInstance = useCreateInstance();
 
   const prefillName = registryImage?.name ?? template?.display_name ?? "";
-  const prefillImage = registryImage ? `lscr.io/linuxserver/${registryImage.name}:latest` : template?.image ?? "";
+  const registryTag = registryImage?.tags?.[0]?.tag ?? "latest";
+  const prefillImage = registryImage ? `lscr.io/linuxserver/${registryImage.name}:${registryTag}` : template?.image ?? "";
 
   const prefillEnv: Record<string, string> = {};
   const envDescriptions: Record<string, string> = {};

@@ -62,6 +62,7 @@ export interface RegistryImage {
   monthly_pulls: number;
   version: string;
   stable: boolean;
+  tags: { tag: string; desc: string }[];
   config: {
     env_vars: { name: string; value: string; desc: string; optional: boolean }[];
     volumes: { path: string; host_path: string; desc: string; optional: boolean }[];

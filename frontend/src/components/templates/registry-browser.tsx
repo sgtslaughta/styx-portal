@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, Star, Download } from "lucide-react";
+import { Search, Star, Download, ExternalLink } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,7 +60,18 @@ export function RegistryBrowser({ onImport }: RegistryBrowserProps) {
                   <span className="flex items-center gap-1"><Star className="h-3 w-3" /> {img.stars}</span>
                   <span className="flex items-center gap-1"><Download className="h-3 w-3" /> {(img.monthly_pulls / 1000).toFixed(0)}k/mo</span>
                   {img.category && <Badge variant="outline" className="text-[10px] px-1 py-0">{img.category}</Badge>}
+                  {img.github_url && (
+                    <a href={img.github_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5 hover:text-foreground">
+                      <ExternalLink className="h-2.5 w-2.5" /> GitHub
+                    </a>
+                  )}
+                  {img.project_url && (
+                    <a href={img.project_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5 hover:text-foreground">
+                      <ExternalLink className="h-2.5 w-2.5" /> Site
+                    </a>
+                  )}
                 </div>
+                {img.version && <div className="mt-1 text-[10px] text-muted-foreground/60">{img.version}</div>}
               </div>
             </div>
           ))}

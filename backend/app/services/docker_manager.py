@@ -44,6 +44,11 @@ class DockerManager:
         if shm_size:
             kwargs["shm_size"] = shm_size
 
+        try:
+            self._client.images.get(image)
+        except docker.errors.ImageNotFound:
+            self._client.images.pull(image)
+
         container = self._client.containers.create(**kwargs)
         return container.id
 
