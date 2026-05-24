@@ -6,7 +6,7 @@ from sqlmodel import Session
 
 from app.config import Settings
 from app.database import init_db, engine
-from app.routers import templates, instances
+from app.routers import templates, instances, registry
 from app.services.docker_manager import DockerManager
 from app.services.session_monitor import SessionMonitor
 
@@ -36,6 +36,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Selkies Hub", version="0.1.0", lifespan=lifespan)
 app.include_router(templates.router, prefix="/api/templates", tags=["templates"])
 app.include_router(instances.router, prefix="/api/instances", tags=["instances"])
+app.include_router(registry.router, prefix="/api/registry/images", tags=["registry"])
 
 
 @app.get("/api/health")
