@@ -41,27 +41,35 @@ export default function App() {
       <Header />
       <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
       <main className="flex-1 p-6">
-        {activeTab === "instances" && (
+        <div className={activeTab === "instances" ? "" : "hidden"}>
           <InstanceGrid onSelect={setSelectedInstance} onLaunch={() => setActiveTab("templates")} />
-        )}
-        {activeTab === "templates" && (
-          <div>
-            <div className="mb-4 flex gap-1">
-              {[
-                { id: "registry", label: "LinuxServer Registry" },
-                { id: "my-templates", label: "My Templates" },
-              ].map((tab) => (
-                <button key={tab.id} onClick={() => setTemplateSubTab(tab.id)} className={cn("rounded-lg px-3 py-1.5 text-sm font-medium transition-colors", templateSubTab === tab.id ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")}>
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-            {templateSubTab === "registry" && <RegistryBrowser onImport={handleImportRegistry} />}
-            {templateSubTab === "my-templates" && <TemplateGrid onLaunch={handleLaunchTemplate} />}
+        </div>
+        <div className={activeTab === "templates" ? "" : "hidden"}>
+          <div className="mb-4 flex gap-1">
+            {[
+              { id: "registry", label: "LinuxServer Registry" },
+              { id: "my-templates", label: "My Templates" },
+            ].map((tab) => (
+              <button key={tab.id} onClick={() => setTemplateSubTab(tab.id)} className={cn("rounded-lg px-3 py-1.5 text-sm font-medium transition-colors", templateSubTab === tab.id ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")}>
+                {tab.label}
+              </button>
+            ))}
           </div>
-        )}
+          <div className={templateSubTab === "registry" ? "" : "hidden"}>
+            <RegistryBrowser onImport={handleImportRegistry} />
+          </div>
+          <div className={templateSubTab === "my-templates" ? "" : "hidden"}>
+            <TemplateGrid onLaunch={handleLaunchTemplate} />
+          </div>
+        </div>
       </main>
-      <LaunchModal open={launchOpen} onClose={closeLaunchModal} registryImage={launchRegistry} template={launchTemplate} />
+      <LaunchModal
+        key={launchRegistry?.name ?? launchTemplate?.id ?? "custom"}
+        open={launchOpen}
+        onClose={closeLaunchModal}
+        registryImage={launchRegistry}
+        template={launchTemplate}
+      />
       <InstanceDetail instance={selectedInstance} onClose={() => setSelectedInstance(null)} />
     </div>
   );

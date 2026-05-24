@@ -9,6 +9,7 @@ import { EnvEditor } from "./env-editor";
 import { useCreateTemplate } from "@/hooks/use-templates";
 import { useCreateInstance } from "@/hooks/use-instances";
 import { slugify } from "@/lib/utils";
+import { api } from "@/api/client";
 import { toast } from "sonner";
 import type { RegistryImage, ServiceTemplate } from "@/lib/types";
 
@@ -63,7 +64,7 @@ export function LaunchModal({ open, onClose, registryImage, template }: LaunchMo
 
   async function handleSaveAndLaunch() {
     try {
-      const tmpl = await createTemplate.mutateAsync({
+      const templateData = {
         name: slugify(name),
         display_name: name,
         image,
@@ -78,8 +79,19 @@ export function LaunchModal({ open, onClose, registryImage, template }: LaunchMo
         internal_port: 3001,
         category: registryImage?.category ?? template?.category ?? undefined,
         tags: [],
-        session_config: { idle_timeout: idleTimeout, grace_period: gracePeriod, timeout_action: "stop", never_timeout: false, max_session_duration: null },
-      });
+        session_config: { idle_timeout: idleTimeout, grace_period: gracePeriod, timeout_action: "stop" as const, never_timeout: false, max_session_duration: null },
+      };
+
+      let tmpl;
+      try {
+        tmpl = await createTemplate.mutateAsync(templateData);
+      } catch {
+        // Template may already exist — fetch existing templates and find match
+        const templates = await api.listTemplates();
+        tmpl = templates.find((t) => t.name === slugify(name));
+        if (!tmpl) throw new Error("Failed to create or find template");
+      }
+
       await createInstance.mutateAsync({ template_id: tmpl.id, name, subdomain });
       toast.success(`Instance "${name}" launched!`);
       onClose();
