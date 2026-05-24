@@ -1,0 +1,12 @@
+http:
+  middlewares:
+    authentik:
+      forwardAuth:
+        address: "http://${AUTHENTIK_HOST}/outpost.goauthentication.com/auth/traefik"
+        trustForwardHeader: true
+        authResponseHeaders:
+          - X-Authentik-Username
+          - X-Authentik-Groups
+          - X-Authentik-Email
+          - X-Authentik-Name
+          - X-Authentik-Uid

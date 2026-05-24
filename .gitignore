@@ -9,3 +9,4 @@ data/
 plans/
 node_modules/
 dist/
+traefik/dynamic.yml
