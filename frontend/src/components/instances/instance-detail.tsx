@@ -29,8 +29,8 @@ export function InstanceDetail({ instance, onClose }: InstanceDetailProps) {
   const domain = window.location.hostname === "localhost" ? "localhost" : window.location.hostname.split(".").slice(1).join(".");
 
   function handleDestroy() {
-    if (!confirm(`Destroy "${instance.name}"?`)) return;
-    destroy.mutate({ id: instance.id, removeVolumes: false }, {
+    if (!confirm(`Destroy "${instance!.name}"?`)) return;
+    destroy.mutate({ id: instance!.id, removeVolumes: false }, {
       onSuccess: () => { toast.success("Instance destroyed"); onClose(); },
       onError: (e) => toast.error(`Destroy failed: ${e.message}`),
     });

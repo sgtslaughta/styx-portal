@@ -11,10 +11,10 @@ const STATUS_STYLES: Record<string, { dot: string; text: string }> = {
 };
 
 export function StatusBadge({ status }: { status: string }) {
-  const style = STATUS_STYLES[status] ?? STATUS_STYLES.stopped;
+  const style = STATUS_STYLES[status] ?? STATUS_STYLES.stopped!;
   return (
-    <span className={cn("flex items-center gap-1.5 text-xs font-medium", style.text)}>
-      <span className={cn("h-1.5 w-1.5 rounded-full", style.dot)} />
+    <span className={cn("flex items-center gap-1.5 text-xs font-medium", style!.text)}>
+      <span className={cn("h-1.5 w-1.5 rounded-full", style!.dot)} />
       {status.charAt(0).toUpperCase() + status.slice(1)}
     </span>
   );
