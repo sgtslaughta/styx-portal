@@ -17,6 +17,9 @@ async def list_templates(session: AsyncSession = Depends(get_session)):
 
 @router.post("", response_model=ServiceTemplate, status_code=201)
 async def create_template(body: TemplateCreate, session: AsyncSession = Depends(get_session)):
+    if not body.image or not body.image.strip():
+        raise HTTPException(422, "Docker image is required")
+
     result = await session.exec(
         select(ServiceTemplate).where(ServiceTemplate.name == body.name)
     )
