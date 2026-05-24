@@ -65,44 +65,61 @@ export function RegistryBrowser({ onImport }: RegistryBrowserProps) {
 
 function RegistryCard({ image: img, onImport }: { image: RegistryImage; onImport: (img: RegistryImage) => void }) {
   const [showPreview, setShowPreview] = useState(false);
-  const [iframeLoaded, setIframeLoaded] = useState(false);
+  const [previewReady, setPreviewReady] = useState(false);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cardRef = useRef<HTMLDivElement>(null);
+  const loadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   function handleMouseEnter() {
     if (img.project_url) {
-      hoverTimer.current = setTimeout(() => setShowPreview(true), 600);
+      hoverTimer.current = setTimeout(() => setShowPreview(true), 800);
     }
+  }
+
+  function handleMouseMove(e: React.MouseEvent) {
+    setMousePos({ x: e.clientX, y: e.clientY });
   }
 
   function handleMouseLeave() {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    if (loadTimer.current) clearTimeout(loadTimer.current);
     setShowPreview(false);
-    setIframeLoaded(false);
+    setPreviewReady(false);
   }
 
-  function handleIframeLoad(e: React.SyntheticEvent<HTMLIFrameElement>) {
-    try {
-      const iframe = e.currentTarget;
-      if (iframe.contentDocument || iframe.contentWindow?.document) {
-        setIframeLoaded(true);
+  function handleIframeLoad() {
+    // Check after a short delay if content actually rendered
+    // (X-Frame-Options blocks still fire onLoad but show blank page)
+    loadTimer.current = setTimeout(() => {
+      try {
+        const iframe = iframeRef.current;
+        if (!iframe) return;
+        // Try to access content — will throw if blocked by CORS/X-Frame-Options
+        const doc = iframe.contentDocument;
+        if (doc && doc.body && doc.body.innerHTML.length > 50) {
+          setPreviewReady(true);
+        } else {
+          setShowPreview(false);
+        }
+      } catch {
+        // Cross-origin — can't check content, but page loaded (assume OK)
+        setPreviewReady(true);
       }
-    } catch {
-      setIframeLoaded(true);
-    }
+    }, 500);
   }
 
   function handleIframeError() {
     setShowPreview(false);
-    setIframeLoaded(false);
+    setPreviewReady(false);
   }
 
   return (
     <div
-      ref={cardRef}
       className="group relative flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-card p-3 transition-colors hover:border-primary/50"
       onClick={() => onImport(img)}
       onMouseEnter={handleMouseEnter}
+      onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >
       <img src={img.project_logo} alt={img.name} className="h-10 w-10 rounded-md object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
@@ -129,18 +146,23 @@ function RegistryCard({ image: img, onImport }: { image: RegistryImage; onImport
 
       {showPreview && img.project_url && (
         <div
-          className={`absolute left-0 top-full z-50 mt-1 w-full overflow-hidden rounded-lg border border-border bg-card shadow-xl ${iframeLoaded ? "" : "invisible"}`}
+          className={`fixed z-50 overflow-hidden rounded-lg border border-border bg-card shadow-2xl transition-opacity duration-150 ${previewReady ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+          style={{
+            left: Math.min(mousePos.x + 16, window.innerWidth - 520),
+            top: Math.min(mousePos.y - 200, window.innerHeight - 420),
+            width: 500,
+            height: 400,
+          }}
           onClick={(e) => { e.stopPropagation(); window.open(img.project_url, "_blank"); }}
-          onMouseEnter={() => { if (hoverTimer.current) clearTimeout(hoverTimer.current); }}
-          onMouseLeave={handleMouseLeave}
         >
-          <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
+          <div className="flex items-center justify-between border-b border-border px-3 py-1.5 cursor-pointer">
             <span className="text-[10px] text-muted-foreground truncate">{img.project_url}</span>
             <ExternalLink className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
           </div>
           <iframe
+            ref={iframeRef}
             src={img.project_url}
-            className={`h-[250px] w-full ${iframeLoaded ? "" : "h-0 overflow-hidden"}`}
+            className="h-[calc(100%-28px)] w-full"
             sandbox="allow-scripts allow-same-origin"
             title={`${img.name} preview`}
             onLoad={handleIframeLoad}
