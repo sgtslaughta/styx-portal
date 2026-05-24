@@ -2,13 +2,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "./status-badge";
-import { api } from "@/api/client";
 import { formatDuration } from "@/lib/utils";
 import { useStartInstance, useStopInstance, useDeleteInstance } from "@/hooks/use-instances";
 import { toast } from "sonner";
 import { ExternalLink, Play, Square, Trash2 } from "lucide-react";
 import type { Instance } from "@/lib/types";
-import { useState } from "react";
 
 interface InstanceDetailProps {
   instance: Instance | null;
@@ -19,7 +17,6 @@ export function InstanceDetail({ instance, onClose }: InstanceDetailProps) {
   const start = useStartInstance();
   const stop = useStopInstance();
   const destroy = useDeleteInstance();
-  const [imgError, setImgError] = useState(false);
 
   if (!instance) return null;
 
@@ -40,12 +37,8 @@ export function InstanceDetail({ instance, onClose }: InstanceDetailProps) {
     <Dialog open={!!instance} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-lg">
         <DialogHeader><DialogTitle>{instance.name}</DialogTitle></DialogHeader>
-        <div className="aspect-video w-full overflow-hidden rounded-lg bg-secondary">
-          {isRunning && !imgError ? (
-            <img src={`${api.screenshotUrl(instance.id)}?t=${Math.floor(Date.now() / 30000)}`} alt={instance.name} className="h-full w-full object-cover" onError={() => setImgError(true)} />
-          ) : (
-            <div className="flex h-full items-center justify-center text-5xl text-muted-foreground/30">{instance.status === "stopped" ? "⏸" : "🖥️"}</div>
-          )}
+        <div className="aspect-video w-full overflow-hidden rounded-lg bg-secondary flex items-center justify-center">
+          <div className="text-5xl">{instance.status === "stopped" ? "⏸" : "🖥️"}</div>
         </div>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div><span className="text-muted-foreground">Status</span><div className="mt-1"><StatusBadge status={instance.status} /></div></div>
