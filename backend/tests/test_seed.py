@@ -2,15 +2,21 @@ import json
 import tempfile
 import os
 
-from sqlmodel import Session as DBSession, create_engine, SQLModel, select
+import pytest
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlmodel import SQLModel, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.database import seed_templates
 from app.models import ServiceTemplate
 
 
-def test_seed_templates():
-    engine = create_engine("sqlite:///:memory:")
-    SQLModel.metadata.create_all(engine)
+@pytest.mark.asyncio
+async def test_seed_templates():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         template_data = {
@@ -22,16 +28,22 @@ def test_seed_templates():
         with open(os.path.join(tmpdir, "test-seed.json"), "w") as f:
             json.dump(template_data, f)
 
-        with DBSession(engine) as session:
-            seed_templates(session, tmpdir)
-            templates = session.exec(select(ServiceTemplate)).all()
+        async with factory() as session:
+            await seed_templates(session, tmpdir)
+            result = await session.exec(select(ServiceTemplate))
+            templates = result.all()
             assert len(templates) == 1
             assert templates[0].name == "test-seed"
 
+    await engine.dispose()
 
-def test_seed_idempotent():
-    engine = create_engine("sqlite:///:memory:")
-    SQLModel.metadata.create_all(engine)
+
+@pytest.mark.asyncio
+async def test_seed_idempotent():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     with tempfile.TemporaryDirectory() as tmpdir:
         template_data = {
@@ -43,8 +55,11 @@ def test_seed_idempotent():
         with open(os.path.join(tmpdir, "idem.json"), "w") as f:
             json.dump(template_data, f)
 
-        with DBSession(engine) as session:
-            seed_templates(session, tmpdir)
-            seed_templates(session, tmpdir)
-            templates = session.exec(select(ServiceTemplate)).all()
+        async with factory() as session:
+            await seed_templates(session, tmpdir)
+            await seed_templates(session, tmpdir)
+            result = await session.exec(select(ServiceTemplate))
+            templates = result.all()
             assert len(templates) == 1
+
+    await engine.dispose()

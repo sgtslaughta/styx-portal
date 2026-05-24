@@ -2,10 +2,11 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from sqlmodel import Session, select
+from fastapi.middleware.cors import CORSMiddleware
+from sqlmodel import select
 
 from app.config import Settings
-from app.database import init_db, engine
+from app.database import init_db, async_session
 from app.models import Instance as InstanceModel
 from app.routers import templates, instances, registry
 from app.services.docker_manager import DockerManager
@@ -26,15 +27,25 @@ async def _session_monitor_loop():
         await asyncio.sleep(10)
         tick += 1
         try:
-            with Session(engine) as session:
+            async with async_session() as session:
                 if tick % 6 == 0:
-                    monitor.check_all(session)
-                if tick % 3 == 0:
-                    running = session.exec(
+                    result = await session.exec(
                         select(InstanceModel).where(
                             InstanceModel.status.in_(["running", "idle"])
                         )
-                    ).all()
+                    )
+                    running_instances = result.all()
+                    for inst in running_instances:
+                        monitor.check_instance(inst, session)
+                    await session.commit()
+
+                if tick % 3 == 0:
+                    result = await session.exec(
+                        select(InstanceModel).where(
+                            InstanceModel.status.in_(["running", "idle"])
+                        )
+                    )
+                    running = result.all()
                     for inst in running:
                         if inst.container_id:
                             screenshots.capture(inst.id, inst.container_id, 3001)
@@ -44,15 +55,13 @@ async def _session_monitor_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
+    await init_db()
     task = asyncio.create_task(_session_monitor_loop())
     yield
     task.cancel()
 
 
 app = FastAPI(title="Selkies Hub", version="0.1.0", lifespan=lifespan)
-
-from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
@@ -68,5 +77,5 @@ app.include_router(registry.router, prefix="/api/registry/images", tags=["regist
 
 
 @app.get("/api/health")
-def health():
+async def health():
     return {"status": "ok"}

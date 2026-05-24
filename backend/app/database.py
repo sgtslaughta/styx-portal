@@ -1,31 +1,34 @@
 import json
 import os
 
-from sqlmodel import SQLModel, create_engine, Session, select
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from sqlmodel import SQLModel, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Settings
 from app.models import ServiceTemplate
 
 settings = Settings()
-engine = create_engine(
+engine = create_async_engine(
     settings.DATABASE_URL,
-    connect_args={"check_same_thread": False},
     echo=False,
 )
+async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
-def init_db():
-    SQLModel.metadata.create_all(engine)
-    with Session(engine) as session:
-        seed_templates(session, settings.TEMPLATES_DIR)
+async def init_db():
+    async with engine.begin() as conn:
+        await conn.run_sync(SQLModel.metadata.create_all)
+    async with async_session() as session:
+        await seed_templates(session, settings.TEMPLATES_DIR)
 
 
-def get_session():
-    with Session(engine) as session:
+async def get_session():
+    async with async_session() as session:
         yield session
 
 
-def seed_templates(session: Session, templates_dir: str):
+async def seed_templates(session: AsyncSession, templates_dir: str):
     if not os.path.isdir(templates_dir):
         return
     for filename in os.listdir(templates_dir):
@@ -35,13 +38,14 @@ def seed_templates(session: Session, templates_dir: str):
         with open(filepath) as f:
             data = json.load(f)
 
-        existing = session.exec(
+        result = await session.exec(
             select(ServiceTemplate).where(ServiceTemplate.name == data["name"])
-        ).first()
+        )
+        existing = result.first()
         if existing:
             continue
 
         template = ServiceTemplate(**data)
         session.add(template)
 
-    session.commit()
+    await session.commit()

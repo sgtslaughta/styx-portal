@@ -1,8 +1,9 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse
-from sqlmodel import Session, select
+from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Settings
 from app.database import get_session
@@ -28,23 +29,25 @@ def get_screenshot_service() -> ScreenshotService:
 
 
 @router.get("", response_model=list[Instance])
-def list_instances(session: Session = Depends(get_session)):
-    return session.exec(select(Instance)).all()
+async def list_instances(session: AsyncSession = Depends(get_session)):
+    result = await session.exec(select(Instance))
+    return result.all()
 
 
 @router.post("", response_model=Instance, status_code=201)
-def create_instance(
+async def create_instance(
     body: InstanceCreate,
-    session: Session = Depends(get_session),
+    session: AsyncSession = Depends(get_session),
     docker: DockerManager = Depends(get_docker_manager),
 ):
-    template = session.get(ServiceTemplate, body.template_id)
+    template = await session.get(ServiceTemplate, body.template_id)
     if not template:
         raise HTTPException(404, "Template not found")
 
-    existing = session.exec(
+    result = await session.exec(
         select(Instance).where(Instance.subdomain == body.subdomain)
-    ).first()
+    )
+    existing = result.first()
     if existing:
         raise HTTPException(409, f"Subdomain '{body.subdomain}' already in use")
 
@@ -57,8 +60,8 @@ def create_instance(
         session_config=body.session_config or template.session_config,
     )
     session.add(instance)
-    session.commit()
-    session.refresh(instance)
+    await session.commit()
+    await session.refresh(instance)
 
     volume_names = []
     for vol in template.volumes:
@@ -96,7 +99,7 @@ def create_instance(
 
     docker.start_container(container_id)
 
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     instance.container_id = container_id
     instance.status = "running"
     instance.started_at = now
@@ -105,26 +108,26 @@ def create_instance(
 
     event = SessionEvent(instance_id=instance.id, event_type="started")
     session.add(event)
-    session.commit()
-    session.refresh(instance)
+    await session.commit()
+    await session.refresh(instance)
     return instance
 
 
 @router.get("/{instance_id}", response_model=Instance)
-def get_instance(instance_id: str, session: Session = Depends(get_session)):
-    instance = session.get(Instance, instance_id)
+async def get_instance(instance_id: str, session: AsyncSession = Depends(get_session)):
+    instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
     return instance
 
 
 @router.post("/{instance_id}/start", response_model=Instance)
-def start_instance(
+async def start_instance(
     instance_id: str,
-    session: Session = Depends(get_session),
+    session: AsyncSession = Depends(get_session),
     docker: DockerManager = Depends(get_docker_manager),
 ):
-    instance = session.get(Instance, instance_id)
+    instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
     if instance.status == "running":
@@ -132,7 +135,7 @@ def start_instance(
 
     docker.start_container(instance.container_id)
 
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     instance.status = "running"
     instance.started_at = now
     instance.last_activity = now
@@ -140,42 +143,42 @@ def start_instance(
 
     event = SessionEvent(instance_id=instance.id, event_type="started")
     session.add(event)
-    session.commit()
-    session.refresh(instance)
+    await session.commit()
+    await session.refresh(instance)
     return instance
 
 
 @router.post("/{instance_id}/stop", response_model=Instance)
-def stop_instance(
+async def stop_instance(
     instance_id: str,
-    session: Session = Depends(get_session),
+    session: AsyncSession = Depends(get_session),
     docker: DockerManager = Depends(get_docker_manager),
 ):
-    instance = session.get(Instance, instance_id)
+    instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
 
     docker.stop_container(instance.container_id)
 
     instance.status = "stopped"
-    instance.stopped_at = datetime.now()
+    instance.stopped_at = datetime.now(timezone.utc)
     session.add(instance)
 
     event = SessionEvent(instance_id=instance.id, event_type="stopped")
     session.add(event)
-    session.commit()
-    session.refresh(instance)
+    await session.commit()
+    await session.refresh(instance)
     return instance
 
 
 @router.delete("/{instance_id}", status_code=204)
-def delete_instance(
+async def delete_instance(
     instance_id: str,
     remove_volumes: bool = Query(False),
-    session: Session = Depends(get_session),
+    session: AsyncSession = Depends(get_session),
     docker: DockerManager = Depends(get_docker_manager),
 ):
-    instance = session.get(Instance, instance_id)
+    instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
 
@@ -188,18 +191,18 @@ def delete_instance(
 
     event = SessionEvent(instance_id=instance.id, event_type="destroyed")
     session.add(event)
-    session.delete(instance)
-    session.commit()
+    await session.delete(instance)
+    await session.commit()
     return Response(status_code=204)
 
 
 @router.get("/{instance_id}/status", response_model=InstanceStatus)
-def get_instance_status(
+async def get_instance_status(
     instance_id: str,
-    session: Session = Depends(get_session),
+    session: AsyncSession = Depends(get_session),
     docker: DockerManager = Depends(get_docker_manager),
 ):
-    instance = session.get(Instance, instance_id)
+    instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
 
@@ -207,14 +210,20 @@ def get_instance_status(
     if instance.container_id:
         docker_status = docker.get_container_status(instance.container_id)
 
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     uptime = None
     if instance.started_at and instance.status == "running":
-        uptime = (now - instance.started_at).total_seconds()
+        started = instance.started_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        uptime = (now - started).total_seconds()
 
     idle = None
     if instance.last_activity and instance.status == "running":
-        idle = (now - instance.last_activity).total_seconds()
+        last_act = instance.last_activity
+        if last_act.tzinfo is None:
+            last_act = last_act.replace(tzinfo=timezone.utc)
+        idle = (now - last_act).total_seconds()
 
     return InstanceStatus(
         id=instance.id,
@@ -227,25 +236,25 @@ def get_instance_status(
 
 
 @router.post("/{instance_id}/keepalive", response_model=Instance)
-def keepalive(instance_id: str, session: Session = Depends(get_session)):
-    instance = session.get(Instance, instance_id)
+async def keepalive(instance_id: str, session: AsyncSession = Depends(get_session)):
+    instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
 
-    instance.last_activity = datetime.now()
+    instance.last_activity = datetime.now(timezone.utc)
     session.add(instance)
-    session.commit()
-    session.refresh(instance)
+    await session.commit()
+    await session.refresh(instance)
     return instance
 
 
 @router.patch("/{instance_id}/session", response_model=Instance)
-def update_session_config(
+async def update_session_config(
     instance_id: str,
     body: SessionConfigUpdate,
-    session: Session = Depends(get_session),
+    session: AsyncSession = Depends(get_session),
 ):
-    instance = session.get(Instance, instance_id)
+    instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
 
@@ -255,18 +264,18 @@ def update_session_config(
     instance.session_config = config
 
     session.add(instance)
-    session.commit()
-    session.refresh(instance)
+    await session.commit()
+    await session.refresh(instance)
     return instance
 
 
 @router.get("/{instance_id}/screenshot")
-def get_screenshot(
+async def get_screenshot(
     instance_id: str,
-    session: Session = Depends(get_session),
+    session: AsyncSession = Depends(get_session),
     screenshots: ScreenshotService = Depends(get_screenshot_service),
 ):
-    instance = session.get(Instance, instance_id)
+    instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
 

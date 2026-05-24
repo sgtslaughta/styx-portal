@@ -1,8 +1,6 @@
 import re
 from datetime import datetime, timedelta, timezone
 
-from sqlmodel import Session, select
-
 from app.models import Instance, SessionEvent
 from app.services.docker_manager import DockerManager
 
@@ -24,7 +22,7 @@ class SessionMonitor:
             return timedelta(minutes=amount)
         return timedelta(hours=amount)
 
-    def check_instance(self, instance: Instance, session: Session) -> list[str]:
+    def check_instance(self, instance: Instance, session) -> list[str]:
         if instance.status not in ("running", "idle"):
             return []
 
@@ -54,7 +52,6 @@ class SessionMonitor:
                 details={"idle_seconds": idle_duration.total_seconds()},
             )
             session.add(event)
-            session.commit()
             actions.append("auto_stopped")
 
         elif instance.status == "running" and idle_duration > idle_timeout:
@@ -66,15 +63,11 @@ class SessionMonitor:
                 details={"idle_seconds": idle_duration.total_seconds()},
             )
             session.add(event)
-            session.commit()
             actions.append("idle_warning")
 
         return actions
 
-    def check_all(self, session: Session) -> dict[str, list[str]]:
-        instances = session.exec(
-            select(Instance).where(Instance.status.in_(["running", "idle"]))
-        ).all()
+    def check_all(self, session, instances: list[Instance]) -> dict[str, list[str]]:
         results = {}
         for instance in instances:
             actions = self.check_instance(instance, session)

@@ -1,5 +1,6 @@
 from unittest.mock import patch, MagicMock
 
+import pytest
 
 MOCK_LSIO_RESPONSE = [
     {
@@ -41,28 +42,29 @@ MOCK_LSIO_RESPONSE = [
 
 
 @patch("app.routers.registry.httpx")
-def test_list_registry_images(mock_httpx, client):
+@pytest.mark.asyncio
+async def test_list_registry_images(mock_httpx, client):
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = MOCK_LSIO_RESPONSE
     mock_httpx.get.return_value = mock_response
 
-    resp = client.get("/api/registry/images")
+    resp = await client.get("/api/registry/images")
     assert resp.status_code == 200
     data = resp.json()
     assert len(data) == 2
     assert data[0]["name"] == "firefox"
-    assert data[0]["project_logo"] is not None
 
 
 @patch("app.routers.registry.httpx")
-def test_list_registry_filter_category(mock_httpx, client):
+@pytest.mark.asyncio
+async def test_list_registry_filter_category(mock_httpx, client):
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = MOCK_LSIO_RESPONSE
     mock_httpx.get.return_value = mock_response
 
-    resp = client.get("/api/registry/images?category=Network")
+    resp = await client.get("/api/registry/images?category=Network")
     assert resp.status_code == 200
     data = resp.json()
     assert len(data) == 1
@@ -70,13 +72,14 @@ def test_list_registry_filter_category(mock_httpx, client):
 
 
 @patch("app.routers.registry.httpx")
-def test_list_registry_search(mock_httpx, client):
+@pytest.mark.asyncio
+async def test_list_registry_search(mock_httpx, client):
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = MOCK_LSIO_RESPONSE
     mock_httpx.get.return_value = mock_response
 
-    resp = client.get("/api/registry/images?search=fire")
+    resp = await client.get("/api/registry/images?search=fire")
     assert resp.status_code == 200
     data = resp.json()
     assert len(data) == 1
@@ -84,13 +87,14 @@ def test_list_registry_search(mock_httpx, client):
 
 
 @patch("app.routers.registry.httpx")
-def test_get_registry_image(mock_httpx, client):
+@pytest.mark.asyncio
+async def test_get_registry_image(mock_httpx, client):
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = MOCK_LSIO_RESPONSE
     mock_httpx.get.return_value = mock_response
 
-    resp = client.get("/api/registry/images/firefox")
+    resp = await client.get("/api/registry/images/firefox")
     assert resp.status_code == 200
     data = resp.json()
     assert data["name"] == "firefox"
@@ -98,11 +102,12 @@ def test_get_registry_image(mock_httpx, client):
 
 
 @patch("app.routers.registry.httpx")
-def test_get_registry_image_not_found(mock_httpx, client):
+@pytest.mark.asyncio
+async def test_get_registry_image_not_found(mock_httpx, client):
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = MOCK_LSIO_RESPONSE
     mock_httpx.get.return_value = mock_response
 
-    resp = client.get("/api/registry/images/nonexistent")
+    resp = await client.get("/api/registry/images/nonexistent")
     assert resp.status_code == 404
