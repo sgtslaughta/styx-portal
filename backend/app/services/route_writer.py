@@ -18,7 +18,6 @@ def write_routes(instances: list[dict], domain: str | None = None):
     middlewares: dict = {}
     config: dict = {
         "http": {
-            "middlewares": middlewares,
             "routers": {
                 "frontend": {
                     "rule": f"Host(`{domain}`)",
@@ -49,11 +48,7 @@ def write_routes(instances: list[dict], domain: str | None = None):
         }
     }
 
-    # ServersTransport for skipping TLS verification on Selkies containers
-    config["http"]["serversTransports"] = {
-        "selkies-transport": {"insecureSkipVerify": True}
-    }
-
+    has_https = False
     for inst in instances:
         inst_id = inst["id"]
         subdomain = inst["subdomain"]
@@ -78,7 +73,15 @@ def write_routes(instances: list[dict], domain: str | None = None):
         }
         if protocol == "https":
             svc_config["serversTransport"] = "selkies-transport"
+            has_https = True
         config["http"]["services"][inst_id] = {"loadBalancer": svc_config}
+
+    if middlewares:
+        config["http"]["middlewares"] = middlewares
+    if has_https:
+        config["http"]["serversTransports"] = {
+            "selkies-transport": {"insecureSkipVerify": True}
+        }
 
     out_file = out_dir / "routes.yml"
     out_file.write_text(yaml.dump(config, default_flow_style=False))
