@@ -55,7 +55,7 @@ class DockerManager:
             "name": name,
             "image": image,
             "labels": labels,
-            "environment": environment,
+            "environment": {"PIXELFLUX_WAYLAND": "true", **environment},
             "volumes": volumes,
             "detach": True,
             "network": self._network_name,

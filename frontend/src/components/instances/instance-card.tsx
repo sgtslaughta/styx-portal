@@ -7,12 +7,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { StatusBadge } from "./status-badge";
-import { api } from "@/api/client";
 import { formatDuration } from "@/lib/utils";
 import { useStartInstance, useStopInstance, useDeleteInstance } from "@/hooks/use-instances";
 import { toast } from "sonner";
 import type { Instance } from "@/lib/types";
-import { useState } from "react";
 
 interface InstanceCardProps {
   instance: Instance;
@@ -23,7 +21,6 @@ export function InstanceCard({ instance, onSelect }: InstanceCardProps) {
   const start = useStartInstance();
   const stop = useStopInstance();
   const destroy = useDeleteInstance();
-  const [imgError, setImgError] = useState(false);
 
   const isRunning = instance.status === "running" || instance.status === "idle";
   const idleSeconds = instance.last_activity
@@ -59,19 +56,10 @@ export function InstanceCard({ instance, onSelect }: InstanceCardProps) {
       className="group cursor-pointer overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/50"
       onClick={() => onSelect(instance)}
     >
-      <div className="relative aspect-video w-full bg-secondary">
-        {isRunning && !imgError ? (
-          <img
-            src={`${api.screenshotUrl(instance.id)}?t=${Math.floor(Date.now() / 30000)}`}
-            alt={instance.name}
-            className="h-full w-full object-cover"
-            onError={() => setImgError(true)}
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center text-4xl text-muted-foreground/30">
-            {instance.status === "stopped" ? "⏸" : "🖥️"}
-          </div>
-        )}
+      <div className="relative aspect-video w-full bg-secondary flex items-center justify-center">
+        <div className="text-4xl text-muted-foreground/30">
+          {instance.status === "stopped" ? "⏸" : instance.status === "pulling" ? "⏳" : "🖥️"}
+        </div>
       </div>
 
       <div className="p-4">
