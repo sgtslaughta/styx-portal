@@ -1,4 +1,5 @@
 import { useInstances } from "@/hooks/use-instances";
+import { useTemplates } from "@/hooks/use-templates";
 import { InstanceCard } from "./instance-card";
 import type { Instance } from "@/lib/types";
 
@@ -9,6 +10,7 @@ interface InstanceGridProps {
 
 export function InstanceGrid({ onSelect, onLaunch }: InstanceGridProps) {
   const { data: instances, isLoading, isError } = useInstances();
+  const { data: templates } = useTemplates();
 
   if (isLoading) {
     return (
@@ -45,7 +47,12 @@ export function InstanceGrid({ onSelect, onLaunch }: InstanceGridProps) {
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
       {instances.map((instance) => (
-        <InstanceCard key={instance.id} instance={instance} onSelect={onSelect} />
+        <InstanceCard
+          key={instance.id}
+          instance={instance}
+          icon={templates?.find((t) => t.id === instance.template_id)?.icon ?? null}
+          onSelect={onSelect}
+        />
       ))}
     </div>
   );

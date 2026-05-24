@@ -14,10 +14,11 @@ import type { Instance } from "@/lib/types";
 
 interface InstanceCardProps {
   instance: Instance;
+  icon: string | null;
   onSelect: (instance: Instance) => void;
 }
 
-export function InstanceCard({ instance, onSelect }: InstanceCardProps) {
+export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
   const start = useStartInstance();
   const stop = useStopInstance();
   const destroy = useDeleteInstance();
@@ -57,8 +58,8 @@ export function InstanceCard({ instance, onSelect }: InstanceCardProps) {
       onClick={() => onSelect(instance)}
     >
       <div className="relative aspect-video w-full bg-secondary flex items-center justify-center">
-        <div className="text-4xl text-muted-foreground/30">
-          {instance.status === "stopped" ? "⏸" : instance.status === "pulling" ? "⏳" : "🖥️"}
+        <div className="text-4xl">
+          {instance.status === "pulling" ? "⏳" : icon ?? "🖥️"}
         </div>
       </div>
 

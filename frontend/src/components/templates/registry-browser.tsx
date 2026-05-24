@@ -129,7 +129,7 @@ function RegistryCard({ image: img, onImport }: { image: RegistryImage; onImport
 
       {showPreview && img.project_url && (
         <div
-          className="absolute left-0 top-full z-50 mt-1 w-full overflow-hidden rounded-lg border border-border bg-card shadow-xl"
+          className={`absolute left-0 top-full z-50 mt-1 w-full overflow-hidden rounded-lg border border-border bg-card shadow-xl ${iframeLoaded ? "" : "invisible"}`}
           onClick={(e) => { e.stopPropagation(); window.open(img.project_url, "_blank"); }}
           onMouseEnter={() => { if (hoverTimer.current) clearTimeout(hoverTimer.current); }}
           onMouseLeave={handleMouseLeave}
@@ -138,10 +138,9 @@ function RegistryCard({ image: img, onImport }: { image: RegistryImage; onImport
             <span className="text-[10px] text-muted-foreground truncate">{img.project_url}</span>
             <ExternalLink className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
           </div>
-          {!iframeLoaded && <div className="flex h-[250px] items-center justify-center text-xs text-muted-foreground">Loading preview...</div>}
           <iframe
             src={img.project_url}
-            className={`h-[250px] w-full ${iframeLoaded ? "" : "hidden"}`}
+            className={`h-[250px] w-full ${iframeLoaded ? "" : "h-0 overflow-hidden"}`}
             sandbox="allow-scripts allow-same-origin"
             title={`${img.name} preview`}
             onLoad={handleIframeLoad}
