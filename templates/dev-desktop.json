@@ -1,0 +1,32 @@
+{
+  "name": "dev-desktop",
+  "display_name": "Development Desktop",
+  "image": "ghcr.io/linuxserver/baseimage-selkies:debiantrixie",
+  "icon": "🖥️",
+  "description": "Full Linux desktop environment for development work",
+  "env_vars": {
+    "PUID": "1000",
+    "PGID": "1000",
+    "SELKIES_ENCODER": "x264enc",
+    "SELKIES_ENABLE_RESIZE": "true"
+  },
+  "gpu_enabled": false,
+  "gpu_count": 0,
+  "memory_limit": "4g",
+  "cpu_limit": "2.0",
+  "shm_size": "1g",
+  "volumes": [
+    {"name": "{instance_id}-home", "mount": "/config"},
+    {"name": "{instance_id}-data", "mount": "/data"}
+  ],
+  "internal_port": 3001,
+  "category": "desktop",
+  "tags": ["development", "coding"],
+  "session_config": {
+    "idle_timeout": "60m",
+    "grace_period": "10m",
+    "timeout_action": "stop",
+    "never_timeout": false,
+    "max_session_duration": null
+  }
+}

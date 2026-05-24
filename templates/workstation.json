@@ -1,0 +1,32 @@
+{
+  "name": "workstation",
+  "display_name": "Workstation (Full Access)",
+  "image": "ghcr.io/linuxserver/baseimage-selkies:debiantrixie",
+  "icon": "🏗️",
+  "description": "Privileged container with full host GPU and device access",
+  "env_vars": {
+    "PUID": "1000",
+    "PGID": "1000",
+    "SELKIES_ENCODER": "nvh264enc",
+    "SELKIES_ENABLE_RESIZE": "true",
+    "NVIDIA_DRIVER_CAPABILITIES": "all"
+  },
+  "gpu_enabled": true,
+  "gpu_count": 1,
+  "memory_limit": "16g",
+  "cpu_limit": "8.0",
+  "shm_size": "4g",
+  "volumes": [
+    {"name": "{instance_id}-home", "mount": "/config"}
+  ],
+  "internal_port": 3001,
+  "category": "workstation",
+  "tags": ["workstation", "gpu", "privileged"],
+  "session_config": {
+    "idle_timeout": "120m",
+    "grace_period": "15m",
+    "timeout_action": "stop",
+    "never_timeout": false,
+    "max_session_duration": null
+  }
+}

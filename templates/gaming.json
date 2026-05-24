@@ -1,0 +1,33 @@
+{
+  "name": "gaming",
+  "display_name": "Gaming Desktop",
+  "image": "ghcr.io/linuxserver/baseimage-selkies:debiantrixie",
+  "icon": "🎮",
+  "description": "GPU-accelerated desktop for gaming and graphics work",
+  "env_vars": {
+    "PUID": "1000",
+    "PGID": "1000",
+    "SELKIES_ENCODER": "nvh264enc",
+    "SELKIES_ENABLE_RESIZE": "true",
+    "NVIDIA_DRIVER_CAPABILITIES": "all"
+  },
+  "gpu_enabled": true,
+  "gpu_count": 1,
+  "memory_limit": "16g",
+  "cpu_limit": "8.0",
+  "shm_size": "4g",
+  "volumes": [
+    {"name": "{instance_id}-home", "mount": "/config"},
+    {"name": "{instance_id}-games", "mount": "/games"}
+  ],
+  "internal_port": 3001,
+  "category": "gaming",
+  "tags": ["gaming", "gpu", "entertainment"],
+  "session_config": {
+    "idle_timeout": "30m",
+    "grace_period": "5m",
+    "timeout_action": "stop",
+    "never_timeout": false,
+    "max_session_duration": "8h"
+  }
+}
