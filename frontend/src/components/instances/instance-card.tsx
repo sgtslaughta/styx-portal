@@ -16,11 +16,10 @@ import { useState } from "react";
 
 interface InstanceCardProps {
   instance: Instance;
-  domain: string;
   onSelect: (instance: Instance) => void;
 }
 
-export function InstanceCard({ instance, domain, onSelect }: InstanceCardProps) {
+export function InstanceCard({ instance, onSelect }: InstanceCardProps) {
   const start = useStartInstance();
   const stop = useStopInstance();
   const destroy = useDeleteInstance();

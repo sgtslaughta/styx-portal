@@ -42,14 +42,10 @@ export function InstanceGrid({ onSelect, onLaunch }: InstanceGridProps) {
     );
   }
 
-  const domain = window.location.hostname === "localhost"
-    ? "localhost"
-    : window.location.hostname.split(".").slice(1).join(".");
-
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
       {instances.map((instance) => (
-        <InstanceCard key={instance.id} instance={instance} domain={domain} onSelect={onSelect} />
+        <InstanceCard key={instance.id} instance={instance} onSelect={onSelect} />
       ))}
     </div>
   );
