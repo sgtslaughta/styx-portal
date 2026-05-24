@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 
 from app.config import Settings
@@ -8,6 +9,7 @@ from app.database import get_session
 from app.models import Instance, ServiceTemplate, SessionEvent
 from app.schemas import InstanceCreate, SessionConfigUpdate, InstanceStatus
 from app.services.docker_manager import DockerManager
+from app.services.screenshot import ScreenshotService
 from app.services.traefik_labels import generate_traefik_labels
 
 router = APIRouter()
@@ -16,6 +18,13 @@ _settings = Settings()
 
 def get_docker_manager() -> DockerManager:
     return DockerManager(network_name=_settings.DOCKER_NETWORK)
+
+
+def get_screenshot_service() -> ScreenshotService:
+    return ScreenshotService(
+        cache_dir=_settings.SCREENSHOT_CACHE_DIR,
+        docker_manager=get_docker_manager(),
+    )
 
 
 @router.get("", response_model=list[Instance])
@@ -249,3 +258,20 @@ def update_session_config(
     session.commit()
     session.refresh(instance)
     return instance
+
+
+@router.get("/{instance_id}/screenshot")
+def get_screenshot(
+    instance_id: str,
+    session: Session = Depends(get_session),
+    screenshots: ScreenshotService = Depends(get_screenshot_service),
+):
+    instance = session.get(Instance, instance_id)
+    if not instance:
+        raise HTTPException(404, "Instance not found")
+
+    path = screenshots.get_path(instance_id)
+    if not path:
+        raise HTTPException(404, "No screenshot available")
+
+    return FileResponse(path, media_type="image/png")

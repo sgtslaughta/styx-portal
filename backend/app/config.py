@@ -8,5 +8,6 @@ class Settings(BaseSettings):
     DOCKER_NETWORK: str = "selkies-hub"
     SELKIES_DEFAULT_PORT: int = 3001
     TEMPLATES_DIR: str = "/app/templates"
+    SCREENSHOT_CACHE_DIR: str = "/app/data/screenshots"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
