@@ -1,0 +1,58 @@
+networks:
+  selkies-hub:
+    name: selkies-hub
+    driver: bridge
+
+volumes:
+  db-data:
+  traefik-certs:
+
+services:
+  traefik:
+    image: traefik:v3.2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - traefik-certs:/certs
+    networks:
+      - selkies-hub
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.dashboard.rule=Host(`traefik.${DOMAIN}`)
+      - traefik.http.routers.dashboard.service=api@internal
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN}
+    networks:
+      - selkies-hub
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      - traefik
+    environment:
+      - DOMAIN=${DOMAIN}
+      - DATABASE_URL=sqlite+aiosqlite:///./data/selkies-hub.db
+      - DOCKER_NETWORK=selkies-hub
+      - TEMPLATES_DIR=/app/templates
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - db-data:/app/data
+      - ./templates:/app/templates:ro
+    networks:
+      - selkies-hub
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.api.rule=Host(`api.${DOMAIN}`)
+      - traefik.http.routers.api.entrypoints=websecure
+      - traefik.http.services.api.loadbalancer.server.port=8000
