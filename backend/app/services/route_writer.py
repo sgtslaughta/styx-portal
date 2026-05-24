@@ -15,18 +15,22 @@ def write_routes(instances: list[dict], domain: str | None = None):
     except PermissionError:
         return
 
+    middlewares: dict = {}
     config: dict = {
         "http": {
+            "middlewares": middlewares,
             "routers": {
                 "frontend": {
                     "rule": f"Host(`{domain}`)",
                     "entryPoints": ["web"],
                     "service": "frontend",
+                    "priority": 1,
                 },
                 "api": {
-                    "rule": f"Host(`api.{domain}`)",
+                    "rule": f"Host(`{domain}`) && PathPrefix(`/api`)",
                     "entryPoints": ["web"],
                     "service": "api",
+                    "priority": 100,
                 },
                 "dashboard": {
                     "rule": f"Host(`traefik.{domain}`)",
@@ -51,10 +55,17 @@ def write_routes(instances: list[dict], domain: str | None = None):
         port = inst.get("port", 3001)
         container_name = f"selkies-{subdomain}"
 
+        strip_mw = f"strip-{subdomain}"
+        middlewares[strip_mw] = {
+            "stripPrefix": {"prefixes": [f"/i/{subdomain}"]}
+        }
+
         config["http"]["routers"][inst_id] = {
-            "rule": f"Host(`{subdomain}.{domain}`)",
+            "rule": f"Host(`{domain}`) && PathPrefix(`/i/{subdomain}`)",
             "entryPoints": ["web"],
+            "middlewares": [strip_mw],
             "service": inst_id,
+            "priority": 50,
         }
         config["http"]["services"][inst_id] = {
             "loadBalancer": {"servers": [{"url": f"http://{container_name}:{port}"}]}

@@ -36,8 +36,7 @@ async def test_create_instance(client, template_id):
     data = resp.json()
     assert data["name"] == "My Dev Box"
     assert data["subdomain"] == "dev"
-    assert data["status"] == "running"
-    assert data["container_id"] == "container-abc123"
+    assert data["status"] == "pulling"
 
 
 @pytest.mark.asyncio
@@ -105,7 +104,7 @@ async def test_get_instance_status(client, template_id):
     instance_id = create_resp.json()["id"]
     resp = await client.get(f"/api/instances/{instance_id}/status")
     assert resp.status_code == 200
-    assert resp.json()["status"] == "running"
+    assert resp.json()["status"] == "pulling"
 
 
 @pytest.mark.asyncio

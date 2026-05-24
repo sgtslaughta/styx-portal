@@ -67,7 +67,7 @@ export function InstanceDetail({ instance, onClose }: InstanceDetailProps) {
         <Separator />
         <div className="flex gap-2">
           {isRunning ? <>
-            <Button className="flex-1" onClick={() => window.open(`https://${instance.subdomain}.${domain}`, "_blank")}><ExternalLink className="mr-2 h-3 w-3" /> Connect</Button>
+            <Button className="flex-1" onClick={() => window.open(`/i/${instance.subdomain}/`, "_blank")}><ExternalLink className="mr-2 h-3 w-3" /> Connect</Button>
             <Button variant="secondary" onClick={() => stop.mutate(instance.id, { onError: (e) => toast.error(e.message) })}><Square className="mr-2 h-3 w-3" /> Stop</Button>
           </> : (
             <Button className="flex-1" onClick={() => start.mutate(instance.id, { onError: (e) => toast.error(e.message) })}><Play className="mr-2 h-3 w-3" /> Start</Button>

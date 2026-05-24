@@ -32,7 +32,7 @@ export function InstanceCard({ instance, domain, onSelect }: InstanceCardProps) 
     : null;
 
   function handleConnect() {
-    window.open(`https://${instance.subdomain}.${domain}`, "_blank");
+    window.open(`/i/${instance.subdomain}/`, "_blank");
   }
 
   function handleStart() {

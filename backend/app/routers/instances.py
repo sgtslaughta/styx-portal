@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -6,7 +7,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Settings
-from app.database import get_session
+from app.database import get_session, async_session
 from app.models import Instance, ServiceTemplate, SessionEvent
 from app.schemas import InstanceCreate, SessionConfigUpdate, InstanceStatus
 from app.services.docker_manager import DockerManager
@@ -47,11 +48,88 @@ async def list_instances(session: AsyncSession = Depends(get_session)):
     return result.all()
 
 
+async def _launch_instance_background(instance_id: str, template_id: str):
+    """Background task: pull image, create container, start it."""
+    docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
+    async with async_session() as session:
+        instance = await session.get(Instance, instance_id)
+        template = await session.get(ServiceTemplate, template_id)
+        if not instance or not template:
+            return
+
+        try:
+            instance.status = "pulling"
+            session.add(instance)
+            await session.commit()
+
+            volume_names = []
+            for vol in template.volumes:
+                vol_name = vol["name"].replace("{instance_id}", instance.id)
+                docker.create_volume(vol_name)
+                volume_names.append(vol_name)
+            instance.volume_names = volume_names
+
+            volumes = {}
+            for vol, vol_name in zip(template.volumes, volume_names):
+                volumes[vol_name] = {"bind": vol["mount"], "mode": "rw"}
+
+            env = {**template.env_vars, **(instance.env_overrides or {})}
+
+            labels = generate_traefik_labels(
+                instance_id=instance.id,
+                subdomain=instance.subdomain,
+                domain=_settings.DOMAIN,
+                port=template.internal_port,
+                template_name=template.name,
+            )
+
+            container_id = docker.create_container(
+                name=f"selkies-{instance.subdomain}",
+                image=template.image,
+                labels=labels,
+                environment=env,
+                volumes=volumes,
+                port=template.internal_port,
+                gpu_enabled=template.gpu_enabled,
+                gpu_count=template.gpu_count,
+                memory_limit=template.memory_limit,
+                shm_size=template.shm_size,
+            )
+
+            instance.status = "starting"
+            instance.container_id = container_id
+            session.add(instance)
+            await session.commit()
+
+            docker.start_container(container_id)
+
+            now = datetime.now(timezone.utc)
+            instance.status = "running"
+            instance.started_at = now
+            instance.last_activity = now
+            session.add(instance)
+
+            event = SessionEvent(instance_id=instance.id, event_type="started")
+            session.add(event)
+            await session.commit()
+            await _refresh_routes(session)
+
+        except Exception as e:
+            instance.status = "error"
+            session.add(instance)
+            event = SessionEvent(
+                instance_id=instance.id,
+                event_type="error",
+                details={"error": str(e)},
+            )
+            session.add(event)
+            await session.commit()
+
+
 @router.post("", response_model=Instance, status_code=201)
 async def create_instance(
     body: InstanceCreate,
     session: AsyncSession = Depends(get_session),
-    docker: DockerManager = Depends(get_docker_manager),
 ):
     template = await session.get(ServiceTemplate, body.template_id)
     if not template:
@@ -68,7 +146,7 @@ async def create_instance(
         template_id=template.id,
         name=body.name,
         subdomain=body.subdomain,
-        status="creating",
+        status="pulling",
         env_overrides=body.env_overrides,
         session_config=body.session_config or template.session_config,
     )
@@ -76,54 +154,7 @@ async def create_instance(
     await session.commit()
     await session.refresh(instance)
 
-    volume_names = []
-    for vol in template.volumes:
-        vol_name = vol["name"].replace("{instance_id}", instance.id)
-        docker.create_volume(vol_name)
-        volume_names.append(vol_name)
-    instance.volume_names = volume_names
-
-    volumes = {}
-    for vol, vol_name in zip(template.volumes, volume_names):
-        volumes[vol_name] = {"bind": vol["mount"], "mode": "rw"}
-
-    env = {**template.env_vars, **body.env_overrides}
-
-    labels = generate_traefik_labels(
-        instance_id=instance.id,
-        subdomain=body.subdomain,
-        domain=_settings.DOMAIN,
-        port=template.internal_port,
-        template_name=template.name,
-    )
-
-    container_id = docker.create_container(
-        name=f"selkies-{body.subdomain}",
-        image=template.image,
-        labels=labels,
-        environment=env,
-        volumes=volumes,
-        port=template.internal_port,
-        gpu_enabled=template.gpu_enabled,
-        gpu_count=template.gpu_count,
-        memory_limit=template.memory_limit,
-        shm_size=template.shm_size,
-    )
-
-    docker.start_container(container_id)
-
-    now = datetime.now(timezone.utc)
-    instance.container_id = container_id
-    instance.status = "running"
-    instance.started_at = now
-    instance.last_activity = now
-    session.add(instance)
-
-    event = SessionEvent(instance_id=instance.id, event_type="started")
-    session.add(event)
-    await session.commit()
-    await session.refresh(instance)
-    await _refresh_routes(session)
+    asyncio.create_task(_launch_instance_background(instance.id, template.id))
     return instance
 
 

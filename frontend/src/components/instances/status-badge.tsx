@@ -6,7 +6,8 @@ const STATUS_STYLES: Record<string, { dot: string; text: string }> = {
   stopped: { dot: "bg-muted-foreground", text: "text-muted-foreground" },
   error: { dot: "bg-destructive", text: "text-destructive" },
   creating: { dot: "bg-primary", text: "text-primary" },
-  starting: { dot: "bg-primary", text: "text-primary" },
+  pulling: { dot: "bg-primary animate-pulse", text: "text-primary" },
+  starting: { dot: "bg-primary animate-pulse", text: "text-primary" },
   stopping: { dot: "bg-warning", text: "text-warning" },
 };
 
