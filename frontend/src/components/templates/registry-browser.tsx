@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Search, Star, Download, ExternalLink } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -51,35 +51,80 @@ export function RegistryBrowser({ onImport }: RegistryBrowserProps) {
       {images && (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
           {images.map((img) => (
-            <div key={img.name} className="flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-card p-3 transition-colors hover:border-primary/50" onClick={() => onImport(img)}>
-              <img src={img.project_logo} alt={img.name} className="h-10 w-10 rounded-md object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-              <div className="flex-1 overflow-hidden">
-                <h4 className="truncate text-sm font-semibold">{img.name}</h4>
-                <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{img.description}</p>
-                <div className="mt-2 flex items-center gap-3 text-[10px] text-muted-foreground">
-                  <span className="flex items-center gap-1"><Star className="h-3 w-3" /> {img.stars}</span>
-                  <span className="flex items-center gap-1"><Download className="h-3 w-3" /> {(img.monthly_pulls / 1000).toFixed(0)}k/mo</span>
-                  {img.category && <Badge variant="outline" className="text-[10px] px-1 py-0">{img.category}</Badge>}
-                  {img.github_url && (
-                    <a href={img.github_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5 hover:text-foreground">
-                      <ExternalLink className="h-2.5 w-2.5" /> GitHub
-                    </a>
-                  )}
-                  {img.project_url && (
-                    <a href={img.project_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5 hover:text-foreground">
-                      <ExternalLink className="h-2.5 w-2.5" /> Site
-                    </a>
-                  )}
-                </div>
-                {img.version && <div className="mt-1 text-[10px] text-muted-foreground/60">{img.version}</div>}
-              </div>
-            </div>
+            <RegistryCard key={img.name} image={img} onImport={onImport} />
           ))}
         </div>
       )}
 
       {images && images.length === 0 && (
         <p className="py-8 text-center text-sm text-muted-foreground">No images match your search.</p>
+      )}
+    </div>
+  );
+}
+
+function RegistryCard({ image: img, onImport }: { image: RegistryImage; onImport: (img: RegistryImage) => void }) {
+  const [showPreview, setShowPreview] = useState(false);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleMouseEnter() {
+    if (img.project_url) {
+      hoverTimer.current = setTimeout(() => setShowPreview(true), 600);
+    }
+  }
+
+  function handleMouseLeave() {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    setShowPreview(false);
+  }
+
+  return (
+    <div
+      className="group relative flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-card p-3 transition-colors hover:border-primary/50"
+      onClick={() => onImport(img)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      <img src={img.project_logo} alt={img.name} className="h-10 w-10 rounded-md object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+      <div className="flex-1 overflow-hidden">
+        <h4 className="truncate text-sm font-semibold">{img.name}</h4>
+        <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{img.description}</p>
+        <div className="mt-2 flex items-center gap-3 text-[10px] text-muted-foreground">
+          <span className="flex items-center gap-1"><Star className="h-3 w-3" /> {img.stars}</span>
+          <span className="flex items-center gap-1"><Download className="h-3 w-3" /> {(img.monthly_pulls / 1000).toFixed(0)}k/mo</span>
+          {img.category && <Badge variant="outline" className="text-[10px] px-1 py-0">{img.category}</Badge>}
+          {img.github_url && (
+            <a href={img.github_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5 hover:text-foreground">
+              <ExternalLink className="h-2.5 w-2.5" /> GitHub
+            </a>
+          )}
+          {img.project_url && (
+            <a href={img.project_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5 hover:text-foreground">
+              <ExternalLink className="h-2.5 w-2.5" /> Site
+            </a>
+          )}
+        </div>
+        {img.version && <div className="mt-1 text-[10px] text-muted-foreground/60">{img.version}</div>}
+      </div>
+
+      {showPreview && img.project_url && (
+        <div
+          className="absolute left-0 top-full z-50 mt-1 w-[400px] overflow-hidden rounded-lg border border-border bg-card shadow-xl"
+          onClick={(e) => { e.stopPropagation(); window.open(img.project_url, "_blank"); }}
+          onMouseEnter={() => { if (hoverTimer.current) clearTimeout(hoverTimer.current); }}
+          onMouseLeave={handleMouseLeave}
+        >
+          <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
+            <span className="text-[10px] text-muted-foreground truncate">{img.project_url}</span>
+            <ExternalLink className="h-3 w-3 text-muted-foreground" />
+          </div>
+          <iframe
+            src={img.project_url}
+            className="h-[250px] w-full pointer-events-auto"
+            sandbox="allow-scripts allow-same-origin"
+            title={`${img.name} preview`}
+          />
+        </div>
       )}
     </div>
   );
