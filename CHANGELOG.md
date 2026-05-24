@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2026-05-24
+
+### Added
+- React frontend dashboard (Vite + TypeScript + Tailwind + shadcn/ui)
+- Instance cards with screenshot thumbnails, status badges, actions
+- Template Gallery with LinuxServer.io registry browser
+- Launch modal with env editor, volume config, GPU toggle, session settings
+- Instance detail modal with status info and inline actions
+- Backend: LinuxServer registry proxy with 1hr cache
+- Backend: Screenshot capture service for container thumbnails
+- Backend: CORS middleware for frontend dev server
+- Frontend Docker integration (nginx, Dockerfile, compose service)
+
 ## [0.1.0] - 2026-05-24
 
 ### Added

@@ -7,3 +7,5 @@ data/
 .superpowers/
 .ruff_cache/
 plans/
+node_modules/
+dist/
