@@ -51,6 +51,17 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Selkies Hub", version="0.1.0", lifespan=lifespan)
+
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", f"https://{_settings.DOMAIN}"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.include_router(templates.router, prefix="/api/templates", tags=["templates"])
 app.include_router(instances.router, prefix="/api/instances", tags=["instances"])
 app.include_router(registry.router, prefix="/api/registry/images", tags=["registry"])
