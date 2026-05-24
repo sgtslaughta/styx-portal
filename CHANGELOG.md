@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.0] - 2026-05-24
+
+### Added
+- Traefik reverse proxy config for HTTP-only operation behind Cloudflare tunnel
+- Authentik ForwardAuth middleware (file provider) for global authentication
+- Config generator script (`scripts/generate-config.sh`) for Traefik dynamic config
+- ForwardAuth middleware template with Authentik outpost integration
+
+### Changed
+- Traefik entrypoint from `websecure` (443) to `web` (80) — TLS handled by Cloudflare
+- All service labels updated to use `web` entrypoint and `authentik@file` middleware
+- Label generator always includes auth middleware (was optional)
+- docker-compose.yml simplified — removed TLS cert volume, added screenshots volume
+
 ## [0.2.0] - 2026-05-24
 
 ### Added
