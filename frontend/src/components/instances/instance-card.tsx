@@ -5,7 +5,7 @@ import { IconViewport } from "./icon-viewport";
 import { ActionBar } from "@/components/common/action-bar";
 import { formatDuration } from "@/lib/utils";
 import { useInstanceStats } from "@/hooks/use-instances";
-import { fadeSlideIn, hoverLift, spring, listStagger } from "@/lib/motion";
+import { fadeSlideIn, hoverLift, spring } from "@/lib/motion";
 import { CHART_COLORS } from "@/lib/chart";
 import type { Instance } from "@/lib/types";
 

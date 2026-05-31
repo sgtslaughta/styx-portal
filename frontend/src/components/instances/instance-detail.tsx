@@ -4,7 +4,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Drawer, DrawerContent, DrawerHeader, DrawerBody, DrawerFooter,
-  DrawerTitle, DrawerDescription,
+  DrawerTitle,
 } from "@/components/ui/drawer";
 import { StatusBadge } from "./status-badge";
 import { GeneralTab, SessionTab } from "./detail-tabs";
@@ -60,7 +60,6 @@ export function InstanceDetail({ instance, onClose }: InstanceDetailProps) {
   if (!instance) return null;
 
   const isRunning = instance.status === "running" || instance.status === "idle";
-  const isPaused = instance.status === "paused";
   const idleSeconds = instance.last_activity
     ? (Date.now() - new Date(instance.last_activity + "Z").getTime()) / 1000
     : null;
