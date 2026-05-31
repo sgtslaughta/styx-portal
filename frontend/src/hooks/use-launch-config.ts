@@ -60,6 +60,10 @@ export interface LaunchConfig {
   setIdleTimeout: (v: string) => void;
   gracePeriod: string;
   setGracePeriod: (v: string) => void;
+  internalPort: number;
+  setInternalPort: (v: number) => void;
+  internalProtocol: string;
+  setInternalProtocol: (v: string) => void;
   buildTemplateData: () => {
     name: string;
     display_name: string;
@@ -83,15 +87,28 @@ export interface LaunchConfig {
   };
 }
 
+/**
+ * Determine the web UI port + protocol for an instance.
+ *  1. An existing template's stored value wins (covers user overrides + edits).
+ *  2. Otherwise derive from the registry image's declared ports — LinuxServer.io
+ *     lists each port with a desc (e.g. "...HTTPS." / "...HTTP, must be proxied").
+ *     Prefer the HTTPS port, then HTTP, then the first declared port.
+ *  3. Fallback to 3001/https (the Selkies default + backend default).
+ * The result is only a PREFILL — the user can override it in the UI.
+ */
 function detectPortAndProtocol(
+  registryImage: RegistryImage | null | undefined,
   template: ServiceTemplate | null | undefined
 ): { port: number; protocol: string } {
-  if (template?.internal_port && template?.internal_protocol) {
-    return { port: template.internal_port, protocol: template.internal_protocol };
+  if (template?.internal_port) {
+    return { port: template.internal_port, protocol: template.internal_protocol || "https" };
   }
-  // Every image in this hub is a LinuxServer Selkies/KasmVNC image; the web UI is
-  // served on 3001 (HTTPS) — also the backend default (see instances.py). Plain
-  // port 443 is never correct for these images, so default to 3001/https.
+  const ports = registryImage?.config?.ports ?? [];
+  const https = ports.find((p) => /https/i.test(p.desc ?? ""));
+  if (https) return { port: Number(https.internal), protocol: "https" };
+  const http = ports.find((p) => /http/i.test(p.desc ?? ""));
+  if (http) return { port: Number(http.internal), protocol: "http" };
+  if (ports[0]?.internal) return { port: Number(ports[0].internal), protocol: "https" };
   return { port: 3001, protocol: "https" };
 }
 
@@ -208,9 +225,14 @@ export function useLaunchConfig(opts: {
   const [idleTimeout, setIdleTimeout] = useState(prefillIdleTimeout);
   const [gracePeriod, setGracePeriod] = useState(prefillGracePeriod);
 
+  const detected = detectPortAndProtocol(registryImage, template);
+  const [internalPort, setInternalPort] = useState(detected.port);
+  const [internalProtocol, setInternalProtocol] = useState(detected.protocol);
+
   function buildTemplateData() {
     const secOpts = securityOpts.filter((s) => s.enabled).map((s) => s.value);
-    const { port: webPort, protocol: webProtocol } = detectPortAndProtocol(template);
+    const webPort = internalPort;
+    const webProtocol = internalProtocol;
     return {
       name: slugify(name),
       display_name: name,
@@ -278,6 +300,10 @@ export function useLaunchConfig(opts: {
     setIdleTimeout,
     gracePeriod,
     setGracePeriod,
+    internalPort,
+    setInternalPort,
+    internalProtocol,
+    setInternalProtocol,
     buildTemplateData,
   };
 }

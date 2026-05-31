@@ -189,7 +189,32 @@ export function LaunchConfigFields({ cfg, gpuInfo }: LaunchConfigFieldsProps) {
         </TabsContent>
 
         <TabsContent value="network" className="space-y-3 mt-4">
-          <p className="text-[10px] text-muted-foreground mb-2">Selkies uses port 3001 (HTTPS) by default. Additional ports shown for reference.</p>
+          {/* Web UI port the reverse proxy connects to. Auto-detected from the
+              registry image (HTTPS preferred); override here if needed. */}
+          <div className="rounded-md border border-border p-3">
+            <Label className="text-xs text-muted-foreground">Web UI port (reverse-proxy target)</Label>
+            <div className="mt-1.5 flex items-center gap-2">
+              <Input
+                type="number"
+                value={cfg.internalPort}
+                onChange={(e) => cfg.setInternalPort(Number(e.target.value))}
+                className="w-28 font-mono text-sm"
+                placeholder="3001"
+              />
+              <select
+                value={cfg.internalProtocol}
+                onChange={(e) => cfg.setInternalProtocol(e.target.value)}
+                className="h-9 rounded-md border border-input bg-background px-2 text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              >
+                <option value="https">https</option>
+                <option value="http">http</option>
+              </select>
+            </div>
+            <p className="mt-1.5 text-[10px] text-muted-foreground">
+              Auto-detected from the image. LinuxServer Selkies/KasmVNC images serve the GUI on 3001 (HTTPS) / 3000 (HTTP). Change only if the image serves elsewhere.
+            </p>
+          </div>
+          <p className="text-[10px] text-muted-foreground mb-2">Additional ports below are reference-only (not published).</p>
           {cfg.ports.map((port, i) => (
             <div key={i} className="flex items-start gap-2">
               <div className="flex-1">
