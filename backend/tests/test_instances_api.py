@@ -130,3 +130,36 @@ async def test_duplicate_subdomain(client, template_id):
         json={"template_id": template_id, "name": "b", "subdomain": "same"},
     )
     assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_recreate_instance(client, template_id, session):
+    from app.models import Instance
+
+    # Create instance
+    create_resp = await client.post(
+        "/api/instances",
+        json={"template_id": template_id, "name": "rec", "subdomain": "rec"},
+    )
+    instance_id = create_resp.json()["id"]
+
+    # Get the template to check its volume count
+    from app.models import ServiceTemplate
+    template = await session.get(ServiceTemplate, template_id)
+    expected_volume_count = len(template.volumes) if template else 0
+
+    # Simulate the instance is running with a container
+    instance = await session.get(Instance, instance_id)
+    instance.status = "running"
+    instance.container_id = "container-old-id"
+    # Set initial volume_names to empty to simulate pre-setup state
+    instance.volume_names = []
+    session.add(instance)
+    await session.commit()
+
+    # POST to recreate endpoint
+    resp = await client.post(f"/api/instances/{instance_id}/recreate")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "running"
+    assert len(data["volume_names"]) == expected_volume_count
