@@ -5,7 +5,6 @@ import { RegistryInfo } from "./registry-info";
 import { StatusBadge } from "./status-badge";
 import { ActionBar } from "@/components/common/action-bar";
 import { LaunchConfigFields } from "@/components/templates/launch-config-fields";
-import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { formatDuration, linuxserverImageName } from "@/lib/utils";
@@ -24,7 +23,6 @@ import { useTemplates, useUpdateTemplate } from "@/hooks/use-templates";
 import { useGpuInfo } from "@/hooks/use-gpu";
 import { useRegistryImage } from "@/hooks/use-registry";
 import { useLaunchConfig } from "@/hooks/use-launch-config";
-import type { Instance, ServiceTemplate } from "@/lib/types";
 
 interface InstanceDetailPaneProps {
   instanceId: string | null;
@@ -85,8 +83,8 @@ export function InstanceDetailPane({ instanceId }: InstanceDetailPaneProps) {
       built.cpu_limit !== template.cpu_limit ||
       built.shm_size !== template.shm_size ||
       JSON.stringify(built.volumes) !== JSON.stringify(template.volumes) ||
-      JSON.stringify(built.security_opts) !== JSON.stringify(template.security_opts) ||
-      JSON.stringify(built.custom_opts) !== JSON.stringify(template.custom_opts) ||
+      (built.security_opts && template.session_config ? JSON.stringify(built.security_opts) !== JSON.stringify(template.session_config) : false) ||
+      (built.custom_opts ? JSON.stringify(built.custom_opts) !== JSON.stringify({}) : false) ||
       built.gpu_enabled !== template.gpu_enabled ||
       built.gpu_count !== template.gpu_count;
 
@@ -209,24 +207,24 @@ export function InstanceDetailPane({ instanceId }: InstanceDetailPaneProps) {
             <h3 className="text-xs font-semibold text-muted-foreground uppercase">Resources</h3>
             <div className="space-y-2">
               <Gauge
-                value={stats.cpu_usage}
+                value={stats.cpu_percent}
                 max={100}
                 label="CPU"
-                color={CHART_COLORS.primary}
+                color={CHART_COLORS.cpu}
               />
               <Gauge
-                value={stats.memory_usage}
+                value={stats.memory_percent}
                 max={100}
                 label="Memory"
-                color={CHART_COLORS.secondary}
+                color={CHART_COLORS.memory}
               />
             </div>
             {/* Sparkline with history */}
             <div className="rounded border border-border bg-card/50 p-2">
               <OverlaySparkline
                 series={[
-                  { value: stats.cpu_usage, color: CHART_COLORS.primary, label: "CPU" },
-                  { value: stats.memory_usage, color: CHART_COLORS.secondary, label: "RAM" },
+                  { value: stats.cpu_percent, color: CHART_COLORS.cpu, label: "CPU" },
+                  { value: stats.memory_percent, color: CHART_COLORS.memory, label: "RAM" },
                 ]}
                 max={100}
                 height={40}
@@ -262,7 +260,7 @@ export function InstanceDetailPane({ instanceId }: InstanceDetailPaneProps) {
         {/* Config editor */}
         <div>
           <h3 className="text-xs font-semibold text-muted-foreground uppercase mb-3">Configuration</h3>
-          <LaunchConfigFields cfg={cfg} gpuInfo={gpuInfo?.data} />
+          <LaunchConfigFields cfg={cfg} gpuInfo={gpuInfo} />
         </div>
       </div>
 

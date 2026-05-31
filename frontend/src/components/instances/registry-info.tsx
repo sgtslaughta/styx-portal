@@ -27,10 +27,10 @@ export function RegistryInfo({ image }: RegistryInfoProps) {
       </div>
 
       {/* Stats: stars/pulls */}
-      {(image.star_count != null || image.pull_count != null) && (
+      {(image.stars != null || image.monthly_pulls != null) && (
         <div className="flex gap-4 text-xs text-muted-foreground">
-          {image.star_count != null && <span>⭐ {image.star_count.toLocaleString()}</span>}
-          {image.pull_count != null && <span>📥 {image.pull_count.toLocaleString()}</span>}
+          {image.stars != null && <span>⭐ {image.stars.toLocaleString()}</span>}
+          {image.monthly_pulls != null && <span>📥 {image.monthly_pulls.toLocaleString()}</span>}
         </div>
       )}
 
@@ -55,8 +55,8 @@ export function RegistryInfo({ image }: RegistryInfoProps) {
             <ExternalLink className="h-3 w-3" />
           </a>
         )}
-        {image.setup_url && (
-          <a href={image.setup_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-md bg-secondary px-2 py-1 text-xs hover:bg-secondary/80 transition-colors">
+        {image.config?.application_setup && (
+          <a href={image.project_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-md bg-secondary px-2 py-1 text-xs hover:bg-secondary/80 transition-colors">
             <BookOpen className="h-3 w-3" />
             Setup
             <ExternalLink className="h-3 w-3" />
@@ -65,11 +65,15 @@ export function RegistryInfo({ image }: RegistryInfoProps) {
       </div>
 
       {/* Collapsible changelog */}
-      {image.changelog && (
+      {image.changelog && image.changelog.length > 0 && (
         <details className="group cursor-pointer">
           <summary className="text-xs font-medium text-muted-foreground select-none">Changelog</summary>
-          <div className="mt-2 text-[10px] text-muted-foreground whitespace-pre-wrap overflow-hidden max-h-32 overflow-y-auto">
-            {image.changelog}
+          <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
+            {image.changelog.map((entry, i) => (
+              <div key={i} className="text-[10px] text-muted-foreground">
+                <span className="font-mono text-foreground">{entry.date}</span> — {entry.desc}
+              </div>
+            ))}
           </div>
         </details>
       )}

@@ -2,7 +2,6 @@ import { useState } from "react";
 import { InstanceGrid } from "./instance-grid";
 import { InstanceDetailPane } from "./instance-detail-pane";
 import { cn } from "@/lib/utils";
-import type { Instance } from "@/lib/types";
 
 interface InstanceWorkspaceProps {
   onLaunch: () => void;
