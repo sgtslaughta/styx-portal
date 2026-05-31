@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -205,6 +206,27 @@ app.include_router(images.router, prefix="/api/images", tags=["images"])
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+_INSTANCE_UNAVAILABLE_HTML = r"""<!doctype html>
+<meta charset="utf-8">
+<title>Instance unavailable</title>
+<meta http-equiv="refresh" content="3;url=/">
+<script>
+  (function () {
+    var m = location.pathname.match(/^\/i\/([^\/]+)/);
+    var q = m ? "?stopped=" + encodeURIComponent(m[1]) : "";
+    location.replace("/" + q);
+  })();
+  /* This page handles /i/subdomain routes that are no longer running */
+</script>
+<p>Instance unavailable. Redirecting&hellip; <a href="/">My Instances</a></p>
+"""
+
+
+@app.get("/api/instance-unavailable", response_class=HTMLResponse)
+async def instance_unavailable():
+    return HTMLResponse(content=_INSTANCE_UNAVAILABLE_HTML)
 
 
 @app.get("/api/system/gpu")
