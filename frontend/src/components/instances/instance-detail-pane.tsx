@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Gauge } from "@/components/common/stat-tile";
 import { OverlaySparkline } from "./sparkline";
 import { RegistryInfo } from "./registry-info";
+import { InstanceThumbnail } from "./instance-thumbnail";
 import { StatusBadge } from "./status-badge";
 import { ActionBar } from "@/components/common/action-bar";
 import { LaunchConfigFields } from "@/components/templates/launch-config-fields";
@@ -203,6 +204,13 @@ export function InstanceDetailPane({ instanceId }: InstanceDetailPaneProps) {
 
       {/* Content scroll area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* Live preview thumbnail */}
+        <InstanceThumbnail
+          instanceId={instance.id}
+          icon={template?.icon ?? null}
+          isLive={isRunning}
+        />
+
         {/* Resources: live CPU/RAM gauges + sparkline */}
         {isRunning && stats && (
           <div className="space-y-3">
