@@ -25,6 +25,10 @@
   --success: oklch(0.55 0.2 162.48);
   --warning: oklch(0.65 0.18 86.047);
   --idle: oklch(0.65 0.18 86.047);
+  --chart-1: oklch(0.55 0.17 255);
+  --chart-2: oklch(0.55 0.2 300);
+  --chart-3: oklch(0.6 0.13 180);
+  --chart-4: oklch(0.65 0.18 50);
 }
 
 .dark {
@@ -49,6 +53,10 @@
   --success: oklch(0.696 0.17 162.48);
   --warning: oklch(0.795 0.184 86.047);
   --idle: oklch(0.795 0.184 86.047);
+  --chart-1: oklch(0.65 0.17 255);
+  --chart-2: oklch(0.66 0.2 300);
+  --chart-3: oklch(0.72 0.13 180);
+  --chart-4: oklch(0.75 0.18 50);
 }
 
 /* Wire Tailwind theme to runtime vars */
@@ -74,5 +82,9 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-idle: var(--idle);
-  --radius: 0.625rem;
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --radius: 0.5rem;
 }
