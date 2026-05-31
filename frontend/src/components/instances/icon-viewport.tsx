@@ -49,10 +49,9 @@ export function IconViewport({ instance, icon }: IconViewportProps) {
       {/* Live screenshot thumbnail */}
       {isLive && (
         <img
-          key={tick}
           src={`${api.screenshotUrl(instance.id)}?t=${tick}`}
           alt={instance.name}
-          className={`absolute inset-0 w-full h-full object-cover ${shotOk ? "" : "opacity-0"}`}
+          className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${shotOk ? "opacity-100" : "opacity-0"}`}
           draggable={false}
           onLoad={() => setShotOk(true)}
           onError={() => setShotOk(false)}
