@@ -1,11 +1,10 @@
 import { useState } from "react";
-import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useInstances, useInstanceStats } from "@/hooks/use-instances";
 import { useResourceHistory } from "@/hooks/use-system";
 import { Gauge } from "@/components/common/stat-tile";
 import { CHART_COLORS } from "@/lib/chart";
-import { Cpu, MemoryStick, Clock } from "lucide-react";
+import { Clock } from "lucide-react";
 
 const TIME_RANGES = [
   { id: "1h", label: "1H" },

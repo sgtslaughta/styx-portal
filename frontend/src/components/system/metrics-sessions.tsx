@@ -163,7 +163,6 @@ function SessionRow({
   const restart = useRestartInstance();
   const pause = usePauseInstance();
   const unpause = useUnpauseInstance();
-  const destroy = useDeleteInstance();
   const { data: events } = useSessionEvents(instance.id, expanded);
 
   const isRunning = instance.status === "running" || instance.status === "idle";
