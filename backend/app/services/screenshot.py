@@ -12,6 +12,12 @@ _VIEWPORT = {"width": 1280, "height": 720}
 _NAV_TIMEOUT_MS = 10000
 _RENDER_WAIT_MS = 3000
 _CLICK_WAIT_MS = 500
+# KasmVNC/Selkies desktops only render in a secure context, so capture must hit
+# the container's own HTTPS web port (conventionally 3001) — NOT the http routing
+# port (3000), which serves an "insecure connection" error page when loaded
+# directly. Traefik fronts the http port for browsers (secure at the edge), but
+# direct in-container capture has no such edge.
+_SECURE_PORT = 3001
 
 
 class ScreenshotService:
@@ -31,6 +37,18 @@ class ScreenshotService:
             if ip:
                 return ip
         return None
+
+    def _secure_endpoint(self, container_id: str, port: int, protocol: str) -> tuple[str, int]:
+        """Prefer the container's HTTPS web port (3001) for capture; fall back to
+        the configured routing port/protocol when 3001 isn't exposed."""
+        try:
+            container = self._docker._client.containers.get(container_id)
+            exposed = container.attrs.get("Config", {}).get("ExposedPorts", {}) or {}
+            if f"{_SECURE_PORT}/tcp" in exposed:
+                return "https", _SECURE_PORT
+        except Exception:
+            pass
+        return protocol, port
 
     async def _ensure_browser(self):
         if self._browser is not None:
@@ -56,6 +74,10 @@ class ScreenshotService:
             ip = None
         if not ip:
             return False
+
+        protocol, port = await asyncio.to_thread(
+            self._secure_endpoint, container_id, port, protocol
+        )
 
         try:
             await self._ensure_browser()

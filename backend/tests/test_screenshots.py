@@ -44,6 +44,7 @@ async def test_capture_writes_png(monkeypatch):
         svc = _make_service(tmpdir, browser=browser)
         monkeypatch.setattr(svc, "_ensure_browser", AsyncMock())
         monkeypatch.setattr(svc, "_resolve_ip", lambda cid: "172.18.0.5")
+        monkeypatch.setattr(svc, "_secure_endpoint", lambda cid, p, proto: (proto, p))
 
         result = await svc.capture("instance-123", "container-abc", 3001)
 
@@ -68,10 +69,34 @@ async def test_capture_uses_protocol_arg(monkeypatch):
         svc = _make_service(tmpdir, browser=browser)
         monkeypatch.setattr(svc, "_ensure_browser", AsyncMock())
         monkeypatch.setattr(svc, "_resolve_ip", lambda cid: "172.18.0.6")
+        monkeypatch.setattr(svc, "_secure_endpoint", lambda cid, p, proto: (proto, p))
 
         await svc.capture("inst-http", "cont", 3000, "http")
 
         assert page.goto.call_args.args[0] == "http://172.18.0.6:3000/"
+
+
+def test_secure_endpoint_prefers_3001():
+    docker = MagicMock()
+    container = MagicMock()
+    container.attrs = {"Config": {"ExposedPorts": {"3000/tcp": {}, "3001/tcp": {}}}}
+    docker._client.containers.get.return_value = container
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        svc = ScreenshotService(cache_dir=tmpdir, docker_manager=docker)
+        # KasmVNC image exposes 3001 → upgrade to https:3001 despite http:3000 config
+        assert svc._secure_endpoint("cid", 3000, "http") == ("https", 3001)
+
+
+def test_secure_endpoint_falls_back_without_3001():
+    docker = MagicMock()
+    container = MagicMock()
+    container.attrs = {"Config": {"ExposedPorts": {"8080/tcp": {}}}}
+    docker._client.containers.get.return_value = container
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        svc = ScreenshotService(cache_dir=tmpdir, docker_manager=docker)
+        assert svc._secure_endpoint("cid", 8080, "http") == ("http", 8080)
 
 
 @pytest.mark.asyncio
