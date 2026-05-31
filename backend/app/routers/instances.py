@@ -12,7 +12,6 @@ from app.database import get_session, async_session
 from app.models import Instance, ServiceTemplate, SessionEvent, PulledImage
 from app.schemas import InstanceCreate, InstanceUpdate, SessionConfigUpdate, InstanceStatus
 from app.services.docker_manager import DockerManager
-from app.services.route_writer import write_routes
 from app.services.screenshot import ScreenshotService
 from app.services.traefik_labels import generate_traefik_labels
 
@@ -34,20 +33,9 @@ def get_screenshot_service() -> ScreenshotService:
 
 
 async def _refresh_routes(session: AsyncSession):
-    result = await session.exec(
-        select(Instance).where(Instance.status.in_(["running", "idle"]))
-    )
-    running = result.all()
-    instances_data = []
-    for i in running:
-        tmpl = await session.get(ServiceTemplate, i.template_id)
-        instances_data.append({
-            "id": i.id,
-            "subdomain": i.subdomain,
-            "port": tmpl.internal_port if tmpl else 3001,
-            "protocol": tmpl.internal_protocol if tmpl else "https",
-        })
-    write_routes(instances_data)
+    from app.services.route_writer import refresh_routes_from_db
+
+    await refresh_routes_from_db(session)
 
 
 async def _build_and_start_container(instance, template, docker):
