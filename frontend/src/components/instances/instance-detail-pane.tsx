@@ -74,19 +74,21 @@ export function InstanceDetailPane({ instanceId }: InstanceDetailPaneProps) {
       });
     const inPlaceChanged = nameChanged || envChanged || sessionChanged;
 
-    // Template changes: image, icon, memory, cpu, shm, volumes, ports, security, custom, gpu
+    // Template-level changes (recreate required). Normalize nullable string/number
+    // fields so an empty-vs-null mismatch doesn't spuriously flag a change.
     const built = cfg.buildTemplateData();
+    const s = (v: unknown) => v ?? "";
+    const n = (v: unknown) => v ?? 0;
     const templateChanged =
-      built.image !== template.image ||
-      built.icon !== template.icon ||
-      built.memory_limit !== template.memory_limit ||
-      built.cpu_limit !== template.cpu_limit ||
-      built.shm_size !== template.shm_size ||
-      JSON.stringify(built.volumes) !== JSON.stringify(template.volumes) ||
-      (built.security_opts && template.session_config ? JSON.stringify(built.security_opts) !== JSON.stringify(template.session_config) : false) ||
-      (built.custom_opts ? JSON.stringify(built.custom_opts) !== JSON.stringify({}) : false) ||
+      s(built.image) !== s(template.image) ||
+      s(built.icon) !== s(template.icon) ||
+      s(built.memory_limit) !== s(template.memory_limit) ||
+      s(built.cpu_limit) !== s(template.cpu_limit) ||
+      s(built.shm_size) !== s(template.shm_size) ||
+      n(built.internal_port) !== n(template.internal_port) ||
+      JSON.stringify(built.volumes ?? []) !== JSON.stringify(template.volumes ?? []) ||
       built.gpu_enabled !== template.gpu_enabled ||
-      built.gpu_count !== template.gpu_count;
+      n(built.gpu_count) !== n(template.gpu_count);
 
     return { inPlaceChanged, templateChanged };
   };
