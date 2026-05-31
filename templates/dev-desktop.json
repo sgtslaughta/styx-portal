@@ -1,27 +1,27 @@
 {
   "name": "dev-desktop",
-  "display_name": "Development Desktop",
-  "image": "ghcr.io/linuxserver/baseimage-selkies:debiantrixie",
-  "icon": "🖥️",
-  "description": "Full Linux desktop environment for development work",
+  "display_name": "Developer Workstation",
+  "image": "selkies-desktop:latest",
+  "icon": "🛠️",
+  "description": "XFCE dev workstation — VSCode, PyCharm, Node, Python, git, Firefox, Chrome, btop, dark theme",
   "env_vars": {
     "PUID": "1000",
     "PGID": "1000",
-    "SELKIES_ENCODER": "x264enc",
-    "SELKIES_ENABLE_RESIZE": "true"
+    "PIXELFLUX_WAYLAND": "true",
+    "TITLE": "Developer Workstation"
   },
-  "gpu_enabled": false,
-  "gpu_count": 0,
-  "memory_limit": "4g",
-  "cpu_limit": "2.0",
-  "shm_size": "1g",
+  "gpu_enabled": true,
+  "gpu_count": 1,
+  "memory_limit": "8g",
+  "cpu_limit": "4.0",
+  "shm_size": "2g",
   "volumes": [
-    {"name": "{instance_id}-home", "mount": "/config"},
-    {"name": "{instance_id}-data", "mount": "/data"}
+    {"name": "{instance_id}-home", "mount": "/config"}
   ],
-  "internal_port": 3001,
-  "category": "desktop",
-  "tags": ["development", "coding"],
+  "internal_port": 3000,
+  "internal_protocol": "http",
+  "category": "development",
+  "tags": ["development", "coding", "vscode", "pycharm", "xfce"],
   "session_config": {
     "idle_timeout": "60m",
     "grace_period": "10m",
