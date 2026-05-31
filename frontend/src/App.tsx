@@ -1,22 +1,20 @@
 import { useState } from "react";
 import { Header } from "@/components/layout/header";
 import { TabNav } from "@/components/layout/tab-nav";
-import { InstanceGrid } from "@/components/instances/instance-grid";
+import { InstanceWorkspace } from "@/components/instances/instance-workspace";
 import { TemplateGrid } from "@/components/templates/template-grid";
 import { RegistryBrowser } from "@/components/templates/registry-browser";
 import { LaunchModal } from "@/components/templates/launch-modal";
-import { InstanceDetail } from "@/components/instances/instance-detail";
 import { MetricsDashboard } from "@/components/system/metrics-dashboard";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useTemplates } from "@/hooks/use-templates";
 import { cn } from "@/lib/utils";
-import type { Instance, ServiceTemplate, RegistryImage } from "@/lib/types";
+import type { ServiceTemplate, RegistryImage } from "@/lib/types";
 
 export default function App() {
   const { data: templates } = useTemplates();
   const [activeTab, setActiveTab] = useState("instances");
   const [templateSubTab, setTemplateSubTab] = useState<string | null>(null);
-  const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null);
   const [launchRegistry, setLaunchRegistry] = useState<RegistryImage | null>(null);
   const [launchTemplate, setLaunchTemplate] = useState<ServiceTemplate | null>(null);
   const [launchOpen, setLaunchOpen] = useState(false);
@@ -48,7 +46,7 @@ export default function App() {
       <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
       <main className="flex-1 p-6">
         <div className={activeTab === "instances" ? "" : "hidden"}>
-          <InstanceGrid onSelect={setSelectedInstance} onLaunch={() => setActiveTab("templates")} />
+          <InstanceWorkspace onLaunch={() => setActiveTab("templates")} />
         </div>
         <div className={activeTab === "templates" ? "" : "hidden"}>
           <div className="mb-4 flex gap-1">
@@ -81,7 +79,6 @@ export default function App() {
         registryImage={launchRegistry}
         template={launchTemplate}
       />
-      <InstanceDetail instance={selectedInstance} onClose={() => setSelectedInstance(null)} />
     </div>
     </TooltipProvider>
   );
