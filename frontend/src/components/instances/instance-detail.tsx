@@ -12,6 +12,7 @@ import { EnvEditor } from "@/components/templates/env-editor";
 import { ActionBar } from "@/components/common/action-bar";
 import { formatDuration } from "@/lib/utils";
 import {
+  useInstances,
   useStartInstance,
   useStopInstance,
   useUpdateInstance,
@@ -32,6 +33,7 @@ interface InstanceDetailProps {
 }
 
 export function InstanceDetail({ instance, onClose }: InstanceDetailProps) {
+  const { data: instances } = useInstances();
   const start = useStartInstance();
   const stop = useStopInstance();
   const update = useUpdateInstance();
@@ -56,6 +58,13 @@ export function InstanceDetail({ instance, onClose }: InstanceDetailProps) {
     setDirty(false);
     setShowRestartConfirm(false);
   }, [instance]);
+
+  // Close the drawer when the open instance is destroyed (vanishes from the query).
+  useEffect(() => {
+    if (instance && instances && !instances.some((i) => i.id === instance.id)) {
+      onClose();
+    }
+  }, [instances, instance, onClose]);
 
   if (!instance) return null;
 
