@@ -88,6 +88,8 @@ class DockerManager:
         try:
             self._client.images.get(image)
         except docker.errors.ImageNotFound:
+            if "/" not in image:
+                raise
             self._client.images.pull(image)
 
         container = self._client.containers.create(**kwargs)
@@ -115,6 +117,10 @@ class DockerManager:
     def unpause_container(self, container_id: str) -> None:
         container = self._client.containers.get(container_id)
         container.unpause()
+
+    def restart_container(self, container_id: str) -> None:
+        container = self._client.containers.get(container_id)
+        container.restart()
 
     def remove_container(self, container_id: str) -> None:
         container = self._client.containers.get(container_id)

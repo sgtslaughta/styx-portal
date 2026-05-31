@@ -36,6 +36,7 @@ export interface Instance {
   subdomain: string;
   container_id: string | null;
   status: "created" | "creating" | "pulling" | "starting" | "running" | "idle" | "paused" | "stopping" | "stopped" | "error";
+  error_message: string | null;
   env_overrides: Record<string, string>;
   volume_names: string[];
   created_at: string;

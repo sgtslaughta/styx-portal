@@ -6,7 +6,7 @@ import { TemplateGrid } from "@/components/templates/template-grid";
 import { RegistryBrowser } from "@/components/templates/registry-browser";
 import { LaunchModal } from "@/components/templates/launch-modal";
 import { InstanceDetail } from "@/components/instances/instance-detail";
-import { ImageManager } from "@/components/system/image-manager";
+import { MetricsDashboard } from "@/components/system/metrics-dashboard";
 import { useTemplates } from "@/hooks/use-templates";
 import { cn } from "@/lib/utils";
 import type { Instance, ServiceTemplate, RegistryImage } from "@/lib/types";
@@ -36,7 +36,6 @@ export default function App() {
     setLaunchOpen(false);
     setLaunchRegistry(null);
     setLaunchTemplate(null);
-    setActiveTab("instances");
   }
 
   const resolvedSubTab = templateSubTab ?? (templates?.length ? "my-templates" : "registry");
@@ -68,8 +67,8 @@ export default function App() {
           </div>
         </div>
         <div className={activeTab === "system" ? "" : "hidden"}>
-          <div className="mx-auto max-w-3xl space-y-6">
-            <ImageManager />
+          <div className="mx-auto max-w-5xl">
+            <MetricsDashboard />
           </div>
         </div>
       </main>

@@ -2,30 +2,42 @@ import { Monitor, Moon, Sun } from "lucide-react";
 import { useInstances } from "@/hooks/use-instances";
 import { useEffect, useState } from "react";
 
+type Theme = "light" | "dark" | "system";
+
+function applyTheme(theme: Theme) {
+  const isDark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.classList.toggle("dark", isDark);
+}
+
 function ThemeToggle() {
-  const [dark, setDark] = useState(true);
+  const [theme, setTheme] = useState<Theme>(() => {
+    return (localStorage.getItem("theme") as Theme) ?? "system";
+  });
 
   useEffect(() => {
-    const stored = localStorage.getItem("theme");
-    if (stored === "light") {
-      setDark(false);
-      document.documentElement.classList.remove("dark");
-    } else if (stored === "dark" || !stored) {
-      setDark(true);
-      document.documentElement.classList.add("dark");
-    }
-  }, []);
+    applyTheme(theme);
+    localStorage.setItem("theme", theme);
+  }, [theme]);
 
-  function toggle() {
-    const next = !dark;
-    setDark(next);
-    document.documentElement.classList.toggle("dark", next);
-    localStorage.setItem("theme", next ? "dark" : "light");
+  useEffect(() => {
+    if (theme !== "system") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = () => applyTheme("system");
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, [theme]);
+
+  function cycle() {
+    const order: Theme[] = ["light", "dark", "system"];
+    const next = order[(order.indexOf(theme) + 1) % order.length]!;
+    setTheme(next);
   }
 
+  const Icon = theme === "dark" ? Moon : theme === "light" ? Sun : Monitor;
+
   return (
-    <button onClick={toggle} className="rounded-md p-2 hover:bg-secondary">
-      {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+    <button onClick={cycle} title={`Theme: ${theme}`} className="rounded-md p-2 hover:bg-secondary">
+      <Icon className="h-4 w-4" />
     </button>
   );
 }

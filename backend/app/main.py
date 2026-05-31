@@ -4,13 +4,14 @@ import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Settings
-from app.database import init_db, async_session
-from app.models import Instance as InstanceModel
+from app.database import init_db, async_session, get_session
+from app.models import Instance, SessionEvent
 from app.routers import templates, instances, registry, images
 from app.services.docker_manager import DockerManager
 from app.services.session_monitor import SessionMonitor
@@ -27,8 +28,8 @@ async def _session_monitor_loop():
         try:
             async with async_session() as session:
                 result = await session.exec(
-                    select(InstanceModel).where(
-                        InstanceModel.status.in_(["running", "idle"])
+                    select(Instance).where(
+                        Instance.status.in_(["running", "idle"])
                     )
                 )
                 running_instances = result.all()
@@ -58,8 +59,8 @@ async def lifespan(app: FastAPI):
     docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
     async with async_session() as session:
         result = await session.exec(
-            select(InstanceModel).where(
-                InstanceModel.status.in_(["running", "idle", "paused", "pulling", "starting"])
+            select(Instance).where(
+                Instance.status.in_(["running", "idle", "paused", "pulling", "starting"])
             )
         )
         active = result.all()
@@ -82,7 +83,7 @@ async def lifespan(app: FastAPI):
     from app.models import ServiceTemplate
     async with async_session() as session:
         result = await session.exec(
-            select(InstanceModel).where(InstanceModel.status.in_(["running", "idle"]))
+            select(Instance).where(Instance.status.in_(["running", "idle"]))
         )
         running = result.all()
         instances_data = []
@@ -96,8 +97,51 @@ async def lifespan(app: FastAPI):
         write_routes(instances_data)
 
     task = asyncio.create_task(_session_monitor_loop())
+    metrics_task = asyncio.create_task(_metrics_collection_loop())
     yield
     task.cancel()
+    metrics_task.cancel()
+
+
+async def _metrics_collection_loop():
+    """Collect aggregate CPU/RAM every 30s for time-series."""
+    from app.services.metrics_store import record_sample
+
+    docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
+    while True:
+        await asyncio.sleep(30)
+        try:
+            async with async_session() as session:
+                result = await session.exec(
+                    select(Instance).where(Instance.status.in_(["running", "idle"]))
+                )
+                running = result.all()
+
+            total_cpu = 0.0
+            total_ram_pct = 0.0
+            for inst in running:
+                if not inst.container_id:
+                    continue
+                try:
+                    raw = await asyncio.to_thread(docker.get_container_stats, inst.container_id)
+                    cpu_d = raw.get("cpu_stats", {}).get("cpu_usage", {}).get("total_usage", 0) - \
+                            raw.get("precpu_stats", {}).get("cpu_usage", {}).get("total_usage", 0)
+                    sys_d = raw.get("cpu_stats", {}).get("system_cpu_usage", 0) - \
+                            raw.get("precpu_stats", {}).get("system_cpu_usage", 0)
+                    ncpu = raw.get("cpu_stats", {}).get("online_cpus", 1)
+                    if sys_d > 0:
+                        total_cpu += cpu_d / sys_d * ncpu * 100
+                    mem = raw.get("memory_stats", {})
+                    limit = mem.get("limit", 1)
+                    usage = mem.get("usage", 0)
+                    if limit > 0:
+                        total_ram_pct += usage / limit * 100
+                except Exception:
+                    pass
+
+            record_sample(round(total_cpu, 1), round(total_ram_pct, 1))
+        except Exception:
+            pass
 
 
 app = FastAPI(title="Selkies Hub", version="0.1.0", lifespan=lifespan)
@@ -125,3 +169,76 @@ async def health():
 async def system_gpu():
     from app.services.docker_manager import detect_gpu
     return detect_gpu()
+
+
+@app.get("/api/system/metrics")
+async def system_metrics(session: AsyncSession = Depends(get_session)):
+    import shutil
+    from app.services.docker_manager import DockerManager, detect_gpu
+
+    docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
+
+    result = await session.exec(
+        select(Instance).where(Instance.status.in_(["running", "idle"]))
+    )
+    running = result.all()
+
+    aggregate_cpu = 0.0
+    aggregate_ram_mb = 0.0
+    for inst in running:
+        if not inst.container_id:
+            continue
+        try:
+            raw = await asyncio.to_thread(docker.get_container_stats, inst.container_id)
+            cpu_delta = raw.get("cpu_stats", {}).get("cpu_usage", {}).get("total_usage", 0) - \
+                        raw.get("precpu_stats", {}).get("cpu_usage", {}).get("total_usage", 0)
+            system_delta = raw.get("cpu_stats", {}).get("system_cpu_usage", 0) - \
+                           raw.get("precpu_stats", {}).get("system_cpu_usage", 0)
+            num_cpus = raw.get("cpu_stats", {}).get("online_cpus", 1)
+            if system_delta > 0:
+                aggregate_cpu += cpu_delta / system_delta * num_cpus * 100
+            aggregate_ram_mb += raw.get("memory_stats", {}).get("usage", 0) / 1024 / 1024
+        except Exception:
+            pass
+
+    disk = shutil.disk_usage("/")
+    gpu_info = detect_gpu()
+
+    events_result = await session.exec(
+        select(SessionEvent).order_by(SessionEvent.id.desc()).limit(20)
+    )
+    events = events_result.all()
+
+    instances_map = {}
+    if events:
+        inst_ids = list({e.instance_id for e in events})
+        insts_result = await session.exec(select(Instance).where(Instance.id.in_(inst_ids)))
+        instances_map = {i.id: i.name for i in insts_result.all()}
+
+    recent_events = []
+    for ev in events:
+        recent_events.append({
+            "type": ev.event_type,
+            "instance": instances_map.get(ev.instance_id, ev.instance_id[:8]),
+            "time": "now",
+            "details": ev.details.get("error", "")[:100] if ev.details else None,
+        })
+
+    return {
+        "aggregate_cpu": round(aggregate_cpu, 1),
+        "aggregate_ram_mb": round(aggregate_ram_mb, 1),
+        "disk_used_gb": round((disk.total - disk.free) / 1024**3, 1),
+        "disk_total_gb": round(disk.total / 1024**3, 1),
+        "recent_events": recent_events,
+        "host": {
+            "docker_version": "unknown",
+            "gpu": gpu_info.get("type") or "None",
+            "network": _settings.DOCKER_NETWORK,
+        },
+    }
+
+
+@app.get("/api/system/metrics/history")
+async def system_metrics_history(range: str = "1h"):
+    from app.services.metrics_store import get_history
+    return get_history(range)

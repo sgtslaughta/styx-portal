@@ -34,6 +34,14 @@ export function useStopInstance() {
   });
 }
 
+export function useRestartInstance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.restartInstance(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["instances"] }),
+  });
+}
+
 export function usePauseInstance() {
   const qc = useQueryClient();
   return useMutation({

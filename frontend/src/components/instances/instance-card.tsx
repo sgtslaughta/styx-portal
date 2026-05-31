@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { MoreHorizontal, ExternalLink, Play, Square, Trash2, Pause } from "lucide-react";
+import { MoreHorizontal, ExternalLink, Play, Square, Trash2, Pause, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -13,6 +13,7 @@ import { formatDuration } from "@/lib/utils";
 import {
   useStartInstance,
   useStopInstance,
+  useRestartInstance,
   usePauseInstance,
   useUnpauseInstance,
   useDeleteInstance,
@@ -32,6 +33,7 @@ const TRANSITION_STATES = new Set(["pulling", "starting", "stopping", "creating"
 export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
   const start = useStartInstance();
   const stop = useStopInstance();
+  const restart = useRestartInstance();
   const pause = usePauseInstance();
   const unpause = useUnpauseInstance();
   const destroy = useDeleteInstance();
@@ -63,6 +65,11 @@ export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
   function handleStop(e: React.MouseEvent) {
     e.stopPropagation();
     stop.mutate(instance.id, { onError: (err) => toast.error(`Stop failed: ${err.message}`) });
+  }
+
+  function handleRestart(e: React.MouseEvent) {
+    e.stopPropagation();
+    restart.mutate(instance.id, { onError: (err) => toast.error(`Restart failed: ${err.message}`) });
   }
 
   function handlePause(e: React.MouseEvent) {
@@ -171,6 +178,9 @@ export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
             <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
               {isRunning && (
                 <>
+                  <DropdownMenuItem onClick={handleRestart}>
+                    <RotateCcw className="mr-2 h-3 w-3" /> Restart
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={handlePause}>
                     <Pause className="mr-2 h-3 w-3" /> Pause
                   </DropdownMenuItem>
@@ -229,6 +239,13 @@ export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
             )}
           </AnimatePresence>
         </div>
+
+        {/* Error message */}
+        {instance.status === "error" && instance.error_message && (
+          <div className="rounded-md bg-red-500/10 border border-red-500/20 px-2.5 py-1.5 text-[11px] text-red-400 leading-tight break-all">
+            {instance.error_message}
+          </div>
+        )}
 
         {/* Overlaid sparkline — CPU + RAM */}
         <AnimatePresence>

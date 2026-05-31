@@ -1,5 +1,8 @@
 import asyncio
+import logging
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse
@@ -135,7 +138,9 @@ async def _launch_instance_background(instance_id: str, template_id: str):
             await _refresh_routes(session)
 
         except Exception as e:
+            logger.error(f"Instance {instance_id} launch failed: {e}")
             instance.status = "error"
+            instance.error_message = str(e)
             session.add(instance)
             event = SessionEvent(
                 instance_id=instance.id,
@@ -282,6 +287,34 @@ async def stop_instance(
     await session.commit()
     await session.refresh(instance)
     await _refresh_routes(session)
+    return instance
+
+
+@router.post("/{instance_id}/restart", response_model=Instance)
+async def restart_instance(
+    instance_id: str,
+    session: AsyncSession = Depends(get_session),
+    docker: DockerManager = Depends(get_docker_manager),
+):
+    instance = await session.get(Instance, instance_id)
+    if not instance:
+        raise HTTPException(404, "Instance not found")
+    if not instance.container_id:
+        raise HTTPException(400, "No container to restart")
+
+    await asyncio.to_thread(docker.restart_container, instance.container_id)
+
+    now = datetime.now(timezone.utc)
+    instance.status = "running"
+    instance.started_at = now
+    instance.last_activity = now
+    instance.error_message = None
+    session.add(instance)
+
+    event = SessionEvent(instance_id=instance.id, event_type="restarted")
+    session.add(event)
+    await session.commit()
+    await session.refresh(instance)
     return instance
 
 
@@ -531,3 +564,54 @@ async def get_screenshot(
         raise HTTPException(404, "No screenshot available")
 
     return FileResponse(path, media_type="image/png")
+
+
+@router.get("/{instance_id}/events")
+async def get_instance_events(
+    instance_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    instance = await session.get(Instance, instance_id)
+    if not instance:
+        raise HTTPException(404, "Instance not found")
+
+    from sqlmodel import desc
+    result = await session.exec(
+        select(SessionEvent)
+        .where(SessionEvent.instance_id == instance_id)
+        .order_by(desc(SessionEvent.id))
+        .limit(20)
+    )
+    events = result.all()
+    return [
+        {
+            "type": ev.event_type,
+            "time": "recent",
+            "details": ev.details.get("error", "")[:200] if ev.details else None,
+        }
+        for ev in events
+    ]
+
+
+@router.get("/{instance_id}/logs")
+async def get_instance_logs(
+    instance_id: str,
+    lines: int = Query(default=500, le=2000),
+    session: AsyncSession = Depends(get_session),
+    docker: DockerManager = Depends(get_docker_manager),
+):
+    instance = await session.get(Instance, instance_id)
+    if not instance:
+        raise HTTPException(404, "Instance not found")
+    if not instance.container_id:
+        return []
+
+    try:
+        container = docker._client.containers.get(instance.container_id)
+        raw_logs = await asyncio.to_thread(
+            container.logs, tail=lines, timestamps=True
+        )
+        text = raw_logs.decode("utf-8", errors="replace")
+        return text.strip().split("\n") if text.strip() else []
+    except Exception:
+        return []

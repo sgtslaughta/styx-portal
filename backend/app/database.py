@@ -18,9 +18,26 @@ async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit
 
 async def init_db():
     async with engine.begin() as conn:
+        await _run_migrations(conn)
         await conn.run_sync(SQLModel.metadata.create_all)
     async with async_session() as session:
         await seed_templates(session, settings.TEMPLATES_DIR)
+
+
+async def _run_migrations(conn):
+    """Add missing columns to existing tables."""
+    import sqlalchemy
+
+    migrations = [
+        ("instances", "error_message", "TEXT"),
+    ]
+    for table, column, col_type in migrations:
+        try:
+            await conn.execute(sqlalchemy.text(
+                f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"
+            ))
+        except Exception:
+            pass
 
 
 async def get_session():

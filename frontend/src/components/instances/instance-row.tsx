@@ -1,11 +1,12 @@
 import { motion } from "framer-motion";
-import { ExternalLink, Play, Square, Trash2, Pause } from "lucide-react";
+import { ExternalLink, Play, Square, Trash2, Pause, RotateCcw } from "lucide-react";
 import { StatusBadge } from "./status-badge";
 import { OverlaySparkline } from "./sparkline";
 import { formatDuration } from "@/lib/utils";
 import {
   useStartInstance,
   useStopInstance,
+  useRestartInstance,
   usePauseInstance,
   useUnpauseInstance,
   useDeleteInstance,
@@ -25,6 +26,7 @@ const TRANSITION_STATES = new Set(["pulling", "starting", "stopping", "creating"
 export function InstanceRow({ instance, icon, onSelect }: InstanceRowProps) {
   const start = useStartInstance();
   const stop = useStopInstance();
+  const restart = useRestartInstance();
   const pause = usePauseInstance();
   const unpause = useUnpauseInstance();
   const destroy = useDeleteInstance();
@@ -42,6 +44,7 @@ export function InstanceRow({ instance, icon, onSelect }: InstanceRowProps) {
 
   function stop_(e: React.MouseEvent) { e.stopPropagation(); stop.mutate(instance.id, { onError: (err) => toast.error(err.message) }); }
   function start_(e: React.MouseEvent) { e.stopPropagation(); start.mutate(instance.id, { onError: (err) => toast.error(err.message) }); }
+  function restart_(e: React.MouseEvent) { e.stopPropagation(); restart.mutate(instance.id, { onError: (err) => toast.error(err.message) }); }
   function pause_(e: React.MouseEvent) { e.stopPropagation(); pause.mutate(instance.id, { onError: (err) => toast.error(err.message) }); }
   function unpause_(e: React.MouseEvent) { e.stopPropagation(); unpause.mutate(instance.id, { onError: (err) => toast.error(err.message) }); }
   function destroy_(e: React.MouseEvent) {
@@ -106,6 +109,9 @@ export function InstanceRow({ instance, icon, onSelect }: InstanceRowProps) {
           <>
             <button onClick={(e) => { e.stopPropagation(); window.open(`/i/${instance.subdomain}/`, "_blank"); }} title="Connect" className="rounded p-1 text-green-400 hover:bg-green-500/15 transition-colors">
               <ExternalLink className="h-3.5 w-3.5" />
+            </button>
+            <button onClick={restart_} title="Restart" className="rounded p-1 text-blue-400 hover:bg-blue-500/15 transition-colors">
+              <RotateCcw className="h-3.5 w-3.5" />
             </button>
             <button onClick={pause_} title="Pause" className="rounded p-1 text-amber-400 hover:bg-amber-500/15 transition-colors">
               <Pause className="h-3.5 w-3.5" />

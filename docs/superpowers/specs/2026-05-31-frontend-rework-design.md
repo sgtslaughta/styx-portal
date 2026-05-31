@@ -40,7 +40,7 @@ Single sources of truth for the values currently hardcoded everywhere.
 
 New files under `components/ui/` (Radix wrappers) and `components/common/` (composed domain primitives).
 
-- **`ConfirmDialog`** — generic. Two modes: `simple` (Cancel / Confirm) and `type-to-confirm` (user types the resource name to enable Confirm). Used for every destructive action. Replaces all 7 native dialogs. Destroy/purge use type-to-confirm; reversible actions (stop/pause) use a single-click confirm or none per existing UX.
+- **`ConfirmDialog`** — generic. Two modes: `simple` (Cancel / Confirm) and `type-to-confirm` (user types the resource name to enable Confirm). Used for irreversible actions only. Replaces all 7 native dialogs. **Destroy/purge use type-to-confirm. Reversible actions (stop/pause/restart/resume) fire immediately with no confirm** (undoable by restarting), surfacing result via toast.
 - **`Tooltip`**, **`Popover`** — Radix wrappers added to `components/ui/` (available from the `radix-ui` umbrella; no new dep).
 - **`Drawer`** — side-anchored Radix Dialog variant for master-detail panels.
 - **`ActionBar`** — status-driven instance lifecycle controls (start/stop/pause/resume/restart/destroy). Takes an `Instance` + size variant; renders the correct buttons for the status. Single implementation consumed by card, card-sm, row, grid bulk actions, detail, and sessions. Wires ConfirmDialog for destroy.
@@ -55,7 +55,7 @@ New files under `components/ui/` (Radix wrappers) and `components/common/` (comp
 - `status-badge`, `instance-card`, `instance-card-sm`, `instance-row` consume `status.ts` + `ActionBar` + `Sparkline`.
 - Decompose `instance-card` (311) → `IconViewport` + `ActionBar` + `StatsRow`.
 - `instance-grid` (335) → extract `SearchSortBar`; keep view modes; bulk actions via `ActionBar`.
-- `instance-detail` (411) → `Drawer` with split tab subcomponents: `StatusTab`, `EnvVarsTab`, `SessionConfigTab`. Aim for a 40/60 master-detail feel against the list.
+- `instance-detail` (411) → side **`Drawer`** (right-anchored, ~40% width) with split tab subcomponents: `StatusTab`, `EnvVarsTab`, `SessionConfigTab`. 40/60 master-detail against the list.
 - All destroy actions → `ConfirmDialog` type-to-confirm.
 
 **Templates + Registry**
