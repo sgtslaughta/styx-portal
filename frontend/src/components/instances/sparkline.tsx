@@ -55,7 +55,7 @@ export function OverlaySparkline({
     return (
       <div className={`relative ${className}`}>
         <svg width="100%" height={height} viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none">
-          <line x1={0} y1={height / 2} x2={w} y2={height / 2} stroke="#666" strokeWidth={0.5} opacity={0.2} strokeDasharray="2 3" />
+          <line x1={0} y1={height / 2} x2={w} y2={height / 2} stroke="var(--muted-foreground)" strokeWidth={0.5} opacity={0.2} strokeDasharray="2 3" />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center gap-3">
           {series.map((s) => (
