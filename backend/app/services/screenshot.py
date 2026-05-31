@@ -33,8 +33,14 @@ class ScreenshotService:
         return None
 
     async def _ensure_browser(self):
-        if self._browser is not None and self._browser.is_connected():
-            return
+        if self._browser is not None:
+            if self._browser.is_connected():
+                return
+            try:
+                await self._browser.close()
+            except Exception:
+                pass
+            self._browser = None
         if self._pw is None:
             self._pw = await async_playwright().start()
         self._browser = await self._pw.chromium.launch(
