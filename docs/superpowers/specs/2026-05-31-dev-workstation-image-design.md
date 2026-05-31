@@ -95,8 +95,12 @@ StartupWMClass=jetbrains-pycharm-ce
 ### Theme: `xsettings.xml`
 Change `Net/ThemeName` `Adwaita-dark` → `Yaru-dark`, `Net/IconThemeName` `Adwaita` → `Yaru-dark`. Seeded into `/config/.config/xfce4` on first run by the existing startup-script copy.
 
-### Template: `dev-desktop.json`
-Already references `selkies-desktop:latest` and category `development`. Update `description` and `tags` to include PyCharm, btop, nano, Yaru-dark. No image/port changes.
+### Templates: repoint `dev-desktop.json`, delete `xfce-desktop.json`
+Current reality: `images/desktop/` builds `selkies-desktop:latest`; **`xfce-desktop.json`** points at it, while **`dev-desktop.json`** points at the raw `baseimage-selkies:debiantrixie` (no custom build → no dev tools). Decision: **rename + repoint** —
+- Repoint `dev-desktop.json` → `image: selkies-desktop:latest`; make it the single dev-workstation template (description/tags: VSCode, PyCharm, Node, Python, btop, nano, Yaru-dark; `internal_port` 3000; `gpu_enabled` per workstation needs).
+- **Delete `xfce-desktop.json`** (now redundant — same built image). One clean dev template, no duplicate pointing at the same image.
+
+Seeding reads the templates dir dynamically and tests use isolated payloads, so removing one template JSON and editing another breaks no backend tests.
 
 ## Out of Scope
 
