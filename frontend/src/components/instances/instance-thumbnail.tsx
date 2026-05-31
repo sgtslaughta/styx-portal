@@ -5,6 +5,8 @@ interface InstanceThumbnailProps {
   instanceId: string;
   icon: string | null;
   isLive: boolean;
+  /** Fill the parent's height (for equal-height column layouts) instead of 16:9. */
+  fill?: boolean;
 }
 
 const REFRESH_MS = 30000;
@@ -15,7 +17,7 @@ const REFRESH_MS = 30000;
  * icon when no screenshot is available (404/error) or the instance isn't live.
  * Unlike IconViewport it carries no name/status overlay — the pane header owns those.
  */
-export function InstanceThumbnail({ instanceId, icon, isLive }: InstanceThumbnailProps) {
+export function InstanceThumbnail({ instanceId, icon, isLive, fill }: InstanceThumbnailProps) {
   const [tick, setTick] = useState(0);
   const [shotOk, setShotOk] = useState(false);
 
@@ -35,7 +37,7 @@ export function InstanceThumbnail({ instanceId, icon, isLive }: InstanceThumbnai
   );
 
   return (
-    <div className="relative aspect-video w-full rounded-lg border border-border bg-secondary overflow-hidden flex items-center justify-center">
+    <div className={`relative w-full rounded-lg border border-border bg-secondary overflow-hidden flex items-center justify-center ${fill ? "h-full min-h-[200px]" : "aspect-video"}`}>
       <div className={`flex items-center justify-center ${shotOk ? "hidden" : ""}`}>
         {iconContent}
       </div>
