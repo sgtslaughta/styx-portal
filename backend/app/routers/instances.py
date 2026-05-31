@@ -2,8 +2,6 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-logger = logging.getLogger(__name__)
-
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 from sqlmodel import select
@@ -17,6 +15,8 @@ from app.services.docker_manager import DockerManager
 from app.services.route_writer import write_routes
 from app.services.screenshot import ScreenshotService
 from app.services.traefik_labels import generate_traefik_labels
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 _settings = Settings()
@@ -48,6 +48,41 @@ async def _refresh_routes(session: AsyncSession):
             "protocol": tmpl.internal_protocol if tmpl else "https",
         })
     write_routes(instances_data)
+
+
+async def _build_and_start_container(instance, template, docker):
+    """(Re)create the Docker container for an instance from its template,
+    mounting the instance's existing named volumes (data preserved), then start it.
+    Sets instance.container_id. Caller commits."""
+    volumes = {}
+    for vol, vol_name in zip(template.volumes, instance.volume_names):
+        await asyncio.to_thread(docker.create_volume, vol_name)
+        volumes[vol_name] = {"bind": vol["mount"], "mode": "rw"}
+
+    env = {**template.env_vars, **(instance.env_overrides or {})}
+    labels = generate_traefik_labels(
+        instance_id=instance.id,
+        subdomain=instance.subdomain,
+        domain=_settings.DOMAIN,
+        port=template.internal_port,
+        template_name=template.name,
+    )
+    container_id = await asyncio.to_thread(
+        docker.create_container,
+        name=f"selkies-{instance.subdomain}",
+        image=template.image,
+        labels=labels,
+        environment=env,
+        volumes=volumes,
+        port=template.internal_port,
+        gpu_enabled=template.gpu_enabled,
+        gpu_count=template.gpu_count,
+        memory_limit=template.memory_limit,
+        shm_size=template.shm_size,
+    )
+    instance.container_id = container_id
+    await asyncio.to_thread(docker.start_container, container_id)
+    return container_id
 
 
 @router.get("", response_model=list[Instance])
@@ -215,35 +250,7 @@ async def start_instance(
         if not template:
             raise HTTPException(400, "Template no longer exists, cannot recreate")
 
-        volumes = {}
-        for vol, vol_name in zip(template.volumes, instance.volume_names):
-            await asyncio.to_thread(docker.create_volume, vol_name)
-            volumes[vol_name] = {"bind": vol["mount"], "mode": "rw"}
-
-        env = {**template.env_vars, **(instance.env_overrides or {})}
-        labels = generate_traefik_labels(
-            instance_id=instance.id,
-            subdomain=instance.subdomain,
-            domain=_settings.DOMAIN,
-            port=template.internal_port,
-            template_name=template.name,
-        )
-
-        container_id = await asyncio.to_thread(
-            docker.create_container,
-            name=f"selkies-{instance.subdomain}",
-            image=template.image,
-            labels=labels,
-            environment=env,
-            volumes=volumes,
-            port=template.internal_port,
-            gpu_enabled=template.gpu_enabled,
-            gpu_count=template.gpu_count,
-            memory_limit=template.memory_limit,
-            shm_size=template.shm_size,
-        )
-        instance.container_id = container_id
-        await asyncio.to_thread(docker.start_container, container_id)
+        await _build_and_start_container(instance, template, docker)
 
     now = datetime.now(timezone.utc)
     instance.status = "running"
