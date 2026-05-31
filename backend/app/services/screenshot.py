@@ -10,7 +10,6 @@ logger = logging.getLogger("selkies-hub")
 
 _VIEWPORT = {"width": 1920, "height": 1080}
 _NAV_TIMEOUT_MS = 10000
-_RENDER_WAIT_MS = 3000
 # Poll for an active stream before screenshotting.
 _STREAM_POLLS = 8
 _STREAM_POLL_MS = 700
@@ -103,14 +102,14 @@ class ScreenshotService:
                 ignore_https_errors=True, viewport=_VIEWPORT,
             )
             try:
-                # View-only mirror first — never steals control from an active user.
+                # ONLY ever use the "#shared" view-only mirror. It connects as a
+                # viewer, never a primary/controller, so it can never steal an
+                # active user's session. If no stream is flowing (nobody is
+                # connected), skip rather than risk a primary connection — the
+                # previous cached thumbnail is kept.
                 page = await self._open(context, base + "#shared")
                 if not await self._is_streaming(page):
-                    # No live stream → nobody is connected, so a full (controller)
-                    # connection is safe and won't disrupt anyone.
-                    await page.close()
-                    page = await self._open(context, base)
-                    await page.wait_for_timeout(_RENDER_WAIT_MS)
+                    return False
                 png = await self._shoot(page)
                 (self._cache_dir / f"{instance_id}.png").write_bytes(png)
                 return True

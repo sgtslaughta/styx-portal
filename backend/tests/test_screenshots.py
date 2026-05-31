@@ -58,13 +58,15 @@ async def test_capture_uses_shared_viewer_when_streaming(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_capture_falls_back_to_controller_when_idle(monkeypatch):
-    """No live stream (nobody connected) → fall back to a plain controller load."""
+async def test_capture_skips_and_never_connects_primary_when_no_stream(monkeypatch):
+    """No live stream → skip (return False) and keep the prior cache. Must NEVER
+    open a plain (primary/controller) connection that would steal a session."""
     page = AsyncMock()
     context = AsyncMock()
     context.new_page.return_value = page
     browser = AsyncMock()
     browser.new_context.return_value = context
+    shot = AsyncMock(return_value=b"\x89PNGnew")
 
     with tempfile.TemporaryDirectory() as tmpdir:
         svc = _make_service(tmpdir, browser=browser)
@@ -72,12 +74,18 @@ async def test_capture_falls_back_to_controller_when_idle(monkeypatch):
         monkeypatch.setattr(svc, "_resolve_ip", lambda cid: "172.18.0.6")
         monkeypatch.setattr(svc, "_secure_endpoint", lambda cid, p, proto: (proto, p))
         monkeypatch.setattr(svc, "_is_streaming", AsyncMock(return_value=False))
-        monkeypatch.setattr(svc, "_shoot", AsyncMock(return_value=b"\x89PNGx"))
+        monkeypatch.setattr(svc, "_shoot", shot)
+        stale = Path(tmpdir) / "inst-http.png"
+        stale.write_bytes(b"OLD")
 
-        await svc.capture("inst-http", "cont", 3000, "http")
+        result = await svc.capture("inst-http", "cont", 3000, "http")
 
+        assert result is False
+        # Only the view-only #shared URL is ever opened — no primary connection.
         urls = [c.args[0] for c in page.goto.await_args_list]
-        assert urls == ["http://172.18.0.6:3000/#shared", "http://172.18.0.6:3000/"]
+        assert urls == ["http://172.18.0.6:3000/#shared"]
+        shot.assert_not_awaited()
+        assert stale.read_bytes() == b"OLD"
 
 
 def test_secure_endpoint_prefers_3001():
