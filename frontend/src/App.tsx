@@ -7,6 +7,7 @@ import { RegistryBrowser } from "@/components/templates/registry-browser";
 import { LaunchModal } from "@/components/templates/launch-modal";
 import { InstanceDetail } from "@/components/instances/instance-detail";
 import { MetricsDashboard } from "@/components/system/metrics-dashboard";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { useTemplates } from "@/hooks/use-templates";
 import { cn } from "@/lib/utils";
 import type { Instance, ServiceTemplate, RegistryImage } from "@/lib/types";
@@ -41,6 +42,7 @@ export default function App() {
   const resolvedSubTab = templateSubTab ?? (templates?.length ? "my-templates" : "registry");
 
   return (
+    <TooltipProvider>
     <div className="flex min-h-screen flex-col bg-background">
       <Header />
       <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
@@ -81,5 +83,6 @@ export default function App() {
       />
       <InstanceDetail instance={selectedInstance} onClose={() => setSelectedInstance(null)} />
     </div>
+    </TooltipProvider>
   );
 }
