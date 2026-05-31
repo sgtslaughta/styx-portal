@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Gauge } from "@/components/common/stat-tile";
 import { OverlaySparkline } from "./sparkline";
 import { RegistryInfo } from "./registry-info";
+import { InstanceThumbnail } from "./instance-thumbnail";
 import { StatusBadge } from "./status-badge";
 import { ActionBar } from "@/components/common/action-bar";
 import { LaunchConfigFields } from "@/components/templates/launch-config-fields";
@@ -203,63 +204,74 @@ export function InstanceDetailPane({ instanceId }: InstanceDetailPaneProps) {
 
       {/* Content scroll area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* Resources: live CPU/RAM gauges + sparkline */}
-        {isRunning && stats && (
-          <div className="space-y-3">
-            <h3 className="text-xs font-semibold text-muted-foreground uppercase">Resources</h3>
-            <div className="space-y-2">
-              <Gauge
-                value={stats.cpu_percent}
-                max={100}
-                label="CPU"
-                color={CHART_COLORS.cpu}
-              />
-              <Gauge
-                value={stats.memory_percent}
-                max={100}
-                label="Memory"
-                color={CHART_COLORS.memory}
-              />
-            </div>
-            {/* Sparkline with history */}
-            <div className="rounded border border-border bg-card/50 p-2">
-              <OverlaySparkline
-                series={[
-                  { value: stats.cpu_percent, color: CHART_COLORS.cpu, label: "CPU" },
-                  { value: stats.memory_percent, color: CHART_COLORS.memory, label: "RAM" },
-                ]}
-                max={100}
-                height={40}
-              />
-            </div>
-            {/* Uptime + idle */}
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="rounded border border-border bg-card/50 p-2">
-                <div className="text-muted-foreground">Uptime</div>
-                <div className="font-mono text-sm">{formatDuration(uptimeSeconds)}</div>
+        {/* Top: two equal-height columns — left info, right live preview */}
+        <div className="grid grid-cols-2 gap-4 items-stretch">
+          {/* Left: resources + graphs + LinuxServer.io details */}
+          <div className="space-y-4 min-w-0">
+            {/* Resources: live CPU/RAM gauges + sparkline */}
+            {isRunning && stats && (
+              <div className="space-y-3">
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase">Resources</h3>
+                <div className="space-y-2">
+                  <Gauge
+                    value={stats.cpu_percent}
+                    max={100}
+                    label="CPU"
+                    color={CHART_COLORS.cpu}
+                  />
+                  <Gauge
+                    value={stats.memory_percent}
+                    max={100}
+                    label="Memory"
+                    color={CHART_COLORS.memory}
+                  />
+                </div>
+                {/* Sparkline with history */}
+                <div className="rounded border border-border bg-card/50 p-2">
+                  <OverlaySparkline
+                    series={[
+                      { value: stats.cpu_percent, color: CHART_COLORS.cpu, label: "CPU" },
+                      { value: stats.memory_percent, color: CHART_COLORS.memory, label: "RAM" },
+                    ]}
+                    max={100}
+                    height={40}
+                  />
+                </div>
+                {/* Uptime + idle */}
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="rounded border border-border bg-card/50 p-2">
+                    <div className="text-muted-foreground">Uptime</div>
+                    <div className="font-mono text-sm">{formatDuration(uptimeSeconds)}</div>
+                  </div>
+                  <div className="rounded border border-border bg-card/50 p-2">
+                    <div className="text-muted-foreground">Idle</div>
+                    <div className="font-mono text-sm">{formatDuration(idleSeconds)}</div>
+                  </div>
+                </div>
               </div>
-              <div className="rounded border border-border bg-card/50 p-2">
-                <div className="text-muted-foreground">Idle</div>
-                <div className="font-mono text-sm">{formatDuration(idleSeconds)}</div>
+            )}
+
+            {/* Registry info */}
+            {regImg && (
+              <div>
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase mb-3">LinuxServer.io</h3>
+                <RegistryInfo image={regImg} />
               </div>
-            </div>
+            )}
           </div>
-        )}
+
+          {/* Right: live preview, height-matched to the left column */}
+          <InstanceThumbnail
+            instanceId={instance.id}
+            icon={template?.icon ?? null}
+            isLive={isRunning}
+            fill
+          />
+        </div>
 
         <Separator />
 
-        {/* Registry info */}
-        {regImg && (
-          <>
-            <div>
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase mb-3">LinuxServer.io</h3>
-              <RegistryInfo image={regImg} />
-            </div>
-            <Separator />
-          </>
-        )}
-
-        {/* Config editor */}
+        {/* Config editor (full width) */}
         <div>
           <h3 className="text-xs font-semibold text-muted-foreground uppercase mb-3">Configuration</h3>
           <LaunchConfigFields cfg={cfg} gpuInfo={gpuInfo} />

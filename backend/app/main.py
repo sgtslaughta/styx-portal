@@ -98,9 +98,11 @@ async def lifespan(app: FastAPI):
 
     task = asyncio.create_task(_session_monitor_loop())
     metrics_task = asyncio.create_task(_metrics_collection_loop())
+    screenshot_task = asyncio.create_task(_screenshot_capture_loop())
     yield
     task.cancel()
     metrics_task.cancel()
+    screenshot_task.cancel()
 
 
 async def _metrics_collection_loop():
@@ -142,6 +144,46 @@ async def _metrics_collection_loop():
             record_sample(round(total_cpu, 1), round(total_ram_pct, 1))
         except Exception:
             pass
+
+
+async def _capture_running_instances(screenshots, targets):
+    for inst, port, protocol in targets:
+        if inst.status not in ("running", "idle") or not inst.container_id:
+            continue
+        try:
+            await screenshots.capture(inst.id, inst.container_id, port, protocol)
+        except Exception:
+            pass
+
+
+async def _screenshot_capture_loop():
+    from app.services.screenshot import ScreenshotService
+    from app.models import ServiceTemplate
+
+    docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
+    screenshots = ScreenshotService(
+        cache_dir=_settings.SCREENSHOT_CACHE_DIR, docker_manager=docker,
+    )
+    try:
+        while True:
+            await asyncio.sleep(_settings.SCREENSHOT_INTERVAL_SECONDS)
+            try:
+                async with async_session() as session:
+                    result = await session.exec(
+                        select(Instance).where(Instance.status.in_(["running", "idle"]))
+                    )
+                    rows = result.all()
+                    targets = []
+                    for inst in rows:
+                        tmpl = await session.get(ServiceTemplate, inst.template_id)
+                        port = tmpl.internal_port if tmpl else 3001
+                        protocol = tmpl.internal_protocol if tmpl else "https"
+                        targets.append((inst, port, protocol))
+                await _capture_running_instances(screenshots, targets)
+            except Exception:
+                pass
+    finally:
+        await screenshots.close()
 
 
 app = FastAPI(title="Selkies Hub", version="0.1.0", lifespan=lifespan)

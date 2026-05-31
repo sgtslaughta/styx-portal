@@ -3,11 +3,11 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from app.main import app
 from app.database import get_session
-from app.routers.instances import get_docker_manager
+from app.routers.instances import get_docker_manager, get_screenshot_service
 
 
 @pytest.fixture(name="session")
@@ -33,9 +33,17 @@ async def client_fixture(session):
         manager.get_container_status.return_value = {"status": "running"}
         return manager
 
+    def get_screenshot_service_override():
+        # Avoid real ScreenshotService (mkdir of host cache dir + Playwright).
+        svc = MagicMock()
+        svc.capture = AsyncMock(return_value=True)
+        svc.close = AsyncMock()
+        return svc
+
     app.dependency_overrides[get_session] = get_session_override
     app.dependency_overrides[get_docker_manager] = get_docker_manager_override
-    
+    app.dependency_overrides[get_screenshot_service] = get_screenshot_service_override
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
     

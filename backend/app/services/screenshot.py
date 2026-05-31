@@ -1,8 +1,34 @@
+import asyncio
+import logging
 from pathlib import Path
 
-import httpx
+from playwright.async_api import async_playwright
 
 from app.services.docker_manager import DockerManager
+
+logger = logging.getLogger("selkies-hub")
+
+_VIEWPORT = {"width": 1920, "height": 1080}
+_NAV_TIMEOUT_MS = 10000
+# Poll for an active stream before screenshotting.
+_STREAM_POLLS = 8
+_STREAM_POLL_MS = 700
+# Detect whether the Selkies client has a live frame. The "#shared" view-only
+# mirror shows "Waiting for stream…" until a controller (real user) is connected;
+# a painted <canvas> with no such overlay means a frame is flowing.
+_STREAM_PROBE_JS = """() => {
+  const t = (document.body.innerText || '').toLowerCase();
+  if (t.includes('waiting for stream') || t.includes('disconnected') || t.includes('reconnect'))
+    return false;
+  const c = document.querySelector('canvas');
+  return !!c && c.width > 0 && c.height > 0;
+}"""
+# KasmVNC/Selkies desktops only render in a secure context, so capture must hit
+# the container's own HTTPS web port (conventionally 3001) — NOT the http routing
+# port (3000), which serves an "insecure connection" error page when loaded
+# directly. Traefik fronts the http port for browsers (secure at the edge), but
+# direct in-container capture has no such edge.
+_SECURE_PORT = 3001
 
 
 class ScreenshotService:
@@ -10,59 +36,118 @@ class ScreenshotService:
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._docker = docker_manager
+        self._pw = None
+        self._browser = None
+        self._sem = asyncio.Semaphore(2)
 
-    def capture(self, instance_id: str, container_id: str, port: int) -> bool:
+    def _resolve_ip(self, container_id: str) -> str | None:
+        container = self._docker._client.containers.get(container_id)
+        networks = container.attrs["NetworkSettings"]["Networks"]
+        for net in networks.values():
+            ip = net.get("IPAddress")
+            if ip:
+                return ip
+        return None
+
+    def _secure_endpoint(self, container_id: str, port: int, protocol: str) -> tuple[str, int]:
+        """Prefer the container's HTTPS web port (3001) for capture; fall back to
+        the configured routing port/protocol when 3001 isn't exposed."""
         try:
             container = self._docker._client.containers.get(container_id)
-            networks = container.attrs["NetworkSettings"]["Networks"]
-            ip = None
-            for net in networks.values():
-                ip = net.get("IPAddress")
-                if ip:
-                    break
-            if not ip:
-                return False
+            exposed = container.attrs.get("Config", {}).get("ExposedPorts", {}) or {}
+            if f"{_SECURE_PORT}/tcp" in exposed:
+                return "https", _SECURE_PORT
+        except Exception:
+            pass
+        return protocol, port
 
-            # Try HTTPS first (Selkies containers use self-signed HTTPS)
-            for scheme in ("https", "http"):
-                try:
-                    resp = httpx.get(
-                        f"{scheme}://{ip}:{port}/screenshot",
-                        timeout=5,
-                        verify=False,
-                    )
-                    if resp.status_code == 200 and len(resp.content) > 100:
-                        path = self._cache_dir / f"{instance_id}.png"
-                        path.write_bytes(resp.content)
-                        return True
-                except httpx.HTTPError:
-                    continue
-
-            # Fallback: try docker exec with grim (Wayland screenshot tool)
+    async def _ensure_browser(self):
+        if self._browser is not None:
+            if self._browser.is_connected():
+                return
             try:
-                exit_code, output = container.exec_run(
-                    "grim -t png /tmp/screenshot.png",
-                    environment={"XDG_RUNTIME_DIR": "/run/user/1000", "WAYLAND_DISPLAY": "wayland-0"},
-                )
-                if exit_code == 0:
-                    bits, _ = container.get_archive("/tmp/screenshot.png")
-                    # Docker get_archive returns a tar stream
-                    import tarfile
-                    import io
-                    tar_stream = io.BytesIO(b"".join(bits))
-                    with tarfile.open(fileobj=tar_stream) as tar:
-                        member = tar.getmembers()[0]
-                        f = tar.extractfile(member)
-                        if f:
-                            path = self._cache_dir / f"{instance_id}.png"
-                            path.write_bytes(f.read())
-                            return True
+                await self._browser.close()
             except Exception:
                 pass
+            self._browser = None
+        if self._pw is None:
+            self._pw = await async_playwright().start()
+        self._browser = await self._pw.chromium.launch(
+            args=["--no-sandbox", "--ignore-certificate-errors"],
+        )
 
-            return False
+    async def capture(
+        self, instance_id: str, container_id: str, port: int, protocol: str = "https"
+    ) -> bool:
+        try:
+            ip = await asyncio.to_thread(self._resolve_ip, container_id)
         except Exception:
+            ip = None
+        if not ip:
             return False
+
+        protocol, port = await asyncio.to_thread(
+            self._secure_endpoint, container_id, port, protocol
+        )
+
+        try:
+            await self._ensure_browser()
+        except Exception:
+            logger.debug("screenshot: browser launch failed", exc_info=True)
+            return False
+
+        base = f"{protocol}://{ip}:{port}/"
+        async with self._sem:
+            context = await self._browser.new_context(
+                ignore_https_errors=True, viewport=_VIEWPORT,
+            )
+            try:
+                # ONLY ever use the "#shared" view-only mirror. It connects as a
+                # viewer, never a primary/controller, so it can never steal an
+                # active user's session. If no stream is flowing (nobody is
+                # connected), skip rather than risk a primary connection — the
+                # previous cached thumbnail is kept.
+                page = await self._open(context, base + "#shared")
+                if not await self._is_streaming(page):
+                    return False
+                png = await self._shoot(page)
+                (self._cache_dir / f"{instance_id}.png").write_bytes(png)
+                return True
+            except Exception:
+                logger.debug("screenshot: capture failed for %s", instance_id, exc_info=True)
+                return False
+            finally:
+                await context.close()
+
+    async def _open(self, context, url):
+        page = await context.new_page()
+        await page.goto(url, wait_until="domcontentloaded", timeout=_NAV_TIMEOUT_MS)
+        return page
+
+    async def _is_streaming(self, page) -> bool:
+        for _ in range(_STREAM_POLLS):
+            await page.wait_for_timeout(_STREAM_POLL_MS)
+            try:
+                if await page.evaluate(_STREAM_PROBE_JS):
+                    return True
+            except Exception:
+                pass
+        return False
+
+    async def _shoot(self, page) -> bytes:
+        # Screenshot the desktop canvas at its native size; fall back to the page.
+        canvas = page.locator("canvas")
+        if await canvas.count():
+            return await canvas.first.screenshot(type="png")
+        return await page.screenshot(type="png")
+
+    async def close(self):
+        if self._browser is not None:
+            await self._browser.close()
+            self._browser = None
+        if self._pw is not None:
+            await self._pw.stop()
+            self._pw = None
 
     def get_path(self, instance_id: str) -> Path | None:
         path = self._cache_dir / f"{instance_id}.png"
