@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useInstances, useInstanceStats } from "@/hooks/use-instances";
 import { useResourceHistory } from "@/hooks/use-system";
-import { Cpu, MemoryStick, Clock } from "lucide-react";
+import { Gauge } from "@/components/common/stat-tile";
+import { CHART_COLORS } from "@/lib/chart";
+import { Clock } from "lucide-react";
 
 const TIME_RANGES = [
   { id: "1h", label: "1H" },
@@ -57,7 +58,7 @@ function TimeSeriesChart({
         <span className="text-[11px] text-muted-foreground font-medium">{label}</span>
         <div className="flex gap-3 text-[10px] tabular-nums">
           <span className="text-muted-foreground">avg <span className="text-foreground">{avgVal.toFixed(1)}{unit}</span></span>
-          <span className="text-muted-foreground">peak <span className="text-amber-400">{peakVal.toFixed(1)}{unit}</span></span>
+          <span className="text-muted-foreground">peak <span className="text-warning">{peakVal.toFixed(1)}{unit}</span></span>
           <span className="text-muted-foreground">now <span style={{ color }}>{currentVal.toFixed(1)}{unit}</span></span>
         </div>
       </div>
@@ -105,12 +106,9 @@ function StorageBar({
         </span>
       </div>
       <div className="h-2 rounded-full bg-secondary overflow-hidden">
-        <motion.div
-          initial={{ width: 0 }}
-          animate={{ width: `${pct}%` }}
-          transition={{ duration: 0.6, ease: "easeOut" }}
-          className="h-full rounded-full"
-          style={{ backgroundColor: color, opacity: pct > 80 ? 1 : 0.7 }}
+        <div
+          className="h-full rounded-full transition-all duration-500"
+          style={{ width: `${pct}%`, backgroundColor: color, opacity: pct > 80 ? 1 : 0.7 }}
         />
       </div>
     </div>
@@ -158,7 +156,7 @@ export function MetricsResources() {
           <TimeSeriesChart
             label="System CPU"
             data={cpuHistory}
-            color="#34d399"
+            color={CHART_COLORS.cpu}
             max={100}
             unit="%"
           />
@@ -167,7 +165,7 @@ export function MetricsResources() {
           <TimeSeriesChart
             label="System Memory"
             data={ramHistory}
-            color="#a78bfa"
+            color={CHART_COLORS.memory}
             max={100}
             unit="%"
           />
@@ -199,19 +197,19 @@ export function MetricsResources() {
           label="Docker Images"
           used={storage.images_gb}
           total={storage.total_gb}
-          color="#60a5fa"
+          color={CHART_COLORS.network}
         />
         <StorageBar
           label="Volumes"
           used={storage.volumes_gb}
           total={storage.total_gb}
-          color="#a78bfa"
+          color={CHART_COLORS.memory}
         />
         <StorageBar
           label="System Disk"
           used={storage.total_gb - storage.available_gb}
           total={storage.total_gb}
-          color={((storage.total_gb - storage.available_gb) / storage.total_gb) > 0.85 ? "#ef4444" : "#34d399"}
+          color={((storage.total_gb - storage.available_gb) / storage.total_gb) > 0.85 ? "var(--destructive)" : CHART_COLORS.cpu}
         />
       </div>
     </div>
@@ -222,31 +220,25 @@ function InstanceResourceRow({ instance }: { instance: { id: string; name: strin
   const { data: stats } = useInstanceStats(instance.id, true);
 
   return (
-    <div className="grid grid-cols-[1fr_120px_120px] gap-4 px-4 py-3 items-center">
+    <div className="grid grid-cols-[1fr_140px_140px] gap-4 px-4 py-3 items-center">
       <span className="text-xs text-foreground truncate">{instance.name}</span>
-      <div className="flex items-center gap-2">
-        <Cpu className="h-3 w-3 text-emerald-500/60" />
-        <div className="flex-1 h-1.5 rounded-full bg-secondary overflow-hidden">
-          <div
-            className="h-full rounded-full bg-emerald-500 transition-all duration-500"
-            style={{ width: `${Math.min(stats?.cpu_percent ?? 0, 100)}%` }}
-          />
-        </div>
-        <span className="text-[10px] text-muted-foreground tabular-nums w-8 text-right">
-          {(stats?.cpu_percent ?? 0).toFixed(0)}%
-        </span>
+      <div>
+        <Gauge
+          value={Math.min(stats?.cpu_percent ?? 0, 100)}
+          max={100}
+          label="CPU"
+          color={CHART_COLORS.cpu}
+          className="text-[10px]"
+        />
       </div>
-      <div className="flex items-center gap-2">
-        <MemoryStick className="h-3 w-3 text-purple-500/60" />
-        <div className="flex-1 h-1.5 rounded-full bg-secondary overflow-hidden">
-          <div
-            className="h-full rounded-full bg-purple-500 transition-all duration-500"
-            style={{ width: `${Math.min(stats?.memory_percent ?? 0, 100)}%` }}
-          />
-        </div>
-        <span className="text-[10px] text-muted-foreground tabular-nums w-8 text-right">
-          {(stats?.memory_percent ?? 0).toFixed(0)}%
-        </span>
+      <div>
+        <Gauge
+          value={Math.min(stats?.memory_percent ?? 0, 100)}
+          max={100}
+          label="Memory"
+          color={CHART_COLORS.memory}
+          className="text-[10px]"
+        />
       </div>
     </div>
   );

@@ -19,7 +19,7 @@ export function TabNav({ activeTab, onTabChange }: TabNavProps) {
           key={tab.id}
           onClick={() => onTabChange(tab.id)}
           className={cn(
-            "px-4 py-2.5 text-sm font-medium transition-colors",
+            "px-4 py-2 text-sm font-medium transition-colors",
             "hover:text-foreground",
             activeTab === tab.id
               ? "border-b-2 border-primary text-foreground"

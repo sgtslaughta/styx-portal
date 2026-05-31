@@ -21,10 +21,12 @@ export function useRegistryImages(params?: { category?: string; search?: string 
   });
 }
 
-export function useRegistryImage(name: string) {
+export function useRegistryImage(name: string | null) {
   return useQuery({
-    queryKey: ["registry", name],
-    queryFn: () => api.getRegistryImage(name),
+    queryKey: ["registry-image", name],
+    queryFn: () => api.getRegistryImage(name!),
     enabled: !!name,
+    staleTime: 1000 * 60 * 60,
+    retry: false,
   });
 }

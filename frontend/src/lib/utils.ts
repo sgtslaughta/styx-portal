@@ -20,3 +20,10 @@ export function slugify(text: string): string {
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
 }
+
+/** Extract the LinuxServer image short-name from a docker image ref, or null.
+ * e.g. "lscr.io/linuxserver/firefox:latest" -> "firefox". Non-LSIO images -> null. */
+export function linuxserverImageName(image: string): string | null {
+  const m = image.match(/(?:lscr\.io\/)?linuxserver\/([^:@/]+)/i);
+  return m ? m[1]! : null;
+}

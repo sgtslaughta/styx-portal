@@ -1,23 +1,17 @@
 import { cn } from "@/lib/utils";
+import { statusMeta } from "@/lib/status";
 
-const STATUS_STYLES: Record<string, { dot: string; text: string }> = {
-  running: { dot: "bg-success", text: "text-success" },
-  idle: { dot: "bg-warning", text: "text-warning" },
-  paused: { dot: "bg-amber-500", text: "text-amber-500" },
-  stopped: { dot: "bg-muted-foreground", text: "text-muted-foreground" },
-  error: { dot: "bg-destructive", text: "text-destructive" },
-  creating: { dot: "bg-primary", text: "text-primary" },
-  pulling: { dot: "bg-primary animate-pulse", text: "text-primary" },
-  starting: { dot: "bg-primary animate-pulse", text: "text-primary" },
-  stopping: { dot: "bg-warning", text: "text-warning" },
-};
-
-export function StatusBadge({ status }: { status: string }) {
-  const style = STATUS_STYLES[status] ?? STATUS_STYLES.stopped!;
+export function StatusBadge({ status, showIcon = false }: { status: string; showIcon?: boolean }) {
+  const m = statusMeta(status);
+  const Icon = m.icon;
   return (
-    <span className={cn("flex items-center gap-1.5 text-xs font-medium", style!.text)}>
-      <span className={cn("h-1.5 w-1.5 rounded-full", style!.dot)} />
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+    <span className={cn("flex items-center gap-1.5 text-xs font-medium", m.textClass)}>
+      {showIcon ? (
+        <Icon className={cn("size-3", m.pulse && "animate-pulse")} />
+      ) : (
+        <span className={cn("h-1.5 w-1.5 rounded-full", m.dotClass, m.pulse && "animate-pulse")} />
+      )}
+      {m.label}
     </span>
   );
 }
