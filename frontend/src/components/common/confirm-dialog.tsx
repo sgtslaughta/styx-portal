@@ -17,13 +17,15 @@ interface ConfirmDialogProps {
   variant?: "default" | "destructive";
   /** When set, the user must type this exact string to enable the confirm button. */
   confirmPhrase?: string;
+  /** Optional extra content (e.g. opt-in checkboxes) rendered above the footer. */
+  extra?: React.ReactNode;
   onConfirm: () => void;
 }
 
 export function ConfirmDialog({
   open, onOpenChange, title, description,
   confirmLabel = "Confirm", cancelLabel = "Cancel",
-  variant = "default", confirmPhrase, onConfirm,
+  variant = "default", confirmPhrase, extra, onConfirm,
 }: ConfirmDialogProps) {
   const [typed, setTyped] = React.useState("");
 
@@ -62,6 +64,8 @@ export function ConfirmDialog({
             />
           </div>
         )}
+
+        {extra}
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>{cancelLabel}</Button>

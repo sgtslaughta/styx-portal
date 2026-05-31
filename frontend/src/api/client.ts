@@ -41,8 +41,16 @@ export const api = {
     request<Instance>(`/instances/${id}/unpause`, { method: "POST" }),
   updateInstance: (id: string, data: { name?: string; env_overrides?: Record<string, string>; session_config?: Record<string, unknown> }) =>
     request<Instance>(`/instances/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  deleteInstance: (id: string, removeVolumes = false) =>
-    request<void>(`/instances/${id}?remove_volumes=${removeVolumes}`, { method: "DELETE" }),
+  deleteInstance: (
+    id: string,
+    removeVolumes = false,
+    removeImage = false,
+    removeTemplate = false,
+  ) =>
+    request<void>(
+      `/instances/${id}?remove_volumes=${removeVolumes}&remove_image=${removeImage}&remove_template=${removeTemplate}`,
+      { method: "DELETE" },
+    ),
   getInstanceStatus: (id: string) =>
     request<InstanceStatus>(`/instances/${id}/status`),
   keepalive: (id: string) =>

@@ -1,4 +1,3 @@
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -163,3 +162,61 @@ async def test_recreate_instance(client, template_id, session):
     data = resp.json()
     assert data["status"] == "running"
     assert len(data["volume_names"]) == expected_volume_count
+
+
+async def _img_present(client, image):
+    resp = await client.get("/api/images")
+    return any(i["image"] == image for i in resp.json())
+
+
+async def _template_present(client, tid):
+    resp = await client.get("/api/templates")
+    return any(t["id"] == tid for t in resp.json())
+
+
+@pytest.mark.asyncio
+async def test_delete_keeps_image_and_template_by_default(client, session, template_id):
+    from app.models import PulledImage
+
+    r = await client.post(
+        "/api/instances",
+        json={"template_id": template_id, "name": "k", "subdomain": "k"},
+    )
+    iid = r.json()["id"]
+    session.add(PulledImage(image="test:latest"))
+    await session.commit()
+
+    resp = await client.delete(f"/api/instances/{iid}")
+    assert resp.status_code == 204
+    assert await _img_present(client, "test:latest"), "image must be kept unless remove_image=true"
+    assert await _template_present(client, template_id), "template must be kept by default"
+
+
+@pytest.mark.asyncio
+async def test_delete_removes_image_when_requested(client, session, template_id):
+    from app.models import PulledImage
+
+    r = await client.post(
+        "/api/instances",
+        json={"template_id": template_id, "name": "i", "subdomain": "i"},
+    )
+    iid = r.json()["id"]
+    session.add(PulledImage(image="test:latest"))
+    await session.commit()
+
+    resp = await client.delete(f"/api/instances/{iid}?remove_image=true")
+    assert resp.status_code == 204
+    assert not await _img_present(client, "test:latest"), "image must be pruned when remove_image=true"
+
+
+@pytest.mark.asyncio
+async def test_delete_removes_template_when_requested(client, template_id):
+    r = await client.post(
+        "/api/instances",
+        json={"template_id": template_id, "name": "t", "subdomain": "t"},
+    )
+    iid = r.json()["id"]
+
+    resp = await client.delete(f"/api/instances/{iid}?remove_template=true")
+    assert resp.status_code == 204
+    assert not await _template_present(client, template_id), "template must be deleted when remove_template=true"

@@ -29,6 +29,16 @@ export function ActionBar({ instance, size = "default", showConnect = true, clas
   const unpause = useUnpauseInstance();
   const destroy = useDeleteInstance();
   const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const [removeImage, setRemoveImage] = React.useState(false);
+  const [removeTemplate, setRemoveTemplate] = React.useState(false);
+
+  // Reset the opt-in checkboxes whenever the dialog closes.
+  React.useEffect(() => {
+    if (!confirmOpen) {
+      setRemoveImage(false);
+      setRemoveTemplate(false);
+    }
+  }, [confirmOpen]);
 
   const { group, label } = statusMeta(instance.status);
   const btn = size === "sm" ? "sm" : "default";
@@ -39,7 +49,7 @@ export function ActionBar({ instance, size = "default", showConnect = true, clas
 
   function doDestroy() {
     destroy.mutate(
-      { id: instance.id, removeVolumes: false },
+      { id: instance.id, removeVolumes: false, removeImage, removeTemplate },
       {
         onError: (e: Error) => toast.error(`Destroy failed: ${e.message}`),
         onSuccess: () => toast.success(`Destroyed ${instance.name}`),
@@ -113,6 +123,28 @@ export function ActionBar({ instance, size = "default", showConnect = true, clas
         confirmLabel="Destroy"
         variant="destructive"
         confirmPhrase={instance.name}
+        extra={
+          <div className="space-y-2 rounded-md border border-border p-2.5">
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={removeImage}
+                onChange={(e) => setRemoveImage(e.target.checked)}
+                className="accent-destructive"
+              />
+              Also remove the container image (only if no other instance uses it)
+            </label>
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={removeTemplate}
+                onChange={(e) => setRemoveTemplate(e.target.checked)}
+                className="accent-destructive"
+              />
+              Also delete the template (only if no other instance uses it)
+            </label>
+          </div>
+        }
         onConfirm={doDestroy}
       />
     </div>

@@ -425,6 +425,8 @@ async def unpause_instance(
 async def delete_instance(
     instance_id: str,
     remove_volumes: bool = Query(False),
+    remove_image: bool = Query(False),
+    remove_template: bool = Query(False),
     session: AsyncSession = Depends(get_session),
     docker: DockerManager = Depends(get_docker_manager),
 ):
@@ -441,17 +443,18 @@ async def delete_instance(
         for vol_name in instance.volume_names:
             await asyncio.to_thread(docker.remove_volume, vol_name)
 
-    # Get template image before deleting
+    # Capture template/image before deleting the instance row.
     template = await session.get(ServiceTemplate, instance.template_id)
     image_tag = template.image if template else None
+    template_id = instance.template_id
 
     event = SessionEvent(instance_id=instance.id, event_type="destroyed")
     session.add(event)
     await session.delete(instance)
     await session.commit()
 
-    # Auto-cleanup image if last instance using it
-    if image_tag:
+    # Opt-in image prune — only when requested AND no other instance uses the image.
+    if remove_image and image_tag:
         remaining = await session.exec(
             select(Instance).join(
                 ServiceTemplate, Instance.template_id == ServiceTemplate.id
@@ -469,6 +472,15 @@ async def delete_instance(
                     pass
                 await session.delete(pulled)
                 await session.commit()
+
+    # Opt-in template delete — only when requested AND no other instance uses it.
+    if remove_template and template is not None:
+        remaining_t = await session.exec(
+            select(Instance).where(Instance.template_id == template_id)
+        )
+        if not remaining_t.first():
+            await session.delete(template)
+            await session.commit()
 
     await _refresh_routes(session)
     return Response(status_code=204)

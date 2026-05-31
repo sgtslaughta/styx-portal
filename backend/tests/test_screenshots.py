@@ -7,7 +7,7 @@ from app.services.screenshot import ScreenshotService
 
 def test_screenshot_cache_dir_created():
     with tempfile.TemporaryDirectory() as tmpdir:
-        svc = ScreenshotService(cache_dir=tmpdir, docker_manager=MagicMock())
+        ScreenshotService(cache_dir=tmpdir, docker_manager=MagicMock())
         assert Path(tmpdir).is_dir()
 
 
