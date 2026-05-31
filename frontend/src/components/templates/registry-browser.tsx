@@ -1,9 +1,9 @@
 import { useState, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Search, Star, Download, ExternalLink, Maximize2, Minimize2 } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { Star, Download, ExternalLink, Maximize2, Minimize2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SearchSortBar } from "@/components/common/search-sort-bar";
 import { useRegistryImages } from "@/hooks/use-registry";
 import type { RegistryImage } from "@/lib/types";
 
@@ -23,18 +23,16 @@ export function RegistryBrowser({ onImport }: RegistryBrowserProps) {
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Search images..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
-        </div>
-        <div className="flex gap-1 flex-wrap">
-          {CATEGORIES.map((cat) => (
-            <Button key={cat} variant={category === cat ? "default" : "ghost"} size="sm" onClick={() => setCategory(cat)} className="text-xs">
-              {cat}
-            </Button>
-          ))}
-        </div>
+      <div className="mb-4">
+        <SearchSortBar query={search} onQueryChange={setSearch} placeholder="Search images…">
+          <div className="flex flex-wrap gap-1">
+            {CATEGORIES.map((cat) => (
+              <Button key={cat} variant={category === cat ? "default" : "ghost"} size="sm" onClick={() => setCategory(cat)} className="text-xs">
+                {cat}
+              </Button>
+            ))}
+          </div>
+        </SearchSortBar>
       </div>
 
       {isLoading && (
