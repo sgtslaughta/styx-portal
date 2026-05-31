@@ -15,9 +15,9 @@ function EventRow({ event }: { event: { type: string; instance: string; time: st
   const typeColors: Record<string, string> = {
     started: "text-emerald-400",
     stopped: "text-muted-foreground",
-    error: "text-red-400",
+    error: "text-destructive",
     restarted: "text-blue-400",
-    paused: "text-amber-400",
+    paused: "text-warning",
     created: "text-purple-400",
   };
 
