@@ -211,10 +211,10 @@ To:
 
 (Leave `CursorThemeName`, `CursorSize`, the `Gtk` font block, and the `Xft` block unchanged.)
 
-- [ ] **Step 2: Validate the XML**
+- [ ] **Step 2: Validate the XML is well-formed**
 
-Run: `python3 -c "import xml.dom.minidom,sys; xml.dom.minidom.parse('images/desktop/root/defaults/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml'); print('XML OK')"`
-Expected: prints `XML OK`.
+Run: `xmllint --noout images/desktop/root/defaults/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml && echo "XML OK"`
+Expected: prints `XML OK` (non-zero exit if malformed). `xmllint` ships with libxml2 and does no entity expansion here. If `xmllint` is absent, `grep -c '<property' <file>` returning a positive count is a sufficient sanity check.
 
 - [ ] **Step 3: Confirm new values present**
 
