@@ -38,5 +38,18 @@ fi
 # Remove saved display config — Pixelflux creates modes dynamically per-client
 rm -f /config/.config/xfce4/xfconf/xfce-perchannel-xml/displays.xml
 
-# Launch full XFCE session via official Wayland method
-exec startxfce4 --wayland
+# Launch labwc as the nesting Wayland compositor + window manager. labwc connects
+# to Pixelflux's parent socket (WAYLAND_DISPLAY=wayland-1 in /config/.XDG) as a
+# Wayland client, so Pixelflux captures it. The stock `startxfce4 --wayland` path
+# uses `wlheadless-run -c labwc`, which would create a SEPARATE headless display
+# Pixelflux can't see — we launch labwc directly to nest instead. labwc then runs
+# xfce4-session (panel, xfdesktop, settings daemon) and provides WM + cursor.
+export XDG_SESSION_TYPE=wayland
+export XDG_CURRENT_DESKTOP=XFCE
+# Force GTK apps onto Xwayland (X11). XFCE has no working native-Wayland GTK
+# backend yet; with WAYLAND_DISPLAY set, GTK would auto-pick Wayland and
+# xfce4-panel crashes ("cannot open display"), which xfce4-session then respawns
+# in a tight loop. GDK_BACKEND=x11 routes XFCE + apps through the Xwayland server
+# labwc provides (DISPLAY=:1). labwc itself is wlroots, unaffected by this.
+export GDK_BACKEND=x11
+exec labwc -s xfce4-session

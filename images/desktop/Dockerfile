@@ -23,6 +23,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xfce4-notifyd \
     dbus-x11 \
     at-spi2-core \
+    labwc \
     && rm -rf /var/lib/apt/lists/*
 
 # ─── Browsers (deb packages, not snap) ───────────────────────────────────────
@@ -118,8 +119,9 @@ COPY root/defaults/.zshrc /defaults/.zshrc
 # ─── Desktop Startup Override ────────────────────────────────────────────────
 COPY root/defaults/startwm.sh /defaults/startwm.sh
 COPY root/defaults/startwm_wayland.sh /defaults/startwm_wayland.sh
+COPY root/defaults/xfce-session.sh /defaults/xfce-session.sh
 COPY root/defaults/autostart /defaults/autostart
-RUN chmod +x /defaults/startwm.sh /defaults/startwm_wayland.sh /defaults/autostart
+RUN chmod +x /defaults/startwm.sh /defaults/startwm_wayland.sh /defaults/xfce-session.sh /defaults/autostart
 
 # ─── XFCE Default Config ────────────────────────────────────────────────────
 COPY root/defaults/xfce4/ /defaults/xfce4/
