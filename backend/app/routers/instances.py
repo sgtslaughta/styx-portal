@@ -632,6 +632,30 @@ async def get_screenshot(
     return FileResponse(path, media_type="image/png")
 
 
+@router.post("/{instance_id}/screenshot/refresh")
+async def refresh_screenshot(
+    instance_id: str,
+    session: AsyncSession = Depends(get_session),
+    screenshots: ScreenshotService = Depends(get_screenshot_service),
+):
+    """Capture a fresh screenshot on demand (via the Selkies #shared view-only
+    mirror — never steals the session). Returns {"ok": bool}."""
+    instance = await session.get(Instance, instance_id)
+    if not instance:
+        raise HTTPException(404, "Instance not found")
+    if instance.status not in ("running", "idle") or not instance.container_id:
+        return {"ok": False, "reason": "not running"}
+
+    tmpl = await session.get(ServiceTemplate, instance.template_id)
+    port = tmpl.internal_port if tmpl else 3001
+    protocol = tmpl.internal_protocol if tmpl else "https"
+    try:
+        ok = await screenshots.capture(instance.id, instance.container_id, port, protocol)
+    finally:
+        await screenshots.close()
+    return {"ok": ok}
+
+
 @router.get("/{instance_id}/events")
 async def get_instance_events(
     instance_id: str,

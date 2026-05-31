@@ -26,6 +26,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   listInstances: () => request<Instance[]>("/instances"),
   screenshotUrl: (id: string) => `${BASE}/instances/${id}/screenshot`,
+  refreshScreenshot: (id: string) =>
+    request<{ ok: boolean }>(`/instances/${id}/screenshot/refresh`, { method: "POST" }),
   createInstance: (data: InstanceCreate) =>
     request<Instance>("/instances", { method: "POST", body: JSON.stringify(data) }),
   startInstance: (id: string) =>

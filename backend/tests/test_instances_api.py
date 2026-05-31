@@ -1,5 +1,11 @@
 
+from unittest.mock import AsyncMock
+
 import pytest
+
+from app.main import app
+from app.models import Instance
+from app.routers.instances import get_screenshot_service
 
 
 TEMPLATE_PAYLOAD = {
@@ -220,3 +226,49 @@ async def test_delete_removes_template_when_requested(client, template_id):
     resp = await client.delete(f"/api/instances/{iid}?remove_template=true")
     assert resp.status_code == 204
     assert not await _template_present(client, template_id), "template must be deleted when remove_template=true"
+
+
+@pytest.mark.asyncio
+async def test_refresh_screenshot_not_found(client):
+    resp = await client.post("/api/instances/nope/screenshot/refresh")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_refresh_screenshot_not_running(client, template_id):
+    r = await client.post(
+        "/api/instances",
+        json={"template_id": template_id, "name": "i", "subdomain": "ref1"},
+    )
+    iid = r.json()["id"]  # status "starting", no container
+
+    resp = await client.post(f"/api/instances/{iid}/screenshot/refresh")
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": False, "reason": "not running"}
+
+
+@pytest.mark.asyncio
+async def test_refresh_screenshot_captures(client, session, template_id):
+    r = await client.post(
+        "/api/instances",
+        json={"template_id": template_id, "name": "i2", "subdomain": "ref2"},
+    )
+    iid = r.json()["id"]
+    inst = await session.get(Instance, iid)
+    inst.status = "running"
+    inst.container_id = "cid-1"
+    session.add(inst)
+    await session.commit()
+
+    svc = AsyncMock()
+    svc.capture.return_value = True
+    app.dependency_overrides[get_screenshot_service] = lambda: svc
+    try:
+        resp = await client.post(f"/api/instances/{iid}/screenshot/refresh")
+    finally:
+        app.dependency_overrides.pop(get_screenshot_service, None)
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    svc.capture.assert_awaited_once()
+    svc.close.assert_awaited_once()

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { RotateCw } from "lucide-react";
 import { api } from "@/api/client";
 
 interface InstanceThumbnailProps {
@@ -20,6 +21,7 @@ const REFRESH_MS = 30000;
 export function InstanceThumbnail({ instanceId, icon, isLive, fill }: InstanceThumbnailProps) {
   const [tick, setTick] = useState(0);
   const [shotOk, setShotOk] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (!isLive) {
@@ -29,6 +31,19 @@ export function InstanceThumbnail({ instanceId, icon, isLive, fill }: InstanceTh
     const t = setInterval(() => setTick((n) => n + 1), REFRESH_MS);
     return () => clearInterval(t);
   }, [isLive]);
+
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await api.refreshScreenshot(instanceId);
+      setTick((n) => n + 1); // re-fetch the freshly captured frame
+    } catch {
+      // ignore — the existing image stays
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const iconContent = icon?.startsWith("http") ? (
     <img src={icon} alt="" className="w-20 h-20 object-contain opacity-60" draggable={false} />
@@ -50,6 +65,18 @@ export function InstanceThumbnail({ instanceId, icon, isLive, fill }: InstanceTh
           onLoad={() => setShotOk(true)}
           onError={() => setShotOk(false)}
         />
+      )}
+      {isLive && (
+        <button
+          type="button"
+          onClick={handleRefresh}
+          disabled={refreshing}
+          title="Refresh preview"
+          aria-label="Refresh preview"
+          className="absolute top-2 right-2 rounded-md bg-black/50 p-1.5 text-white/90 backdrop-blur-sm transition hover:bg-black/70 disabled:opacity-50"
+        >
+          <RotateCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+        </button>
       )}
     </div>
   );
