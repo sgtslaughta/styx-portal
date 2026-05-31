@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <channel name="xsettings" version="1.0">
   <property name="Net" type="empty">
-    <property name="ThemeName" type="string" value="Adwaita-dark"/>
-    <property name="IconThemeName" type="string" value="Adwaita"/>
+    <property name="ThemeName" type="string" value="Yaru-dark"/>
+    <property name="IconThemeName" type="string" value="Yaru-dark"/>
     <property name="CursorThemeName" type="string" value="breeze_cursors"/>
     <property name="CursorSize" type="int" value="24"/>
   </property>
