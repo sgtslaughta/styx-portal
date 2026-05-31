@@ -12,6 +12,7 @@ import {
 } from "@/hooks/use-instances";
 import { useSessionEvents } from "@/hooks/use-system";
 import { StatusBadge } from "@/components/instances/status-badge";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { formatDuration } from "@/lib/utils";
 import {
   Play,
@@ -32,6 +33,7 @@ export function MetricsSessions() {
   const { data: instances } = useInstances();
   const [filter, setFilter] = useState<string>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [destroyTarget, setDestroyTarget] = useState<Instance | null>(null);
 
   const filtered = instances?.filter((inst) => {
     if (filter === "all") return true;
@@ -91,12 +93,57 @@ export function MetricsSessions() {
                 instance={inst}
                 expanded={expandedId === inst.id}
                 onToggle={() => setExpandedId(expandedId === inst.id ? null : inst.id)}
+                onDestroyClick={(inst) => setDestroyTarget(inst)}
               />
             ))
           )}
         </div>
       </div>
+
+      {/* Destroy confirmation dialog */}
+      {destroyTarget && (
+        <DestroyDialog
+          instance={destroyTarget}
+          onOpenChange={(open) => !open && setDestroyTarget(null)}
+          onConfirm={() => setDestroyTarget(null)}
+        />
+      )}
     </div>
+  );
+}
+
+function DestroyDialog({
+  instance,
+  onOpenChange,
+  onConfirm,
+}: {
+  instance: Instance;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+}) {
+  const destroy = useDeleteInstance();
+
+  function handleDestroy() {
+    destroy.mutate({ id: instance.id, removeVolumes: false }, {
+      onSuccess: () => {
+        toast.success(`Destroyed "${instance.name}"`);
+        onConfirm();
+      },
+      onError: (e) => toast.error(e.message),
+    });
+  }
+
+  return (
+    <ConfirmDialog
+      open={true}
+      onOpenChange={onOpenChange}
+      title="Destroy Instance"
+      description={`This action cannot be undone. All data in this instance will be lost.`}
+      confirmPhrase={instance.name}
+      variant="destructive"
+      confirmLabel="Destroy"
+      onConfirm={handleDestroy}
+    />
   );
 }
 
@@ -104,10 +151,12 @@ function SessionRow({
   instance,
   expanded,
   onToggle,
+  onDestroyClick,
 }: {
   instance: Instance;
   expanded: boolean;
   onToggle: () => void;
+  onDestroyClick: (inst: Instance) => void;
 }) {
   const start = useStartInstance();
   const stop = useStopInstance();
@@ -147,7 +196,7 @@ function SessionRow({
         <span className="text-xs text-muted-foreground tabular-nums">
           {uptimeSeconds != null ? formatDuration(uptimeSeconds) : "—"}
         </span>
-        <span className={cn("text-xs tabular-nums", idleSeconds && idleSeconds > 300 ? "text-amber-400" : "text-muted-foreground")}>
+        <span className={cn("text-xs tabular-nums", idleSeconds && idleSeconds > 300 ? "text-warning" : "text-muted-foreground")}>
           {idleSeconds != null ? formatDuration(idleSeconds) : "—"}
         </span>
         <div className="flex gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
@@ -155,23 +204,20 @@ function SessionRow({
             <>
               <ActionBtn icon={ExternalLink} color="emerald" title="Connect" onClick={() => window.open(`/i/${instance.subdomain}/`, "_blank")} />
               <ActionBtn icon={RotateCcw} color="blue" title="Restart" onClick={() => restart.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />
-              <ActionBtn icon={Pause} color="amber" title="Pause" onClick={() => pause.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />
-              <ActionBtn icon={Square} color="red" title="Stop" onClick={() => stop.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />
+              <ActionBtn icon={Pause} color="warning" title="Pause" onClick={() => pause.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />
+              <ActionBtn icon={Square} color="destructive" title="Stop" onClick={() => stop.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />
             </>
           )}
           {isPaused && (
             <>
               <ActionBtn icon={Play} color="emerald" title="Resume" onClick={() => unpause.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />
-              <ActionBtn icon={Square} color="red" title="Stop" onClick={() => stop.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />
+              <ActionBtn icon={Square} color="destructive" title="Stop" onClick={() => stop.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />
             </>
           )}
           {!isRunning && !isPaused && (
             <>
               <ActionBtn icon={Play} color="emerald" title="Start" onClick={() => start.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />
-              <ActionBtn icon={Trash2} color="red" title="Destroy" onClick={() => {
-                if (confirm(`Destroy "${instance.name}"?`))
-                  destroy.mutate({ id: instance.id, removeVolumes: false }, { onError: (e) => toast.error(e.message) });
-              }} />
+              <ActionBtn icon={Trash2} color="destructive" title="Destroy" onClick={() => onDestroyClick(instance)} />
             </>
           )}
         </div>
@@ -189,7 +235,7 @@ function SessionRow({
           >
             <div className="px-4 pb-3 pt-1 ml-7">
               {instance.error_message && (
-                <div className="mb-2 rounded-md bg-red-500/10 border border-red-500/20 px-3 py-2 text-[11px] text-red-300">
+                <div className="mb-2 rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2 text-[11px] text-destructive/80">
                   {instance.error_message}
                 </div>
               )}
@@ -202,7 +248,7 @@ function SessionRow({
                       <span className="text-muted-foreground/60 tabular-nums w-20">{ev.time}</span>
                       <span className={cn(
                         "font-medium",
-                        ev.type === "error" ? "text-red-400" :
+                        ev.type === "error" ? "text-destructive" :
                         ev.type === "started" ? "text-emerald-400" :
                         ev.type === "stopped" ? "text-muted-foreground" :
                         "text-blue-400"
@@ -229,15 +275,15 @@ function ActionBtn({
   onClick,
 }: {
   icon: React.ElementType;
-  color: "emerald" | "blue" | "amber" | "red";
+  color: "emerald" | "blue" | "warning" | "destructive";
   title: string;
   onClick: () => void;
 }) {
   const colors = {
     emerald: "text-emerald-400 hover:bg-emerald-500/15",
     blue: "text-blue-400 hover:bg-blue-500/15",
-    amber: "text-amber-400 hover:bg-amber-500/15",
-    red: "text-red-400 hover:bg-red-500/15",
+    warning: "text-warning hover:bg-warning/15",
+    destructive: "text-destructive hover:bg-destructive/15",
   };
   return (
     <button
