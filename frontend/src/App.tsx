@@ -24,8 +24,11 @@ export default function App() {
     const sp = new URLSearchParams(window.location.search);
     const stopped = sp.get("stopped");
     if (stopped) {
-      toast.error(`Instance "${stopped}" is stopped`);
       window.history.replaceState({}, "", window.location.pathname);
+      // Defer so the toast fires after sonner's <Toaster> has mounted/subscribed
+      // (this effect runs before the Toaster's subscribe effect, so an immediate
+      // toast on mount is dropped).
+      setTimeout(() => toast.error(`Instance "${stopped}" is stopped`), 0);
     }
   }, []);
 
