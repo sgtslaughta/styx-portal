@@ -42,6 +42,14 @@ export function useRestartInstance() {
   });
 }
 
+export function useRecreateInstance() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.recreateInstance(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["instances"] }),
+  });
+}
+
 export function usePauseInstance() {
   const qc = useQueryClient();
   return useMutation({

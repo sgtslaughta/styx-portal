@@ -33,6 +33,8 @@ export const api = {
     request<Instance>(`/instances/${id}/stop`, { method: "POST" }),
   restartInstance: (id: string) =>
     request<Instance>(`/instances/${id}/restart`, { method: "POST" }),
+  recreateInstance: (id: string) =>
+    request<Instance>(`/instances/${id}/recreate`, { method: "POST" }),
   pauseInstance: (id: string) =>
     request<Instance>(`/instances/${id}/pause`, { method: "POST" }),
   unpauseInstance: (id: string) =>
