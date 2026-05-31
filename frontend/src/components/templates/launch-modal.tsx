@@ -3,18 +3,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EnvEditor } from "./env-editor";
+import { GpuIndicator } from "./launch-gpu-indicator";
 import { useCreateTemplate, useUpdateTemplate } from "@/hooks/use-templates";
 import { useCreateInstance } from "@/hooks/use-instances";
 import { useGpuInfo } from "@/hooks/use-gpu";
 import { slugify } from "@/lib/utils";
 import { api } from "@/api/client";
 import { toast } from "sonner";
-import { Plus, Trash2, Gpu, Shield, HardDrive, Network, Settings2, Info, ExternalLink, Monitor } from "lucide-react";
+import { Plus, Trash2, Shield, HardDrive, Network, Settings2, Info, ExternalLink, Monitor } from "lucide-react";
 import { SELKIES_DEFAULTS, SELKIES_GROUPS } from "@/lib/selkies-defaults";
 import type { RegistryImage, ServiceTemplate } from "@/lib/types";
 
@@ -358,70 +358,6 @@ export function LaunchModal({ open, onClose, registryImage, template }: LaunchMo
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function GpuIndicator({ gpuInfo, gpuEnabled, setGpuEnabled, gpuDevices, setGpuDevices }: {
-  gpuInfo: { available: boolean; type: string | null; devices: string[] } | undefined;
-  gpuEnabled: boolean;
-  setGpuEnabled: (v: boolean) => void;
-  gpuDevices: string[];
-  setGpuDevices: (v: string[]) => void;
-}) {
-  const [showDevices, setShowDevices] = useState(false);
-  const allDevices = gpuInfo?.devices ?? [];
-
-  function toggleDevice(dev: string) {
-    setGpuDevices(gpuDevices.includes(dev) ? gpuDevices.filter(d => d !== dev) : [...gpuDevices, dev]);
-  }
-
-  return (
-    <div className="rounded-lg border border-border p-3 space-y-2">
-      <div className="flex items-center gap-4">
-        <Gpu className="h-5 w-5 text-muted-foreground" />
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">GPU Passthrough</span>
-            {gpuInfo?.available ? (
-              <Badge variant="outline" className="text-[10px] text-green-600 border-green-600/30">
-                {gpuInfo.type?.toUpperCase()} detected
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="text-[10px] text-yellow-600 border-yellow-600/30">
-                No GPU detected
-              </Badge>
-            )}
-          </div>
-          {gpuEnabled && gpuDevices.length === 0 && (
-            <p className="text-[10px] text-muted-foreground mt-0.5">AUTO mode — all devices passed through</p>
-          )}
-          {gpuEnabled && gpuDevices.length > 0 && (
-            <p className="text-[10px] text-muted-foreground mt-0.5">Manual: {gpuDevices.join(", ")}</p>
-          )}
-        </div>
-        <Switch checked={gpuEnabled} onCheckedChange={setGpuEnabled} />
-      </div>
-      {gpuEnabled && allDevices.length > 0 && (
-        <>
-          <button onClick={() => setShowDevices(!showDevices)} className="text-[10px] text-primary hover:underline">
-            {showDevices ? "▾ Hide device selection" : "▸ Override specific devices (default: auto)"}
-          </button>
-          {showDevices && (
-            <div className="space-y-1 pl-9">
-              {allDevices.map(dev => (
-                <label key={dev} className="flex items-center gap-2 text-xs cursor-pointer">
-                  <input type="checkbox" checked={gpuDevices.includes(dev)} onChange={() => toggleDevice(dev)} className="rounded" />
-                  <code className="text-[10px]">{dev}</code>
-                </label>
-              ))}
-              {gpuDevices.length > 0 && (
-                <button onClick={() => setGpuDevices([])} className="text-[10px] text-muted-foreground hover:text-foreground">Reset to AUTO</button>
-              )}
-            </div>
-          )}
-        </>
-      )}
-    </div>
   );
 }
 
