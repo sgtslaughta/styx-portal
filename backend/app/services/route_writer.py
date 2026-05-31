@@ -6,16 +6,25 @@ from app.config import Settings
 _settings = Settings()
 
 
-def write_routes(instances: list[dict], domain: str | None = None):
-    """Write Traefik dynamic config with routes for all services + running instances."""
-    domain = domain or _settings.DOMAIN
-    out_dir = Path(_settings.TRAEFIK_DYNAMIC_DIR)
-    try:
-        out_dir.mkdir(parents=True, exist_ok=True)
-    except PermissionError:
-        return
+def build_routes_config(instances: list[dict], domain: str) -> dict:
+    """Build the Traefik dynamic config dict for all services + running instances.
 
-    middlewares: dict = {}
+    Always emits the static `unavailable-rewrite` / `instance-unavailable-errors`
+    middlewares and the low-priority `instances_fallback` router so stopped /
+    unknown `/i/` requests get redirected to the My Instances page.
+    """
+    middlewares: dict = {
+        "unavailable-rewrite": {
+            "replacePath": {"path": "/api/instance-unavailable"}
+        },
+        "instance-unavailable-errors": {
+            "errors": {
+                "status": ["500-599"],
+                "service": "api",
+                "query": "/api/instance-unavailable",
+            }
+        },
+    }
     config: dict = {
         "http": {
             "routers": {
@@ -35,6 +44,13 @@ def write_routes(instances: list[dict], domain: str | None = None):
                     "rule": f"Host(`traefik.{domain}`)",
                     "entryPoints": ["web"],
                     "service": "api@internal",
+                },
+                "instances_fallback": {
+                    "rule": f"Host(`{domain}`) && PathPrefix(`/i/`)",
+                    "entryPoints": ["web"],
+                    "middlewares": ["unavailable-rewrite"],
+                    "service": "api",
+                    "priority": 10,
                 },
             },
             "services": {
@@ -57,14 +73,12 @@ def write_routes(instances: list[dict], domain: str | None = None):
         container_name = f"selkies-{subdomain}"
 
         strip_mw = f"strip-{subdomain}"
-        middlewares[strip_mw] = {
-            "stripPrefix": {"prefixes": [f"/i/{subdomain}"]}
-        }
+        middlewares[strip_mw] = {"stripPrefix": {"prefixes": [f"/i/{subdomain}"]}}
 
         config["http"]["routers"][inst_id] = {
             "rule": f"Host(`{domain}`) && PathPrefix(`/i/{subdomain}`)",
             "entryPoints": ["web"],
-            "middlewares": [strip_mw],
+            "middlewares": ["instance-unavailable-errors", strip_mw],
             "service": inst_id,
             "priority": 50,
         }
@@ -76,12 +90,42 @@ def write_routes(instances: list[dict], domain: str | None = None):
             has_https = True
         config["http"]["services"][inst_id] = {"loadBalancer": svc_config}
 
-    if middlewares:
-        config["http"]["middlewares"] = middlewares
+    config["http"]["middlewares"] = middlewares
     if has_https:
         config["http"]["serversTransports"] = {
             "selkies-transport": {"insecureSkipVerify": True}
         }
+    return config
 
-    out_file = out_dir / "routes.yml"
-    out_file.write_text(yaml.dump(config, default_flow_style=False))
+
+def write_routes(instances: list[dict], domain: str | None = None):
+    """Render the Traefik dynamic config to the file provider directory."""
+    domain = domain or _settings.DOMAIN
+    out_dir = Path(_settings.TRAEFIK_DYNAMIC_DIR)
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        return
+    config = build_routes_config(instances, domain)
+    (out_dir / "routes.yml").write_text(yaml.dump(config, default_flow_style=False))
+
+
+async def refresh_routes_from_db(session):
+    """Query running/idle instances and (re)write the Traefik routes file."""
+    from sqlmodel import select
+    from app.models import Instance, ServiceTemplate
+
+    result = await session.exec(
+        select(Instance).where(Instance.status.in_(["running", "idle"]))
+    )
+    running = result.all()
+    data = []
+    for i in running:
+        tmpl = await session.get(ServiceTemplate, i.template_id)
+        data.append({
+            "id": i.id,
+            "subdomain": i.subdomain,
+            "port": tmpl.internal_port if tmpl else 3001,
+            "protocol": tmpl.internal_protocol if tmpl else "https",
+        })
+    write_routes(data)
