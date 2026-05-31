@@ -75,6 +75,35 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     && rm -rf /var/lib/apt/lists/*
 
+# ─── Node.js 22 + npm (NodeSource deb, not snap) ─────────────────────────────
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+# ─── VSCode (Microsoft apt repo, deb) ────────────────────────────────────────
+RUN curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft.gpg && \
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/code stable main" > /etc/apt/sources.list.d/vscode.list && \
+    apt-get update && apt-get install -y --no-install-recommends code && \
+    rm -rf /var/lib/apt/lists/*
+
+# ─── CLI utils + Yaru dark theme ─────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nano \
+    btop \
+    yaru-theme-gtk \
+    yaru-theme-icon \
+    && rm -rf /var/lib/apt/lists/*
+
+# ─── PyCharm Community (JetBrains tarball, bundles JBR runtime) ───────────────
+RUN set -eux; \
+    url="$(curl -fsSL 'https://data.services.jetbrains.com/products/releases?code=PCC&latest=true&type=release' | jq -r '.PCC[0].downloads.linux.link')"; \
+    curl -fsSL "$url" -o /tmp/pycharm.tar.gz; \
+    mkdir -p /opt/pycharm; \
+    tar -xzf /tmp/pycharm.tar.gz -C /opt/pycharm --strip-components=1; \
+    rm /tmp/pycharm.tar.gz; \
+    ln -sf /opt/pycharm/bin/pycharm.sh /usr/local/bin/pycharm
+COPY root/defaults/applications/pycharm.desktop /usr/share/applications/pycharm.desktop
+
 # ─── UV (Python package manager) ────────────────────────────────────────────
 RUN curl -LsSf https://astral.sh/uv/install.sh | env HOME=/root sh \
     && mv /root/.local/bin/uv /usr/local/bin/uv \
