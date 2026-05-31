@@ -30,6 +30,28 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xdg-desktop-portal-gnome \
     && rm -rf /var/lib/apt/lists/*
 
+# ─── Ubuntu look: Yaru theme + dock + appindicator ───────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    yaru-theme-gtk \
+    yaru-theme-icon \
+    yaru-theme-sound \
+    yaru-theme-gnome-shell \
+    gnome-shell-extension-ubuntu-dock \
+    gnome-shell-extension-appindicator \
+    ubuntu-wallpapers \
+    fonts-ubuntu \
+    && rm -rf /var/lib/apt/lists/*
+
+# ─── Firefox (deb, not snap) — Mozilla PPA, pinned over transition package ────
+RUN apt-get update && apt-get install -y --no-install-recommends software-properties-common && \
+    add-apt-repository -y ppa:mozillateam/ppa && \
+    printf 'Package: *\nPin: release o=LP-PPA-mozillateam\nPin-Priority: 1001\n' > /etc/apt/preferences.d/mozilla-firefox && \
+    apt-get update && apt-get install -y --no-install-recommends firefox && \
+    rm -rf /var/lib/apt/lists/*
+
+# ─── Default dconf settings (theme, dock, extensions) ────────────────────────
+COPY root/defaults/dconf/ /defaults/dconf/
+
 # ─── Desktop Startup Override ────────────────────────────────────────────────
 COPY root/defaults/startwm_wayland.sh /defaults/startwm_wayland.sh
 RUN chmod +x /defaults/startwm_wayland.sh
