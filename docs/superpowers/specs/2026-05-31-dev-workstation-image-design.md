@@ -96,11 +96,11 @@ StartupWMClass=jetbrains-pycharm-ce
 Change `Net/ThemeName` `Adwaita-dark` → `Yaru-dark`, `Net/IconThemeName` `Adwaita` → `Yaru-dark`. Seeded into `/config/.config/xfce4` on first run by the existing startup-script copy.
 
 ### Templates: repoint `dev-desktop.json`, delete `xfce-desktop.json`
-Current reality: `images/desktop/` builds `selkies-desktop:latest`; **`xfce-desktop.json`** points at it, while **`dev-desktop.json`** points at the raw `baseimage-selkies:debiantrixie` (no custom build → no dev tools). Decision: **rename + repoint** —
-- Repoint `dev-desktop.json` → `image: selkies-desktop:latest`; make it the single dev-workstation template (description/tags: VSCode, PyCharm, Node, Python, btop, nano, Yaru-dark; `internal_port` 3000; `gpu_enabled` per workstation needs).
-- **Delete `xfce-desktop.json`** (now redundant — same built image). One clean dev template, no duplicate pointing at the same image.
+Current reality: `images/desktop/` builds `selkies-desktop:latest`; **`xfce-desktop.json`** points at it, while **`dev-desktop.json`** points at the raw `baseimage-selkies:debiantrixie` (no custom build → no dev tools). Decision: **repoint `dev-desktop.json`** —
+- Repoint `dev-desktop.json` → `image: selkies-desktop:latest`; make it the dev-workstation template (description/tags: VSCode, PyCharm, Node, Python, btop, nano, Yaru-dark; `internal_port` 3000 to match the built image; align `gpu_enabled`/limits with workstation needs).
+- **Keep `xfce-desktop.json`** as the generic full-XFCE template (also points at `selkies-desktop:latest` — same image, different framing: generic desktop vs. dev workstation).
 
-Seeding reads the templates dir dynamically and tests use isolated payloads, so removing one template JSON and editing another breaks no backend tests.
+Seeding reads the templates dir dynamically and tests use isolated payloads, so editing a template JSON breaks no backend tests.
 
 ## Out of Scope
 
