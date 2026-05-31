@@ -19,6 +19,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dconf-cli \
     && rm -rf /var/lib/apt/lists/*
 
+# ─── Stock Ubuntu 26.04 GNOME apps ───────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gnome-text-editor \
+    gnome-system-monitor \
+    gnome-calculator \
+    loupe \
+    papers \
+    ptyxis \
+    xdg-desktop-portal-gnome \
+    && rm -rf /var/lib/apt/lists/*
+
 # ─── Desktop Startup Override ────────────────────────────────────────────────
 COPY root/defaults/startwm_wayland.sh /defaults/startwm_wayland.sh
 RUN chmod +x /defaults/startwm_wayland.sh
