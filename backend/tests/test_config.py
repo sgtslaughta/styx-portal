@@ -16,3 +16,8 @@ def test_settings_from_env(monkeypatch):
     settings = Settings()
     assert settings.DOMAIN == "example.com"
     assert settings.DATABASE_URL == "sqlite+aiosqlite:///custom.db"
+
+
+def test_screenshot_interval_default():
+    s = Settings()
+    assert s.SCREENSHOT_INTERVAL_SECONDS == 30
