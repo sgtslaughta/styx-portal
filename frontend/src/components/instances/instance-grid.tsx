@@ -19,6 +19,8 @@ type StatusFilter = "all" | "running" | "stopped" | "paused";
 interface InstanceGridProps {
   onSelect: (instance: Instance) => void;
   onLaunch: () => void;
+  selectedId?: string;
+  dense?: boolean;
 }
 
 const STATUS_ORDER: Record<string, number> = {
@@ -57,11 +59,11 @@ const SORT_CYCLE: SortKey[] = ["status", "name", "created", "uptime"];
 const FILTER_LABELS: Record<StatusFilter, string> = { all: "All", running: "Running", stopped: "Stopped", paused: "Paused" };
 const FILTER_CYCLE: StatusFilter[] = ["all", "running", "stopped", "paused"];
 
-export function InstanceGrid({ onSelect, onLaunch }: InstanceGridProps) {
+export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: InstanceGridProps) {
   const { data: instances, isLoading, isError } = useInstances();
   const { data: templates } = useTemplates();
 
-  const [view, setView] = useState<ViewMode>("normal");
+  const [view, setView] = useState<ViewMode>(dense ? "compact" : "normal");
   const [sort, setSort] = useState<SortKey>("status");
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [search, setSearch] = useState("");
@@ -208,10 +210,12 @@ export function InstanceGrid({ onSelect, onLaunch }: InstanceGridProps) {
           <span>{SORT_LABELS[sort]}</span>
         </button>
 
-        <button onClick={cycleView} className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 h-8 text-xs text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors" title={`View: ${view}`}>
-          <ViewIcon className="h-3.5 w-3.5" />
-          <span className="capitalize">{view}</span>
-        </button>
+        {!dense && (
+          <button onClick={cycleView} className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 h-8 text-xs text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors" title={`View: ${view}`}>
+            <ViewIcon className="h-3.5 w-3.5" />
+            <span className="capitalize">{view}</span>
+          </button>
+        )}
 
         <span className="text-[10px] text-muted-foreground tabular-nums">
           {processed.length}/{instances.length}
@@ -232,6 +236,7 @@ export function InstanceGrid({ onSelect, onLaunch }: InstanceGridProps) {
                   key={instance.id}
                   id={instance.id}
                   isSelected={isSelected}
+                  isHighlighted={selectedId === instance.id}
                   selectionActive={hasSelection}
                   onToggle={toggleSelect}
                   view={view}
@@ -308,16 +313,19 @@ export function InstanceGrid({ onSelect, onLaunch }: InstanceGridProps) {
   );
 }
 
-function SelectableWrapper({ id, isSelected, selectionActive, onToggle, view, children }: {
+interface SelectableWrapperProps {
   id: string;
   isSelected: boolean;
+  isHighlighted?: boolean;
   selectionActive: boolean;
   onToggle: (id: string) => void;
   view: ViewMode;
   children: React.ReactNode;
-}) {
+}
+
+function SelectableWrapper({ id, isSelected, isHighlighted, selectionActive, onToggle, view, children }: SelectableWrapperProps) {
   return (
-    <div className={`relative ${isSelected ? "ring-2 ring-primary/60 rounded-xl" : ""}`}>
+    <div className={`relative ${isSelected ? "ring-2 ring-primary/60 rounded-xl" : ""} ${isHighlighted && !isSelected ? "ring-2 ring-primary/40 rounded-xl" : ""}`}>
       {/* Checkbox overlay */}
       <div
         className={`absolute z-10 transition-opacity ${
