@@ -83,20 +83,16 @@ export interface LaunchConfig {
   };
 }
 
-function isSelkiesImage(img: string): boolean {
-  const lower = img.toLowerCase();
-  return lower.includes("selkies") || lower.includes("kasmvnc");
-}
-
 function detectPortAndProtocol(
-  img: string,
   template: ServiceTemplate | null | undefined
 ): { port: number; protocol: string } {
   if (template?.internal_port && template?.internal_protocol) {
     return { port: template.internal_port, protocol: template.internal_protocol };
   }
-  if (isSelkiesImage(img)) return { port: 3001, protocol: "https" };
-  return { port: 443, protocol: "https" };
+  // Every image in this hub is a LinuxServer Selkies/KasmVNC image; the web UI is
+  // served on 3001 (HTTPS) — also the backend default (see instances.py). Plain
+  // port 443 is never correct for these images, so default to 3001/https.
+  return { port: 3001, protocol: "https" };
 }
 
 export function useLaunchConfig(opts: {
@@ -214,10 +210,7 @@ export function useLaunchConfig(opts: {
 
   function buildTemplateData() {
     const secOpts = securityOpts.filter((s) => s.enabled).map((s) => s.value);
-    const { port: webPort, protocol: webProtocol } = detectPortAndProtocol(
-      image,
-      template
-    );
+    const { port: webPort, protocol: webProtocol } = detectPortAndProtocol(template);
     return {
       name: slugify(name),
       display_name: name,
