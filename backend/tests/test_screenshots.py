@@ -30,11 +30,11 @@ def test_get_screenshot_path():
 
 
 @pytest.mark.asyncio
-async def test_capture_writes_png(monkeypatch):
+async def test_capture_uses_shared_viewer_when_streaming(monkeypatch):
+    """When a stream is live, capture uses the non-intrusive #shared mirror only."""
     png_bytes = b"\x89PNG" + b"x" * 200
 
     page = AsyncMock()
-    page.screenshot.return_value = png_bytes
     context = AsyncMock()
     context.new_page.return_value = page
     browser = AsyncMock()
@@ -45,21 +45,22 @@ async def test_capture_writes_png(monkeypatch):
         monkeypatch.setattr(svc, "_ensure_browser", AsyncMock())
         monkeypatch.setattr(svc, "_resolve_ip", lambda cid: "172.18.0.5")
         monkeypatch.setattr(svc, "_secure_endpoint", lambda cid, p, proto: (proto, p))
+        monkeypatch.setattr(svc, "_is_streaming", AsyncMock(return_value=True))
+        monkeypatch.setattr(svc, "_shoot", AsyncMock(return_value=png_bytes))
 
         result = await svc.capture("instance-123", "container-abc", 3001)
 
         assert result is True
-        page.goto.assert_awaited_once()
-        url = page.goto.call_args.args[0]
-        assert url == "https://172.18.0.5:3001/"
-        cached = Path(tmpdir) / "instance-123.png"
-        assert cached.read_bytes() == png_bytes
+        # Only the #shared viewer is opened — no controller (plain) connection.
+        urls = [c.args[0] for c in page.goto.await_args_list]
+        assert urls == ["https://172.18.0.5:3001/#shared"]
+        assert (Path(tmpdir) / "instance-123.png").read_bytes() == png_bytes
 
 
 @pytest.mark.asyncio
-async def test_capture_uses_protocol_arg(monkeypatch):
+async def test_capture_falls_back_to_controller_when_idle(monkeypatch):
+    """No live stream (nobody connected) → fall back to a plain controller load."""
     page = AsyncMock()
-    page.screenshot.return_value = b"\x89PNG" + b"x" * 200
     context = AsyncMock()
     context.new_page.return_value = page
     browser = AsyncMock()
@@ -70,10 +71,13 @@ async def test_capture_uses_protocol_arg(monkeypatch):
         monkeypatch.setattr(svc, "_ensure_browser", AsyncMock())
         monkeypatch.setattr(svc, "_resolve_ip", lambda cid: "172.18.0.6")
         monkeypatch.setattr(svc, "_secure_endpoint", lambda cid, p, proto: (proto, p))
+        monkeypatch.setattr(svc, "_is_streaming", AsyncMock(return_value=False))
+        monkeypatch.setattr(svc, "_shoot", AsyncMock(return_value=b"\x89PNGx"))
 
         await svc.capture("inst-http", "cont", 3000, "http")
 
-        assert page.goto.call_args.args[0] == "http://172.18.0.6:3000/"
+        urls = [c.args[0] for c in page.goto.await_args_list]
+        assert urls == ["http://172.18.0.6:3000/#shared", "http://172.18.0.6:3000/"]
 
 
 def test_secure_endpoint_prefers_3001():

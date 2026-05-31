@@ -8,10 +8,22 @@ from app.services.docker_manager import DockerManager
 
 logger = logging.getLogger("selkies-hub")
 
-_VIEWPORT = {"width": 1280, "height": 720}
+_VIEWPORT = {"width": 1920, "height": 1080}
 _NAV_TIMEOUT_MS = 10000
 _RENDER_WAIT_MS = 3000
-_CLICK_WAIT_MS = 500
+# Poll for an active stream before screenshotting.
+_STREAM_POLLS = 8
+_STREAM_POLL_MS = 700
+# Detect whether the Selkies client has a live frame. The "#shared" view-only
+# mirror shows "Waiting for stream…" until a controller (real user) is connected;
+# a painted <canvas> with no such overlay means a frame is flowing.
+_STREAM_PROBE_JS = """() => {
+  const t = (document.body.innerText || '').toLowerCase();
+  if (t.includes('waiting for stream') || t.includes('disconnected') || t.includes('reconnect'))
+    return false;
+  const c = document.querySelector('canvas');
+  return !!c && c.width > 0 && c.height > 0;
+}"""
 # KasmVNC/Selkies desktops only render in a secure context, so capture must hit
 # the container's own HTTPS web port (conventionally 3001) — NOT the http routing
 # port (3000), which serves an "insecure connection" error page when loaded
@@ -85,24 +97,21 @@ class ScreenshotService:
             logger.debug("screenshot: browser launch failed", exc_info=True)
             return False
 
+        base = f"{protocol}://{ip}:{port}/"
         async with self._sem:
             context = await self._browser.new_context(
                 ignore_https_errors=True, viewport=_VIEWPORT,
             )
             try:
-                page = await context.new_page()
-                await page.goto(
-                    f"{protocol}://{ip}:{port}/",
-                    wait_until="networkidle",
-                    timeout=_NAV_TIMEOUT_MS,
-                )
-                await page.wait_for_timeout(_RENDER_WAIT_MS)
-                try:
-                    await page.mouse.click(_VIEWPORT["width"] // 2, _VIEWPORT["height"] // 2)
-                    await page.wait_for_timeout(_CLICK_WAIT_MS)
-                except Exception:
-                    pass
-                png = await page.screenshot(type="png")
+                # View-only mirror first — never steals control from an active user.
+                page = await self._open(context, base + "#shared")
+                if not await self._is_streaming(page):
+                    # No live stream → nobody is connected, so a full (controller)
+                    # connection is safe and won't disrupt anyone.
+                    await page.close()
+                    page = await self._open(context, base)
+                    await page.wait_for_timeout(_RENDER_WAIT_MS)
+                png = await self._shoot(page)
                 (self._cache_dir / f"{instance_id}.png").write_bytes(png)
                 return True
             except Exception:
@@ -110,6 +119,28 @@ class ScreenshotService:
                 return False
             finally:
                 await context.close()
+
+    async def _open(self, context, url):
+        page = await context.new_page()
+        await page.goto(url, wait_until="domcontentloaded", timeout=_NAV_TIMEOUT_MS)
+        return page
+
+    async def _is_streaming(self, page) -> bool:
+        for _ in range(_STREAM_POLLS):
+            await page.wait_for_timeout(_STREAM_POLL_MS)
+            try:
+                if await page.evaluate(_STREAM_PROBE_JS):
+                    return True
+            except Exception:
+                pass
+        return False
+
+    async def _shoot(self, page) -> bytes:
+        # Screenshot the desktop canvas at its native size; fall back to the page.
+        canvas = page.locator("canvas")
+        if await canvas.count():
+            return await canvas.first.screenshot(type="png")
+        return await page.screenshot(type="png")
 
     async def close(self):
         if self._browser is not None:
