@@ -47,7 +47,9 @@ class ScreenshotService:
             args=["--no-sandbox", "--ignore-certificate-errors"],
         )
 
-    async def capture(self, instance_id: str, container_id: str, port: int) -> bool:
+    async def capture(
+        self, instance_id: str, container_id: str, port: int, protocol: str = "https"
+    ) -> bool:
         try:
             ip = await asyncio.to_thread(self._resolve_ip, container_id)
         except Exception:
@@ -68,7 +70,7 @@ class ScreenshotService:
             try:
                 page = await context.new_page()
                 await page.goto(
-                    f"https://{ip}:{port}/",
+                    f"{protocol}://{ip}:{port}/",
                     wait_until="networkidle",
                     timeout=_NAV_TIMEOUT_MS,
                 )

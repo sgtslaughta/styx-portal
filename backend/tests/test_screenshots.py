@@ -56,6 +56,25 @@ async def test_capture_writes_png(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_capture_uses_protocol_arg(monkeypatch):
+    page = AsyncMock()
+    page.screenshot.return_value = b"\x89PNG" + b"x" * 200
+    context = AsyncMock()
+    context.new_page.return_value = page
+    browser = AsyncMock()
+    browser.new_context.return_value = context
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        svc = _make_service(tmpdir, browser=browser)
+        monkeypatch.setattr(svc, "_ensure_browser", AsyncMock())
+        monkeypatch.setattr(svc, "_resolve_ip", lambda cid: "172.18.0.6")
+
+        await svc.capture("inst-http", "cont", 3000, "http")
+
+        assert page.goto.call_args.args[0] == "http://172.18.0.6:3000/"
+
+
+@pytest.mark.asyncio
 async def test_capture_no_ip_returns_false(monkeypatch):
     with tempfile.TemporaryDirectory() as tmpdir:
         svc = _make_service(tmpdir)

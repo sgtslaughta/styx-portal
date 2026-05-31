@@ -147,11 +147,11 @@ async def _metrics_collection_loop():
 
 
 async def _capture_running_instances(screenshots, targets):
-    for inst, port in targets:
+    for inst, port, protocol in targets:
         if inst.status not in ("running", "idle") or not inst.container_id:
             continue
         try:
-            await screenshots.capture(inst.id, inst.container_id, port)
+            await screenshots.capture(inst.id, inst.container_id, port, protocol)
         except Exception:
             pass
 
@@ -177,7 +177,8 @@ async def _screenshot_capture_loop():
                     for inst in rows:
                         tmpl = await session.get(ServiceTemplate, inst.template_id)
                         port = tmpl.internal_port if tmpl else 3001
-                        targets.append((inst, port))
+                        protocol = tmpl.internal_protocol if tmpl else "https"
+                        targets.append((inst, port, protocol))
                 await _capture_running_instances(screenshots, targets)
             except Exception:
                 pass
