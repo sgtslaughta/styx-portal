@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { Trash2, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { useDeleteTemplate } from "@/hooks/use-templates";
 import { toast } from "sonner";
 import type { ServiceTemplate } from "@/lib/types";
@@ -11,13 +13,18 @@ interface TemplateCardProps {
 }
 
 export function TemplateCard({ template, onLaunch }: TemplateCardProps) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const deleteTemplate = useDeleteTemplate();
 
   function handleDelete(e: React.MouseEvent) {
     e.stopPropagation();
-    if (!confirm(`Delete template "${template.display_name}"?`)) return;
+    setConfirmOpen(true);
+  }
+
+  function doDelete() {
     deleteTemplate.mutate(template.id, {
       onError: (err) => toast.error(`Delete failed: ${err.message}`),
+      onSuccess: () => toast.success(`Deleted ${template.display_name}`),
     });
   }
 
@@ -47,6 +54,16 @@ export function TemplateCard({ template, onLaunch }: TemplateCardProps) {
           <Trash2 className="h-3 w-3" />
         </Button>
       </div>
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title={`Delete template "${template.display_name}"?`}
+        description="This removes the template definition. Running instances are unaffected."
+        confirmLabel="Delete"
+        variant="destructive"
+        confirmPhrase={template.display_name}
+        onConfirm={doDelete}
+      />
     </div>
   );
 }
