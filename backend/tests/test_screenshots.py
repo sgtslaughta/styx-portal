@@ -1,8 +1,17 @@
 import tempfile
-from unittest.mock import MagicMock, patch
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from app.services.screenshot import ScreenshotService
+
+
+def _make_service(tmpdir, browser=None):
+    svc = ScreenshotService(cache_dir=tmpdir, docker_manager=MagicMock())
+    if browser is not None:
+        svc._browser = browser
+    return svc
 
 
 def test_screenshot_cache_dir_created():
@@ -11,60 +20,66 @@ def test_screenshot_cache_dir_created():
         assert Path(tmpdir).is_dir()
 
 
-@patch("app.services.screenshot.httpx")
-def test_capture_screenshot(mock_httpx):
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.content = b"\x89PNG" + b"x" * 200
-    mock_httpx.get.return_value = mock_response
-
-    mock_docker = MagicMock()
-    mock_container = MagicMock()
-    mock_container.attrs = {
-        "NetworkSettings": {
-            "Networks": {
-                "selkies-hub": {"IPAddress": "172.18.0.5"}
-            }
-        }
-    }
-    mock_docker._client.containers.get.return_value = mock_container
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        svc = ScreenshotService(cache_dir=tmpdir, docker_manager=mock_docker)
-        result = svc.capture("instance-123", "container-abc", 3001)
-
-        assert result is True
-        cached = Path(tmpdir) / "instance-123.png"
-        assert cached.exists()
-        assert cached.read_bytes() == b"\x89PNG" + b"x" * 200
-
-
-@patch("app.services.screenshot.httpx")
-def test_capture_screenshot_failure(mock_httpx):
-    mock_httpx.get.side_effect = Exception("connection refused")
-    mock_docker = MagicMock()
-    mock_container = MagicMock()
-    mock_container.attrs = {
-        "NetworkSettings": {
-            "Networks": {
-                "selkies-hub": {"IPAddress": "172.18.0.5"}
-            }
-        }
-    }
-    mock_docker._client.containers.get.return_value = mock_container
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        svc = ScreenshotService(cache_dir=tmpdir, docker_manager=mock_docker)
-        result = svc.capture("inst-1", "cont-1", 3001)
-        assert result is False
-
-
 def test_get_screenshot_path():
     with tempfile.TemporaryDirectory() as tmpdir:
         svc = ScreenshotService(cache_dir=tmpdir, docker_manager=MagicMock())
-
         assert svc.get_path("nonexistent") is None
-
         cached = Path(tmpdir) / "inst-1.png"
         cached.write_bytes(b"\x89PNG data")
         assert svc.get_path("inst-1") == cached
+
+
+@pytest.mark.asyncio
+async def test_capture_writes_png(monkeypatch):
+    png_bytes = b"\x89PNG" + b"x" * 200
+
+    page = AsyncMock()
+    page.screenshot.return_value = png_bytes
+    context = AsyncMock()
+    context.new_page.return_value = page
+    browser = AsyncMock()
+    browser.new_context.return_value = context
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        svc = _make_service(tmpdir, browser=browser)
+        monkeypatch.setattr(svc, "_ensure_browser", AsyncMock())
+        monkeypatch.setattr(svc, "_resolve_ip", lambda cid: "172.18.0.5")
+
+        result = await svc.capture("instance-123", "container-abc", 3001)
+
+        assert result is True
+        page.goto.assert_awaited_once()
+        url = page.goto.call_args.args[0]
+        assert url == "https://172.18.0.5:3001/"
+        cached = Path(tmpdir) / "instance-123.png"
+        assert cached.read_bytes() == png_bytes
+
+
+@pytest.mark.asyncio
+async def test_capture_no_ip_returns_false(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        svc = _make_service(tmpdir)
+        monkeypatch.setattr(svc, "_ensure_browser", AsyncMock())
+        monkeypatch.setattr(svc, "_resolve_ip", lambda cid: None)
+        result = await svc.capture("inst-1", "cont-1", 3001)
+        assert result is False
+
+
+@pytest.mark.asyncio
+async def test_capture_keeps_previous_on_failure(monkeypatch):
+    context = AsyncMock()
+    context.new_page.side_effect = Exception("render boom")
+    browser = AsyncMock()
+    browser.new_context.return_value = context
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        svc = _make_service(tmpdir, browser=browser)
+        monkeypatch.setattr(svc, "_ensure_browser", AsyncMock())
+        monkeypatch.setattr(svc, "_resolve_ip", lambda cid: "172.18.0.5")
+        stale = Path(tmpdir) / "inst-1.png"
+        stale.write_bytes(b"OLD")
+
+        result = await svc.capture("inst-1", "cont-1", 3001)
+
+        assert result is False
+        assert stale.read_bytes() == b"OLD"

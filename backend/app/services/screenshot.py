@@ -1,8 +1,17 @@
+import asyncio
+import logging
 from pathlib import Path
 
-import httpx
+from playwright.async_api import async_playwright
 
 from app.services.docker_manager import DockerManager
+
+logger = logging.getLogger("selkies-hub")
+
+_VIEWPORT = {"width": 1280, "height": 720}
+_NAV_TIMEOUT_MS = 10000
+_RENDER_WAIT_MS = 3000
+_CLICK_WAIT_MS = 500
 
 
 class ScreenshotService:
@@ -10,59 +19,75 @@ class ScreenshotService:
         self._cache_dir = Path(cache_dir)
         self._cache_dir.mkdir(parents=True, exist_ok=True)
         self._docker = docker_manager
+        self._pw = None
+        self._browser = None
+        self._sem = asyncio.Semaphore(2)
 
-    def capture(self, instance_id: str, container_id: str, port: int) -> bool:
+    def _resolve_ip(self, container_id: str) -> str | None:
+        container = self._docker._client.containers.get(container_id)
+        networks = container.attrs["NetworkSettings"]["Networks"]
+        for net in networks.values():
+            ip = net.get("IPAddress")
+            if ip:
+                return ip
+        return None
+
+    async def _ensure_browser(self):
+        if self._browser is not None and self._browser.is_connected():
+            return
+        if self._pw is None:
+            self._pw = await async_playwright().start()
+        self._browser = await self._pw.chromium.launch(
+            args=["--no-sandbox", "--ignore-certificate-errors"],
+        )
+
+    async def capture(self, instance_id: str, container_id: str, port: int) -> bool:
         try:
-            container = self._docker._client.containers.get(container_id)
-            networks = container.attrs["NetworkSettings"]["Networks"]
-            ip = None
-            for net in networks.values():
-                ip = net.get("IPAddress")
-                if ip:
-                    break
-            if not ip:
-                return False
-
-            # Try HTTPS first (Selkies containers use self-signed HTTPS)
-            for scheme in ("https", "http"):
-                try:
-                    resp = httpx.get(
-                        f"{scheme}://{ip}:{port}/screenshot",
-                        timeout=5,
-                        verify=False,
-                    )
-                    if resp.status_code == 200 and len(resp.content) > 100:
-                        path = self._cache_dir / f"{instance_id}.png"
-                        path.write_bytes(resp.content)
-                        return True
-                except httpx.HTTPError:
-                    continue
-
-            # Fallback: try docker exec with grim (Wayland screenshot tool)
-            try:
-                exit_code, output = container.exec_run(
-                    "grim -t png /tmp/screenshot.png",
-                    environment={"XDG_RUNTIME_DIR": "/run/user/1000", "WAYLAND_DISPLAY": "wayland-0"},
-                )
-                if exit_code == 0:
-                    bits, _ = container.get_archive("/tmp/screenshot.png")
-                    # Docker get_archive returns a tar stream
-                    import tarfile
-                    import io
-                    tar_stream = io.BytesIO(b"".join(bits))
-                    with tarfile.open(fileobj=tar_stream) as tar:
-                        member = tar.getmembers()[0]
-                        f = tar.extractfile(member)
-                        if f:
-                            path = self._cache_dir / f"{instance_id}.png"
-                            path.write_bytes(f.read())
-                            return True
-            except Exception:
-                pass
-
-            return False
+            ip = await asyncio.to_thread(self._resolve_ip, container_id)
         except Exception:
+            ip = None
+        if not ip:
             return False
+
+        try:
+            await self._ensure_browser()
+        except Exception:
+            logger.debug("screenshot: browser launch failed", exc_info=True)
+            return False
+
+        async with self._sem:
+            context = await self._browser.new_context(
+                ignore_https_errors=True, viewport=_VIEWPORT,
+            )
+            try:
+                page = await context.new_page()
+                await page.goto(
+                    f"https://{ip}:{port}/",
+                    wait_until="networkidle",
+                    timeout=_NAV_TIMEOUT_MS,
+                )
+                await page.wait_for_timeout(_RENDER_WAIT_MS)
+                try:
+                    await page.mouse.click(_VIEWPORT["width"] // 2, _VIEWPORT["height"] // 2)
+                    await page.wait_for_timeout(_CLICK_WAIT_MS)
+                except Exception:
+                    pass
+                png = await page.screenshot(type="png")
+                (self._cache_dir / f"{instance_id}.png").write_bytes(png)
+                return True
+            except Exception:
+                logger.debug("screenshot: capture failed for %s", instance_id, exc_info=True)
+                return False
+            finally:
+                await context.close()
+
+    async def close(self):
+        if self._browser is not None:
+            await self._browser.close()
+            self._browser = None
+        if self._pw is not None:
+            await self._pw.stop()
+            self._pw = None
 
     def get_path(self, instance_id: str) -> Path | None:
         path = self._cache_dir / f"{instance_id}.png"
