@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import { api } from "@/api/client";
 import { statusMeta } from "@/lib/status";
 import type { Instance } from "@/lib/types";
 
@@ -6,11 +8,26 @@ interface IconViewportProps {
   icon: string | null;
 }
 
+const REFRESH_MS = 30000;
+
 export function IconViewport({ instance, icon }: IconViewportProps) {
   const { dotClass, pulse } = statusMeta(instance.status);
 
   const isStopped = instance.status === "stopped" || instance.status === "error";
   const isPaused = instance.status === "paused";
+  const isLive = instance.status === "running" || instance.status === "idle";
+
+  const [tick, setTick] = useState(0);
+  const [shotOk, setShotOk] = useState(false);
+
+  useEffect(() => {
+    if (!isLive) {
+      setShotOk(false);
+      return;
+    }
+    const t = setInterval(() => setTick((n) => n + 1), REFRESH_MS);
+    return () => clearInterval(t);
+  }, [isLive]);
 
   const iconContent = instance.status === "pulling" ? (
     <span className="text-[16rem] leading-none select-none">⏳</span>
@@ -22,12 +39,25 @@ export function IconViewport({ instance, icon }: IconViewportProps) {
 
   return (
     <div className="relative aspect-video w-full bg-secondary overflow-hidden flex items-center justify-center">
-      {/* Static icon — no infinite loops */}
+      {/* Static icon — shown until/unless a screenshot loads */}
       <div
-        className={`relative flex items-center justify-center w-full h-full ${isStopped ? "grayscale opacity-20" : isPaused ? "opacity-40 saturate-50" : ""}`}
+        className={`relative flex items-center justify-center w-full h-full ${isStopped ? "grayscale opacity-20" : isPaused ? "opacity-40 saturate-50" : ""} ${shotOk ? "hidden" : ""}`}
       >
         {iconContent}
       </div>
+
+      {/* Live screenshot thumbnail */}
+      {isLive && (
+        <img
+          key={tick}
+          src={`${api.screenshotUrl(instance.id)}?t=${tick}`}
+          alt={instance.name}
+          className={`absolute inset-0 w-full h-full object-cover ${shotOk ? "" : "opacity-0"}`}
+          draggable={false}
+          onLoad={() => setShotOk(true)}
+          onError={() => setShotOk(false)}
+        />
+      )}
 
       {/* Name overlay gradient */}
       <div className="absolute bottom-0 left-0 right-0 px-3 pb-2 pt-8" style={{ background: "linear-gradient(to top, rgba(0,0,0,0.7) 0%, transparent 100%)" }}>
