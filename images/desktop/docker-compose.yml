@@ -1,0 +1,22 @@
+services:
+  desktop:
+    build: .
+    image: selkies-desktop:latest
+    container_name: selkies-desktop
+    ports:
+      - "3000:3000"
+      - "3001:3001"
+    volumes:
+      - desktop-config:/config
+    devices:
+      - /dev/dri:/dev/dri
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York
+      - TITLE=Desktop
+      - START_DOCKER=false
+    restart: unless-stopped
+
+volumes:
+  desktop-config:

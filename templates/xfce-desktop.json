@@ -1,0 +1,32 @@
+{
+  "name": "xfce-desktop",
+  "display_name": "XFCE Desktop (Wayland)",
+  "image": "selkies-desktop:latest",
+  "icon": "🖥️",
+  "description": "Full XFCE desktop on Wayland with Firefox, Chrome, dev tools, zsh",
+  "env_vars": {
+    "PUID": "1000",
+    "PGID": "1000",
+    "PIXELFLUX_WAYLAND": "true",
+    "TITLE": "Desktop"
+  },
+  "gpu_enabled": true,
+  "gpu_count": 1,
+  "memory_limit": "8g",
+  "cpu_limit": "4.0",
+  "shm_size": "2g",
+  "volumes": [
+    {"name": "{instance_id}-home", "mount": "/config"}
+  ],
+  "internal_port": 3000,
+  "internal_protocol": "http",
+  "category": "desktop",
+  "tags": ["desktop", "xfce", "wayland", "development"],
+  "session_config": {
+    "idle_timeout": "60m",
+    "grace_period": "10m",
+    "timeout_action": "stop",
+    "never_timeout": false,
+    "max_session_duration": null
+  }
+}

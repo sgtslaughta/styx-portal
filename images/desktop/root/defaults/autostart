@@ -1,0 +1,8 @@
+#!/bin/bash
+# Autostart apps after desktop loads
+
+# Clipboard manager
+xfce4-clipman &
+
+# Notification daemon
+/usr/lib/xfce4/notifyd/xfce4-notifyd &
