@@ -2,10 +2,12 @@ import asyncio
 import logging
 import secrets
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -20,22 +22,42 @@ logger = logging.getLogger("selkies-hub")
 _settings = Settings()
 
 
+async def _run_monitor_pass(session, monitor, docker) -> bool:
+    """One reconcile pass over running/idle instances. Marks crashed containers
+    stopped and applies idle auto-stop. Returns True if any instance stopped."""
+    result = await session.exec(
+        select(Instance).where(Instance.status.in_(["running", "idle"]))
+    )
+    instances = result.all()
+    changed = False
+    for inst in instances:
+        if inst.container_id:
+            status = await asyncio.to_thread(docker.get_container_status, inst.container_id)
+            if status["status"] in ("not_found", "exited"):
+                inst.status = "stopped"
+                inst.stopped_at = datetime.now(timezone.utc)
+                session.add(inst)
+                changed = True
+                continue
+        actions = monitor.check_instance(inst, session)
+        if "auto_stopped" in actions:
+            changed = True
+    return changed
+
+
 async def _session_monitor_loop():
+    from app.services.route_writer import refresh_routes_from_db
+
     docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
     monitor = SessionMonitor(docker)
     while True:
         await asyncio.sleep(60)
         try:
             async with async_session() as session:
-                result = await session.exec(
-                    select(Instance).where(
-                        Instance.status.in_(["running", "idle"])
-                    )
-                )
-                running_instances = result.all()
-                for inst in running_instances:
-                    monitor.check_instance(inst, session)
+                changed = await _run_monitor_pass(session, monitor, docker)
                 await session.commit()
+                if changed:
+                    await refresh_routes_from_db(session)
         except Exception:
             pass
 
@@ -79,22 +101,9 @@ async def lifespan(app: FastAPI):
         await session.commit()
 
     # Write initial Traefik routes on startup
-    from app.services.route_writer import write_routes
-    from app.models import ServiceTemplate
+    from app.services.route_writer import refresh_routes_from_db
     async with async_session() as session:
-        result = await session.exec(
-            select(Instance).where(Instance.status.in_(["running", "idle"]))
-        )
-        running = result.all()
-        instances_data = []
-        for i in running:
-            tmpl = await session.get(ServiceTemplate, i.template_id)
-            instances_data.append({
-                "id": i.id, "subdomain": i.subdomain,
-                "port": tmpl.internal_port if tmpl else 3001,
-                "protocol": tmpl.internal_protocol if tmpl else "https",
-            })
-        write_routes(instances_data)
+        await refresh_routes_from_db(session)
 
     task = asyncio.create_task(_session_monitor_loop())
     metrics_task = asyncio.create_task(_metrics_collection_loop())
@@ -205,6 +214,27 @@ app.include_router(images.router, prefix="/api/images", tags=["images"])
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+_INSTANCE_UNAVAILABLE_HTML = r"""<!doctype html>
+<meta charset="utf-8">
+<title>Instance unavailable</title>
+<meta http-equiv="refresh" content="3;url=/">
+<script>
+  (function () {
+    var m = location.pathname.match(/^\/i\/([^\/]+)/);
+    var q = m ? "?stopped=" + encodeURIComponent(m[1]) : "";
+    location.replace("/" + q);
+  })();
+  /* This page handles /i/subdomain routes that are no longer running */
+</script>
+<p>Instance unavailable. Redirecting&hellip; <a href="/">My Instances</a></p>
+"""
+
+
+@app.get("/api/instance-unavailable", response_class=HTMLResponse)
+async def instance_unavailable():
+    return HTMLResponse(content=_INSTANCE_UNAVAILABLE_HTML)
 
 
 @app.get("/api/system/gpu")

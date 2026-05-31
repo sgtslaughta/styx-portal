@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Header } from "@/components/layout/header";
 import { TabNav } from "@/components/layout/tab-nav";
 import { InstanceWorkspace } from "@/components/instances/instance-workspace";
@@ -18,6 +19,15 @@ export default function App() {
   const [launchRegistry, setLaunchRegistry] = useState<RegistryImage | null>(null);
   const [launchTemplate, setLaunchTemplate] = useState<ServiceTemplate | null>(null);
   const [launchOpen, setLaunchOpen] = useState(false);
+
+  useEffect(() => {
+    const sp = new URLSearchParams(window.location.search);
+    const stopped = sp.get("stopped");
+    if (stopped) {
+      toast.error(`Instance "${stopped}" is stopped`);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
 
   function handleImportRegistry(image: RegistryImage) {
     setLaunchRegistry(image);
