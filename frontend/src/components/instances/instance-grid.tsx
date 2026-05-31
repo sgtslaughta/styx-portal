@@ -1,6 +1,9 @@
 import { useState, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, LayoutGrid, List, Maximize2, ArrowUpDown, Filter, Play, Square, Pause, Trash2, CheckSquare, X } from "lucide-react";
+import { LayoutGrid, List, Maximize2, Filter, Play, Square, Pause, Trash2, CheckSquare, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { SearchSortBar } from "@/components/common/search-sort-bar";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { useInstances, useStartInstance, useStopInstance, usePauseInstance, useUnpauseInstance, useDeleteInstance } from "@/hooks/use-instances";
 import { useTemplates } from "@/hooks/use-templates";
 import { InstanceCard } from "./instance-card";
@@ -63,6 +66,7 @@ export function InstanceGrid({ onSelect, onLaunch }: InstanceGridProps) {
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkConfirm, setBulkConfirm] = useState(false);
 
   const startMut = useStartInstance();
   const stopMut = useStopInstance();
@@ -124,11 +128,14 @@ export function InstanceGrid({ onSelect, onLaunch }: InstanceGridProps) {
     toast.success(`Resuming ${selPaused.length} instance(s)`);
     clearSelection();
   }
-  function bulkDestroy() {
-    if (!confirm(`Destroy ${selected.size} instance(s)? Containers will be removed.`)) return;
+  function runBulkDestroy() {
     selectedInstances.forEach((i) => destroyMut.mutate({ id: i.id, removeVolumes: false }, { onError: (e) => toast.error(`${i.name}: ${e.message}`) }));
     toast.success(`Destroying ${selected.size} instance(s)`);
     clearSelection();
+  }
+
+  function bulkDestroy() {
+    setBulkConfirm(true);
   }
 
   function cycleView() { setView((v) => VIEW_CYCLE[(VIEW_CYCLE.indexOf(v) + 1) % VIEW_CYCLE.length]!); }
@@ -142,7 +149,7 @@ export function InstanceGrid({ onSelect, onLaunch }: InstanceGridProps) {
     return (
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {[1, 2, 3].map((i) => (
-          <motion.div key={i} className="aspect-[4/3] rounded-xl bg-card" animate={{ opacity: [0.3, 0.6, 0.3] }} transition={{ duration: 1.5, repeat: Infinity, delay: i * 0.2 }} />
+          <div key={i} className="aspect-[4/3] rounded-xl bg-card animate-pulse" />
         ))}
       </div>
     );
@@ -175,7 +182,11 @@ export function InstanceGrid({ onSelect, onLaunch }: InstanceGridProps) {
   return (
     <div className="space-y-3">
       {/* Toolbar */}
-      <div className="flex items-center gap-2">
+      <SearchSortBar
+        query={search}
+        onQueryChange={setSearch}
+        placeholder="Search instances…"
+      >
         {/* Select all / clear */}
         <button
           onClick={hasSelection ? clearSelection : selectAll}
@@ -188,24 +199,12 @@ export function InstanceGrid({ onSelect, onLaunch }: InstanceGridProps) {
           {hasSelection ? `${selected.size} selected` : "Select"}
         </button>
 
-        {/* Search */}
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search instances…"
-            className="h-8 w-full rounded-md border border-border bg-card pl-8 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
-          />
-        </div>
-
         <button onClick={cycleFilter} className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 h-8 text-xs text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors" title="Filter by status">
           <Filter className="h-3.5 w-3.5" />
           <span>{FILTER_LABELS[filter]}</span>
         </button>
 
         <button onClick={cycleSort} className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 h-8 text-xs text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors" title="Sort by">
-          <ArrowUpDown className="h-3.5 w-3.5" />
           <span>{SORT_LABELS[sort]}</span>
         </button>
 
@@ -217,7 +216,7 @@ export function InstanceGrid({ onSelect, onLaunch }: InstanceGridProps) {
         <span className="text-[10px] text-muted-foreground tabular-nums">
           {processed.length}/{instances.length}
         </span>
-      </div>
+      </SearchSortBar>
 
       {/* Grid / List */}
       {processed.length === 0 ? (
@@ -264,28 +263,28 @@ export function InstanceGrid({ onSelect, onLaunch }: InstanceGridProps) {
             <span className="text-xs font-medium text-foreground mr-1">{selected.size} selected</span>
 
             {selStopped.length > 0 && (
-              <button onClick={bulkStart} className="inline-flex items-center gap-1 rounded-md px-3 h-7 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/25 transition-colors">
+              <Button size="sm" variant="secondary" onClick={bulkStart} className="h-7 text-xs gap-1">
                 <Play className="h-3 w-3" /> Start {selStopped.length}
-              </button>
+              </Button>
             )}
             {selRunning.length > 0 && (
-              <button onClick={bulkPause} className="inline-flex items-center gap-1 rounded-md px-3 h-7 text-xs text-amber-400 bg-amber-500/10 hover:bg-amber-500/25 transition-colors">
+              <Button size="sm" variant="secondary" onClick={bulkPause} className="h-7 text-xs gap-1">
                 <Pause className="h-3 w-3" /> Pause {selRunning.length}
-              </button>
+              </Button>
             )}
             {selPaused.length > 0 && (
-              <button onClick={bulkUnpause} className="inline-flex items-center gap-1 rounded-md px-3 h-7 text-xs text-green-400 bg-green-500/10 hover:bg-green-500/25 transition-colors">
+              <Button size="sm" variant="secondary" onClick={bulkUnpause} className="h-7 text-xs gap-1">
                 <Play className="h-3 w-3" /> Resume {selPaused.length}
-              </button>
+              </Button>
             )}
             {(selRunning.length + selPaused.length) > 0 && (
-              <button onClick={bulkStop} className="inline-flex items-center gap-1 rounded-md px-3 h-7 text-xs text-red-400 bg-red-500/10 hover:bg-red-500/25 transition-colors">
+              <Button size="sm" variant="secondary" onClick={bulkStop} className="h-7 text-xs gap-1">
                 <Square className="h-3 w-3" /> Stop {selRunning.length + selPaused.length}
-              </button>
+              </Button>
             )}
-            <button onClick={bulkDestroy} className="inline-flex items-center gap-1 rounded-md px-3 h-7 text-xs text-red-400 bg-red-500/10 hover:bg-red-500/25 transition-colors">
+            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive h-7 text-xs gap-1" onClick={bulkDestroy}>
               <Trash2 className="h-3 w-3" /> Destroy
-            </button>
+            </Button>
 
             <div className="w-px h-5 bg-border mx-1" />
             <button onClick={clearSelection} className="rounded-md p-1 text-muted-foreground hover:text-foreground transition-colors" title="Clear selection">
@@ -294,6 +293,17 @@ export function InstanceGrid({ onSelect, onLaunch }: InstanceGridProps) {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <ConfirmDialog
+        open={bulkConfirm}
+        onOpenChange={setBulkConfirm}
+        title={`Destroy ${selected.size} instance(s)?`}
+        description="Containers will be removed. Named volumes are kept."
+        confirmLabel="Destroy"
+        variant="destructive"
+        confirmPhrase="destroy"
+        onConfirm={runBulkDestroy}
+      />
     </div>
   );
 }
