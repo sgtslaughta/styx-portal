@@ -1,0 +1,32 @@
+{
+  "name": "gnome-desktop",
+  "display_name": "GNOME Desktop (Ubuntu 26.04)",
+  "image": "selkies-gnome:latest",
+  "icon": "🐧",
+  "description": "Stock minimal Ubuntu 26.04 GNOME desktop on Wayland with Firefox",
+  "env_vars": {
+    "PUID": "1000",
+    "PGID": "1000",
+    "PIXELFLUX_WAYLAND": "true",
+    "TITLE": "GNOME Desktop"
+  },
+  "gpu_enabled": true,
+  "gpu_count": 1,
+  "memory_limit": "8g",
+  "cpu_limit": "4.0",
+  "shm_size": "2g",
+  "volumes": [
+    {"name": "{instance_id}-home", "mount": "/config"}
+  ],
+  "internal_port": 3000,
+  "internal_protocol": "http",
+  "category": "desktop",
+  "tags": ["desktop", "gnome", "ubuntu", "wayland"],
+  "session_config": {
+    "idle_timeout": "60m",
+    "grace_period": "10m",
+    "timeout_action": "stop",
+    "never_timeout": false,
+    "max_session_duration": null
+  }
+}
