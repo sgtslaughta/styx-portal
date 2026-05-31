@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { AlertTriangle } from "lucide-react";
 import { Header } from "@/components/layout/header";
 import { TabNav } from "@/components/layout/tab-nav";
 import { InstanceWorkspace } from "@/components/instances/instance-workspace";
@@ -28,7 +29,14 @@ export default function App() {
       // Defer so the toast fires after sonner's <Toaster> has mounted/subscribed
       // (this effect runs before the Toaster's subscribe effect, so an immediate
       // toast on mount is dropped).
-      setTimeout(() => toast.error(`Instance "${stopped}" is stopped`), 0);
+      setTimeout(
+        () =>
+          toast.warning(`Instance "${stopped}" is stopped`, {
+            icon: <AlertTriangle className="h-5 w-5 text-yellow-500" />,
+            duration: 6000,
+          }),
+        0,
+      );
     }
   }, []);
 
