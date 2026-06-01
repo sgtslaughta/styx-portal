@@ -14,10 +14,49 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class User(SQLModel, table=True):
+    __tablename__ = "users"
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    username: str = Field(unique=True, index=True)
+    email: str | None = Field(default=None, index=True)
+    password_hash: str
+    role: str = "user"  # admin | user
+    is_active: bool = True
+    must_change_pw: bool = False
+    created_at: datetime = Field(default_factory=_now)
+    last_login: datetime | None = None
+
+
+class Invite(SQLModel, table=True):
+    __tablename__ = "invites"
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    token_hash: str = Field(unique=True, index=True)
+    email: str | None = None
+    role: str = "user"
+    created_by: str = Field(foreign_key="users.id")
+    expires_at: datetime | None = None
+    used_at: datetime | None = None
+    created_at: datetime = Field(default_factory=_now)
+
+
+class RefreshToken(SQLModel, table=True):
+    __tablename__ = "refresh_tokens"
+
+    jti: str = Field(primary_key=True)
+    user_id: str = Field(foreign_key="users.id", index=True)
+    expires_at: datetime
+    revoked: bool = False
+    user_agent: str | None = None
+    created_at: datetime = Field(default_factory=_now)
+
+
 class ServiceTemplate(SQLModel, table=True):
     __tablename__ = "service_templates"
 
     id: str = Field(default_factory=_uuid, primary_key=True)
+    owner_id: str | None = Field(default=None, foreign_key="users.id", index=True)
     name: str = Field(unique=True, index=True)
     display_name: str
     image: str
@@ -53,6 +92,7 @@ class Instance(SQLModel, table=True):
 
     id: str = Field(default_factory=_uuid, primary_key=True)
     template_id: str = Field(foreign_key="service_templates.id")
+    owner_id: str | None = Field(default=None, foreign_key="users.id", index=True)
     name: str
     subdomain: str = Field(unique=True, index=True)
     container_id: str | None = None
