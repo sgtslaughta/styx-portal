@@ -40,5 +40,19 @@ fi
 # Remove saved display config — Pixelflux creates modes dynamically per-client
 rm -f /config/.config/xfce4/xfconf/xfce-perchannel-xml/displays.xml
 
+# labwc (the Wayland WM) themes window borders from an openbox-3 theme. The base
+# seeds an Adwaita rc.xml, but no Adwaita openbox-3 theme is installed, so labwc
+# falls back to light builtin borders that clash with the dark GTK theme. Force the
+# installed dark openbox theme (Breeze-ob) into the rc.xml labwc actually reads.
+# (Squared's xfwm4 borders can't be used: labwc ignores xfwm4 themes.)
+LABWC_RC=/config/.config/xfce4/labwc/rc.xml
+if [ ! -f "$LABWC_RC" ]; then
+    mkdir -p "$(dirname "$LABWC_RC")"
+    cp /usr/share/xfce4/labwc/labwc-rc.xml "$LABWC_RC" 2>/dev/null || true
+fi
+if [ -f "$LABWC_RC" ]; then
+    sed -i '/<theme>/,/<\/theme>/ s|<name>[^<]*</name>|<name>Breeze-ob</name>|' "$LABWC_RC"
+fi
+
 # Launch full XFCE session via official Wayland method
 exec startxfce4 --wayland

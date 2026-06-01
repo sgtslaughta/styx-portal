@@ -95,6 +95,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     yaru-theme-icon \
     && rm -rf /var/lib/apt/lists/*
 
+# ─── Squared GTK theme (EliverLara) ──────────────────────────────────────────
+# Single dark GTK theme (the theme IS dark; no -dark variant). The repo root holds
+# the theme dirs + index.theme, alongside non-theme dirs (Art/assets/src) we skip.
+# Its bundled xfwm4 theme is NOT used: the session runs labwc (Wayland), which
+# themes window borders from openbox-3, not xfwm4 — borders use Breeze-ob (set at
+# session start). Icon theme stays Yaru-dark.
+RUN git clone --depth=1 https://github.com/EliverLara/Squared.git /tmp/squared && \
+    mkdir -p /usr/share/themes/Squared && \
+    cp -r /tmp/squared/gtk-2.0 /tmp/squared/gtk-3.0 /tmp/squared/gtk-4.0 \
+          /tmp/squared/xfwm4 /tmp/squared/metacity-1 /tmp/squared/index.theme \
+          /usr/share/themes/Squared/ && \
+    rm -rf /tmp/squared
+
 # ─── PyCharm Community (JetBrains tarball, bundles JBR runtime) ───────────────
 RUN set -eux; \
     url="$(curl -fsSL 'https://data.services.jetbrains.com/products/releases?code=PCC&latest=true&type=release' | jq -r '.PCC[0].downloads.linux.link')"; \

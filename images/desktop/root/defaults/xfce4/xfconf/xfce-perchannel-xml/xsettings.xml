@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <channel name="xsettings" version="1.0">
   <property name="Net" type="empty">
-    <property name="ThemeName" type="string" value="Yaru-dark"/>
+    <property name="ThemeName" type="string" value="Squared"/>
     <property name="IconThemeName" type="string" value="Yaru-dark"/>
-    <property name="CursorThemeName" type="string" value="breeze_cursors"/>
+    <property name="CursorThemeName" type="string" value="Yaru"/>
     <property name="CursorSize" type="int" value="24"/>
   </property>
   <property name="Gtk" type="empty">
