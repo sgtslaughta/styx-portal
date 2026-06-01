@@ -14,10 +14,11 @@ from app.config import Settings
 from app.database import init_db, async_session, get_session
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.middleware.security_headers import SecurityHeadersMiddleware
-from app.models import Instance, SessionEvent
+from app.models import Instance, SessionEvent, User
 from app.routers import templates, instances, registry, images
 from app.routers import auth as auth_router
 from app.routers import users as users_router
+from app.security.deps import get_current_user, require_admin
 from app.services.docker_manager import DockerManager
 from app.services.session_monitor import SessionMonitor
 from app.security.csrf import csrf_valid, CSRF_COOKIE, CSRF_HEADER, UNSAFE_METHODS
@@ -251,13 +252,16 @@ async def instance_unavailable():
 
 
 @app.get("/api/system/gpu")
-async def system_gpu():
+async def system_gpu(user: User = Depends(get_current_user)):
     from app.services.docker_manager import detect_gpu
     return detect_gpu()
 
 
 @app.get("/api/system/metrics")
-async def system_metrics(session: AsyncSession = Depends(get_session)):
+async def system_metrics(
+    session: AsyncSession = Depends(get_session),
+    admin: User = Depends(require_admin),
+):
     import shutil
     from app.services.docker_manager import DockerManager, detect_gpu
 
@@ -324,6 +328,9 @@ async def system_metrics(session: AsyncSession = Depends(get_session)):
 
 
 @app.get("/api/system/metrics/history")
-async def system_metrics_history(range: str = "1h"):
+async def system_metrics_history(
+    range: str = "1h",
+    admin: User = Depends(require_admin),
+):
     from app.services.metrics_store import get_history
     return get_history(range)

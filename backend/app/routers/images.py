@@ -4,7 +4,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Settings
 from app.database import get_session
-from app.models import PulledImage, Instance, ServiceTemplate
+from app.models import PulledImage, Instance, ServiceTemplate, User
+from app.security.deps import get_current_user, require_admin
 from app.services.docker_manager import DockerManager
 
 router = APIRouter()
@@ -16,7 +17,10 @@ def get_docker_manager() -> DockerManager:
 
 
 @router.get("", response_model=list[PulledImage])
-async def list_images(session: AsyncSession = Depends(get_session)):
+async def list_images(
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
     result = await session.exec(select(PulledImage))
     return result.all()
 
@@ -26,6 +30,7 @@ async def delete_image(
     image_id: str,
     session: AsyncSession = Depends(get_session),
     docker: DockerManager = Depends(get_docker_manager),
+    admin: User = Depends(require_admin),
 ):
     pulled = await session.get(PulledImage, image_id)
     if not pulled:
@@ -51,6 +56,7 @@ async def delete_image(
 async def purge_images(
     session: AsyncSession = Depends(get_session),
     docker: DockerManager = Depends(get_docker_manager),
+    admin: User = Depends(require_admin),
 ):
     """Remove all tracked images that have no active instances."""
     result = await session.exec(select(PulledImage))

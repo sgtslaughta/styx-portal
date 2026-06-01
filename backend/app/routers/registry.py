@@ -1,7 +1,10 @@
 import time
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from app.models import User
+from app.security.deps import get_current_user
 
 router = APIRouter()
 
@@ -31,6 +34,7 @@ def _fetch_images() -> list[dict]:
 def list_images(
     category: str | None = Query(None),
     search: str | None = Query(None),
+    user: User = Depends(get_current_user),
 ):
     try:
         images = _fetch_images()
@@ -54,7 +58,7 @@ def list_images(
 
 
 @router.get("/{name}")
-def get_image(name: str):
+def get_image(name: str, user: User = Depends(get_current_user)):
     try:
         images = _fetch_images()
     except httpx.HTTPError:
