@@ -150,8 +150,10 @@ async def accept_invite(body: AcceptInviteRequest, request: Request, response: R
     inv = result.first()
     if not inv or inv.used_at is not None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid or used invite")
-    if inv.expires_at and inv.expires_at < _now():
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invite expired")
+    if inv.expires_at:
+        expires = inv.expires_at if inv.expires_at.tzinfo else inv.expires_at.replace(tzinfo=timezone.utc)
+        if expires < _now():
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invite expired")
     exists = await session.exec(select(User).where(User.username == body.username))
     if exists.first():
         raise HTTPException(status.HTTP_409_CONFLICT, "Username taken")
