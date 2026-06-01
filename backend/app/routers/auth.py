@@ -193,6 +193,7 @@ async def link_start(name: str, user: User = Depends(get_current_user),
 
 @router.get("/link/{name}/callback")
 async def link_callback(name: str, request: Request,
+                        user: User = Depends(get_current_user),
                         session: AsyncSession = Depends(get_session)):
     tx_raw = request.cookies.get(oauth.TX_COOKIE)
     if not tx_raw:
@@ -204,10 +205,11 @@ async def link_callback(name: str, request: Request,
     if tx["provider"] != name or tx["mode"] != "link" or \
             request.query_params.get("state") != tx["state"]:
         return RedirectResponse("/?link=bad_state", status_code=302)
-    user = await session.get(User, tx["uid"])
+    if tx["uid"] != user.id:
+        return RedirectResponse("/?link=error", status_code=302)
     provider = (await session.exec(select(OAuthProvider).where(
         OAuthProvider.name == name))).first()
-    if not user or not provider:
+    if not provider:
         return RedirectResponse("/?link=error", status_code=302)
     try:
         identity = await oauth.fetch_identity(provider, "link", str(request.url), tx["verifier"])
