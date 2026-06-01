@@ -75,6 +75,61 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     jq \
     && rm -rf /var/lib/apt/lists/*
 
+# ─── Node.js 22 + npm (NodeSource deb, not snap) ─────────────────────────────
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+# ─── VSCode (Microsoft apt repo, deb) ────────────────────────────────────────
+RUN curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft.gpg && \
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/code stable main" > /etc/apt/sources.list.d/vscode.list && \
+    apt-get update && apt-get install -y --no-install-recommends code && \
+    rm -rf /var/lib/apt/lists/* && \
+    sed -i 's|/usr/share/code/code|/usr/share/code/code --no-sandbox|g' /usr/share/applications/code.desktop /usr/share/applications/code-url-handler.desktop 2>/dev/null || true
+
+# ─── CLI utils + Yaru dark theme ─────────────────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nano \
+    btop \
+    yaru-theme-gtk \
+    yaru-theme-icon \
+    && rm -rf /var/lib/apt/lists/*
+
+# ─── Squared GTK theme (EliverLara) ──────────────────────────────────────────
+# Single dark GTK theme (the theme IS dark; no -dark variant). The repo root holds
+# the theme dirs + index.theme, alongside non-theme dirs (Art/assets/src) we skip.
+# Its bundled xfwm4 theme is NOT used: the session runs labwc (Wayland), which
+# themes window borders from openbox-3, not xfwm4 — borders use Breeze-ob (set at
+# session start). Icon theme stays Yaru-dark.
+RUN git clone --depth=1 https://github.com/EliverLara/Squared.git /tmp/squared && \
+    mkdir -p /usr/share/themes/Squared && \
+    cp -r /tmp/squared/gtk-2.0 /tmp/squared/gtk-3.0 /tmp/squared/gtk-4.0 \
+          /tmp/squared/xfwm4 /tmp/squared/metacity-1 /tmp/squared/index.theme \
+          /usr/share/themes/Squared/ && \
+    rm -rf /tmp/squared
+
+# ─── MesloLGS NF font (Nerd Font; default terminal font) ─────────────────────
+# All four styles so terminals render bold/italic. URLs use %20 literals (Docker
+# RUN is /bin/sh = dash, which lacks bash ${var// /} substitution).
+RUN mkdir -p /usr/share/fonts/truetype/meslolgs && \
+    cd /usr/share/fonts/truetype/meslolgs && \
+    b="https://github.com/romkatv/powerlevel10k-media/raw/master" && \
+    curl -fsSL "$b/MesloLGS%20NF%20Regular.ttf"     -o "MesloLGS NF Regular.ttf" && \
+    curl -fsSL "$b/MesloLGS%20NF%20Bold.ttf"        -o "MesloLGS NF Bold.ttf" && \
+    curl -fsSL "$b/MesloLGS%20NF%20Italic.ttf"      -o "MesloLGS NF Italic.ttf" && \
+    curl -fsSL "$b/MesloLGS%20NF%20Bold%20Italic.ttf" -o "MesloLGS NF Bold Italic.ttf" && \
+    fc-cache -f
+
+# ─── PyCharm Community (JetBrains tarball, bundles JBR runtime) ───────────────
+RUN set -eux; \
+    url="$(curl -fsSL 'https://data.services.jetbrains.com/products/releases?code=PCC&latest=true&type=release' | jq -r '.PCC[0].downloads.linux.link')"; \
+    curl -fsSL "$url" -o /tmp/pycharm.tar.gz; \
+    mkdir -p /opt/pycharm; \
+    tar -xzf /tmp/pycharm.tar.gz -C /opt/pycharm --strip-components=1; \
+    rm /tmp/pycharm.tar.gz; \
+    ln -sf /opt/pycharm/bin/pycharm.sh /usr/local/bin/pycharm
+COPY root/defaults/applications/pycharm.desktop /usr/share/applications/pycharm.desktop
+
 # ─── UV (Python package manager) ────────────────────────────────────────────
 RUN curl -LsSf https://astral.sh/uv/install.sh | env HOME=/root sh \
     && mv /root/.local/bin/uv /usr/local/bin/uv \
