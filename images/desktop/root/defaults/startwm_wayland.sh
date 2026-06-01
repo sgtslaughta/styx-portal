@@ -2,7 +2,9 @@
 
 # Wayland DE startup — XFCE 4.20 official Wayland session via labwc
 ulimit -c 0
-export XCURSOR_THEME=breeze
+# Cursor theme MUST name an installed theme or X shows the ugly 'X' fallback
+# cursor. Only Yaru / Adwaita / breeze_cursors exist here — "breeze" does not.
+export XCURSOR_THEME=Yaru
 export XCURSOR_SIZE=24
 export XKB_DEFAULT_LAYOUT=us
 export XKB_DEFAULT_RULES=evdev
