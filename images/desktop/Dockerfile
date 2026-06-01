@@ -84,7 +84,8 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
 RUN curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft.gpg && \
     echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/code stable main" > /etc/apt/sources.list.d/vscode.list && \
     apt-get update && apt-get install -y --no-install-recommends code && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    sed -i 's|/usr/share/code/code|/usr/share/code/code --no-sandbox|g' /usr/share/applications/code.desktop /usr/share/applications/code-url-handler.desktop 2>/dev/null || true
 
 # ─── CLI utils + Yaru dark theme ─────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
