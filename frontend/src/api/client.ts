@@ -10,11 +10,30 @@ import type {
 
 const BASE = "/api";
 
+function getCookie(name: string): string | null {
+  const m = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(init?.headers as Record<string, string>),
+  };
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    const csrf = getCookie("csrf_token");
+    if (csrf) headers["X-CSRF-Token"] = csrf;
+  }
   const res = await fetch(`${BASE}${path}`, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    credentials: "include",
     ...init,
+    headers,
   });
+  if (res.status === 401 && !path.startsWith("/auth/")) {
+    window.location.href = "/login";
+    throw new Error("Unauthorized");
+  }
   if (!res.ok) {
     const detail = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(detail.detail || res.statusText);
@@ -105,4 +124,24 @@ export const api = {
 
   getInstanceLogs: (instanceId: string) =>
     request<string[]>(`/instances/${instanceId}/logs`),
+
+  setupRequired: () => request<{ setup_required: boolean }>("/auth/setup-required"),
+  setup: (data: { username: string; email?: string; password: string }) =>
+    request<{ id: string; username: string; role: string }>("/auth/setup", {
+      method: "POST", body: JSON.stringify(data) }),
+  login: (data: { username: string; password: string }) =>
+    request<{ id: string; username: string; role: string }>("/auth/login", {
+      method: "POST", body: JSON.stringify(data) }),
+  logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
+  me: () => request<{ id: string; username: string; email: string | null; role: string }>("/auth/me"),
+  acceptInvite: (data: { token: string; username: string; password: string }) =>
+    request<{ id: string; username: string; role: string }>("/auth/accept-invite", {
+      method: "POST", body: JSON.stringify(data) }),
+  listUsers: () => request<{ id: string; username: string; email: string | null; role: string; is_active: boolean }[]>("/users"),
+  createInvite: (data: { email?: string; role: string }) =>
+    request<{ token: string; expires_at: string | null }>("/users/invites", {
+      method: "POST", body: JSON.stringify(data) }),
+  disableUser: (id: string) => request<unknown>(`/users/${id}/disable`, { method: "PATCH" }),
+  changeRole: (id: string, role: string) =>
+    request<unknown>(`/users/${id}/role?role=${role}`, { method: "PATCH" }),
 };
