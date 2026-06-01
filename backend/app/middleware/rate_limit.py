@@ -6,6 +6,22 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 
+def client_ip_from_headers(request) -> str:
+    """Resolve the real client IP behind a trusted proxy (Cloudflare/Traefik).
+
+    Backend is only reachable via the proxy, so these headers are trustworthy here.
+    Prefers Cloudflare's CF-Connecting-IP, then the left-most X-Forwarded-For hop,
+    then the direct socket peer.
+    """
+    cf = request.headers.get("cf-connecting-ip")
+    if cf:
+        return cf.strip()
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 class SlidingWindow:
     def __init__(self, limit: int, window: int):
         self.limit = limit
@@ -35,7 +51,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._default = SlidingWindow(*_parse(default_spec))
 
     async def dispatch(self, request: Request, call_next):
-        ip = request.client.host if request.client else "unknown"
+        ip = client_ip_from_headers(request)
         is_auth = request.url.path.startswith("/api/auth")
         window = self._auth if is_auth else self._default
         if not window.allow(f"{ip}:{is_auth}"):
