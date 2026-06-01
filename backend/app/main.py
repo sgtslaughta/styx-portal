@@ -18,6 +18,8 @@ from app.models import Instance, SessionEvent, User
 from app.routers import templates, instances, registry, images
 from app.routers import auth as auth_router
 from app.routers import users as users_router
+from app.routers import oauth as oauth_router
+from app.routers import oauth_admin as oauth_admin_router
 from app.security.deps import get_current_user, require_admin
 from app.services.docker_manager import DockerManager
 from app.services.session_monitor import SessionMonitor
@@ -234,6 +236,8 @@ app.include_router(registry.router, prefix="/api/registry/images", tags=["regist
 app.include_router(images.router, prefix="/api/images", tags=["images"])
 app.include_router(auth_router.router, prefix="/api/auth", tags=["auth"])
 app.include_router(users_router.router, prefix="/api/users", tags=["users"])
+app.include_router(oauth_router.router, prefix="/api/auth/oauth", tags=["oauth"])
+app.include_router(oauth_admin_router.router, prefix="/api/oauth-providers", tags=["oauth-admin"])
 
 
 @app.get("/api/health")
