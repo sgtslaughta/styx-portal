@@ -108,6 +108,18 @@ RUN git clone --depth=1 https://github.com/EliverLara/Squared.git /tmp/squared &
           /usr/share/themes/Squared/ && \
     rm -rf /tmp/squared
 
+# ─── MesloLGS NF font (Nerd Font; default terminal font) ─────────────────────
+# All four styles so terminals render bold/italic. URLs use %20 literals (Docker
+# RUN is /bin/sh = dash, which lacks bash ${var// /} substitution).
+RUN mkdir -p /usr/share/fonts/truetype/meslolgs && \
+    cd /usr/share/fonts/truetype/meslolgs && \
+    b="https://github.com/romkatv/powerlevel10k-media/raw/master" && \
+    curl -fsSL "$b/MesloLGS%20NF%20Regular.ttf"     -o "MesloLGS NF Regular.ttf" && \
+    curl -fsSL "$b/MesloLGS%20NF%20Bold.ttf"        -o "MesloLGS NF Bold.ttf" && \
+    curl -fsSL "$b/MesloLGS%20NF%20Italic.ttf"      -o "MesloLGS NF Italic.ttf" && \
+    curl -fsSL "$b/MesloLGS%20NF%20Bold%20Italic.ttf" -o "MesloLGS NF Bold Italic.ttf" && \
+    fc-cache -f
+
 # ─── PyCharm Community (JetBrains tarball, bundles JBR runtime) ───────────────
 RUN set -eux; \
     url="$(curl -fsSL 'https://data.services.jetbrains.com/products/releases?code=PCC&latest=true&type=release' | jq -r '.PCC[0].downloads.linux.link')"; \

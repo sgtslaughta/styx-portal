@@ -10,7 +10,7 @@
     background_darkness = 0.92
     background_type = transparent
     cursor_color = "#88c0d0"
-    font = Noto Sans Mono 11
+    font = MesloLGS NF 11
     foreground_color = "#d8dee9"
     background_color = "#2e3440"
     palette = "#3b4252:#bf616a:#a3be8c:#ebcb8b:#81a1c1:#b48ead:#88c0d0:#e5e9f0:#4c566a:#bf616a:#a3be8c:#ebcb8b:#81a1c1:#b48ead:#8fbcbb:#eceff4"
