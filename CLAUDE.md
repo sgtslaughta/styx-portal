@@ -52,6 +52,7 @@ docker compose up -d
 5. Subdomain routing — cleaner for WebRTC/WebSocket
 6. SQLModel — one class = DB model + API schema
 7. **Auth (Phase 1):** Native JWT auth with per-user instance ownership, Argon2id hashing, CSRF (double-submit), rate limiting, and security headers (CSP/HSTS/X-Frame-Options) enforced.
+8. **SSO (Phase 2):** Federated identities via OIDC/OAuth2 (authlib). Providers stored in `oauth_providers` with Fernet-encrypted secrets (key=HKDF(JWT_SECRET)). Identities in `federated_identities` table (unique provider+subject). Pre-authorized-only provisioning: verified email must match existing user or open invite. Identity details fetched from OIDC userinfo endpoint (no JWKS/id_token parsing).
 
 ## Testing
 

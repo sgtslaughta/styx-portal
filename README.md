@@ -95,6 +95,18 @@ Native username/password auth with JWT in httpOnly cookies.
 
 Security: per-user instance ownership (admins see all), Argon2id password hashing, double-submit CSRF, rate limiting on auth endpoints, and security headers (CSP/HSTS/X-Frame-Options) are enforced.
 
+## SSO / OAuth (Phase 2)
+
+Federated identity via OIDC and OAuth2 providers (generic OIDC issuer discovery, Google, GitHub).
+
+- **Provider setup:** Admins add providers in **System → OAuth providers** with issuer URL, client ID, and client secret; enable to activate.
+- **Sign-in:** Users see "Sign in with <provider>" buttons on the login page; login succeeds only if the verified email matches an existing user or open invite (pre-authorized-only).
+- **Account linking:** Logged-in users link/unlink providers under **System → Connected accounts** (cannot unlink the only login method).
+- **Redirect URIs:** Register these with each provider:
+  - Login: `https://<domain>/api/auth/oauth/<name>/callback`
+  - Linking: `https://<domain>/api/auth/link/<name>/callback`
+- **Secrets:** Client secrets are encrypted at rest using a Fernet key derived from `JWT_SECRET`; rotating `JWT_SECRET` requires re-entering provider secrets.
+
 ## Session Management
 
 Background monitor polls every 60s. Per-template configurable:
