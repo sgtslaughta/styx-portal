@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     COOKIE_DOMAIN: str | None = None
     RATE_LIMIT_AUTH: str = "5/60"        # 5 requests per 60s on /auth/*
     RATE_LIMIT_DEFAULT: str = "120/60"   # 120 requests per 60s otherwise
+    OAUTH_REDIRECT_BASE: str = ""   # e.g. https://s.jmolabs.dev ; defaults to https://{DOMAIN}
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
@@ -28,3 +29,6 @@ class Settings(BaseSettings):
                 raise RuntimeError("JWT_SECRET must be set when COOKIE_SECURE=true")
             return "dev-insecure-secret-do-not-use-in-prod"
         return self.JWT_SECRET
+
+    def oauth_redirect_base(self) -> str:
+        return self.OAUTH_REDIRECT_BASE or f"https://{self.DOMAIN}"
