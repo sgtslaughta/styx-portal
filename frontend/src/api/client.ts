@@ -8,6 +8,17 @@ import type {
   TemplateCreate,
 } from "@/lib/types";
 
+export type OAuthProviderRow = {
+  id: string; name: string; display_label: string; kind: string;
+  issuer_url: string | null; client_id: string; scopes: string;
+  role_map: Record<string, unknown>; enabled: boolean; has_secret: boolean;
+};
+export type OAuthProviderCreate = {
+  name: string; display_label: string; kind: string; issuer_url?: string;
+  authorize_url?: string; token_url?: string; userinfo_url?: string;
+  client_id: string; client_secret: string; scopes?: string; role_map?: Record<string, unknown>;
+};
+
 const BASE = "/api";
 
 function getCookie(name: string): string | null {
@@ -144,4 +155,16 @@ export const api = {
   disableUser: (id: string) => request<unknown>(`/users/${id}/disable`, { method: "PATCH" }),
   changeRole: (id: string, role: string) =>
     request<unknown>(`/users/${id}/role?role=${role}`, { method: "PATCH" }),
+
+  oauthProviders: () => request<{ name: string; display_label: string }[]>("/auth/oauth/providers"),
+  oauthStartUrl: (name: string) => `/api/auth/oauth/${name}/start`,
+  linkStartUrl: (name: string) => `/api/auth/link/${name}/start`,
+  linkedProviders: () => request<{ provider: string; email: string | null; created_at: string }[]>("/auth/link/providers"),
+  unlinkProvider: (name: string) => request<{ ok: boolean }>(`/auth/link/${name}`, { method: "DELETE" }),
+  listOAuthProviders: () => request<OAuthProviderRow[]>("/oauth-providers"),
+  createOAuthProvider: (data: OAuthProviderCreate) =>
+    request<OAuthProviderRow>("/oauth-providers", { method: "POST", body: JSON.stringify(data) }),
+  updateOAuthProvider: (id: string, data: Partial<OAuthProviderCreate> & { enabled?: boolean }) =>
+    request<OAuthProviderRow>(`/oauth-providers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  deleteOAuthProvider: (id: string) => request<void>(`/oauth-providers/${id}`, { method: "DELETE" }),
 };

@@ -9,6 +9,8 @@ import { RegistryBrowser } from "@/components/templates/registry-browser";
 import { LaunchModal } from "@/components/templates/launch-modal";
 import { MetricsDashboard } from "@/components/system/metrics-dashboard";
 import { UsersPanel } from "@/components/system/users-panel";
+import { OAuthProvidersPanel } from "@/components/system/oauth-providers-panel";
+import { ConnectedAccounts } from "@/components/system/connected-accounts";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useTemplates } from "@/hooks/use-templates";
 import { useAuth } from "@/hooks/use-auth";
@@ -93,6 +95,8 @@ export default function App() {
         <div className={activeTab === "system" ? "" : "hidden"}>
           <div className="mx-auto max-w-5xl space-y-6">
             {user?.role === "admin" && <UsersPanel />}
+            {user?.role === "admin" && <OAuthProvidersPanel />}
+            {user && <ConnectedAccounts />}
             <MetricsDashboard />
           </div>
         </div>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { LogIn } from "lucide-react";
 import { api } from "@/api/client";
@@ -11,8 +11,31 @@ export function LoginPage() {
   const [username, setU] = useState("");
   const [password, setP] = useState("");
   const [err, setErr] = useState("");
+  const [providers, setProviders] = useState<{ name: string; display_label: string }[]>([]);
   const nav = useNavigate();
   const { refresh } = useAuth();
+
+  useEffect(() => {
+    api.oauthProviders().then(setProviders).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const ssoError = new URLSearchParams(window.location.search).get("error");
+    if (ssoError) {
+      const errorMap: Record<string, string> = {
+        not_authorized: "This account is not authorized. Ask an admin for an invite.",
+        email_unverified: "Your identity provider did not confirm a verified email.",
+        account_disabled: "This account is disabled.",
+        state_mismatch: "Sign-in session expired. Please try again.",
+        bad_state: "Sign-in session expired. Please try again.",
+        missing_state: "Sign-in session expired. Please try again.",
+        oauth_failed: "Single sign-on failed. Please try again.",
+        unknown_provider: "Single sign-on failed. Please try again.",
+      };
+      const message = errorMap[ssoError] || "An error occurred during sign-in. Please try again.";
+      setErr(message);
+    }
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -66,6 +89,17 @@ export function LoginPage() {
               Sign in
             </Button>
           </form>
+          {providers.length > 0 && (
+            <div className="space-y-2 pt-2">
+              <div className="text-center text-xs text-muted-foreground">or continue with</div>
+              {providers.map((p) => (
+                <a key={p.name} href={api.oauthStartUrl(p.name)}
+                   className="block w-full rounded-md border border-border bg-background p-2 text-center text-sm hover:bg-muted">
+                  Sign in with {p.display_label}
+                </a>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
