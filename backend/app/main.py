@@ -80,6 +80,17 @@ async def _session_monitor_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Fail fast at boot if the auth secret is misconfigured, rather than
+    # returning an opaque 500 the first time a token is minted (e.g. /auth/setup).
+    try:
+        _settings.jwt_secret_or_raise()
+    except RuntimeError as e:
+        logger.critical(
+            "FATAL: %s. Set JWT_SECRET in the environment (e.g. "
+            "`openssl rand -base64 48`), or set COOKIE_SECURE=false for local dev.", e
+        )
+        raise
+
     await init_db()
 
     # Sync instance states — mark stale instances as stopped
