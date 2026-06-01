@@ -1,7 +1,6 @@
 import pytest
 
 
-@pytest.mark.skip(reason="enabled after middleware wired in Task 15")
 @pytest.mark.asyncio
 async def test_security_headers_present(client):
     r = await client.get("/api/health")

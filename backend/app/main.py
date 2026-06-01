@@ -1,25 +1,40 @@
 import asyncio
 import logging
-import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from pathlib import Path
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import Settings
 from app.database import init_db, async_session, get_session
+from app.middleware.rate_limit import RateLimitMiddleware
+from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.models import Instance, SessionEvent
 from app.routers import templates, instances, registry, images
+from app.routers import auth as auth_router
+from app.routers import users as users_router
 from app.services.docker_manager import DockerManager
 from app.services.session_monitor import SessionMonitor
+from app.security.csrf import csrf_valid, CSRF_COOKIE, CSRF_HEADER, UNSAFE_METHODS
 
 logger = logging.getLogger("selkies-hub")
 _settings = Settings()
+
+_CSRF_EXEMPT = {"/api/auth/login", "/api/auth/setup", "/api/auth/refresh", "/api/auth/accept-invite"}
+
+
+class CSRFMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if request.method in UNSAFE_METHODS and request.url.path not in _CSRF_EXEMPT:
+            if not csrf_valid(request.cookies.get(CSRF_COOKIE),
+                              request.headers.get(CSRF_HEADER)):
+                return JSONResponse({"detail": "CSRF check failed"}, status_code=403)
+        return await call_next(request)
 
 
 async def _run_monitor_pass(session, monitor, docker) -> bool:
@@ -65,17 +80,6 @@ async def _session_monitor_loop():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-
-    # Generate or load admin token
-    token_path = Path(_settings.SCREENSHOT_CACHE_DIR).parent / ".admin_token"
-    if token_path.exists():
-        admin_token = token_path.read_text().strip()
-    else:
-        admin_token = secrets.token_urlsafe(32)
-        token_path.parent.mkdir(parents=True, exist_ok=True)
-        token_path.write_text(admin_token)
-    app.state.admin_token = admin_token
-    logger.warning(f"\n{'='*60}\n  ADMIN TOKEN: {admin_token}\n{'='*60}\n")
 
     # Sync instance states — mark stale instances as stopped
     docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
@@ -197,18 +201,27 @@ async def _screenshot_capture_loop():
 
 app = FastAPI(title="Selkies Hub", version="0.1.0", lifespan=lifespan)
 
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(CSRFMiddleware)
+app.add_middleware(
+    RateLimitMiddleware,
+    auth_spec=_settings.RATE_LIMIT_AUTH,
+    default_spec=_settings.RATE_LIMIT_DEFAULT,
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", f"https://{_settings.DOMAIN}"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-CSRF-Token"],
 )
 
 app.include_router(templates.router, prefix="/api/templates", tags=["templates"])
 app.include_router(instances.router, prefix="/api/instances", tags=["instances"])
 app.include_router(registry.router, prefix="/api/registry/images", tags=["registry"])
 app.include_router(images.router, prefix="/api/images", tags=["images"])
+app.include_router(auth_router.router, prefix="/api/auth", tags=["auth"])
+app.include_router(users_router.router, prefix="/api/users", tags=["users"])
 
 
 @app.get("/api/health")
