@@ -1,8 +1,14 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter, Routes, Route } from "react-router";
 import { Toaster } from "sonner";
 import App from "./App";
+import { AuthProvider } from "@/auth/AuthContext";
+import { ProtectedRoute } from "@/auth/ProtectedRoute";
+import { LoginPage } from "@/pages/LoginPage";
+import { SetupWizard } from "@/pages/SetupWizard";
+import { AcceptInvitePage } from "@/pages/AcceptInvitePage";
 import "./styles/globals.css";
 
 /** Toaster that follows the app theme by mirroring the `.dark` class on <html>
@@ -32,7 +38,16 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <App />
+      <BrowserRouter>
+        <AuthProvider>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/setup" element={<SetupWizard />} />
+            <Route path="/accept-invite/:token" element={<AcceptInvitePage />} />
+            <Route path="/*" element={<ProtectedRoute><App /></ProtectedRoute>} />
+          </Routes>
+        </AuthProvider>
+      </BrowserRouter>
       <ThemedToaster />
     </QueryClientProvider>
   </StrictMode>

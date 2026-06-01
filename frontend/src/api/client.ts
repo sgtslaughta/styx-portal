@@ -12,7 +12,7 @@ const BASE = "/api";
 
 function getCookie(name: string): string | null {
   const m = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
-  return m ? decodeURIComponent(m[1]) : null;
+  return m && m[1] ? decodeURIComponent(m[1]) : null;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -23,7 +23,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   };
   if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
     const csrf = getCookie("csrf_token");
-    if (csrf) headers["X-CSRF-Token"] = csrf;
+    if (csrf !== null) headers["X-CSRF-Token"] = csrf;
   }
   const res = await fetch(`${BASE}${path}`, {
     credentials: "include",
