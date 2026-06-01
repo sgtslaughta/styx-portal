@@ -1,5 +1,5 @@
 from typing import Any
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class TemplateCreate(BaseModel):
@@ -70,3 +70,38 @@ class InstanceStatus(BaseModel):
     uptime_seconds: float | None
     idle_seconds: float | None
     session_config: dict[str, Any] | None
+
+
+class SetupRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=64)
+    email: str | None = None
+    password: str = Field(min_length=12, max_length=256)
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class AcceptInviteRequest(BaseModel):
+    token: str
+    username: str = Field(min_length=3, max_length=64)
+    password: str = Field(min_length=12, max_length=256)
+
+
+class UserOut(BaseModel):
+    id: str
+    username: str
+    email: str | None
+    role: str
+    is_active: bool
+
+
+class CreateInviteRequest(BaseModel):
+    email: str | None = None
+    role: str = "user"
+
+
+class InviteOut(BaseModel):
+    token: str
+    expires_at: str | None
