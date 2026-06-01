@@ -1,4 +1,4 @@
-from app.models import User, Invite, RefreshToken, Instance
+from app.models import User, Invite, Instance
 
 
 def test_user_defaults():
