@@ -85,6 +85,16 @@ uvicorn app.main:app --reload --port 8000
 - **workstation** — Full host access with GPU passthrough
 - **gaming** — GPU-accelerated desktop for gaming
 
+## Authentication (Phase 1)
+
+Native username/password auth with JWT in httpOnly cookies.
+
+- **First run:** visit the app; you'll be redirected to `/setup` to create the admin account (one-time).
+- **Users:** admin-invite-only. Admins generate single-use invite links from the **System → Users** panel.
+- **Config:** set a strong `JWT_SECRET` (≥32 bytes) and `COOKIE_SECURE=true` in `.env` before exposing publicly.
+
+Security: per-user instance ownership (admins see all), Argon2id password hashing, double-submit CSRF, rate limiting on auth endpoints, and security headers (CSP/HSTS/X-Frame-Options) are enforced.
+
 ## Session Management
 
 Background monitor polls every 60s. Per-template configurable:

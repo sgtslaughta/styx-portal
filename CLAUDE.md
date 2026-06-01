@@ -51,6 +51,7 @@ docker compose up -d
 4. Traefik auto-discovery via labels — no config reloads
 5. Subdomain routing — cleaner for WebRTC/WebSocket
 6. SQLModel — one class = DB model + API schema
+7. **Auth (Phase 1):** Native JWT auth with per-user instance ownership, Argon2id hashing, CSRF (double-submit), rate limiting, and security headers (CSP/HSTS/X-Frame-Options) enforced.
 
 ## Testing
 

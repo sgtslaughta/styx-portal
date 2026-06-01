@@ -1,5 +1,6 @@
 import { Monitor, Moon, Sun } from "lucide-react";
 import { useInstances } from "@/hooks/use-instances";
+import { useAuth } from "@/hooks/use-auth";
 import { useEffect, useState } from "react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -68,6 +69,7 @@ function CountChip({ count, label, dotClass }: { count: number; label: string; d
 
 export function Header() {
   const { data: instances } = useInstances();
+  const { user, logout } = useAuth();
   const running = instances?.filter((i) => i.status === "running" || i.status === "idle").length ?? 0;
   const paused = instances?.filter((i) => i.status === "paused").length ?? 0;
   const stopped = instances?.filter((i) => i.status === "stopped").length ?? 0;
@@ -83,6 +85,12 @@ export function Header() {
         <CountChip count={stopped} label="stopped" dotClass="bg-muted-foreground" />
         <CountChip count={errored} label="error" dotClass="bg-destructive" />
       </div>
+      {user && (
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">{user.username}</span>
+          <button onClick={() => logout()} className="text-sm underline hover:text-foreground">Log out</button>
+        </div>
+      )}
       <ThemeToggle />
     </header>
   );

@@ -8,13 +8,16 @@ import { TemplateGrid } from "@/components/templates/template-grid";
 import { RegistryBrowser } from "@/components/templates/registry-browser";
 import { LaunchModal } from "@/components/templates/launch-modal";
 import { MetricsDashboard } from "@/components/system/metrics-dashboard";
+import { UsersPanel } from "@/components/system/users-panel";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useTemplates } from "@/hooks/use-templates";
+import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 import type { ServiceTemplate, RegistryImage } from "@/lib/types";
 
 export default function App() {
   const { data: templates } = useTemplates();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("instances");
   const [templateSubTab, setTemplateSubTab] = useState<string | null>(null);
   const [launchRegistry, setLaunchRegistry] = useState<RegistryImage | null>(null);
@@ -88,7 +91,8 @@ export default function App() {
           </div>
         </div>
         <div className={activeTab === "system" ? "" : "hidden"}>
-          <div className="mx-auto max-w-5xl">
+          <div className="mx-auto max-w-5xl space-y-6">
+            {user?.role === "admin" && <UsersPanel />}
             <MetricsDashboard />
           </div>
         </div>

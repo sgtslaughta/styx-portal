@@ -44,6 +44,8 @@ services:
       - DOCKER_NETWORK=selkies-hub
       - TEMPLATES_DIR=/app/templates
       - AUTHENTIK_MIDDLEWARE=authentik@file
+      - JWT_SECRET=${JWT_SECRET}
+      - COOKIE_SECURE=${COOKIE_SECURE:-true}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - db-data:/app/data

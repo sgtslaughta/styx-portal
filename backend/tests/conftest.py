@@ -1,3 +1,9 @@
+import os
+os.environ.setdefault("JWT_SECRET", "test-secret")
+os.environ.setdefault("COOKIE_SECURE", "false")
+os.environ.setdefault("RATE_LIMIT_AUTH", "1000/60")
+os.environ.setdefault("RATE_LIMIT_DEFAULT", "1000/60")
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
@@ -46,5 +52,16 @@ async def client_fixture(session):
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
-    
+
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def admin_client(client):
+    """An AsyncClient that has completed first-run setup and holds admin cookies + CSRF header."""
+    r = await client.post("/api/auth/setup", json={
+        "username": "admin", "password": "correct horse battery staple"})
+    assert r.status_code == 201, r.text
+    csrf = client.cookies.get("csrf_token")
+    client.headers.update({"X-CSRF-Token": csrf})
+    return client

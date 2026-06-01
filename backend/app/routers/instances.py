@@ -9,8 +9,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Settings
 from app.database import get_session, async_session
-from app.models import Instance, ServiceTemplate, SessionEvent, PulledImage
+from app.models import Instance, ServiceTemplate, SessionEvent, PulledImage, User
 from app.schemas import InstanceCreate, InstanceUpdate, SessionConfigUpdate, InstanceStatus
+from app.security.deps import get_current_user, require_owner_or_admin
 from app.services.docker_manager import DockerManager
 from app.services.screenshot import ScreenshotService
 from app.services.traefik_labels import generate_traefik_labels
@@ -74,8 +75,14 @@ async def _build_and_start_container(instance, template, docker):
 
 
 @router.get("", response_model=list[Instance])
-async def list_instances(session: AsyncSession = Depends(get_session)):
-    result = await session.exec(select(Instance))
+async def list_instances(
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
+    stmt = select(Instance)
+    if user.role != "admin":
+        stmt = stmt.where(Instance.owner_id == user.id)
+    result = await session.exec(stmt)
     return result.all()
 
 
@@ -178,6 +185,7 @@ async def _launch_instance_background(instance_id: str, template_id: str):
 async def create_instance(
     body: InstanceCreate,
     session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
 ):
     template = await session.get(ServiceTemplate, body.template_id)
     if not template:
@@ -192,6 +200,7 @@ async def create_instance(
 
     instance = Instance(
         template_id=template.id,
+        owner_id=user.id,
         name=body.name,
         subdomain=body.subdomain,
         status="starting",
@@ -207,10 +216,15 @@ async def create_instance(
 
 
 @router.get("/{instance_id}", response_model=Instance)
-async def get_instance(instance_id: str, session: AsyncSession = Depends(get_session)):
+async def get_instance(
+    instance_id: str,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
     instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
+    require_owner_or_admin(instance.owner_id, user)
     return instance
 
 
@@ -219,10 +233,12 @@ async def start_instance(
     instance_id: str,
     session: AsyncSession = Depends(get_session),
     docker: DockerManager = Depends(get_docker_manager),
+    user: User = Depends(get_current_user),
 ):
     instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
+    require_owner_or_admin(instance.owner_id, user)
     if instance.status == "running":
         raise HTTPException(409, "Instance already running")
 
@@ -263,10 +279,12 @@ async def stop_instance(
     instance_id: str,
     session: AsyncSession = Depends(get_session),
     docker: DockerManager = Depends(get_docker_manager),
+    user: User = Depends(get_current_user),
 ):
     instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
+    require_owner_or_admin(instance.owner_id, user)
 
     if instance.container_id:
         status = await asyncio.to_thread(docker.get_container_status, instance.container_id)
@@ -290,10 +308,12 @@ async def restart_instance(
     instance_id: str,
     session: AsyncSession = Depends(get_session),
     docker: DockerManager = Depends(get_docker_manager),
+    user: User = Depends(get_current_user),
 ):
     instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
+    require_owner_or_admin(instance.owner_id, user)
     if not instance.container_id:
         raise HTTPException(400, "No container to restart")
 
@@ -318,12 +338,14 @@ async def recreate_instance(
     instance_id: str,
     session: AsyncSession = Depends(get_session),
     docker: DockerManager = Depends(get_docker_manager),
+    user: User = Depends(get_current_user),
 ):
     """Rebuild the instance's container from its (updated) template, reusing the
     instance's named volumes so persistent data is preserved. Same instance id/subdomain."""
     instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
+    require_owner_or_admin(instance.owner_id, user)
     template = await session.get(ServiceTemplate, instance.template_id)
     if not template:
         raise HTTPException(400, "Template no longer exists, cannot recreate")
@@ -365,10 +387,12 @@ async def pause_instance(
     instance_id: str,
     session: AsyncSession = Depends(get_session),
     docker: DockerManager = Depends(get_docker_manager),
+    user: User = Depends(get_current_user),
 ):
     instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
+    require_owner_or_admin(instance.owner_id, user)
     if instance.status != "running" and instance.status != "idle":
         raise HTTPException(409, "Instance not running")
 
@@ -389,10 +413,12 @@ async def unpause_instance(
     instance_id: str,
     session: AsyncSession = Depends(get_session),
     docker: DockerManager = Depends(get_docker_manager),
+    user: User = Depends(get_current_user),
 ):
     instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
+    require_owner_or_admin(instance.owner_id, user)
     if instance.status != "paused":
         raise HTTPException(409, "Instance not paused")
 
@@ -417,10 +443,12 @@ async def delete_instance(
     remove_template: bool = Query(False),
     session: AsyncSession = Depends(get_session),
     docker: DockerManager = Depends(get_docker_manager),
+    user: User = Depends(get_current_user),
 ):
     instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
+    require_owner_or_admin(instance.owner_id, user)
 
     if instance.container_id:
         status = await asyncio.to_thread(docker.get_container_status, instance.container_id)
@@ -479,10 +507,12 @@ async def get_instance_status(
     instance_id: str,
     session: AsyncSession = Depends(get_session),
     docker: DockerManager = Depends(get_docker_manager),
+    user: User = Depends(get_current_user),
 ):
     instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
+    require_owner_or_admin(instance.owner_id, user)
 
     docker_status = {}
     if instance.container_id:
@@ -518,10 +548,12 @@ async def get_instance_stats(
     instance_id: str,
     session: AsyncSession = Depends(get_session),
     docker: DockerManager = Depends(get_docker_manager),
+    user: User = Depends(get_current_user),
 ):
     instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
+    require_owner_or_admin(instance.owner_id, user)
     if not instance.container_id or instance.status not in ("running", "idle"):
         return {"cpu_percent": 0, "memory_mb": 0, "memory_limit_mb": 0, "memory_percent": 0}
 
@@ -551,10 +583,15 @@ async def get_instance_stats(
 
 
 @router.post("/{instance_id}/keepalive", response_model=Instance)
-async def keepalive(instance_id: str, session: AsyncSession = Depends(get_session)):
+async def keepalive(
+    instance_id: str,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
+):
     instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
+    require_owner_or_admin(instance.owner_id, user)
 
     instance.last_activity = datetime.now(timezone.utc)
     session.add(instance)
@@ -568,10 +605,12 @@ async def update_instance(
     instance_id: str,
     body: InstanceUpdate,
     session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
 ):
     instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
+    require_owner_or_admin(instance.owner_id, user)
 
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(instance, field, value)
@@ -587,10 +626,12 @@ async def update_session_config(
     instance_id: str,
     body: SessionConfigUpdate,
     session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
 ):
     instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
+    require_owner_or_admin(instance.owner_id, user)
 
     config = instance.session_config or {}
     for field, value in body.model_dump(exclude_unset=True).items():
@@ -608,10 +649,12 @@ async def get_screenshot(
     instance_id: str,
     session: AsyncSession = Depends(get_session),
     screenshots: ScreenshotService = Depends(get_screenshot_service),
+    user: User = Depends(get_current_user),
 ):
     instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
+    require_owner_or_admin(instance.owner_id, user)
 
     path = screenshots.get_path(instance_id)
     if not path:
@@ -625,12 +668,14 @@ async def refresh_screenshot(
     instance_id: str,
     session: AsyncSession = Depends(get_session),
     screenshots: ScreenshotService = Depends(get_screenshot_service),
+    user: User = Depends(get_current_user),
 ):
     """Capture a fresh screenshot on demand (via the Selkies #shared view-only
     mirror — never steals the session). Returns {"ok": bool}."""
     instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
+    require_owner_or_admin(instance.owner_id, user)
     if instance.status not in ("running", "idle") or not instance.container_id:
         return {"ok": False, "reason": "not running"}
 
@@ -648,10 +693,12 @@ async def refresh_screenshot(
 async def get_instance_events(
     instance_id: str,
     session: AsyncSession = Depends(get_session),
+    user: User = Depends(get_current_user),
 ):
     instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
+    require_owner_or_admin(instance.owner_id, user)
 
     from sqlmodel import desc
     result = await session.exec(
@@ -677,10 +724,12 @@ async def get_instance_logs(
     lines: int = Query(default=500, le=2000),
     session: AsyncSession = Depends(get_session),
     docker: DockerManager = Depends(get_docker_manager),
+    user: User = Depends(get_current_user),
 ):
     instance = await session.get(Instance, instance_id)
     if not instance:
         raise HTTPException(404, "Instance not found")
+    require_owner_or_admin(instance.owner_id, user)
     if not instance.container_id:
         return []
 
