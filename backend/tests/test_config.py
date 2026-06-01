@@ -25,14 +25,16 @@ def test_screenshot_interval_default():
 
 def test_jwt_settings_defaults():
     """Test JWT and rate-limit settings have expected defaults."""
-    s = Settings()
-    assert s.JWT_SECRET == ""
-    assert s.ACCESS_TTL == 900
-    assert s.REFRESH_TTL == 604800
-    assert s.COOKIE_SECURE is True
-    assert s.COOKIE_DOMAIN is None
-    assert s.RATE_LIMIT_AUTH == "5/60"
-    assert s.RATE_LIMIT_DEFAULT == "120/60"
+    # Use model_fields to check declared defaults (not env-influenced runtime values).
+    # conftest.py sets JWT_SECRET, COOKIE_SECURE, RATE_LIMIT_AUTH, RATE_LIMIT_DEFAULT as env vars
+    # for test runs, so checking Settings() would fail. Instead, check the class defaults.
+    assert Settings.model_fields["JWT_SECRET"].default == ""
+    assert Settings.model_fields["ACCESS_TTL"].default == 900
+    assert Settings.model_fields["REFRESH_TTL"].default == 604800
+    assert Settings.model_fields["COOKIE_SECURE"].default is True
+    assert Settings.model_fields["COOKIE_DOMAIN"].default is None
+    assert Settings.model_fields["RATE_LIMIT_AUTH"].default == "5/60"
+    assert Settings.model_fields["RATE_LIMIT_DEFAULT"].default == "120/60"
 
 
 def test_jwt_secret_or_raise_with_secret():

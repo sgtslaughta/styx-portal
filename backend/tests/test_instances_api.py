@@ -26,14 +26,14 @@ TEMPLATE_PAYLOAD = {
 
 
 @pytest.fixture
-async def template_id(client):
-    resp = await client.post("/api/templates", json=TEMPLATE_PAYLOAD)
+async def template_id(admin_client):
+    resp = await admin_client.post("/api/templates", json=TEMPLATE_PAYLOAD)
     return resp.json()["id"]
 
 
 @pytest.mark.asyncio
-async def test_create_instance(client, template_id):
-    resp = await client.post(
+async def test_create_instance(admin_client, template_id):
+    resp = await admin_client.post(
         "/api/instances",
         json={"template_id": template_id, "name": "My Dev Box", "subdomain": "dev"},
     )
@@ -45,8 +45,8 @@ async def test_create_instance(client, template_id):
 
 
 @pytest.mark.asyncio
-async def test_create_instance_bad_template(client):
-    resp = await client.post(
+async def test_create_instance_bad_template(admin_client):
+    resp = await admin_client.post(
         "/api/instances",
         json={"template_id": "nonexistent", "name": "fail", "subdomain": "fail"},
     )
@@ -54,83 +54,83 @@ async def test_create_instance_bad_template(client):
 
 
 @pytest.mark.asyncio
-async def test_list_instances(client, template_id):
-    await client.post(
+async def test_list_instances(admin_client, template_id):
+    await admin_client.post(
         "/api/instances",
         json={"template_id": template_id, "name": "inst1", "subdomain": "inst1"},
     )
-    resp = await client.get("/api/instances")
+    resp = await admin_client.get("/api/instances")
     assert resp.status_code == 200
     assert len(resp.json()) == 1
 
 
 @pytest.mark.asyncio
-async def test_stop_instance(client, template_id):
-    create_resp = await client.post(
+async def test_stop_instance(admin_client, template_id):
+    create_resp = await admin_client.post(
         "/api/instances",
         json={"template_id": template_id, "name": "s", "subdomain": "s"},
     )
     instance_id = create_resp.json()["id"]
-    resp = await client.post(f"/api/instances/{instance_id}/stop")
+    resp = await admin_client.post(f"/api/instances/{instance_id}/stop")
     assert resp.status_code == 200
     assert resp.json()["status"] == "stopped"
 
 
 @pytest.mark.asyncio
-async def test_start_stopped_instance(client, template_id):
-    create_resp = await client.post(
+async def test_start_stopped_instance(admin_client, template_id):
+    create_resp = await admin_client.post(
         "/api/instances",
         json={"template_id": template_id, "name": "r", "subdomain": "r"},
     )
     instance_id = create_resp.json()["id"]
-    await client.post(f"/api/instances/{instance_id}/stop")
-    resp = await client.post(f"/api/instances/{instance_id}/start")
+    await admin_client.post(f"/api/instances/{instance_id}/stop")
+    resp = await admin_client.post(f"/api/instances/{instance_id}/start")
     assert resp.status_code == 200
     assert resp.json()["status"] == "running"
 
 
 @pytest.mark.asyncio
-async def test_delete_instance(client, template_id):
-    create_resp = await client.post(
+async def test_delete_instance(admin_client, template_id):
+    create_resp = await admin_client.post(
         "/api/instances",
         json={"template_id": template_id, "name": "d", "subdomain": "d"},
     )
     instance_id = create_resp.json()["id"]
-    resp = await client.delete(f"/api/instances/{instance_id}?remove_volumes=true")
+    resp = await admin_client.delete(f"/api/instances/{instance_id}?remove_volumes=true")
     assert resp.status_code == 204
 
 
 @pytest.mark.asyncio
-async def test_get_instance_status(client, template_id):
-    create_resp = await client.post(
+async def test_get_instance_status(admin_client, template_id):
+    create_resp = await admin_client.post(
         "/api/instances",
         json={"template_id": template_id, "name": "st", "subdomain": "st"},
     )
     instance_id = create_resp.json()["id"]
-    resp = await client.get(f"/api/instances/{instance_id}/status")
+    resp = await admin_client.get(f"/api/instances/{instance_id}/status")
     assert resp.status_code == 200
     assert resp.json()["status"] == "starting"
 
 
 @pytest.mark.asyncio
-async def test_keepalive(client, template_id):
-    create_resp = await client.post(
+async def test_keepalive(admin_client, template_id):
+    create_resp = await admin_client.post(
         "/api/instances",
         json={"template_id": template_id, "name": "ka", "subdomain": "ka"},
     )
     instance_id = create_resp.json()["id"]
-    resp = await client.post(f"/api/instances/{instance_id}/keepalive")
+    resp = await admin_client.post(f"/api/instances/{instance_id}/keepalive")
     assert resp.status_code == 200
     assert resp.json()["last_activity"] is not None
 
 
 @pytest.mark.asyncio
-async def test_duplicate_subdomain(client, template_id):
-    await client.post(
+async def test_duplicate_subdomain(admin_client, template_id):
+    await admin_client.post(
         "/api/instances",
         json={"template_id": template_id, "name": "a", "subdomain": "same"},
     )
-    resp = await client.post(
+    resp = await admin_client.post(
         "/api/instances",
         json={"template_id": template_id, "name": "b", "subdomain": "same"},
     )
@@ -138,11 +138,11 @@ async def test_duplicate_subdomain(client, template_id):
 
 
 @pytest.mark.asyncio
-async def test_recreate_instance(client, template_id, session):
+async def test_recreate_instance(admin_client, template_id, session):
     from app.models import Instance
 
     # Create instance
-    create_resp = await client.post(
+    create_resp = await admin_client.post(
         "/api/instances",
         json={"template_id": template_id, "name": "rec", "subdomain": "rec"},
     )
@@ -163,28 +163,28 @@ async def test_recreate_instance(client, template_id, session):
     await session.commit()
 
     # POST to recreate endpoint
-    resp = await client.post(f"/api/instances/{instance_id}/recreate")
+    resp = await admin_client.post(f"/api/instances/{instance_id}/recreate")
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "running"
     assert len(data["volume_names"]) == expected_volume_count
 
 
-async def _img_present(client, image):
-    resp = await client.get("/api/images")
+async def _img_present(admin_client, image):
+    resp = await admin_client.get("/api/images")
     return any(i["image"] == image for i in resp.json())
 
 
-async def _template_present(client, tid):
-    resp = await client.get("/api/templates")
+async def _template_present(admin_client, tid):
+    resp = await admin_client.get("/api/templates")
     return any(t["id"] == tid for t in resp.json())
 
 
 @pytest.mark.asyncio
-async def test_delete_keeps_image_and_template_by_default(client, session, template_id):
+async def test_delete_keeps_image_and_template_by_default(admin_client, session, template_id):
     from app.models import PulledImage
 
-    r = await client.post(
+    r = await admin_client.post(
         "/api/instances",
         json={"template_id": template_id, "name": "k", "subdomain": "k"},
     )
@@ -192,17 +192,17 @@ async def test_delete_keeps_image_and_template_by_default(client, session, templ
     session.add(PulledImage(image="test:latest"))
     await session.commit()
 
-    resp = await client.delete(f"/api/instances/{iid}")
+    resp = await admin_client.delete(f"/api/instances/{iid}")
     assert resp.status_code == 204
-    assert await _img_present(client, "test:latest"), "image must be kept unless remove_image=true"
-    assert await _template_present(client, template_id), "template must be kept by default"
+    assert await _img_present(admin_client, "test:latest"), "image must be kept unless remove_image=true"
+    assert await _template_present(admin_client, template_id), "template must be kept by default"
 
 
 @pytest.mark.asyncio
-async def test_delete_removes_image_when_requested(client, session, template_id):
+async def test_delete_removes_image_when_requested(admin_client, session, template_id):
     from app.models import PulledImage
 
-    r = await client.post(
+    r = await admin_client.post(
         "/api/instances",
         json={"template_id": template_id, "name": "i", "subdomain": "i"},
     )
@@ -210,46 +210,46 @@ async def test_delete_removes_image_when_requested(client, session, template_id)
     session.add(PulledImage(image="test:latest"))
     await session.commit()
 
-    resp = await client.delete(f"/api/instances/{iid}?remove_image=true")
+    resp = await admin_client.delete(f"/api/instances/{iid}?remove_image=true")
     assert resp.status_code == 204
-    assert not await _img_present(client, "test:latest"), "image must be pruned when remove_image=true"
+    assert not await _img_present(admin_client, "test:latest"), "image must be pruned when remove_image=true"
 
 
 @pytest.mark.asyncio
-async def test_delete_removes_template_when_requested(client, template_id):
-    r = await client.post(
+async def test_delete_removes_template_when_requested(admin_client, template_id):
+    r = await admin_client.post(
         "/api/instances",
         json={"template_id": template_id, "name": "t", "subdomain": "t"},
     )
     iid = r.json()["id"]
 
-    resp = await client.delete(f"/api/instances/{iid}?remove_template=true")
+    resp = await admin_client.delete(f"/api/instances/{iid}?remove_template=true")
     assert resp.status_code == 204
-    assert not await _template_present(client, template_id), "template must be deleted when remove_template=true"
+    assert not await _template_present(admin_client, template_id), "template must be deleted when remove_template=true"
 
 
 @pytest.mark.asyncio
-async def test_refresh_screenshot_not_found(client):
-    resp = await client.post("/api/instances/nope/screenshot/refresh")
+async def test_refresh_screenshot_not_found(admin_client):
+    resp = await admin_client.post("/api/instances/nope/screenshot/refresh")
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_refresh_screenshot_not_running(client, template_id):
-    r = await client.post(
+async def test_refresh_screenshot_not_running(admin_client, template_id):
+    r = await admin_client.post(
         "/api/instances",
         json={"template_id": template_id, "name": "i", "subdomain": "ref1"},
     )
     iid = r.json()["id"]  # status "starting", no container
 
-    resp = await client.post(f"/api/instances/{iid}/screenshot/refresh")
+    resp = await admin_client.post(f"/api/instances/{iid}/screenshot/refresh")
     assert resp.status_code == 200
     assert resp.json() == {"ok": False, "reason": "not running"}
 
 
 @pytest.mark.asyncio
-async def test_refresh_screenshot_captures(client, session, template_id):
-    r = await client.post(
+async def test_refresh_screenshot_captures(admin_client, session, template_id):
+    r = await admin_client.post(
         "/api/instances",
         json={"template_id": template_id, "name": "i2", "subdomain": "ref2"},
     )
@@ -264,7 +264,7 @@ async def test_refresh_screenshot_captures(client, session, template_id):
     svc.capture.return_value = True
     app.dependency_overrides[get_screenshot_service] = lambda: svc
     try:
-        resp = await client.post(f"/api/instances/{iid}/screenshot/refresh")
+        resp = await admin_client.post(f"/api/instances/{iid}/screenshot/refresh")
     finally:
         app.dependency_overrides.pop(get_screenshot_service, None)
 
