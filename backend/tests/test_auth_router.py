@@ -32,7 +32,6 @@ async def test_login_bad_credentials(admin_client):
     assert r.status_code == 401
 
 
-@pytest.mark.xfail(reason="route protected in Task 17", strict=False)
 @pytest.mark.asyncio
 async def test_unauthenticated_instances_401(client):
     r = await client.get("/api/instances")
