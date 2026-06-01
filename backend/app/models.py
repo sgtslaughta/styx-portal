@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from sqlmodel import Field, SQLModel, Column
-from sqlalchemy import JSON
+from sqlalchemy import JSON, UniqueConstraint
 
 
 def _uuid() -> str:
@@ -49,6 +49,38 @@ class RefreshToken(SQLModel, table=True):
     expires_at: datetime
     revoked: bool = False
     user_agent: str | None = None
+    created_at: datetime = Field(default_factory=_now)
+
+
+class OAuthProvider(SQLModel, table=True):
+    __tablename__ = "oauth_providers"
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    name: str = Field(unique=True, index=True)        # "google" | "github" | "authentik"
+    display_label: str
+    kind: str = "oidc"                                 # "oidc" | "oauth2"
+    issuer_url: str | None = None                      # oidc: discovery base
+    authorize_url: str | None = None                   # oauth2: explicit endpoints
+    token_url: str | None = None
+    userinfo_url: str | None = None
+    client_id: str
+    client_secret_enc: str
+    scopes: str = "openid email profile"
+    role_map: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    enabled: bool = True
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+
+
+class FederatedIdentity(SQLModel, table=True):
+    __tablename__ = "federated_identities"
+    __table_args__ = (UniqueConstraint("provider", "subject", name="uq_provider_subject"),)
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    user_id: str = Field(foreign_key="users.id", index=True)
+    provider: str = Field(index=True)
+    subject: str = Field(index=True)
+    email: str | None = None
     created_at: datetime = Field(default_factory=_now)
 
 
