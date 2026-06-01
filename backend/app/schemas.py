@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Any
 from pydantic import BaseModel, Field
 
@@ -105,3 +106,63 @@ class CreateInviteRequest(BaseModel):
 class InviteOut(BaseModel):
     token: str
     expires_at: str | None
+
+
+@dataclass
+class OAuthIdentity:
+    sub: str
+    email: str | None
+    email_verified: bool
+    claims: dict
+
+
+class ProviderCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=40)
+    display_label: str
+    kind: str = "oidc"                       # oidc | oauth2
+    issuer_url: str | None = None
+    authorize_url: str | None = None
+    token_url: str | None = None
+    userinfo_url: str | None = None
+    client_id: str
+    client_secret: str                        # plaintext in; stored encrypted
+    scopes: str = "openid email profile"
+    role_map: dict = Field(default_factory=dict)
+    enabled: bool = True
+
+
+class ProviderUpdate(BaseModel):
+    display_label: str | None = None
+    issuer_url: str | None = None
+    authorize_url: str | None = None
+    token_url: str | None = None
+    userinfo_url: str | None = None
+    client_id: str | None = None
+    client_secret: str | None = None          # if provided, re-encrypt; else unchanged
+    scopes: str | None = None
+    role_map: dict | None = None
+    enabled: bool | None = None
+
+
+class ProviderOut(BaseModel):
+    id: str
+    name: str
+    display_label: str
+    kind: str
+    issuer_url: str | None
+    client_id: str
+    scopes: str
+    role_map: dict
+    enabled: bool
+    has_secret: bool                          # never expose the secret itself
+
+
+class PublicProvider(BaseModel):
+    name: str
+    display_label: str
+
+
+class ConnectedIdentity(BaseModel):
+    provider: str
+    email: str | None
+    created_at: str
