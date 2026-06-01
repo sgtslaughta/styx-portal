@@ -12,6 +12,8 @@ dependencies = [
     "httpx>=0.28.0",
     "pyyaml>=6.0",
     "playwright>=1.49.0",
+    "pyjwt>=2.9.0",
+    "argon2-cffi>=23.1.0",
 ]
 
 [project.optional-dependencies]
