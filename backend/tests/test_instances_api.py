@@ -278,8 +278,6 @@ async def test_refresh_screenshot_captures(admin_client, session, template_id):
 async def test_launch_dind_instance_mounts_docker_store(admin_client, session):
     """Test that launching a dind=true template adds a dockerstore volume.
     Uses the recreate endpoint to trigger _build_and_start_container synchronously."""
-    from app.models import ServiceTemplate
-
     dind_template = {
         "name": "dind-desk",
         "display_name": "DinD Desk",
@@ -293,7 +291,6 @@ async def test_launch_dind_instance_mounts_docker_store(admin_client, session):
 
     # Create instance (synchronously, just to set up DB state)
     from app.models import Instance
-    template = await session.get(ServiceTemplate, template_id)
     instance = Instance(
         template_id=template_id,
         owner_id="test-user",
