@@ -1,4 +1,20 @@
-from app.middleware.rate_limit import SlidingWindow, client_ip_from_headers
+from app.middleware.rate_limit import SlidingWindow, client_ip_from_headers, is_strict_auth
+
+
+def test_strict_only_for_credential_posts():
+    # credential-submitting POSTs are strict
+    assert is_strict_auth("POST", "/api/auth/login") is True
+    assert is_strict_auth("POST", "/api/auth/accept-invite") is True
+    assert is_strict_auth("POST", "/api/auth/setup") is True
+
+
+def test_login_page_gets_are_not_strict():
+    # routes the login page polls must NOT be in the brute-force bucket
+    assert is_strict_auth("GET", "/api/auth/setup-required") is False
+    assert is_strict_auth("GET", "/api/auth/me") is False
+    assert is_strict_auth("GET", "/api/auth/oauth/providers") is False
+    assert is_strict_auth("POST", "/api/auth/refresh") is False
+    assert is_strict_auth("POST", "/api/auth/logout") is False
 
 
 def test_allows_under_limit():
