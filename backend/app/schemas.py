@@ -15,6 +15,7 @@ class TemplateCreate(BaseModel):
     memory_limit: str | None = None
     cpu_limit: str | None = None
     shm_size: str | None = None
+    dind: bool = False
     volumes: list[dict[str, str]] = []
     internal_port: int = 3001
     internal_protocol: str = "https"
@@ -34,6 +35,7 @@ class TemplateUpdate(BaseModel):
     memory_limit: str | None = None
     cpu_limit: str | None = None
     shm_size: str | None = None
+    dind: bool | None = None
     volumes: list[dict[str, str]] | None = None
     internal_port: int | None = None
     internal_protocol: str | None = None

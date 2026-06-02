@@ -77,3 +77,11 @@ async def test_create_duplicate_template(admin_client):
     await admin_client.post("/api/templates", json=TEMPLATE_PAYLOAD)
     resp = await admin_client.post("/api/templates", json=TEMPLATE_PAYLOAD)
     assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_create_template_accepts_dind(admin_client):
+    payload = {**TEMPLATE_PAYLOAD, "name": "dind-tpl", "dind": True}
+    resp = await admin_client.post("/api/templates", json=payload)
+    assert resp.status_code == 201, resp.text
+    assert resp.json()["dind"] is True
