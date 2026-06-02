@@ -44,6 +44,7 @@ export function TemplateCard({ template, onLaunch }: TemplateCardProps) {
       <div className="mb-3 flex flex-wrap gap-1">
         {template.category && <Badge variant="secondary" className="text-[10px]">{template.category}</Badge>}
         {template.gpu_enabled && <Badge variant="secondary" className="text-[10px]">GPU</Badge>}
+        {template.dind && <Badge variant="secondary" className="text-[10px]">DinD</Badge>}
         {template.memory_limit && <Badge variant="outline" className="text-[10px]">{template.memory_limit} RAM</Badge>}
       </div>
       <div className="flex gap-2">

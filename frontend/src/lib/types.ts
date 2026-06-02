@@ -16,6 +16,7 @@ export interface ServiceTemplate {
   env_vars: Record<string, string>;
   gpu_enabled: boolean;
   gpu_count: number;
+  dind: boolean;
   memory_limit: string | null;
   cpu_limit: string | null;
   shm_size: string | null;
@@ -96,6 +97,7 @@ export interface TemplateCreate {
   env_vars?: Record<string, string>;
   gpu_enabled?: boolean;
   gpu_count?: number;
+  dind?: boolean;
   memory_limit?: string;
   cpu_limit?: string;
   shm_size?: string;
