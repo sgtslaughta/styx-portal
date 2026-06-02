@@ -15,6 +15,7 @@
   "memory_limit": "8g",
   "cpu_limit": "4.0",
   "shm_size": "2g",
+  "dind": true,
   "volumes": [
     {"name": "{instance_id}-home", "mount": "/config"}
   ],
