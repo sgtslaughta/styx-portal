@@ -33,6 +33,9 @@ async def create_template(
     if not body.image or not body.image.strip():
         raise HTTPException(422, "Docker image is required")
 
+    if body.dind and user.role != "admin":
+        raise HTTPException(403, "DinD templates require admin")
+
     result = await session.exec(
         select(ServiceTemplate).where(ServiceTemplate.name == body.name)
     )
@@ -72,6 +75,9 @@ async def update_template(
     if not template:
         raise HTTPException(404, "Template not found")
     require_owner_or_admin(template.owner_id, user)
+
+    if body.dind and user.role != "admin":
+        raise HTTPException(403, "DinD templates require admin")
 
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(template, field, value)

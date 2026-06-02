@@ -85,3 +85,26 @@ async def test_create_template_accepts_dind(admin_client):
     resp = await admin_client.post("/api/templates", json=payload)
     assert resp.status_code == 201, resp.text
     assert resp.json()["dind"] is True
+
+
+@pytest.mark.asyncio
+async def test_member_cannot_create_dind_template(member_client):
+    payload = {**TEMPLATE_PAYLOAD, "name": "dind-blocked", "dind": True}
+    resp = await member_client.post("/api/templates", json=payload)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_member_can_create_non_dind_template(member_client):
+    payload = {**TEMPLATE_PAYLOAD, "name": "plain-ok", "dind": False}
+    resp = await member_client.post("/api/templates", json=payload)
+    assert resp.status_code == 201, resp.text
+
+
+@pytest.mark.asyncio
+async def test_member_cannot_update_template_to_dind(member_client):
+    create = await member_client.post(
+        "/api/templates", json={**TEMPLATE_PAYLOAD, "name": "to-upgrade"})
+    tid = create.json()["id"]
+    resp = await member_client.put(f"/api/templates/{tid}", json={"dind": True})
+    assert resp.status_code == 403

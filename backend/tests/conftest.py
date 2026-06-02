@@ -65,3 +65,22 @@ async def admin_client(client):
     csrf = client.cookies.get("csrf_token")
     client.headers.update({"X-CSRF-Token": csrf})
     return client
+
+
+@pytest.fixture
+async def member_client(client, session):
+    """An AsyncClient for a non-admin member user with auth cookies + CSRF header."""
+    from app.models import User
+    from app.security.passwords import hash_password
+    session.add(User(
+        username="member",
+        password_hash=hash_password("correct horse battery staple"),
+        role="member",
+        is_active=True,
+    ))
+    await session.commit()
+    r = await client.post("/api/auth/login", json={
+        "username": "member", "password": "correct horse battery staple"})
+    assert r.status_code == 200, r.text
+    client.headers.update({"X-CSRF-Token": client.cookies.get("csrf_token")})
+    return client
