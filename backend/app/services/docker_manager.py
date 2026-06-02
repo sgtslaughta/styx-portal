@@ -50,7 +50,12 @@ class DockerManager:
         cpu_limit: str | None = None,
         shm_size: str | None = None,
         privileged: bool = False,
+        dind: bool = False,
     ) -> str:
+        if dind:
+            privileged = True
+            environment = {**environment, "START_DOCKER": "true"}
+
         kwargs: dict = {
             "name": name,
             "image": image,

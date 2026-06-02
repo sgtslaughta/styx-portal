@@ -135,3 +135,25 @@ def test_remove_volume(mock_docker):
     manager.remove_volume("my-vol")
 
     mock_volume.remove.assert_called_once()
+
+
+def test_create_container_dind(mock_docker):
+    manager, client = mock_docker
+    mock_container = MagicMock()
+    mock_container.id = "dind-container"
+    client.containers.create.return_value = mock_container
+
+    manager.create_container(
+        name="dind-instance",
+        image="selkies-desktop:latest",
+        labels={},
+        environment={"PUID": "1000"},
+        volumes={"dind-store": {"bind": "/var/lib/docker", "mode": "rw"}},
+        port=3001,
+        dind=True,
+    )
+
+    call_kwargs = client.containers.create.call_args[1]
+    assert call_kwargs["privileged"] is True
+    assert call_kwargs["environment"]["START_DOCKER"] == "true"
+    assert call_kwargs["volumes"]["dind-store"]["bind"] == "/var/lib/docker"
