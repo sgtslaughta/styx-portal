@@ -100,6 +100,7 @@ class ServiceTemplate(SQLModel, table=True):
     memory_limit: str | None = None
     cpu_limit: str | None = None
     shm_size: str | None = None
+    dind: bool = False
     volumes: list[dict[str, str]] = Field(default_factory=list, sa_column=Column(JSON))
     internal_port: int = 3001
     internal_protocol: str = "https"

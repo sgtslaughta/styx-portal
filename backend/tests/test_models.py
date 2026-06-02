@@ -118,3 +118,9 @@ def test_instance_subdomain_unique(db_session):
     db_session.add(i2)
     with pytest.raises(Exception):
         db_session.commit()
+
+
+def test_service_template_dind_defaults_false():
+    from app.models import ServiceTemplate
+    t = ServiceTemplate(name="x", display_name="X", image="img:latest")
+    assert t.dind is False

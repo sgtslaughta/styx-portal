@@ -32,6 +32,7 @@ async def _run_migrations(conn):
         ("instances", "error_message", "TEXT"),
         ("instances", "owner_id", "TEXT"),
         ("service_templates", "owner_id", "TEXT"),
+        ("service_templates", "dind", "BOOLEAN"),
     ]
     for table, column, col_type in migrations:
         try:
