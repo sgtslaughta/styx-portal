@@ -8,7 +8,7 @@ interface TabNavProps {
 const TABS = [
   { id: "instances", label: "My Instances" },
   { id: "templates", label: "Template Gallery" },
-  { id: "system", label: "System" },
+  { id: "system", label: "Settings" },
 ];
 
 export function TabNav({ activeTab, onTabChange }: TabNavProps) {
