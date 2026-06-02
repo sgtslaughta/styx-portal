@@ -44,6 +44,20 @@ def _parse(spec: str) -> tuple[int, int]:
     return int(limit), int(window)
 
 
+# Only credential-submitting POSTs get the strict brute-force bucket. The other
+# /api/auth/* routes (setup-required, me, refresh, oauth/providers) are fired by
+# the login page on every load and must use the lenient default bucket.
+_STRICT_AUTH_PATHS = frozenset({
+    "/api/auth/login",
+    "/api/auth/accept-invite",
+    "/api/auth/setup",
+})
+
+
+def is_strict_auth(method: str, path: str) -> bool:
+    return method == "POST" and path in _STRICT_AUTH_PATHS
+
+
 class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, auth_spec: str, default_spec: str):
         super().__init__(app)
@@ -52,9 +66,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         ip = client_ip_from_headers(request)
-        is_auth = request.url.path.startswith("/api/auth")
-        window = self._auth if is_auth else self._default
-        if not window.allow(f"{ip}:{is_auth}"):
+        strict = is_strict_auth(request.method, request.url.path)
+        window = self._auth if strict else self._default
+        if not window.allow(f"{ip}:{strict}"):
             return JSONResponse(
                 {"detail": "Too many requests"},
                 status_code=429,
