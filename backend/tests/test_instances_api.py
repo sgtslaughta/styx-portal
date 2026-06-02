@@ -272,3 +272,48 @@ async def test_refresh_screenshot_captures(admin_client, session, template_id):
     assert resp.json() == {"ok": True}
     svc.capture.assert_awaited_once()
     svc.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_launch_dind_instance_mounts_docker_store(admin_client, session):
+    """Test that launching a dind=true template adds a dockerstore volume.
+    Uses the recreate endpoint to trigger _build_and_start_container synchronously."""
+    from app.models import ServiceTemplate
+
+    dind_template = {
+        "name": "dind-desk",
+        "display_name": "DinD Desk",
+        "image": "selkies-desktop:latest",
+        "internal_port": 3001,
+        "dind": True,
+    }
+    tr = await admin_client.post("/api/templates", json=dind_template)
+    assert tr.status_code == 201, tr.text
+    template_id = tr.json()["id"]
+
+    # Create instance (synchronously, just to set up DB state)
+    from app.models import Instance
+    template = await session.get(ServiceTemplate, template_id)
+    instance = Instance(
+        template_id=template_id,
+        owner_id="test-user",
+        name="dind-inst",
+        subdomain="dind-inst",
+        status="stopped",
+        volume_names=[],  # Start empty; recreate will recompute them
+    )
+    session.add(instance)
+    await session.commit()
+    await session.refresh(instance)
+    instance_id = instance.id
+
+    # Call recreate endpoint, which synchronously calls _build_and_start_container
+    # and should add the dockerstore volume
+    resp = await admin_client.post(f"/api/instances/{instance_id}/recreate")
+    assert resp.status_code == 200, resp.text
+
+    # Verify dockerstore volume was added to instance.volume_names
+    inst = await session.get(Instance, instance_id)
+    assert inst.volume_names is not None
+    assert any(v.endswith("-dockerstore") for v in inst.volume_names), \
+        f"Expected dockerstore volume in {inst.volume_names}"

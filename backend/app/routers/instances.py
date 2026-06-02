@@ -22,6 +22,10 @@ router = APIRouter()
 _settings = Settings()
 
 
+def _dind_store_volume(instance_id: str) -> str:
+    return f"selkies-{instance_id}-dockerstore"
+
+
 def get_docker_manager() -> DockerManager:
     return DockerManager(network_name=_settings.DOCKER_NETWORK)
 
@@ -48,6 +52,13 @@ async def _build_and_start_container(instance, template, docker):
         await asyncio.to_thread(docker.create_volume, vol_name)
         volumes[vol_name] = {"bind": vol["mount"], "mode": "rw"}
 
+    if template.dind:
+        store = _dind_store_volume(instance.id)
+        if store not in instance.volume_names:
+            instance.volume_names = [*instance.volume_names, store]
+        await asyncio.to_thread(docker.create_volume, store)
+        volumes[store] = {"bind": "/var/lib/docker", "mode": "rw"}
+
     env = {**template.env_vars, **(instance.env_overrides or {})}
     labels = generate_traefik_labels(
         instance_id=instance.id,
@@ -68,6 +79,7 @@ async def _build_and_start_container(instance, template, docker):
         gpu_count=template.gpu_count,
         memory_limit=template.memory_limit,
         shm_size=template.shm_size,
+        dind=template.dind,
     )
     instance.container_id = container_id
     await asyncio.to_thread(docker.start_container, container_id)
@@ -113,6 +125,13 @@ async def _launch_instance_background(instance_id: str, template_id: str):
             for vol, vol_name in zip(template.volumes, volume_names):
                 volumes[vol_name] = {"bind": vol["mount"], "mode": "rw"}
 
+            if template.dind:
+                store = _dind_store_volume(instance.id)
+                if store not in instance.volume_names:
+                    instance.volume_names = [*instance.volume_names, store]
+                await asyncio.to_thread(docker.create_volume, store)
+                volumes[store] = {"bind": "/var/lib/docker", "mode": "rw"}
+
             env = {**template.env_vars, **(instance.env_overrides or {})}
 
             labels = generate_traefik_labels(
@@ -135,6 +154,7 @@ async def _launch_instance_background(instance_id: str, template_id: str):
                 gpu_count=template.gpu_count,
                 memory_limit=template.memory_limit,
                 shm_size=template.shm_size,
+                dind=template.dind,
             )
 
             # Track pulled image
