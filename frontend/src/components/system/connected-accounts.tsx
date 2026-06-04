@@ -24,7 +24,7 @@ export function ConnectedAccounts() {
   const availableProviders = providers.filter((p) => !linkedNames.has(p.name));
 
   return (
-    <Card>
+    <Card className="styx-card">
       <CardHeader className="pb-4">
         <div className="flex items-center gap-3">
           <div className="rounded-lg bg-primary/10 p-2">
