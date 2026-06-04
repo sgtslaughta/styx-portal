@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, Navigate } from "react-router";
 import { api } from "@/api/client";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ export function LoginPage() {
   const [err, setErr] = useState("");
   const [providers, setProviders] = useState<{ name: string; display_label: string }[]>([]);
   const nav = useNavigate();
-  const { refresh } = useAuth();
+  const { refresh, setupRequired, loading } = useAuth();
 
   useEffect(() => {
     api.oauthProviders().then(setProviders).catch(() => {});
@@ -46,6 +46,10 @@ export function LoginPage() {
       setErr((e as Error).message);
     }
   }
+
+  // No users yet → send the first visitor to the admin setup flow instead of a
+  // login form they could never satisfy.
+  if (!loading && setupRequired) return <Navigate to="/setup" replace />;
 
   return (
     <div className="grid min-h-screen md:grid-cols-2">

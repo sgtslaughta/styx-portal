@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, Navigate } from "react-router";
 import zxcvbn from "zxcvbn";
 import { api } from "@/api/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -15,7 +15,7 @@ export function SetupWizard() {
   const [password, setP] = useState("");
   const [err, setErr] = useState("");
   const nav = useNavigate();
-  const { refresh } = useAuth();
+  const { refresh, setupRequired, loading } = useAuth();
   const score = password ? zxcvbn(password).score : 0;
 
   async function submit(e: React.FormEvent) {
@@ -27,6 +27,9 @@ export function SetupWizard() {
       nav("/");
     } catch (e) { setErr((e as Error).message); }
   }
+
+  // Setup is a one-time flow: once an admin exists, never show it again.
+  if (!loading && !setupRequired) return <Navigate to="/login" replace />;
 
   return (
     <div className="grid min-h-screen md:grid-cols-2">
