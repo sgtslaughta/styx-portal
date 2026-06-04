@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <script>
-      (function(){var t=localStorage.getItem('theme');var d=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme:dark)').matches);if(d)document.documentElement.classList.add('dark')})()
+      (function(){var p=location.pathname;var pub=p==='/login'||p.indexOf('/login/')===0||p==='/setup'||p.indexOf('/setup/')===0||p==='/accept-invite'||p.indexOf('/accept-invite/')===0;var t=localStorage.getItem('theme');var eff=pub?'system':t;var d=eff==='dark'||(eff!=='light'&&matchMedia('(prefers-color-scheme:dark)').matches);document.documentElement.classList.toggle('dark',d)})()
     </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
