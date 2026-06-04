@@ -168,3 +168,29 @@
           mask: radial-gradient(120% 200% at 0% 50%, #000 30%, transparent 75%);
 }
 .styx-header > * { position: relative; z-index: 1; }
+
+/* Auth form panel — FIXED light (off-white), theme-independent. Re-declares the
+   light design tokens locally so inputs/buttons using semantic tokens stay light
+   even when <html> carries the .dark class (e.g. a dark dashboard preference). */
+.styx-auth-form {
+  --background: oklch(0.985 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(0.97 0.002 265);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(0.97 0.002 265);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.55 0.17 255);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.93 0.006 265);
+  --secondary-foreground: oklch(0.2 0 0);
+  --muted: oklch(0.93 0.006 265);
+  --muted-foreground: oklch(0.45 0.015 265);
+  --accent: oklch(0.93 0.006 265);
+  --accent-foreground: oklch(0.2 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.87 0.008 265);
+  --input: oklch(0.87 0.008 265);
+  --ring: oklch(0.55 0.17 255);
+  background: #f7f8fa;
+  color: var(--foreground);
+}
