@@ -107,9 +107,9 @@ export function MetricsLogs() {
       </div>
 
       {/* Log viewer */}
-      <div className="rounded-lg border border-border bg-background overflow-hidden">
+      <div className="styx-card rounded-lg overflow-hidden">
         {/* Log header */}
-        <div className="flex items-center justify-between px-3 py-2 border-b border-border/40 bg-card">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-border/40">
           <div className="flex items-center gap-2">
             <Terminal className="h-3 w-3 text-muted-foreground/60" />
             <span className="text-[11px] text-muted-foreground font-mono">

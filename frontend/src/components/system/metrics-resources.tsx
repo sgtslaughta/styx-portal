@@ -152,7 +152,7 @@ export function MetricsResources() {
 
       {/* Aggregate Charts */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="rounded-lg border border-border bg-card p-4">
+        <div className="styx-card rounded-lg p-4">
           <TimeSeriesChart
             label="System CPU"
             data={cpuHistory}
@@ -161,7 +161,7 @@ export function MetricsResources() {
             unit="%"
           />
         </div>
-        <div className="rounded-lg border border-border bg-card p-4">
+        <div className="styx-card rounded-lg p-4">
           <TimeSeriesChart
             label="System Memory"
             data={ramHistory}
@@ -174,7 +174,7 @@ export function MetricsResources() {
 
       {/* Per-instance resources */}
       {runningInstances.length > 0 && (
-        <div className="rounded-lg border border-border bg-card">
+        <div className="styx-card rounded-lg">
           <div className="px-4 py-3 border-b border-border/40">
             <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Per-Instance Resources
@@ -189,7 +189,7 @@ export function MetricsResources() {
       )}
 
       {/* Storage */}
-      <div className="rounded-lg border border-border bg-card p-4 space-y-4">
+      <div className="styx-card rounded-lg p-4 space-y-4">
         <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
           Storage
         </span>
