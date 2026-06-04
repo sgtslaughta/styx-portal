@@ -33,6 +33,8 @@ async def _run_migrations(conn):
         ("instances", "owner_id", "TEXT"),
         ("service_templates", "owner_id", "TEXT"),
         ("service_templates", "dind", "BOOLEAN"),
+        ("oauth_providers", "icon_url", "TEXT"),
+        ("oauth_providers", "trust_email", "BOOLEAN"),
     ]
     for table, column, col_type in migrations:
         try:
