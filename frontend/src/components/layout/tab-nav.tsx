@@ -13,16 +13,16 @@ const TABS = [
 
 export function TabNav({ activeTab, onTabChange }: TabNavProps) {
   return (
-    <div className="flex gap-1 border-b border-border px-6">
+    <div className="flex gap-1 border-b border-border px-6 styx-header">
       {TABS.map((tab) => (
         <button
           key={tab.id}
           onClick={() => onTabChange(tab.id)}
           className={cn(
-            "px-4 py-2 text-sm font-medium transition-colors",
+            "my-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition-colors",
             "hover:text-foreground",
             activeTab === tab.id
-              ? "border-b-2 border-primary text-foreground"
+              ? "bg-card text-foreground shadow-[inset_0_0_0_1px_var(--card-border-color)]"
               : "text-muted-foreground"
           )}
         >
