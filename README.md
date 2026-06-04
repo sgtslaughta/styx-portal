@@ -1,4 +1,4 @@
-# Selkies Hub
+# Styx Portal
 
 Self-hosted remote desktop platform managing Selkies-based containers. Replaces Kasm Workspaces with better performance via WebRTC streaming.
 
@@ -26,6 +26,17 @@ Cloudflare Tunnel → Traefik (auto-discovery) → Services
 | Tunnel | Cloudflare Tunnel |
 | Auth | Authentik (ForwardAuth) |
 | Frontend | React (planned) |
+
+## Upgrading from Selkies Hub (rebrand)
+
+The rebrand renames the Docker network and SQLite DB. On an existing install:
+
+```bash
+docker compose down
+docker network rm selkies-hub        # old network
+rm -f backend/data/selkies-hub.db    # old DB (state is recreated on first run)
+docker compose up -d                 # recreates the styx-portal network + fresh DB
+```
 
 ## Quick Start
 
