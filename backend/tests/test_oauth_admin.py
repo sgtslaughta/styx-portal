@@ -81,9 +81,11 @@ async def test_config_check_ok(admin_client, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_test_login_callback_probes_without_session(admin_client, monkeypatch):
+async def test_test_login_callback_probes_without_session(admin_client, monkeypatch, session):
     from app.security import oauth
     from app.schemas import OAuthIdentity
+    from app.models import FederatedIdentity
+    from sqlmodel import select
 
     async def fake_fetch(provider, mode, url, verifier, redirect_uri=None):
         return OAuthIdentity(sub="ak-1", email="u@e.test", email_verified=False,
@@ -102,3 +104,10 @@ async def test_test_login_callback_probes_without_session(admin_client, monkeypa
     assert r.status_code == 200
     assert "u@e.test" in r.text          # identity surfaced in the result page
     assert "would_pass" in r.text
+
+    # verify no FederatedIdentity was created
+    federated_identities = (await session.exec(select(FederatedIdentity))).all()
+    assert len(federated_identities) == 0, "test-login should not create FederatedIdentity"
+
+    # verify no auth cookie was set
+    assert "access_token" not in r.cookies, "test-login should not set auth cookie"

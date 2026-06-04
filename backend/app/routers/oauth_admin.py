@@ -118,7 +118,7 @@ async def test_start(provider_id: str, admin: User = Depends(require_admin),
 
 
 def _probe_page(probe: dict) -> str:
-    payload = _json.dumps(probe)
+    payload = _json.dumps(probe).replace("<", "\\u003c")
     return (
         "<!doctype html><html><body><script>"
         f"const r={payload};"
