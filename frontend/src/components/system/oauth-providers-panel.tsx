@@ -49,7 +49,7 @@ export function OAuthProvidersPanel() {
 
   return (
     <div className="space-y-6">
-      <Card>
+      <Card className="styx-card">
         <CardHeader className="pb-4">
           <div className="flex items-center gap-3">
             <div className="rounded-lg bg-primary/10 p-2">

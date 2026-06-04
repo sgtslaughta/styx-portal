@@ -122,3 +122,49 @@
   .styx-brand::after { animation: none; }
 }
 .styx-brand > * { position: relative; z-index: 1; }
+
+/* ── Styx Portal dashboard theming (immersive depth) ───────────────── */
+:root {
+  --surface-gradient: radial-gradient(120% 140% at 10% 0%, #eef3fb 0%, #e7ecf4 60%);
+  --card-gradient: linear-gradient(160deg, #ffffff, #eef3fb);
+  --card-border-color: #d4def0;
+  --card-glow: 0 1px 2px rgba(40, 90, 200, 0.06), 0 8px 20px -14px rgba(40, 90, 200, 0.35);
+  --brand-accent: #2f6fe0;
+  --motif-color: rgba(40, 90, 200, 0.05);
+  --header-gradient: linear-gradient(90deg, #e9eff8, #eef3fb);
+}
+.dark {
+  --surface-gradient: radial-gradient(120% 140% at 10% 0%, #0c1322 0%, #0a0e17 60%);
+  --card-gradient: linear-gradient(160deg, #121d30, #0d1420);
+  --card-border-color: #213050;
+  --card-glow: 0 1px 0 rgba(90, 150, 255, 0.08) inset, 0 6px 18px -10px rgba(40, 90, 200, 0.5);
+  --brand-accent: #5b9bff;
+  --motif-color: rgba(70, 140, 255, 0.06);
+  --header-gradient: radial-gradient(120% 180% at 10% 50%, #0c1830 0%, #0a0f1a 60%);
+}
+
+.styx-app-bg { background: var(--surface-gradient); }
+
+.styx-card {
+  background: var(--card-gradient);
+  border: 1px solid var(--card-border-color);
+  box-shadow: var(--card-glow);
+}
+
+.styx-header {
+  position: relative;
+  overflow: hidden;
+  background: var(--header-gradient);
+}
+
+/* Static river current — no animation (header motif). */
+.styx-motif::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(115deg, transparent 0 16px, var(--motif-color) 16px 17px);
+  -webkit-mask: radial-gradient(120% 200% at 0% 50%, #000 30%, transparent 75%);
+          mask: radial-gradient(120% 200% at 0% 50%, #000 30%, transparent 75%);
+}
+.styx-header > * { position: relative; z-index: 1; }

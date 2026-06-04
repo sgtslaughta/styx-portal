@@ -62,7 +62,7 @@ export default function App() {
 
   return (
     <TooltipProvider>
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-screen flex-col bg-background styx-app-bg">
       <Header />
       <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
       <main className="flex-1 p-6">

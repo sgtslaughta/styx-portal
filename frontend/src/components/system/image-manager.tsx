@@ -46,7 +46,7 @@ export function ImageManager() {
     return (
       <div className="space-y-2">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-14 rounded-lg bg-card animate-pulse" />
+          <div key={i} className="styx-card h-14 rounded-lg animate-pulse" />
         ))}
       </div>
     );
@@ -67,7 +67,7 @@ export function ImageManager() {
         </div>
 
         {images && images.length > 0 && (
-          <button onClick={() => setConfirmPurge(true)} className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors">
+          <button onClick={() => setConfirmPurge(true)} className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-destructive hover:border-destructive/40 transition-colors bg-secondary">
             <Trash2 className="h-3 w-3" />
             Purge Unused
           </button>
@@ -76,7 +76,7 @@ export function ImageManager() {
 
       {/* Image list */}
       {!images?.length ? (
-        <div className="rounded-lg border border-border bg-card/50 py-12 text-center">
+        <div className="rounded-lg border border-border py-12 text-center bg-card/50">
           <HardDrive className="mx-auto mb-2 h-8 w-8 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">No pulled images tracked yet</p>
           <p className="text-xs text-muted-foreground/60">Images appear here when you launch instances</p>
@@ -91,7 +91,7 @@ export function ImageManager() {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                className="group flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 transition-colors hover:border-border/80"
+                className="styx-card group flex items-center gap-3 rounded-lg px-4 py-3 transition-colors hover:border-border/80"
               >
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-mono text-foreground">{img.image}</p>

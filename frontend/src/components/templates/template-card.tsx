@@ -29,7 +29,7 @@ export function TemplateCard({ template, onLaunch }: TemplateCardProps) {
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card p-4 transition-colors hover:border-primary/50">
+    <div className="styx-card overflow-hidden rounded-xl p-4 transition-colors hover:border-primary/50">
       <div className="mb-3 flex items-start gap-3">
         {template.icon?.startsWith("http") ? (
           <img src={template.icon} alt="" className="h-8 w-8 rounded object-contain" />

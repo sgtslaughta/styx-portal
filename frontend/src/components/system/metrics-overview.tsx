@@ -108,7 +108,7 @@ export function MetricsOverview() {
       {/* Two-column: Events + Host Info */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Recent Events */}
-        <div className="lg:col-span-2 rounded-lg border border-border bg-card">
+        <div className="styx-card lg:col-span-2 rounded-lg">
           <div className="flex items-center justify-between px-4 py-3 border-b border-border/40">
             <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Recent Events
@@ -125,7 +125,7 @@ export function MetricsOverview() {
         </div>
 
         {/* Host Info */}
-        <div className="rounded-lg border border-border bg-card">
+        <div className="styx-card rounded-lg">
           <div className="px-4 py-3 border-b border-border/40">
             <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Host

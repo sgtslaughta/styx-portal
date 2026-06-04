@@ -70,7 +70,7 @@ export function MetricsSessions() {
       </div>
 
       {/* Session Table */}
-      <div className="rounded-lg border border-border bg-card overflow-hidden">
+      <div className="styx-card rounded-lg overflow-hidden">
         {/* Header */}
         <div className="grid grid-cols-[1fr_100px_80px_80px_140px] gap-2 px-4 py-2.5 border-b border-border/40 text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
           <span>Instance</span>

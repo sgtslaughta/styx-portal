@@ -36,7 +36,7 @@ export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
       exit="exit"
       whileHover={hoverLift}
       transition={spring}
-      className="group cursor-pointer overflow-hidden rounded-xl border border-border bg-card transition-colors hover:border-primary/50"
+      className="styx-card group cursor-pointer overflow-hidden rounded-xl transition-colors hover:border-primary/50"
       onClick={() => onSelect(instance)}
     >
       <IconViewport instance={instance} icon={icon} />

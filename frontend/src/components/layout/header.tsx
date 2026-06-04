@@ -1,4 +1,4 @@
-import { Monitor, Moon, Sun } from "lucide-react";
+import { Monitor, Moon, Sun, Waves } from "lucide-react";
 import { useInstances } from "@/hooks/use-instances";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme, type Theme } from "@/theme/ThemeProvider";
@@ -33,9 +33,10 @@ function CountChip({ count, label, dotClass }: { count: number; label: string; d
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="flex items-center gap-1.5 rounded-full bg-secondary px-2 py-0.5 text-xs tabular-nums">
+        <span className="flex items-center gap-1.5 rounded-full border border-border bg-card/60 px-2 py-0.5 text-xs text-muted-foreground">
           <span className={cn("h-1.5 w-1.5 rounded-full", dotClass)} />
-          {count}
+          <span className="tabular-nums text-foreground">{count}</span>
+          {label}
         </span>
       </TooltipTrigger>
       <TooltipContent>
@@ -54,9 +55,9 @@ export function Header() {
   const errored = instances?.filter((i) => i.status === "error").length ?? 0;
 
   return (
-    <header className="flex items-center gap-3 border-b border-border px-6 py-2.5">
-      <Monitor className="h-5 w-5 text-primary" />
-      <span className="text-base font-bold">Styx Portal</span>
+    <header className="styx-header styx-motif flex items-center gap-3 border-b border-border px-6 py-2.5">
+      <Waves className="h-5 w-5" style={{ color: "var(--brand-accent)" }} />
+      <span className="text-base font-extrabold tracking-wider">STYX PORTAL</span>
       <div className="ml-auto flex items-center gap-1.5">
         <CountChip count={running} label="running" dotClass="bg-success" />
         <CountChip count={paused} label="paused" dotClass="bg-warning" />

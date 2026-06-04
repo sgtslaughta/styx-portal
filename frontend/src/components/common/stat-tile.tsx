@@ -13,7 +13,7 @@ interface StatTileProps {
 
 export function StatTile({ icon: Icon, label, value, sub, className }: StatTileProps) {
   return (
-    <div className={cn("rounded-lg border border-border bg-card p-3", className)}>
+    <div className={cn("styx-card rounded-lg p-3", className)}>
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         {Icon && <Icon className="size-3.5" />}
         {label}
