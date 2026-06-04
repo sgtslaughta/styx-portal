@@ -114,6 +114,7 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
     const w = window.open(api.oauthTestStartUrl(editing.id), "sso-test",
       "width=520,height=640");
     const onMsg = (ev: MessageEvent) => {
+      if (ev.origin !== window.location.origin) return;
       if (ev.data?.type === "sso-test") {
         setProbe(ev.data.result);
         window.removeEventListener("message", onMsg);

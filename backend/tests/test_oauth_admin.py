@@ -104,6 +104,8 @@ async def test_test_login_callback_probes_without_session(admin_client, monkeypa
     assert r.status_code == 200
     assert "u@e.test" in r.text          # identity surfaced in the result page
     assert "would_pass" in r.text
+    # probe page carries its own CSP allowing its inline script (global policy is script-src 'self')
+    assert "'unsafe-inline'" in r.headers["content-security-policy"]
 
     # verify no FederatedIdentity was created
     federated_identities = (await session.exec(select(FederatedIdentity))).all()
