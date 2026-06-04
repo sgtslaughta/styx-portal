@@ -36,7 +36,7 @@ export function InstanceCardSm({ instance, icon, onSelect }: Props) {
       exit="exit"
       whileHover={hoverLift}
       transition={spring}
-      className="group cursor-pointer overflow-hidden rounded-xl border border-border bg-card hover:border-primary/40 transition-colors"
+      className="styx-card group cursor-pointer overflow-hidden rounded-xl hover:border-primary/40 transition-colors"
       onClick={() => onSelect(instance)}
     >
       {/* Header — icon + name + status */}
