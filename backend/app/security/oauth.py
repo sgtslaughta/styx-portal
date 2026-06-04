@@ -73,6 +73,24 @@ async def _endpoints(provider: OAuthProvider) -> dict:
             "userinfo": provider.userinfo_url}
 
 
+async def discovery_checks(provider: OAuthProvider) -> tuple[bool, list[dict]]:
+    """Server-side reachability/validity checks. Never raises."""
+    checks: list[dict] = []
+    checks.append({"label": "client_id set", "ok": bool(provider.client_id),
+                   "detail": "" if provider.client_id else "missing"})
+    try:
+        eps = await _endpoints(provider)
+        src = "discovery" if provider.kind == "oidc" else "config"
+        for key in ("authorize", "token", "userinfo"):
+            val = eps.get(key)
+            checks.append({"label": f"{key} endpoint", "ok": bool(val),
+                           "detail": val or f"missing in {src}"})
+    except Exception as e:  # noqa: BLE001 — surface, never 500
+        checks.append({"label": "endpoint discovery", "ok": False, "detail": str(e)})
+    ok = all(c["ok"] for c in checks)
+    return ok, checks
+
+
 def _redirect_uri(provider_name: str, mode: str) -> str:
     leg = "link" if mode == "link" else "oauth"
     return f"{_settings.oauth_redirect_base()}/api/auth/{leg}/{provider_name}/callback"

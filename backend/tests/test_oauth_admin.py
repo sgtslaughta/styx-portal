@@ -63,3 +63,18 @@ async def test_rejects_oversize_data_uri_icon(admin_client):
     payload = {**_payload(), "name": "big", "icon_url": big}
     r = await admin_client.post("/api/oauth-providers", json=payload)
     assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_config_check_ok(admin_client, monkeypatch):
+    from app.security import oauth
+    async def fake_checks(_p):
+        return True, [{"label": "Discovery document", "ok": True, "detail": "200"},
+                      {"label": "client_id set", "ok": True, "detail": ""}]
+    monkeypatch.setattr(oauth, "discovery_checks", fake_checks)
+    await admin_client.post("/api/oauth-providers", json=_payload())
+    pid = (await admin_client.get("/api/oauth-providers")).json()[0]["id"]
+    r = await admin_client.post(f"/api/oauth-providers/{pid}/test/config")
+    assert r.status_code == 200
+    assert r.json()["ok"] is True
+    assert any(c["label"] == "Discovery document" for c in r.json()["checks"])

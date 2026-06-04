@@ -165,6 +165,17 @@ class ProviderOut(BaseModel):
     trust_email: bool
 
 
+class ProviderTestCheck(BaseModel):
+    label: str
+    ok: bool
+    detail: str = ""
+
+
+class ProviderTestResult(BaseModel):
+    ok: bool
+    checks: list[ProviderTestCheck]
+
+
 class PublicProvider(BaseModel):
     name: str
     display_label: str

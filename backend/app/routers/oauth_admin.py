@@ -6,7 +6,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.database import get_session
 from app.models import OAuthProvider, User
-from app.schemas import ProviderCreate, ProviderUpdate, ProviderOut
+from app.schemas import ProviderCreate, ProviderUpdate, ProviderOut, ProviderTestResult
+from app.security import oauth
 from app.security.crypto import encrypt_secret
 from app.security.deps import require_admin
 
@@ -79,6 +80,16 @@ async def update_provider(provider_id: str, body: ProviderUpdate,
     session.add(p)
     await session.commit()
     return _out(p)
+
+
+@router.post("/{provider_id}/test/config", response_model=ProviderTestResult)
+async def test_config(provider_id: str, admin: User = Depends(require_admin),
+                      session: AsyncSession = Depends(get_session)):
+    p = await session.get(OAuthProvider, provider_id)
+    if not p:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    ok, checks = await oauth.discovery_checks(p)
+    return ProviderTestResult(ok=ok, checks=checks)
 
 
 @router.delete("/{provider_id}", status_code=204)
