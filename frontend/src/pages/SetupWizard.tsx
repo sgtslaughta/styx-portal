@@ -34,7 +34,7 @@ export function SetupWizard() {
   return (
     <div className="grid min-h-screen md:grid-cols-2">
       <LoginBrandPanel />
-      <div className="flex items-center justify-center bg-muted px-6 py-12">
+      <div className="styx-auth-form flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm space-y-6">
           <div className="space-y-1 text-center">
             <h1 className="text-2xl font-bold">Create admin account</h1>
