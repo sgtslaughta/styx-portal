@@ -14,7 +14,7 @@ from app.routers.auth import _issue_session
 from app.services import federation
 
 router = APIRouter()
-logger = logging.getLogger("selkies-hub")
+logger = logging.getLogger("styx-portal")
 _settings = Settings()
 
 

@@ -25,7 +25,7 @@ from app.services.docker_manager import DockerManager
 from app.services.session_monitor import SessionMonitor
 from app.security.csrf import csrf_valid, CSRF_COOKIE, CSRF_HEADER, UNSAFE_METHODS
 
-logger = logging.getLogger("selkies-hub")
+logger = logging.getLogger("styx-portal")
 _settings = Settings()
 
 _CSRF_EXEMPT = {"/api/auth/login", "/api/auth/setup", "/api/auth/refresh", "/api/auth/accept-invite"}
@@ -213,7 +213,7 @@ async def _screenshot_capture_loop():
         await screenshots.close()
 
 
-app = FastAPI(title="Selkies Hub", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Styx Portal", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(CSRFMiddleware)
