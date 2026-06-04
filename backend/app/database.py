@@ -44,6 +44,15 @@ async def _run_migrations(conn):
         except Exception:
             pass
 
+    # ADD COLUMN ... BOOLEAN has no default, so rows that predate the column get
+    # NULL. trust_email is a non-nullable bool downstream — backfill to False.
+    try:
+        await conn.execute(sqlalchemy.text(
+            "UPDATE oauth_providers SET trust_email = 0 WHERE trust_email IS NULL"
+        ))
+    except Exception:
+        pass
+
 
 async def get_session():
     async with async_session() as session:

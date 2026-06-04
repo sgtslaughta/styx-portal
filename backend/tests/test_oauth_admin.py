@@ -113,3 +113,17 @@ async def test_test_login_callback_probes_without_session(admin_client, monkeypa
 
     # verify no auth cookie was set
     assert "access_token" not in r.cookies, "test-login should not set auth cookie"
+
+
+def test_out_coerces_null_trust_email():
+    """A provider row migrated from before trust_email existed has the column as
+    NULL (ALTER TABLE ADD COLUMN ... BOOLEAN, no default). ProviderOut.trust_email
+    is a non-nullable bool, so _out must coerce None -> False or GET /oauth-providers
+    500s and the admin list renders empty. Regression for the live ValidationError."""
+    from app.routers.oauth_admin import _out
+    from app.models import OAuthProvider
+    p = OAuthProvider(name="authentik", display_label="Authentik", kind="oidc",
+                      client_id="cid", client_secret_enc="enc")
+    p.trust_email = None  # simulate the migrated pre-existing row
+    out = _out(p)
+    assert out.trust_email is False

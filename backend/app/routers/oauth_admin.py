@@ -24,7 +24,7 @@ def _out(p: OAuthProvider) -> ProviderOut:
                        issuer_url=p.issuer_url, client_id=p.client_id, scopes=p.scopes,
                        role_map=p.role_map, enabled=p.enabled,
                        has_secret=bool(p.client_secret_enc),
-                       icon_url=p.icon_url, trust_email=p.trust_email)
+                       icon_url=p.icon_url, trust_email=bool(p.trust_email))
 
 
 MAX_ICON_BYTES = 256 * 1024
