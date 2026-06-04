@@ -1,7 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { toast } from "sonner";
 import { api } from "@/api/client";
-import { Users, Copy, Trash2, Check } from "lucide-react";
+import { Users, Copy, Trash2, Check, ShieldCheck, ShieldOff } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,12 @@ export function UsersPanel() {
   const disable = useMutation({
     mutationFn: (id: string) => api.disableUser(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+  });
+
+  const setRole = useMutation({
+    mutationFn: (p: { id: string; role: string }) => api.changeRole(p.id, p.role),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["users"] }),
+    onError: (e: Error) => toast.error(e.message),
   });
 
   const handleCopyInviteUrl = () => {
@@ -130,16 +137,41 @@ export function UsersPanel() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         {u.is_active && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => disable.mutate(u.id)}
-                            disabled={disable.isPending}
-                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                          >
-                            <Trash2 className="h-4 w-4 mr-1" />
-                            Disable
-                          </Button>
+                          <>
+                            {u.role === "admin" ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setRole.mutate({ id: u.id, role: "user" })}
+                                disabled={setRole.isPending}
+                                title="Demote to user"
+                              >
+                                <ShieldOff className="h-4 w-4 mr-1" />
+                                Make user
+                              </Button>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setRole.mutate({ id: u.id, role: "admin" })}
+                                disabled={setRole.isPending}
+                                title="Promote to admin"
+                              >
+                                <ShieldCheck className="h-4 w-4 mr-1" />
+                                Make admin
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => disable.mutate(u.id)}
+                              disabled={disable.isPending}
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              Disable
+                            </Button>
+                          </>
                         )}
                       </td>
                     </tr>

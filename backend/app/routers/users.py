@@ -61,6 +61,12 @@ async def change_role(user_id: str, role: str, admin: User = Depends(require_adm
     user = await session.get(User, user_id)
     if not user:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if role == "user" and user.role == "admin":
+        admins = (await session.exec(select(User).where(
+            User.role == "admin", User.is_active == True))).all()  # noqa: E712
+        if len(admins) <= 1:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                "cannot demote the last admin")
     user.role = role
     session.add(user)
     await session.commit()
