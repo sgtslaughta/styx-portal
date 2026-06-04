@@ -131,6 +131,8 @@ class ProviderCreate(BaseModel):
     scopes: str = "openid email profile"
     role_map: dict = Field(default_factory=dict)
     enabled: bool = True
+    icon_url: str | None = None
+    trust_email: bool = False
 
 
 class ProviderUpdate(BaseModel):
@@ -144,6 +146,8 @@ class ProviderUpdate(BaseModel):
     scopes: str | None = None
     role_map: dict | None = None
     enabled: bool | None = None
+    icon_url: str | None = None
+    trust_email: bool | None = None
 
 
 class ProviderOut(BaseModel):
@@ -157,11 +161,14 @@ class ProviderOut(BaseModel):
     role_map: dict
     enabled: bool
     has_secret: bool                          # never expose the secret itself
+    icon_url: str | None
+    trust_email: bool
 
 
 class PublicProvider(BaseModel):
     name: str
     display_label: str
+    icon_url: str | None = None
 
 
 class ConnectedIdentity(BaseModel):

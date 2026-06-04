@@ -31,3 +31,16 @@ async def test_list_and_update(admin_client):
 async def test_requires_admin(client):
     r = await client.get("/api/oauth-providers")
     assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_create_roundtrips_icon_and_trust(admin_client):
+    payload = {"name": "authentik", "display_label": "Authentik", "kind": "oidc",
+               "issuer_url": "https://idp.test", "client_id": "cid",
+               "client_secret": "shh", "scopes": "openid email profile",
+               "icon_url": "https://idp.test/logo.svg", "trust_email": True}
+    r = await admin_client.post("/api/oauth-providers", json=payload)
+    assert r.status_code == 201
+    body = r.json()
+    assert body["icon_url"] == "https://idp.test/logo.svg"
+    assert body["trust_email"] is True

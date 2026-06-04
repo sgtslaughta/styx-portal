@@ -17,7 +17,8 @@ def _out(p: OAuthProvider) -> ProviderOut:
     return ProviderOut(id=p.id, name=p.name, display_label=p.display_label, kind=p.kind,
                        issuer_url=p.issuer_url, client_id=p.client_id, scopes=p.scopes,
                        role_map=p.role_map, enabled=p.enabled,
-                       has_secret=bool(p.client_secret_enc))
+                       has_secret=bool(p.client_secret_enc),
+                       icon_url=p.icon_url, trust_email=p.trust_email)
 
 
 @router.get("", response_model=list[ProviderOut])
@@ -39,7 +40,8 @@ async def create_provider(body: ProviderCreate, admin: User = Depends(require_ad
         issuer_url=body.issuer_url, authorize_url=body.authorize_url,
         token_url=body.token_url, userinfo_url=body.userinfo_url,
         client_id=body.client_id, client_secret_enc=encrypt_secret(body.client_secret),
-        scopes=body.scopes, role_map=body.role_map, enabled=body.enabled)
+        scopes=body.scopes, role_map=body.role_map, enabled=body.enabled,
+        icon_url=body.icon_url, trust_email=body.trust_email)
     session.add(p)
     await session.commit()
     return _out(p)
