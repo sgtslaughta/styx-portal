@@ -152,7 +152,7 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col">
         <DialogHeader>
           <DialogTitle>{editing ? "Edit provider" : "Add SSO provider"}</DialogTitle>
           <DialogDescription>
@@ -160,7 +160,7 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
+        <div className="-mr-2 flex-1 space-y-3 overflow-y-auto pr-2">
           <Field label="Display name" hint="Shown to users on the login button.">
             <Input
               value={form.display_label}
@@ -487,8 +487,8 @@ function CopyRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="space-y-0.5">
       <div className="text-[11px] text-muted-foreground">{label}</div>
-      <div className="flex items-center gap-2">
-        <code className="flex-1 truncate rounded border border-border bg-background px-2 py-1 text-[11px]">
+      <div className="flex items-start gap-2">
+        <code className="flex-1 break-all rounded border border-border bg-background px-2 py-1 font-mono text-[11px]">
           {value}
         </code>
         <Button
