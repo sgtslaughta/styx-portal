@@ -33,9 +33,10 @@ function CountChip({ count, label, dotClass }: { count: number; label: string; d
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="flex items-center gap-1.5 rounded-full bg-secondary px-2 py-0.5 text-xs tabular-nums">
+        <span className="flex items-center gap-1.5 rounded-full border border-border bg-card/60 px-2 py-0.5 text-xs text-muted-foreground">
           <span className={cn("h-1.5 w-1.5 rounded-full", dotClass)} />
-          {count}
+          <span className="tabular-nums text-foreground">{count}</span>
+          {label}
         </span>
       </TooltipTrigger>
       <TooltipContent>
