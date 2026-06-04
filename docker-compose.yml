@@ -1,6 +1,6 @@
 networks:
-  selkies-hub:
-    name: selkies-hub
+  styx-portal:
+    name: styx-portal
     driver: bridge
 
 volumes:
@@ -19,7 +19,7 @@ services:
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - traefik-dynamic:/etc/traefik/dynamic:ro
     networks:
-      - selkies-hub
+      - styx-portal
 
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -31,7 +31,7 @@ services:
     environment:
       - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN}
     networks:
-      - selkies-hub
+      - styx-portal
 
   backend:
     build: ./backend
@@ -40,8 +40,8 @@ services:
       - traefik
     environment:
       - DOMAIN=${DOMAIN}
-      - DATABASE_URL=sqlite+aiosqlite:///./data/selkies-hub.db
-      - DOCKER_NETWORK=selkies-hub
+      - DATABASE_URL=sqlite+aiosqlite:///./data/styx-portal.db
+      - DOCKER_NETWORK=styx-portal
       - TEMPLATES_DIR=/app/templates
       - AUTHENTIK_MIDDLEWARE=authentik@file
       - JWT_SECRET=${JWT_SECRET}
@@ -55,7 +55,7 @@ services:
     devices:
       - /dev/dri:/dev/dri
     networks:
-      - selkies-hub
+      - styx-portal
 
   frontend:
     build: ./frontend
@@ -63,4 +63,4 @@ services:
     depends_on:
       - backend
     networks:
-      - selkies-hub
+      - styx-portal
