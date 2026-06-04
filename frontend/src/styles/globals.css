@@ -88,3 +88,37 @@
   --color-chart-4: var(--chart-4);
   --radius: 0.5rem;
 }
+
+/* Styx Portal login brand panel — always dark, animated "river current" */
+.styx-brand {
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(140% 120% at 15% 100%, #0a1426 0%, #070a12 45%, #05070d 100%);
+  color: #fff;
+}
+.styx-brand::before,
+.styx-brand::after {
+  content: "";
+  position: absolute;
+  inset: -40% -40%;
+  pointer-events: none;
+  -webkit-mask: radial-gradient(150% 130% at 0% 100%, #000 30%, transparent 72%);
+          mask: radial-gradient(150% 130% at 0% 100%, #000 30%, transparent 72%);
+}
+.styx-brand::before {
+  background: repeating-linear-gradient(115deg, transparent 0 22px, rgba(70, 140, 255, 0.09) 22px 23px);
+  animation: styx-flow 14s linear infinite;
+}
+.styx-brand::after {
+  background: repeating-linear-gradient(115deg, transparent 0 40px, rgba(40, 90, 200, 0.06) 40px 41px);
+  animation: styx-flow 26s linear infinite;
+}
+@keyframes styx-flow {
+  from { transform: translate(0, 0); }
+  to   { transform: translate(-23px, -49px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .styx-brand::before,
+  .styx-brand::after { animation: none; }
+}
+.styx-brand > * { position: relative; z-index: 1; }
