@@ -1,4 +1,4 @@
-import { Monitor, Moon, Sun } from "lucide-react";
+import { Monitor, Moon, Sun, Waves } from "lucide-react";
 import { useInstances } from "@/hooks/use-instances";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme, type Theme } from "@/theme/ThemeProvider";
@@ -54,9 +54,9 @@ export function Header() {
   const errored = instances?.filter((i) => i.status === "error").length ?? 0;
 
   return (
-    <header className="flex items-center gap-3 border-b border-border px-6 py-2.5">
-      <Monitor className="h-5 w-5 text-primary" />
-      <span className="text-base font-bold">Styx Portal</span>
+    <header className="styx-header styx-motif flex items-center gap-3 border-b border-border px-6 py-2.5">
+      <Waves className="h-5 w-5" style={{ color: "var(--brand-accent)" }} />
+      <span className="text-base font-extrabold tracking-wider">STYX PORTAL</span>
       <div className="ml-auto flex items-center gap-1.5">
         <CountChip count={running} label="running" dotClass="bg-success" />
         <CountChip count={paused} label="paused" dotClass="bg-warning" />
