@@ -33,7 +33,7 @@ export function InstanceRow({ instance, icon, onSelect }: InstanceRowProps) {
       animate="animate"
       exit="exit"
       transition={spring}
-      className="group flex items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 cursor-pointer hover:border-primary/40 transition-colors"
+      className="styx-card group flex items-center gap-3 rounded-lg px-3 py-2 cursor-pointer hover:border-primary/40 transition-colors"
       onClick={() => onSelect(instance)}
     >
       {/* Icon */}
