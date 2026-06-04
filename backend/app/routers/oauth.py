@@ -36,7 +36,8 @@ def _err_redirect(code: str) -> RedirectResponse:
 async def list_public_providers(session: AsyncSession = Depends(get_session)):
     rows = (await session.exec(select(OAuthProvider).where(
         OAuthProvider.enabled == True))).all()  # noqa: E712
-    return [PublicProvider(name=p.name, display_label=p.display_label) for p in rows]
+    return [PublicProvider(name=p.name, display_label=p.display_label,
+                           icon_url=p.icon_url) for p in rows]
 
 
 @router.get("/{name}/start")
