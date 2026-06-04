@@ -163,6 +163,8 @@ class ProviderOut(BaseModel):
     has_secret: bool                          # never expose the secret itself
     icon_url: str | None
     trust_email: bool
+    redirect_uri: str                         # register this in the IdP (login flow)
+    test_redirect_uri: str                    # register this too to use "Test login"
 
 
 class ProviderTestCheck(BaseModel):

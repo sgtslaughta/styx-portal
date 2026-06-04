@@ -127,3 +127,13 @@ def test_out_coerces_null_trust_email():
     p.trust_email = None  # simulate the migrated pre-existing row
     out = _out(p)
     assert out.trust_email is False
+
+
+@pytest.mark.asyncio
+async def test_out_exposes_redirect_uris(admin_client):
+    await admin_client.post("/api/oauth-providers",
+                            json={**_payload(), "name": "authentik"})
+    row = (await admin_client.get("/api/oauth-providers")).json()[0]
+    assert row["redirect_uri"].endswith("/api/auth/oauth/authentik/callback")
+    assert row["test_redirect_uri"].endswith(
+        f"/api/oauth-providers/{row['id']}/test/callback")

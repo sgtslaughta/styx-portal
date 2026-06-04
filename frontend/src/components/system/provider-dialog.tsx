@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import {
   api, type OAuthProviderRow, type OAuthProviderCreate, type ProviderTestResult,
 } from "@/api/client";
-import { KeyRound, Upload, X, Check, AlertCircle, ChevronDown } from "lucide-react";
+import { KeyRound, Upload, X, Check, AlertCircle, ChevronDown, Link2, Copy } from "lucide-react";
 
 const MAX_ICON_BYTES = 200 * 1024;
 
@@ -177,6 +177,31 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
               />
             </Field>
           )}
+
+          <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+            <div className="flex items-center gap-1.5 text-xs font-medium">
+              <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
+              Redirect URI — register this in your identity provider
+            </div>
+            <CopyRow
+              label="Login callback"
+              value={
+                editing
+                  ? editing.redirect_uri
+                  : `${window.location.origin}/api/auth/oauth/${form.name || "your-provider"}/callback`
+              }
+            />
+            {editing ? (
+              <CopyRow label="Test-login callback" value={editing.test_redirect_uri} />
+            ) : (
+              <p className="text-[11px] text-muted-foreground">
+                Save the provider to get its Test-login callback URL.
+              </p>
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              Must match exactly — scheme, host, path, and case. Use Strict matching in your IdP.
+            </p>
+          </div>
 
           <Field label="Client ID">
             <Input value={form.client_id} onChange={set("client_id")} />
@@ -383,6 +408,30 @@ function Field({
       <label className="block text-xs font-medium text-muted-foreground">{label}</label>
       {children}
       {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+    </div>
+  );
+}
+
+function CopyRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="space-y-0.5">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="flex items-center gap-2">
+        <code className="flex-1 truncate rounded border border-border bg-background px-2 py-1 text-[11px]">
+          {value}
+        </code>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            navigator.clipboard?.writeText(value);
+            toast.success("Copied");
+          }}
+        >
+          <Copy className="h-3.5 w-3.5" />
+        </Button>
+      </div>
     </div>
   );
 }

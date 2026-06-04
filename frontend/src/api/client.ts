@@ -13,6 +13,7 @@ export type OAuthProviderRow = {
   issuer_url: string | null; client_id: string; scopes: string;
   role_map: Record<string, unknown>; enabled: boolean; has_secret: boolean;
   icon_url: string | null; trust_email: boolean;
+  redirect_uri: string; test_redirect_uri: string;
 };
 export type OAuthProviderCreate = {
   name: string; display_label: string; kind: string; issuer_url?: string;

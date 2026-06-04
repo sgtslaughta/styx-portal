@@ -19,12 +19,23 @@ _settings = Settings()
 router = APIRouter()
 
 
+def _login_redirect_uri(name: str) -> str:
+    # canonical login-flow callback — exactly what build_authorize sends to the IdP
+    return oauth._redirect_uri(name, "login")
+
+
+def _test_redirect_uri(provider_id: str) -> str:
+    return f"{_settings.oauth_redirect_base()}/api/oauth-providers/{provider_id}/test/callback"
+
+
 def _out(p: OAuthProvider) -> ProviderOut:
     return ProviderOut(id=p.id, name=p.name, display_label=p.display_label, kind=p.kind,
                        issuer_url=p.issuer_url, client_id=p.client_id, scopes=p.scopes,
                        role_map=p.role_map, enabled=p.enabled,
                        has_secret=bool(p.client_secret_enc),
-                       icon_url=p.icon_url, trust_email=bool(p.trust_email))
+                       icon_url=p.icon_url, trust_email=bool(p.trust_email),
+                       redirect_uri=_login_redirect_uri(p.name),
+                       test_redirect_uri=_test_redirect_uri(p.id))
 
 
 MAX_ICON_BYTES = 256 * 1024
@@ -95,10 +106,6 @@ async def test_config(provider_id: str, admin: User = Depends(require_admin),
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     ok, checks = await oauth.discovery_checks(p)
     return ProviderTestResult(ok=ok, checks=checks)
-
-
-def _test_redirect_uri(provider_id: str) -> str:
-    return f"{_settings.oauth_redirect_base()}/api/oauth-providers/{provider_id}/test/callback"
 
 
 @router.get("/{provider_id}/test/start")
