@@ -10,3 +10,6 @@ plans/
 node_modules/
 dist/
 traefik/dynamic.yml
+
+# Local Claude Code runtime/settings
+.claude/
