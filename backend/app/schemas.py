@@ -133,6 +133,7 @@ class ProviderCreate(BaseModel):
     enabled: bool = True
     icon_url: str | None = None
     trust_email: bool = False
+    allow_signup: bool = False
 
 
 class ProviderUpdate(BaseModel):
@@ -148,6 +149,7 @@ class ProviderUpdate(BaseModel):
     enabled: bool | None = None
     icon_url: str | None = None
     trust_email: bool | None = None
+    allow_signup: bool | None = None
 
 
 class ProviderOut(BaseModel):
@@ -163,6 +165,7 @@ class ProviderOut(BaseModel):
     has_secret: bool                          # never expose the secret itself
     icon_url: str | None
     trust_email: bool
+    allow_signup: bool
     redirect_uri: str                         # register this in the IdP (login flow)
     test_redirect_uri: str                    # register this too to use "Test login"
 

@@ -59,7 +59,7 @@ async def test_rejects_when_not_preauthorized(session):
 async def test_role_map_promotes_admin(session):
     session.add(Invite(token_hash="h", email="a@b.c", role="user", created_by="admin"))
     await session.commit()
-    role_map = {"claim": "groups", "values": {"selkies-admins": "admin"}}
+    role_map = {"claim": "groups", "admin_group": "selkies-admins"}
     out = await federation.resolve_identity(
         session, "google", _ident(claims={"groups": ["selkies-admins"]}), role_map=role_map)
     assert out.role == "admin"
@@ -88,3 +88,50 @@ async def test_no_email_always_rejected_even_with_trust(session):
     with pytest.raises(federation.EmailUnverified):
         await federation.resolve_identity(
             session, "authentik", _ident(verified=False, email=None), trust_email=True)
+
+
+def _claims(groups=None):
+    return {"groups": groups or []}
+
+
+@pytest.mark.asyncio
+async def test_no_signup_without_allow_signup(session):
+    # default: invite-less, allow_signup off -> NotAuthorized
+    with pytest.raises(federation.NotAuthorized):
+        await federation.resolve_identity(session, "authentik", _ident())
+
+
+@pytest.mark.asyncio
+async def test_allow_signup_open_provisions_user(session):
+    out = await federation.resolve_identity(
+        session, "authentik", _ident(), role_map={}, allow_signup=True)
+    assert out.email == "a@b.c"
+    assert out.role == "user"
+
+
+@pytest.mark.asyncio
+async def test_signup_requires_user_group_when_set(session):
+    rm = {"claim": "groups", "user_group": "styx-users", "admin_group": "styx-admins"}
+    # not in user group -> denied even with allow_signup
+    with pytest.raises(federation.NotAuthorized):
+        await federation.resolve_identity(
+            session, "authentik",
+            _ident(claims=_claims(["other"])), role_map=rm, allow_signup=True)
+
+
+@pytest.mark.asyncio
+async def test_signup_user_group_grants_user(session):
+    rm = {"claim": "groups", "user_group": "styx-users", "admin_group": "styx-admins"}
+    out = await federation.resolve_identity(
+        session, "authentik",
+        _ident(claims=_claims(["styx-users"])), role_map=rm, allow_signup=True)
+    assert out.role == "user"
+
+
+@pytest.mark.asyncio
+async def test_signup_admin_group_grants_admin(session):
+    rm = {"claim": "groups", "user_group": "styx-users", "admin_group": "styx-admins"}
+    out = await federation.resolve_identity(
+        session, "authentik",
+        _ident(claims=_claims(["styx-admins"])), role_map=rm, allow_signup=True)
+    assert out.role == "admin"

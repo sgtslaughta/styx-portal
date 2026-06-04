@@ -68,6 +68,7 @@ class OAuthProvider(SQLModel, table=True):
     scopes: str = "openid email profile"
     icon_url: str | None = None                        # remote URL or base64 data URI
     trust_email: bool = False                          # treat missing email_verified as verified
+    allow_signup: bool = False                          # auto-provision users without an invite
     role_map: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     enabled: bool = True
     created_at: datetime = Field(default_factory=_now)

@@ -71,7 +71,8 @@ async def callback(name: str, request: Request, session: AsyncSession = Depends(
         identity = await oauth.fetch_identity(
             provider, "login", str(request.url), tx["verifier"])
         user = await federation.resolve_identity(
-            session, name, identity, provider.role_map, provider.trust_email)
+            session, name, identity, provider.role_map, provider.trust_email,
+            provider.allow_signup)
     except federation.EmailUnverified:
         return _err_redirect("email_unverified")
     except federation.Disabled:

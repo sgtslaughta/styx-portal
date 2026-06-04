@@ -35,6 +35,7 @@ async def _run_migrations(conn):
         ("service_templates", "dind", "BOOLEAN"),
         ("oauth_providers", "icon_url", "TEXT"),
         ("oauth_providers", "trust_email", "BOOLEAN"),
+        ("oauth_providers", "allow_signup", "BOOLEAN"),
     ]
     for table, column, col_type in migrations:
         try:
@@ -44,14 +45,15 @@ async def _run_migrations(conn):
         except Exception:
             pass
 
-    # ADD COLUMN ... BOOLEAN has no default, so rows that predate the column get
-    # NULL. trust_email is a non-nullable bool downstream — backfill to False.
-    try:
-        await conn.execute(sqlalchemy.text(
-            "UPDATE oauth_providers SET trust_email = 0 WHERE trust_email IS NULL"
-        ))
-    except Exception:
-        pass
+    # ADD COLUMN ... BOOLEAN has no default, so rows that predate a column get NULL.
+    # These are non-nullable bools downstream — backfill NULLs to False.
+    for column in ("trust_email", "allow_signup"):
+        try:
+            await conn.execute(sqlalchemy.text(
+                f"UPDATE oauth_providers SET {column} = 0 WHERE {column} IS NULL"
+            ))
+        except Exception:
+            pass
 
 
 async def get_session():

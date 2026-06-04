@@ -12,14 +12,14 @@ export type OAuthProviderRow = {
   id: string; name: string; display_label: string; kind: string;
   issuer_url: string | null; client_id: string; scopes: string;
   role_map: Record<string, unknown>; enabled: boolean; has_secret: boolean;
-  icon_url: string | null; trust_email: boolean;
+  icon_url: string | null; trust_email: boolean; allow_signup: boolean;
   redirect_uri: string; test_redirect_uri: string;
 };
 export type OAuthProviderCreate = {
   name: string; display_label: string; kind: string; issuer_url?: string;
   authorize_url?: string; token_url?: string; userinfo_url?: string;
   client_id: string; client_secret: string; scopes?: string; role_map?: Record<string, unknown>;
-  icon_url?: string | null; trust_email?: boolean;
+  icon_url?: string | null; trust_email?: boolean; allow_signup?: boolean;
 };
 
 export type ProviderTestResult = {

@@ -34,6 +34,7 @@ def _out(p: OAuthProvider) -> ProviderOut:
                        role_map=p.role_map, enabled=p.enabled,
                        has_secret=bool(p.client_secret_enc),
                        icon_url=p.icon_url, trust_email=bool(p.trust_email),
+                       allow_signup=bool(p.allow_signup),
                        redirect_uri=_login_redirect_uri(p.name),
                        test_redirect_uri=_test_redirect_uri(p.id))
 
@@ -70,7 +71,8 @@ async def create_provider(body: ProviderCreate, admin: User = Depends(require_ad
         token_url=body.token_url, userinfo_url=body.userinfo_url,
         client_id=body.client_id, client_secret_enc=encrypt_secret(body.client_secret),
         scopes=body.scopes, role_map=body.role_map, enabled=body.enabled,
-        icon_url=body.icon_url, trust_email=body.trust_email)
+        icon_url=body.icon_url, trust_email=body.trust_email,
+        allow_signup=body.allow_signup)
     session.add(p)
     await session.commit()
     return _out(p)

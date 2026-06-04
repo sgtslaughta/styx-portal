@@ -16,8 +16,10 @@ const MAX_ICON_BYTES = 200 * 1024;
 const EMPTY: OAuthProviderCreate = {
   name: "", display_label: "", kind: "oidc", issuer_url: "",
   client_id: "", client_secret: "", scopes: "openid email profile",
-  icon_url: null, trust_email: false,
+  icon_url: null, trust_email: false, allow_signup: false,
 };
+
+type RoleMap = { claim?: string; user_group?: string; admin_group?: string };
 
 type Props = {
   open: boolean;
@@ -31,6 +33,9 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
   const [advanced, setAdvanced] = useState(false);
   const [test, setTest] = useState<ProviderTestResult | null>(null);
   const [probe, setProbe] = useState<Record<string, unknown> | null>(null);
+  const [groupsClaim, setGroupsClaim] = useState("groups");
+  const [userGroup, setUserGroup] = useState("");
+  const [adminGroup, setAdminGroup] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -48,11 +53,26 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
         scopes: editing.scopes,
         icon_url: editing.icon_url,
         trust_email: editing.trust_email,
+        allow_signup: editing.allow_signup,
       });
+      const rm = (editing.role_map ?? {}) as RoleMap;
+      setGroupsClaim(rm.claim || "groups");
+      setUserGroup(rm.user_group || "");
+      setAdminGroup(rm.admin_group || "");
     } else {
       setForm(EMPTY);
+      setGroupsClaim("groups");
+      setUserGroup("");
+      setAdminGroup("");
     }
   }, [open, editing]);
+
+  function buildRoleMap(): RoleMap {
+    const rm: RoleMap = { claim: groupsClaim.trim() || "groups" };
+    if (userGroup.trim()) rm.user_group = userGroup.trim();
+    if (adminGroup.trim()) rm.admin_group = adminGroup.trim();
+    return rm;
+  }
 
   const set = (k: keyof OAuthProviderCreate) => (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -86,6 +106,8 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
           scopes: form.scopes,
           icon_url: form.icon_url,
           trust_email: form.trust_email,
+          allow_signup: form.allow_signup,
+          role_map: buildRoleMap(),
           authorize_url: form.authorize_url,
           token_url: form.token_url,
           userinfo_url: form.userinfo_url,
@@ -93,7 +115,7 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
         if (form.client_secret) patch.client_secret = form.client_secret;
         return api.updateOAuthProvider(editing.id, patch);
       }
-      return api.createOAuthProvider(form);
+      return api.createOAuthProvider({ ...form, role_map: buildRoleMap() });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["oauth-providers"] });
@@ -284,6 +306,55 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
               </span>
             </span>
           </label>
+
+          <div className="space-y-3 rounded-md border border-border p-3">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!form.allow_signup}
+                className="mt-0.5 h-4 w-4"
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, allow_signup: e.target.checked }))
+                }
+              />
+              <span className="text-sm">
+                <span className="font-medium">Allow new users to sign up</span>
+                <span className="block text-xs text-muted-foreground">
+                  Auto-create accounts on first login without an invite. Otherwise sign-in
+                  is invite-only.
+                </span>
+              </span>
+            </label>
+
+            <div className="grid grid-cols-3 gap-2">
+              <Field label="Groups claim" hint="Userinfo claim holding the user's groups.">
+                <Input
+                  value={groupsClaim}
+                  onChange={(e) => setGroupsClaim(e.target.value)}
+                  placeholder="groups"
+                />
+              </Field>
+              <Field label="User group" hint="Required to sign up (blank = anyone).">
+                <Input
+                  value={userGroup}
+                  onChange={(e) => setUserGroup(e.target.value)}
+                  placeholder="styx-users"
+                />
+              </Field>
+              <Field label="Admin group" hint="Members get the admin role.">
+                <Input
+                  value={adminGroup}
+                  onChange={(e) => setAdminGroup(e.target.value)}
+                  placeholder="styx-admins"
+                />
+              </Field>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Admin group → admin. With a user group set, only its members may sign up; leave it
+              blank to allow anyone the provider authenticates. Group mapping also applies to
+              invited users.
+            </p>
+          </div>
 
           <button
             type="button"
