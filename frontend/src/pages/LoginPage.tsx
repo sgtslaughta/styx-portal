@@ -5,12 +5,13 @@ import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LoginBrandPanel } from "@/components/auth/LoginBrandPanel";
+import { KeyRound } from "lucide-react";
 
 export function LoginPage() {
   const [username, setU] = useState("");
   const [password, setP] = useState("");
   const [err, setErr] = useState("");
-  const [providers, setProviders] = useState<{ name: string; display_label: string }[]>([]);
+  const [providers, setProviders] = useState<{ name: string; display_label: string; icon_url: string | null }[]>([]);
   const nav = useNavigate();
   const { refresh, setupRequired, loading } = useAuth();
 
@@ -67,8 +68,11 @@ export function LoginPage() {
                 <a
                   key={p.name}
                   href={api.oauthStartUrl(p.name)}
-                  className="flex w-full items-center justify-center rounded-md border border-border bg-background p-2.5 text-sm font-medium hover:bg-accent"
+                  className="flex w-full items-center justify-center gap-2 rounded-md border border-border bg-background p-2.5 text-sm font-medium hover:bg-accent"
                 >
+                  {p.icon_url
+                    ? <img src={p.icon_url} alt="" className="h-5 w-5 object-contain" />
+                    : <KeyRound className="h-4 w-4 text-muted-foreground" />}
                   Continue with {p.display_label}
                 </a>
               ))}
