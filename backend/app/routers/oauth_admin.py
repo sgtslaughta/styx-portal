@@ -1,15 +1,20 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import RedirectResponse, HTMLResponse
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.config import Settings
 from app.database import get_session
 from app.models import OAuthProvider, User
 from app.schemas import ProviderCreate, ProviderUpdate, ProviderOut, ProviderTestResult
 from app.security import oauth
 from app.security.crypto import encrypt_secret
 from app.security.deps import require_admin
+import json as _json
+
+_settings = Settings()
 
 router = APIRouter()
 
@@ -90,6 +95,68 @@ async def test_config(provider_id: str, admin: User = Depends(require_admin),
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     ok, checks = await oauth.discovery_checks(p)
     return ProviderTestResult(ok=ok, checks=checks)
+
+
+def _test_redirect_uri(provider_id: str) -> str:
+    return f"{_settings.oauth_redirect_base()}/api/oauth-providers/{provider_id}/test/callback"
+
+
+@router.get("/{provider_id}/test/start")
+async def test_start(provider_id: str, admin: User = Depends(require_admin),
+                     session: AsyncSession = Depends(get_session)):
+    p = await session.get(OAuthProvider, provider_id)
+    if not p:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    redirect = _test_redirect_uri(provider_id)
+    url, state, verifier = await oauth.build_authorize(p, mode="test", redirect_uri=redirect)
+    resp = RedirectResponse(url, status_code=status.HTTP_302_FOUND)
+    resp.set_cookie(oauth.TX_COOKIE,
+                    oauth.pack_tx(p.name, state, verifier, "test", provider_id),
+                    max_age=oauth.TX_TTL, httponly=True,
+                    secure=_settings.COOKIE_SECURE, samesite="lax")
+    return resp
+
+
+def _probe_page(probe: dict) -> str:
+    payload = _json.dumps(probe)
+    return (
+        "<!doctype html><html><body><script>"
+        f"const r={payload};"
+        "if(window.opener){window.opener.postMessage({type:'sso-test',result:r},'*');}"
+        "document.body.innerText=JSON.stringify(r,null,2);"
+        "setTimeout(()=>window.close(),500);"
+        "</script></body></html>"
+    )
+
+
+@router.get("/{provider_id}/test/callback")
+async def test_callback(provider_id: str, request: Request,
+                        admin: User = Depends(require_admin),
+                        session: AsyncSession = Depends(get_session)):
+    p = await session.get(OAuthProvider, provider_id)
+    if not p:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    tx_raw = request.cookies.get(oauth.TX_COOKIE)
+    try:
+        tx = oauth.unpack_tx(tx_raw or "")
+    except Exception:
+        return HTMLResponse(_probe_page({"ok": False, "error": "bad_state"}))
+    if tx["mode"] != "test" or tx["uid"] != provider_id or \
+            request.query_params.get("state") != tx["state"]:
+        return HTMLResponse(_probe_page({"ok": False, "error": "state_mismatch"}))
+    redirect = _test_redirect_uri(provider_id)
+    try:
+        identity = await oauth.fetch_identity(p, "test", str(request.url),
+                                              tx["verifier"], redirect_uri=redirect)
+    except Exception as e:  # noqa: BLE001
+        return HTMLResponse(_probe_page({"ok": False, "error": str(e)}))
+    would_pass = bool(identity.email) and (identity.email_verified or p.trust_email)
+    probe = {"ok": True, "sub": identity.sub, "email": identity.email,
+             "email_verified": identity.email_verified, "trust_email": p.trust_email,
+             "would_pass": would_pass, "claims": identity.claims}
+    resp = HTMLResponse(_probe_page(probe))
+    resp.delete_cookie(oauth.TX_COOKIE)
+    return resp
 
 
 @router.delete("/{provider_id}", status_code=204)

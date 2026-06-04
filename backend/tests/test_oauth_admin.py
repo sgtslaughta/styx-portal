@@ -78,3 +78,27 @@ async def test_config_check_ok(admin_client, monkeypatch):
     assert r.status_code == 200
     assert r.json()["ok"] is True
     assert any(c["label"] == "Discovery document" for c in r.json()["checks"])
+
+
+@pytest.mark.asyncio
+async def test_test_login_callback_probes_without_session(admin_client, monkeypatch):
+    from app.security import oauth
+    from app.schemas import OAuthIdentity
+
+    async def fake_fetch(provider, mode, url, verifier, redirect_uri=None):
+        return OAuthIdentity(sub="ak-1", email="u@e.test", email_verified=False,
+                             claims={"sub": "ak-1", "email": "u@e.test"})
+    monkeypatch.setattr(oauth, "fetch_identity", fake_fetch)
+
+    await admin_client.post("/api/oauth-providers",
+                            json={**_payload(), "name": "authentik", "trust_email": True})
+    pid = (await admin_client.get("/api/oauth-providers")).json()[0]["id"]
+
+    # forge a valid test tx cookie
+    tx = oauth.pack_tx("authentik", "st8", "vfy", "test", pid)
+    admin_client.cookies.set(oauth.TX_COOKIE, tx)
+    r = await admin_client.get(
+        f"/api/oauth-providers/{pid}/test/callback?state=st8&code=abc")
+    assert r.status_code == 200
+    assert "u@e.test" in r.text          # identity surfaced in the result page
+    assert "would_pass" in r.text
