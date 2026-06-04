@@ -136,7 +136,7 @@ export function MetricsOverview() {
               { label: "Docker", value: hostInfo.docker_version ?? "—" },
               { label: "GPU", value: hostInfo.gpu ?? "None" },
               { label: "Containers", value: `${counts.total}` },
-              { label: "Network", value: hostInfo.network ?? "selkies-hub" },
+              { label: "Network", value: hostInfo.network ?? "styx-portal" },
               { label: "Uptime", value: hostInfo.uptime ? formatDuration(hostInfo.uptime) : "—" },
             ].map((row) => (
               <div key={row.label} className="flex items-center justify-between">
