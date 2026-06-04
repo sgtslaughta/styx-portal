@@ -1,34 +1,12 @@
 import { Monitor, Moon, Sun } from "lucide-react";
 import { useInstances } from "@/hooks/use-instances";
 import { useAuth } from "@/hooks/use-auth";
-import { useEffect, useState } from "react";
+import { useTheme, type Theme } from "@/theme/ThemeProvider";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-type Theme = "light" | "dark" | "system";
-
-function applyTheme(theme: Theme) {
-  const isDark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
-  document.documentElement.classList.toggle("dark", isDark);
-}
-
 function ThemeToggle() {
-  const [theme, setTheme] = useState<Theme>(() => {
-    return (localStorage.getItem("theme") as Theme) ?? "system";
-  });
-
-  useEffect(() => {
-    applyTheme(theme);
-    localStorage.setItem("theme", theme);
-  }, [theme]);
-
-  useEffect(() => {
-    if (theme !== "system") return;
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = () => applyTheme("system");
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, [theme]);
+  const { theme, setTheme } = useTheme();
 
   function cycle() {
     const order: Theme[] = ["light", "dark", "system"];

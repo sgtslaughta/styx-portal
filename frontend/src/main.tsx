@@ -6,6 +6,7 @@ import { Toaster } from "sonner";
 import App from "./App";
 import { AuthProvider } from "@/auth/AuthContext";
 import { ProtectedRoute } from "@/auth/ProtectedRoute";
+import { ThemeProvider } from "@/theme/ThemeProvider";
 import { LoginPage } from "@/pages/LoginPage";
 import { SetupWizard } from "@/pages/SetupWizard";
 import { AcceptInvitePage } from "@/pages/AcceptInvitePage";
@@ -39,6 +40,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
+        <ThemeProvider>
         <AuthProvider>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
@@ -47,6 +49,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/*" element={<ProtectedRoute><App /></ProtectedRoute>} />
           </Routes>
         </AuthProvider>
+        </ThemeProvider>
       </BrowserRouter>
       <ThemedToaster />
     </QueryClientProvider>
