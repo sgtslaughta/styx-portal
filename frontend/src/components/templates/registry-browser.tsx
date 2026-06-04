@@ -37,7 +37,7 @@ export function RegistryBrowser({ onImport }: RegistryBrowserProps) {
 
       {isLoading && (
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3, 4, 5, 6].map((i) => <div key={i} className="h-28 animate-pulse rounded-xl bg-card" />)}
+          {[1, 2, 3, 4, 5, 6].map((i) => <div key={i} className="styx-card h-28 animate-pulse rounded-xl" />)}
         </div>
       )}
 
@@ -124,7 +124,7 @@ function RegistryCard({ image: img, onImport }: { image: RegistryImage; onImport
 
   return (
     <div
-      className="group relative flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-card p-3 transition-colors hover:border-primary/50"
+      className="styx-card group relative flex cursor-pointer items-start gap-3 rounded-xl p-3 transition-colors hover:border-primary/50"
       onClick={() => onImport(img)}
       onMouseEnter={handleMouseEnter}
       onMouseMove={handleMouseMove}
@@ -161,7 +161,7 @@ function RegistryCard({ image: img, onImport }: { image: RegistryImage; onImport
 
       {showPreview && img.project_url && (
         <div
-          className={`fixed z-50 overflow-hidden rounded-lg border border-border bg-card shadow-2xl transition-all duration-200 ${previewReady ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+          className={`styx-card fixed z-50 overflow-hidden rounded-lg shadow-2xl transition-all duration-200 ${previewReady ? "opacity-100" : "opacity-0 pointer-events-none"}`}
           style={{
             left: expanded ? Math.min(previewPos.x, window.innerWidth - 770) : previewPos.x,
             top: expanded ? Math.min(previewPos.y, window.innerHeight - 620) : previewPos.y,

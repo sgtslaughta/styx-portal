@@ -12,7 +12,7 @@ export function TemplateGrid({ onLaunch }: TemplateGridProps) {
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {[1, 2, 3].map((i) => <div key={i} className="h-40 animate-pulse rounded-xl bg-card" />)}
+        {[1, 2, 3].map((i) => <div key={i} className="styx-card h-40 animate-pulse rounded-xl" />)}
       </div>
     );
   }
