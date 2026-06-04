@@ -72,3 +72,19 @@ async def test_rejects_disabled_user(session):
     await session.commit()
     with pytest.raises(federation.Disabled):
         await federation.resolve_identity(session, "google", _ident())
+
+
+@pytest.mark.asyncio
+async def test_trust_email_allows_unverified(session):
+    session.add(Invite(token_hash="h", email="a@b.c", role="user", created_by="admin"))
+    await session.commit()
+    out = await federation.resolve_identity(
+        session, "authentik", _ident(verified=False), trust_email=True)
+    assert out.email == "a@b.c"
+
+
+@pytest.mark.asyncio
+async def test_no_email_always_rejected_even_with_trust(session):
+    with pytest.raises(federation.EmailUnverified):
+        await federation.resolve_identity(
+            session, "authentik", _ident(verified=False, email=None), trust_email=True)

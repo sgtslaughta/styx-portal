@@ -213,7 +213,7 @@ async def link_callback(name: str, request: Request,
         return RedirectResponse("/?link=error", status_code=302)
     try:
         identity = await oauth.fetch_identity(provider, "link", str(request.url), tx["verifier"])
-        await federation.link_identity(session, user, name, identity)
+        await federation.link_identity(session, user, name, identity, provider.trust_email)
     except federation.FederationError:
         return RedirectResponse("/?link=conflict", status_code=302)
     except Exception:

@@ -42,8 +42,11 @@ def _apply_role_map(default_role: str, claims: dict, role_map: dict | None) -> s
 
 
 async def resolve_identity(session: AsyncSession, provider_name: str,
-                           identity: OAuthIdentity, role_map: dict | None = None) -> User:
-    if not identity.email_verified or not identity.email:
+                           identity: OAuthIdentity, role_map: dict | None = None,
+                           trust_email: bool = False) -> User:
+    if not identity.email:
+        raise EmailUnverified("IdP did not provide an email")
+    if not identity.email_verified and not trust_email:
         raise EmailUnverified("IdP did not provide a verified email")
 
     # 1. existing federated identity → login
@@ -89,8 +92,8 @@ async def resolve_identity(session: AsyncSession, provider_name: str,
 
 
 async def link_identity(session: AsyncSession, user: User, provider_name: str,
-                        identity: OAuthIdentity) -> None:
-    if not identity.email_verified:
+                        identity: OAuthIdentity, trust_email: bool = False) -> None:
+    if not identity.email_verified and not trust_email:
         raise EmailUnverified("IdP did not provide a verified email")
     taken = (await session.exec(select(FederatedIdentity).where(
         FederatedIdentity.provider == provider_name,
