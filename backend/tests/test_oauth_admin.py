@@ -44,3 +44,22 @@ async def test_create_roundtrips_icon_and_trust(admin_client):
     body = r.json()
     assert body["icon_url"] == "https://idp.test/logo.svg"
     assert body["trust_email"] is True
+
+
+@pytest.mark.asyncio
+async def test_update_sets_trust_and_icon(admin_client):
+    await admin_client.post("/api/oauth-providers", json=_payload())
+    pid = (await admin_client.get("/api/oauth-providers")).json()[0]["id"]
+    r = await admin_client.patch(f"/api/oauth-providers/{pid}",
+                                 json={"trust_email": True, "icon_url": "https://x.test/i.png"})
+    assert r.status_code == 200
+    assert r.json()["trust_email"] is True
+    assert r.json()["icon_url"] == "https://x.test/i.png"
+
+
+@pytest.mark.asyncio
+async def test_rejects_oversize_data_uri_icon(admin_client):
+    big = "data:image/png;base64," + ("A" * 300_000)
+    payload = {**_payload(), "name": "big", "icon_url": big}
+    r = await admin_client.post("/api/oauth-providers", json=payload)
+    assert r.status_code == 422
