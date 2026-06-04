@@ -38,7 +38,7 @@ export function AcceptInvitePage() {
             <UserPlus className="h-5 w-5 text-primary" />
             <CardTitle>Accept invitation</CardTitle>
           </div>
-          <CardDescription>Create your user account to join Selkies Hub</CardDescription>
+          <CardDescription>Create your user account to join Styx Portal</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="space-y-4">

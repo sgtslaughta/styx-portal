@@ -32,7 +32,7 @@ def detect_gpu() -> dict:
 
 
 class DockerManager:
-    def __init__(self, network_name: str = "selkies-hub"):
+    def __init__(self, network_name: str = "styx-portal"):
         self._client = docker.DockerClient.from_env()
         self._network_name = network_name
 

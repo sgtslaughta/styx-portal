@@ -1,4 +1,4 @@
-# Selkies Hub — Development Guide
+# Styx Portal — Development Guide
 
 ## Project Structure
 

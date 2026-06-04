@@ -32,7 +32,7 @@ echo "==> Repairing templates with internal_port=443 using the registry's declar
 docker exec "$BACKEND" python - <<'PY'
 import sqlite3, urllib.request, json, re
 
-DB = "/app/data/selkies-hub.db"
+DB = "/app/data/styx-portal.db"
 API = "http://localhost:8000/api"
 
 

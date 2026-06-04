@@ -14,9 +14,9 @@ def test_basic_labels():
     assert labels["traefik.http.routers.abc123.entrypoints"] == "web"
     assert labels["traefik.http.services.abc123.loadbalancer.server.port"] == "3001"
     assert labels["traefik.http.routers.abc123.middlewares"] == "authentik@file"
-    assert labels["selkies-hub.managed"] == "true"
-    assert labels["selkies-hub.instance-id"] == "abc123"
-    assert labels["selkies-hub.template"] == "dev-desktop"
+    assert labels["styx-portal.managed"] == "true"
+    assert labels["styx-portal.instance-id"] == "abc123"
+    assert labels["styx-portal.template"] == "dev-desktop"
 
 
 def test_labels_custom_middleware():

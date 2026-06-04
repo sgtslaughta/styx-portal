@@ -9,8 +9,14 @@ def mock_docker():
     with patch("app.services.docker_manager.docker.DockerClient") as mock_cls:
         client = MagicMock()
         mock_cls.from_env.return_value = client
-        manager = DockerManager(network_name="selkies-hub")
+        manager = DockerManager(network_name="styx-portal")
         yield manager, client
+
+
+def test_default_network_name():
+    with patch("app.services.docker_manager.docker.DockerClient"):
+        manager = DockerManager()
+        assert manager._network_name == "styx-portal"
 
 
 def test_create_container(mock_docker):

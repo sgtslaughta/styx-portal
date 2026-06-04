@@ -6,7 +6,7 @@ from playwright.async_api import async_playwright
 
 from app.services.docker_manager import DockerManager
 
-logger = logging.getLogger("selkies-hub")
+logger = logging.getLogger("styx-portal")
 
 _VIEWPORT = {"width": 1920, "height": 1080}
 _NAV_TIMEOUT_MS = 10000

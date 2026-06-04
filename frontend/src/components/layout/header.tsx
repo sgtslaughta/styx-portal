@@ -78,7 +78,7 @@ export function Header() {
   return (
     <header className="flex items-center gap-3 border-b border-border px-6 py-2.5">
       <Monitor className="h-5 w-5 text-primary" />
-      <span className="text-base font-bold">Selkies Hub</span>
+      <span className="text-base font-bold">Styx Portal</span>
       <div className="ml-auto flex items-center gap-1.5">
         <CountChip count={running} label="running" dotClass="bg-success" />
         <CountChip count={paused} label="paused" dotClass="bg-warning" />

@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { LogIn } from "lucide-react";
 import { api } from "@/api/client";
 import { useAuth } from "@/hooks/use-auth";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { LoginBrandPanel } from "@/components/auth/LoginBrandPanel";
 
 export function LoginPage() {
   const [username, setU] = useState("");
@@ -32,8 +31,7 @@ export function LoginPage() {
         oauth_failed: "Single sign-on failed. Please try again.",
         unknown_provider: "Single sign-on failed. Please try again.",
       };
-      const message = errorMap[ssoError] || "An error occurred during sign-in. Please try again.";
-      setErr(message);
+      setErr(errorMap[ssoError] || "An error occurred during sign-in. Please try again.");
     }
   }, []);
 
@@ -44,33 +42,57 @@ export function LoginPage() {
       await api.login({ username, password });
       await refresh();
       nav("/");
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) {
+      setErr((e as Error).message);
+    }
   }
 
   return (
-    <div className="grid h-screen place-items-center bg-background px-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="gap-1 pb-4">
-          <div className="flex items-center gap-2">
-            <LogIn className="h-5 w-5 text-primary" />
-            <CardTitle>Sign in to Selkies Hub</CardTitle>
+    <div className="grid min-h-screen md:grid-cols-2">
+      <LoginBrandPanel />
+      <div className="flex items-center justify-center bg-muted px-6 py-12">
+        <div className="w-full max-w-sm space-y-6">
+          <div className="space-y-1 text-center">
+            <h1 className="text-2xl font-bold">Sign in</h1>
+            <p className="text-sm text-muted-foreground">Welcome back. Please sign in to continue.</p>
           </div>
-          <CardDescription>Enter your credentials to access the dashboard</CardDescription>
-        </CardHeader>
-        <CardContent>
+
+          {providers.length > 0 && (
+            <div className="space-y-2">
+              {providers.map((p) => (
+                <a
+                  key={p.name}
+                  href={api.oauthStartUrl(p.name)}
+                  className="flex w-full items-center justify-center rounded-md border border-border bg-background p-2.5 text-sm font-medium hover:bg-accent"
+                >
+                  Continue with {p.display_label}
+                </a>
+              ))}
+              <div className="flex items-center gap-3 pt-1 text-xs text-muted-foreground">
+                <span className="h-px flex-1 bg-border" />
+                or
+                <span className="h-px flex-1 bg-border" />
+              </div>
+            </div>
+          )}
+
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-2">
-              <label htmlFor="username" className="block text-sm font-medium">Username</label>
+              <label htmlFor="username" className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Email or username
+              </label>
               <Input
                 id="username"
-                placeholder="your-username"
+                placeholder="you@example.com"
                 value={username}
                 onChange={(e) => setU(e.target.value)}
                 required
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="password" className="block text-sm font-medium">Password</label>
+              <label htmlFor="password" className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Password
+              </label>
               <Input
                 id="password"
                 type="password"
@@ -89,19 +111,8 @@ export function LoginPage() {
               Sign in
             </Button>
           </form>
-          {providers.length > 0 && (
-            <div className="space-y-2 pt-2">
-              <div className="text-center text-xs text-muted-foreground">or continue with</div>
-              {providers.map((p) => (
-                <a key={p.name} href={api.oauthStartUrl(p.name)}
-                   className="block w-full rounded-md border border-border bg-background p-2 text-center text-sm hover:bg-muted">
-                  Sign in with {p.display_label}
-                </a>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

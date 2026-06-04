@@ -12,7 +12,7 @@ def generate_traefik_labels(
         f"traefik.http.routers.{instance_id}.entrypoints": "web",
         f"traefik.http.routers.{instance_id}.middlewares": auth_middleware,
         f"traefik.http.services.{instance_id}.loadbalancer.server.port": str(port),
-        "selkies-hub.managed": "true",
-        "selkies-hub.instance-id": instance_id,
-        "selkies-hub.template": template_name,
+        "styx-portal.managed": "true",
+        "styx-portal.instance-id": instance_id,
+        "styx-portal.template": template_name,
     }

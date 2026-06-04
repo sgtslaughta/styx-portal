@@ -37,7 +37,7 @@ export function SetupWizard() {
             <Shield className="h-5 w-5 text-primary" />
             <CardTitle>Create admin account</CardTitle>
           </div>
-          <CardDescription>Set up your Selkies Hub administrator account</CardDescription>
+          <CardDescription>Set up your Styx Portal administrator account</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="space-y-4">
