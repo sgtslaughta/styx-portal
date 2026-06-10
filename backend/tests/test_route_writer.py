@@ -30,7 +30,7 @@ def test_static_middlewares_present():
 
 
 def test_instance_router_wraps_errors_then_strip():
-    inst = {"id": "abc", "subdomain": "dev", "port": 3001, "protocol": "https"}
+    inst = {"id": "abc", "subdomain": "dev", "port": 3001, "protocol": "https", "tls_skip_verify": True}
     cfg = build_routes_config([inst], "example.com")
     router = cfg["http"]["routers"]["abc"]
     assert router["rule"] == "Host(`example.com`) && PathPrefix(`/i/dev`)"
@@ -40,6 +40,25 @@ def test_instance_router_wraps_errors_then_strip():
     assert cfg["http"]["middlewares"]["strip-dev"] == {
         "stripPrefix": {"prefixes": ["/i/dev"]}
     }
-    # https service keeps insecure-skip transport
+    # https service with tls_skip_verify keeps insecure-skip transport
     assert cfg["http"]["services"]["abc"]["loadBalancer"]["serversTransport"] == "selkies-transport"
     assert cfg["http"]["serversTransports"]["selkies-transport"] == {"insecureSkipVerify": True}
+
+
+def test_insecure_transport_only_when_template_opts_in():
+    cfg = build_routes_config(
+        [{"id": "i1", "subdomain": "a", "port": 3001, "protocol": "https",
+          "tls_skip_verify": True},
+         {"id": "i2", "subdomain": "b", "port": 8443, "protocol": "https",
+          "tls_skip_verify": False}],
+        "example.com")
+    assert cfg["http"]["services"]["i1"]["loadBalancer"]["serversTransport"] == "selkies-transport"
+    assert "serversTransport" not in cfg["http"]["services"]["i2"]["loadBalancer"]
+
+
+def test_no_transport_block_when_no_instance_opts_in():
+    cfg = build_routes_config(
+        [{"id": "i2", "subdomain": "b", "port": 8443, "protocol": "https",
+          "tls_skip_verify": False}],
+        "example.com")
+    assert "serversTransports" not in cfg["http"]

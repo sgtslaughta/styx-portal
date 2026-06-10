@@ -85,7 +85,7 @@ def build_routes_config(instances: list[dict], domain: str) -> dict:
         svc_config: dict = {
             "servers": [{"url": f"{protocol}://{container_name}:{port}"}],
         }
-        if protocol == "https":
+        if protocol == "https" and inst.get("tls_skip_verify"):
             svc_config["serversTransport"] = "selkies-transport"
             has_https = True
         config["http"]["services"][inst_id] = {"loadBalancer": svc_config}
@@ -127,5 +127,6 @@ async def refresh_routes_from_db(session):
             "subdomain": i.subdomain,
             "port": tmpl.internal_port if tmpl else 3001,
             "protocol": tmpl.internal_protocol if tmpl else "https",
+            "tls_skip_verify": bool(tmpl.tls_skip_verify) if tmpl else False,
         })
     write_routes(data)
