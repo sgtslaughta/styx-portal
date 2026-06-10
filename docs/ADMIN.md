@@ -20,6 +20,38 @@ When the user clicks the link, they create their account and are automatically a
 
 Admins can promote/demote users in the **Users** panel.
 
+## Physical Workstations
+
+Styx Portal can stream physical Linux machines on the local network alongside container instances.
+
+### Getting Started
+
+1. Navigate to **System → Workstations**
+2. Click **Enroll workstation**
+3. Copy the one-liner command and run it on a physical Linux machine
+4. The machine will appear as **Online** within 60 seconds and users can connect to stream its desktop
+
+### Setup Requirements
+
+- **Network:** Workstations must reach the portal's LAN address (`SERVER_LAN_URL`). Set this to your local IP/hostname before enrolling.
+- **Workstation OS:** Linux with X11 or Wayland, Python 3, glibc ≥ 2.17, audio stack (PipeWire/PulseAudio)
+- **Optional:** GPU drivers (NVIDIA or VAAPI) for hardware video encoding. Without them, CPU encoding (x264) is used.
+
+### Admin Panel
+
+In **System → Workstations**, you can:
+- **Enroll:** Mint single-use tokens (valid 24 hours) with enrollment commands
+- **Monitor:** See status (online/offline/pending/revoked), last heartbeat, IP address, GPU info
+- **Configure:** Adjust encoder, framerate, bitrate per workstation
+- **Access control:** Restrict which users can connect to each workstation
+- **Revoke/Purge:** Stop streaming gracefully (Revoke) or remove from portal (Purge)
+
+### Troubleshooting
+
+See **[Physical Workstation Streaming Guide](./WORKSTATIONS.md)** for enrollment error codes (E00–E08), diagnostics, and solutions.
+
+---
+
 ## SSO / OAuth Setup
 
 Styx Portal supports federated authentication via OIDC and OAuth2 providers.

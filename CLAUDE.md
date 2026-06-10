@@ -3,6 +3,11 @@
 ## Project Structure
 
 ```
+agent/             Workstation enrollment and agent daemon
+  enroll.sh        Enrollment script (preflight E01–E08, install, register)
+  styx_agent.py    Agent daemon (selkies supervision, heartbeat, doctor, uninstall)
+  uninstall.sh     Standalone removal script
+  tests/           Agent unit tests
 backend/           FastAPI application
   app/
     config.py      Pydantic settings (env-driven)
@@ -13,10 +18,16 @@ backend/           FastAPI application
     routers/
       templates.py Template CRUD
       instances.py Instance lifecycle + Docker integration
+      workstations.py   Workstation admin CRUD + token minting
+      enroll.py    Public enrollment API (register, script/artifact serving)
+      agent.py     Agent-facing API (heartbeat, deregister)
     services/
       docker_manager.py    Docker API wrapper
       traefik_labels.py    Label generation for Traefik routing
       session_monitor.py   Idle detection background loop
+      workstations.py      Subdomain slug, stale-offline detection
+      artifacts.py         Selkies tarball cache + download
+      route_writer.py      Traefik dynamic config (extended for workstation routes)
   tests/           pytest test suite
 docker-compose.yml Infrastructure services
 traefik/           Traefik static config
