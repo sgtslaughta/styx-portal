@@ -1,4 +1,5 @@
 import type { Transition, Variants } from "framer-motion";
+import { useReducedMotion } from "framer-motion";
 
 /** Calm default spring for layout/position changes. */
 export const spring: Transition = { type: "spring", stiffness: 400, damping: 32 };
@@ -17,3 +18,13 @@ export const hoverLift = { y: -2 } as const;
 export const listStagger: Variants = {
   animate: { transition: { staggerChildren: 0.03 } },
 };
+
+/** Entrance variants that collapse to instant (no transform/opacity animation)
+ *  when the user prefers reduced motion. */
+export function useFadeSlideIn(): Variants {
+  const reduce = useReducedMotion();
+  if (reduce) {
+    return { initial: { opacity: 1 }, animate: { opacity: 1 }, exit: { opacity: 1 } };
+  }
+  return fadeSlideIn;
+}

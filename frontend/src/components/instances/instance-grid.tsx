@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { LayoutGrid, List, Maximize2, Filter, Play, Square, Pause, Trash2, CheckSquare, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchSortBar } from "@/components/common/search-sort-bar";
@@ -63,6 +63,7 @@ const FILTER_CYCLE: StatusFilter[] = ["all", "running", "stopped", "paused"];
 export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: InstanceGridProps) {
   const { data: instances, isLoading, isError, refetch } = useInstances();
   const { data: templates } = useTemplates();
+  const reduce = useReducedMotion();
 
   const [view, setView] = useState<ViewMode>(dense ? "compact" : "normal");
   const [sort, setSort] = useState<SortKey>("status");
@@ -263,9 +264,9 @@ export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: 
       <AnimatePresence>
         {hasSelection && (
           <motion.div
-            initial={{ y: 60, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 60, opacity: 0 }}
+            initial={reduce ? undefined : { y: 60, opacity: 0 }}
+            animate={reduce ? undefined : { y: 0, opacity: 1 }}
+            exit={reduce ? undefined : { y: 60, opacity: 0 }}
             transition={{ type: "spring", stiffness: 400, damping: 30 }}
             className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 shadow-2xl"
           >

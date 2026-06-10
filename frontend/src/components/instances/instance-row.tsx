@@ -4,7 +4,7 @@ import { OverlaySparkline } from "./sparkline";
 import { ActionBar } from "@/components/common/action-bar";
 import { formatDuration } from "@/lib/utils";
 import { useInstanceStats } from "@/hooks/use-instances";
-import { fadeSlideIn, spring } from "@/lib/motion";
+import { useFadeSlideIn, spring } from "@/lib/motion";
 import { CHART_COLORS } from "@/lib/chart";
 import type { Instance } from "@/lib/types";
 
@@ -20,6 +20,7 @@ export function InstanceRow({ instance, icon, onSelect }: InstanceRowProps) {
   const isStopped = instance.status === "stopped" || instance.status === "error";
 
   const { data: stats } = useInstanceStats(instance.id, isRunning);
+  const variants = useFadeSlideIn();
 
   const uptimeSeconds = instance.started_at && isRunning
     ? (Date.now() - new Date(instance.started_at + "Z").getTime()) / 1000
@@ -28,7 +29,7 @@ export function InstanceRow({ instance, icon, onSelect }: InstanceRowProps) {
   return (
     <motion.div
       layout
-      variants={fadeSlideIn}
+      variants={variants}
       initial="initial"
       animate="animate"
       exit="exit"

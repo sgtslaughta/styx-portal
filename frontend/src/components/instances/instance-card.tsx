@@ -5,7 +5,7 @@ import { IconViewport } from "./icon-viewport";
 import { ActionBar } from "@/components/common/action-bar";
 import { formatDuration } from "@/lib/utils";
 import { useInstanceStats } from "@/hooks/use-instances";
-import { fadeSlideIn, hoverLift, spring } from "@/lib/motion";
+import { useFadeSlideIn, hoverLift, spring } from "@/lib/motion";
 import { CHART_COLORS } from "@/lib/chart";
 import type { Instance } from "@/lib/types";
 
@@ -19,6 +19,7 @@ export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
   const isRunning = instance.status === "running" || instance.status === "idle";
 
   const { data: stats } = useInstanceStats(instance.id, isRunning);
+  const variants = useFadeSlideIn();
 
   const uptimeSeconds = instance.started_at && isRunning
     ? (Date.now() - new Date(instance.started_at + "Z").getTime()) / 1000
@@ -30,7 +31,7 @@ export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
   return (
     <motion.div
       layout
-      variants={fadeSlideIn}
+      variants={variants}
       initial="initial"
       animate="animate"
       exit="exit"
