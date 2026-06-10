@@ -87,10 +87,7 @@ async def lifespan(app: FastAPI):
     try:
         _settings.jwt_secret_or_raise()
     except RuntimeError as e:
-        logger.critical(
-            "FATAL: %s. Set JWT_SECRET in the environment (e.g. "
-            "`openssl rand -base64 48`), or set COOKIE_SECURE=false for local dev.", e
-        )
+        logger.critical("FATAL: %s", e)
         raise
 
     await init_db()

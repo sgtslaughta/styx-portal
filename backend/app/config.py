@@ -1,4 +1,16 @@
+import json
+import logging
+import secrets as _secrets
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
+
+logger = logging.getLogger("styx-portal")
+
+PLACEHOLDER_SECRETS = {
+    "change-me-to-a-long-random-string-min-32-bytes",
+    "dev-insecure-secret-do-not-use-in-prod",
+}
 
 
 class Settings(BaseSettings):
@@ -20,15 +32,44 @@ class Settings(BaseSettings):
     RATE_LIMIT_AUTH: str = "5/60"        # 5 requests per 60s on /auth/*
     RATE_LIMIT_DEFAULT: str = "120/60"   # 120 requests per 60s otherwise
     OAUTH_REDIRECT_BASE: str = ""   # e.g. https://s.jmolabs.dev ; defaults to https://{DOMAIN}
+    SECRETS_FILE: str = "/app/data/secrets.json"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
     def jwt_secret_or_raise(self) -> str:
-        if not self.JWT_SECRET:
-            if self.COOKIE_SECURE:
-                raise RuntimeError("JWT_SECRET must be set when COOKIE_SECURE=true")
-            return "dev-insecure-secret-do-not-use-in-prod"
-        return self.JWT_SECRET
+        if self.JWT_SECRET:
+            if self.JWT_SECRET in PLACEHOLDER_SECRETS:
+                raise RuntimeError(
+                    "JWT_SECRET is a placeholder value. Generate a real one: "
+                    "openssl rand -base64 48"
+                )
+            if len(self.JWT_SECRET) < 32:
+                raise RuntimeError(
+                    f"JWT_SECRET must be at least 32 characters (got {len(self.JWT_SECRET)}). "
+                    "Generate one: openssl rand -base64 48"
+                )
+            return self.JWT_SECRET
+        return self._load_or_create_secret()
+
+    def _load_or_create_secret(self) -> str:
+        path = Path(self.SECRETS_FILE)
+        if path.exists():
+            data = json.loads(path.read_text())
+            if data.get("jwt_secret"):
+                return data["jwt_secret"]
+        else:
+            data = {}
+        secret = _secrets.token_urlsafe(48)
+        data["jwt_secret"] = secret
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2))
+        path.chmod(0o600)
+        logger.warning(
+            "JWT_SECRET not set — generated one and saved to %s. "
+            "Back this file up; losing it logs everyone out and invalidates "
+            "stored OAuth client secrets.", path,
+        )
+        return secret
 
     def oauth_redirect_base(self) -> str:
         return self.OAUTH_REDIRECT_BASE or f"https://{self.DOMAIN}"
