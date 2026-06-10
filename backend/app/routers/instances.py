@@ -15,11 +15,17 @@ from app.security.deps import get_current_user, require_owner_or_admin
 from app.services.docker_manager import DockerManager
 from app.services.screenshot import ScreenshotService
 from app.services.traefik_labels import generate_traefik_labels
+from app.services.audit import audit
+from app.middleware.rate_limit import SlidingWindow
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 _settings = Settings()
+
+# Parse rate limit config and create instance creation limiter
+_limit, _window = _settings.RATE_LIMIT_INSTANCE_CREATE.split("/")
+_create_limiter = SlidingWindow(int(_limit), int(_window))
 
 # Field allowlist for instance updates. Only these fields can be modified via PATCH.
 _INSTANCE_UPDATE_FIELDS = {"name", "env_overrides", "session_config"}
@@ -214,6 +220,24 @@ async def create_instance(
     if not template:
         raise HTTPException(404, "Template not found")
 
+    # Rate limit check for non-admin users
+    if user.role != "admin":
+        if not _create_limiter.allow(user.id):
+            raise HTTPException(429, "Too many instances created recently — try again later")
+
+        # Quota check for non-admin users
+        quota = _settings.MAX_INSTANCES_PER_USER
+        if quota > 0:
+            owned = await session.exec(
+                select(Instance).where(Instance.owner_id == user.id)
+            )
+            owned_count = len(owned.all())
+            if owned_count >= quota:
+                raise HTTPException(
+                    429,
+                    f"Instance limit reached ({quota}). Delete an instance first."
+                )
+
     result = await session.exec(
         select(Instance).where(Instance.subdomain == body.subdomain)
     )
@@ -233,6 +257,16 @@ async def create_instance(
     session.add(instance)
     await session.commit()
     await session.refresh(instance)
+
+    # Audit the instance creation
+    await audit(
+        session,
+        "instance.create",
+        user_id=user.id,
+        resource=instance.id,
+        detail={"template": template.name, "subdomain": instance.subdomain}
+    )
+    await session.commit()
 
     asyncio.create_task(_launch_instance_background(instance.id, template.id))
     return instance
@@ -473,6 +507,9 @@ async def delete_instance(
         raise HTTPException(404, "Instance not found")
     require_owner_or_admin(instance.owner_id, user)
 
+    # Capture subdomain before deletion for audit
+    subdomain = instance.subdomain
+
     if instance.container_id:
         status = await asyncio.to_thread(docker.get_container_status, instance.container_id)
         if status["status"] != "not_found":
@@ -490,6 +527,16 @@ async def delete_instance(
     event = SessionEvent(instance_id=instance.id, event_type="destroyed")
     session.add(event)
     await session.delete(instance)
+    await session.commit()
+
+    # Audit the instance deletion
+    await audit(
+        session,
+        "instance.delete",
+        user_id=user.id,
+        resource=instance_id,
+        detail={"subdomain": subdomain}
+    )
     await session.commit()
 
     # Opt-in image prune — only when requested AND no other instance uses the image.

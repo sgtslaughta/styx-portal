@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     COOKIE_DOMAIN: str | None = None
     RATE_LIMIT_AUTH: str = "5/60"        # 5 requests per 60s on /auth/*
     RATE_LIMIT_DEFAULT: str = "120/60"   # 120 requests per 60s otherwise
+    RATE_LIMIT_INSTANCE_CREATE: str = "10/3600"  # 10 creates per hour per user
+    MAX_INSTANCES_PER_USER: int = 3      # 0 = unlimited; admins exempt
     OAUTH_REDIRECT_BASE: str = ""   # e.g. https://s.jmolabs.dev ; defaults to https://{DOMAIN}
     SECRETS_FILE: str = "/app/data/secrets.json"
 
