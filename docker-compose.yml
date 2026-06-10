@@ -130,6 +130,7 @@ services:
       - screenshots:/app/data/screenshots
       - traefik-dynamic:/app/traefik-dynamic
       - ./templates:/app/templates:ro
+      - ./agent:/app/agent:ro
     devices:
       - /dev/dri:/dev/dri
     group_add:

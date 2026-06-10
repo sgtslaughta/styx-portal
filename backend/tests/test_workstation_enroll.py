@@ -1,7 +1,11 @@
+import hashlib
+import secrets
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from sqlmodel import select
 
-from app.models import WorkstationEnrollmentToken
+from app.models import WorkstationEnrollmentToken, Workstation, User
 
 
 @pytest.mark.asyncio
@@ -22,3 +26,77 @@ async def test_mint_enroll_token(admin_client, session):
     rows = (await session.exec(select(WorkstationEnrollmentToken))).all()
     assert len(rows) == 1
     assert rows[0].token_hash != body["token"]  # stored hashed
+
+
+async def _mint(session, admin_id: str, *, expired=False, used=False) -> str:
+    raw = secrets.token_urlsafe(32)
+    delta = timedelta(hours=-1) if expired else timedelta(hours=24)
+    session.add(WorkstationEnrollmentToken(
+        token_hash=hashlib.sha256(raw.encode()).hexdigest(),
+        created_by=admin_id,
+        expires_at=datetime.now(timezone.utc) + delta,
+        used_at=datetime.now(timezone.utc) if used else None))
+    await session.commit()
+    return raw
+
+
+async def _admin_id(session) -> str:
+    from sqlmodel import select as _select
+    return (await session.exec(_select(User).where(User.role == "admin"))).first().id
+
+
+@pytest.mark.asyncio
+async def test_register_happy_path(admin_client, client, session):
+    raw = await _mint(session, await _admin_id(session))
+    r = await client.post("/api/enroll/register", json={
+        "token": raw, "hostname": "My-Desk.local", "lan_ip": "192.168.1.50",
+        "display_server": "wayland", "gpu_info": {"vendor": "nvidia"},
+        "os_info": {"distro": "ubuntu"}, "agent_version": "0.1.0"})
+    assert r.status_code == 201
+    body = r.json()
+    assert body["subdomain"] == "my-desk-local"
+    assert body["selkies_user"] == "styx"
+    assert len(body["agent_token"]) > 30
+    assert body["heartbeat_interval_s"] == 30
+    ws = (await session.exec(select(Workstation))).first()
+    assert ws.status == "pending"
+    assert ws.agent_token_hash == hashlib.sha256(body["agent_token"].encode()).hexdigest()
+    # token single-use
+    r2 = await client.post("/api/enroll/register", json={
+        "token": raw, "hostname": "x", "lan_ip": "1.2.3.4"})
+    assert r2.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_register_rejects_expired_and_bogus(client, admin_client, session):
+    raw = await _mint(session, await _admin_id(session), expired=True)
+    r = await client.post("/api/enroll/register", json={
+        "token": raw, "hostname": "x", "lan_ip": "1.2.3.4"})
+    assert r.status_code == 401
+    r = await client.post("/api/enroll/register", json={
+        "token": "bogus", "hostname": "x", "lan_ip": "1.2.3.4"})
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_register_subdomain_collision_appends_suffix(client, admin_client, session):
+    aid = await _admin_id(session)
+    for expected in ("desk", "desk-2"):
+        raw = await _mint(session, aid)
+        r = await client.post("/api/enroll/register", json={
+            "token": raw, "hostname": "desk", "lan_ip": "192.168.1.50"})
+        assert r.json()["subdomain"] == expected
+
+
+@pytest.mark.asyncio
+async def test_enroll_script_served(client):
+    r = await client.get("/api/enroll/script")
+    assert r.status_code == 200
+    assert "--token" in r.text  # bash script content
+
+
+@pytest.mark.asyncio
+async def test_agent_py_served(client):
+    r = await client.get("/api/enroll/agent.py")
+    assert r.status_code == 200
+    assert "def main" in r.text

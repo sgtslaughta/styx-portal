@@ -22,6 +22,7 @@ from app.routers import oauth as oauth_router
 from app.routers import oauth_admin as oauth_admin_router
 from app.routers import audit as audit_router
 from app.routers import workstations as workstations_router
+from app.routers import enroll as enroll_router
 from app.security.deps import get_current_user, require_admin
 from app.services.docker_manager import DockerManager
 from app.services.session_monitor import SessionMonitor
@@ -266,6 +267,7 @@ app.include_router(oauth_router.router, prefix="/api/auth/oauth", tags=["oauth"]
 app.include_router(oauth_admin_router.router, prefix="/api/oauth-providers", tags=["oauth-admin"])
 app.include_router(audit_router.router, prefix="/api/audit", tags=["audit"])
 app.include_router(workstations_router.router, prefix="/api/workstations", tags=["workstations"])
+app.include_router(enroll_router.router, prefix="/api/enroll", tags=["enroll"])
 
 
 @app.get("/api/health")

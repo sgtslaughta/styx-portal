@@ -1,0 +1,6 @@
+"""Styx workstation agent — full implementation in Task 11."""
+def main() -> int:
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())
