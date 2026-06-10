@@ -82,6 +82,27 @@ def detect_encoder() -> str:
 XVFB_DISPLAY = ":100"
 
 
+def _find_xauthority(cfg: dict) -> str | None:
+    """Best-effort XAUTHORITY for capturing an existing X display. Checks the
+    config override, the env, then the common per-distro locations. Returns the
+    first existing file, or None (Selkies falls back to no-auth local connect)."""
+    uid = os.getuid()
+    candidates = [
+        cfg.get("xauthority"),
+        os.environ.get("XAUTHORITY"),
+        str(HOME / ".Xauthority"),
+        f"/run/user/{uid}/.mutter-Xwaylandauth",      # GNOME Xwayland
+        f"/run/user/{uid}/gdm/Xauthority",            # GDM
+    ]
+    # VNC servers drop a per-display cookie under ~/.Xauthority already, but
+    # some write ~/.vnc/...; glob those too.
+    candidates += [str(p) for p in sorted(HOME.glob(".vnc/*Xauthority"))]
+    for c in candidates:
+        if c and Path(c).is_file():
+            return c
+    return None
+
+
 def display_plan(cfg: dict) -> tuple[bool, str]:
     """Return (start_xvfb, display).
 
@@ -99,7 +120,8 @@ def display_plan(cfg: dict) -> tuple[bool, str]:
     return True, cfg.get("xvfb_display", XVFB_DISPLAY)
 
 
-def build_selkies_cmd(cfg: dict, display: str) -> tuple[list[str], dict]:
+def build_selkies_cmd(cfg: dict, display: str,
+                      use_xauth: bool = True) -> tuple[list[str], dict]:
     """selkies-gstreamer v1.6.x is configured by CLI flags (addr/port/encoder/
     basic auth are flags, NOT env vars). It serves HTTP + WebSocket + WebRTC on
     a single port, so Traefik proxies straight to it.
@@ -110,6 +132,13 @@ def build_selkies_cmd(cfg: dict, display: str) -> tuple[list[str], dict]:
         encoder = detect_encoder()
     env = os.environ.copy()
     env["DISPLAY"] = display
+    # Capturing an existing X display (e.g. KasmVNC :1) needs its auth cookie;
+    # the systemd --user service starts with an empty env, so resolve
+    # XAUTHORITY explicitly. Its location varies by distro/display manager.
+    if use_xauth:
+        xauth = _find_xauthority(cfg)
+        if xauth:
+            env["XAUTHORITY"] = xauth
     env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
     env.setdefault("PULSE_SERVER", f"unix:{env['XDG_RUNTIME_DIR']}/pulse/native")
     # Isolate the bundled portable interpreter from the user's site-packages.
@@ -161,7 +190,7 @@ def run(cfg: dict) -> int:
     selkies_log = open(LOG_DIR / "selkies.log", "ab", buffering=0)
     xvfb_log = open(LOG_DIR / "xvfb.log", "ab", buffering=0)
     start_xvfb, display = display_plan(cfg)
-    cmd, env = build_selkies_cmd(cfg, display)
+    cmd, env = build_selkies_cmd(cfg, display, use_xauth=not start_xvfb)
     proc: subprocess.Popen | None = None
     xvfb: subprocess.Popen | None = None
     interval = 30
@@ -205,7 +234,7 @@ def run(cfg: dict) -> int:
             if hb["stream_settings"] != cfg["stream_settings"]:
                 cfg["stream_settings"] = hb["stream_settings"]
                 CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
-                cmd, env = build_selkies_cmd(cfg, display)
+                cmd, env = build_selkies_cmd(cfg, display, use_xauth=not start_xvfb)
                 proc.terminate()
                 proc.wait(timeout=10)
                 proc = None

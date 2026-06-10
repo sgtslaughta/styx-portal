@@ -56,6 +56,20 @@ def test_display_override_wins_over_wayland(tmp_path):
     assert display == ":1"
 
 
+def test_xauthority_set_for_live_display(tmp_path):
+    xa = tmp_path / "xauth"; xa.write_bytes(b"cookie")
+    _, cfg = _cfg(tmp_path, display=":1", xauthority=str(xa))
+    _, env = styx_agent.build_selkies_cmd(cfg, ":1", use_xauth=True)
+    assert env["XAUTHORITY"] == str(xa)
+
+
+def test_xauthority_skipped_for_xvfb(tmp_path):
+    xa = tmp_path / "xauth"; xa.write_bytes(b"cookie")
+    _, cfg = _cfg(tmp_path, xauthority=str(xa))
+    _, env = styx_agent.build_selkies_cmd(cfg, ":100", use_xauth=False)
+    assert "XAUTHORITY" not in env
+
+
 def test_display_plan_x11_attaches_live(tmp_path, monkeypatch):
     monkeypatch.delenv("DISPLAY", raising=False)
     _, cfg = _cfg(tmp_path)
