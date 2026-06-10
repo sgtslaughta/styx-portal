@@ -75,9 +75,22 @@ Templates define the images, resources, and capabilities for launched instances.
 
 These require admin privileges to set:
 
-- **cap_add:** Additional Linux capabilities (default `[]`). Most desktops need none; add only if template fails to boot when confined.
-- **security_opt:** Security options (default `[]`). Applied at runtime.
-- **tls_skip_verify:** bool. Set true only if the template serves self-signed HTTPS internally (e.g., older Selkies versions).
+- **cap_add:** Additional Linux capabilities (default `[]`). **Selkies / LinuxServer
+  desktop images need a capability set to boot** — their s6 init runs `chown` and
+  drops privileges, which `cap_drop: ALL` blocks (symptom: `chown ... Operation not
+  permitted`, `s6-applyuidgid: fatal`). Give such templates at least
+  `CHOWN, SETUID, SETGID, DAC_OVERRIDE, FOWNER` (the bundled seed templates ship the
+  full standard set).
+- **security_opt:** Security options (default `[]`). **GPU desktop templates that do
+  framebuffer capture (Selkies/pixelflux) need `seccomp=unconfined`** — the default
+  seccomp profile blocks syscalls the capture path uses (symptom: a `pixelflux`/Rust
+  `PermissionDenied` panic and a black screen with "websocket disconnected"). The seed
+  templates ship `["seccomp=unconfined","apparmor=unconfined"]`. The rest of the
+  isolation (non-root backend, socket-proxy, per-user networks, audit, quotas) still
+  applies; only the desktop container's own seccomp is relaxed.
+- **tls_skip_verify:** bool. Set true if the template serves self-signed HTTPS
+  internally — **all Selkies desktop images do**, so every `https` template needs this
+  (else Traefik fails cert verification and the instance 502s). Seed templates set it.
 
 ### DinD (Docker-in-Docker) Templates
 

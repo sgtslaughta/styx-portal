@@ -2,7 +2,7 @@
   "name": "gaming",
   "display_name": "Gaming Desktop",
   "image": "ghcr.io/linuxserver/baseimage-selkies:debiantrixie",
-  "icon": "🎮",
+  "icon": "\ud83c\udfae",
   "description": "GPU-accelerated desktop for gaming and graphics work",
   "env_vars": {
     "PUID": "1000",
@@ -17,19 +17,49 @@
   "cpu_limit": "8.0",
   "shm_size": "4g",
   "volumes": [
-    {"name": "{instance_id}-home", "mount": "/config"},
-    {"name": "{instance_id}-games", "mount": "/games"}
+    {
+      "name": "{instance_id}-home",
+      "mount": "/config"
+    },
+    {
+      "name": "{instance_id}-games",
+      "mount": "/games"
+    }
   ],
   "internal_port": 3001,
   "internal_protocol": "https",
   "tls_skip_verify": true,
   "category": "gaming",
-  "tags": ["gaming", "gpu", "entertainment"],
+  "tags": [
+    "gaming",
+    "gpu",
+    "entertainment"
+  ],
   "session_config": {
     "idle_timeout": "30m",
     "grace_period": "5m",
     "timeout_action": "stop",
     "never_timeout": false,
     "max_session_duration": "8h"
-  }
+  },
+  "cap_add": [
+    "CHOWN",
+    "DAC_OVERRIDE",
+    "FSETID",
+    "FOWNER",
+    "MKNOD",
+    "NET_RAW",
+    "SETGID",
+    "SETUID",
+    "SETFCAP",
+    "SETPCAP",
+    "NET_BIND_SERVICE",
+    "SYS_CHROOT",
+    "KILL",
+    "AUDIT_WRITE"
+  ],
+  "security_opt": [
+    "seccomp=unconfined",
+    "apparmor=unconfined"
+  ]
 }
