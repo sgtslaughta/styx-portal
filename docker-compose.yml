@@ -54,6 +54,9 @@ services:
       - ./templates:/app/templates:ro
     devices:
       - /dev/dri:/dev/dri
+    group_add:
+      - "${VIDEO_GID:-44}"
+      - "${RENDER_GID:-992}"
     networks:
       - styx-portal
 
