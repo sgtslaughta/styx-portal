@@ -51,10 +51,16 @@ class DockerManager:
         shm_size: str | None = None,
         privileged: bool = False,
         dind: bool = False,
+        cap_add: list[str] | None = None,
+        security_opt: list[str] | None = None,
     ) -> str:
         if dind:
             privileged = True
             environment = {**environment, "START_DOCKER": "true"}
+            if not memory_limit or not cpu_limit:
+                raise ValueError(
+                    "DinD templates require explicit resource limits (memory + cpu)"
+                )
 
         kwargs: dict = {
             "name": name,
@@ -65,9 +71,14 @@ class DockerManager:
             "detach": True,
             "network": self._network_name,
             "privileged": privileged,
-            "security_opt": ["seccomp=unconfined", "apparmor=unconfined"],
-            "sysctls": {"net.ipv4.ip_unprivileged_port_start": "0"},
         }
+        if privileged:
+            # privileged grants all caps; cap flags would be rejected
+            kwargs["security_opt"] = list(security_opt or [])
+        else:
+            kwargs["security_opt"] = ["no-new-privileges:true"] + list(security_opt or [])
+            kwargs["cap_drop"] = ["ALL"]
+            kwargs["cap_add"] = list(cap_add or [])
         if gpu_enabled:
             gpu_info = detect_gpu()
             if gpu_info["type"] == "nvidia":
@@ -89,6 +100,8 @@ class DockerManager:
             kwargs["mem_limit"] = memory_limit
         if shm_size:
             kwargs["shm_size"] = shm_size
+        if cpu_limit:
+            kwargs["nano_cpus"] = int(float(cpu_limit) * 1e9)
 
         try:
             self._client.images.get(image)

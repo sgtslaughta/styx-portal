@@ -45,6 +45,9 @@ async def create_template(
     if body.dind and user.role != "admin":
         raise HTTPException(403, "DinD templates require admin")
 
+    if (body.cap_add or body.security_opt) and user.role != "admin":
+        raise HTTPException(403, "cap_add/security_opt overrides require admin")
+
     result = await session.exec(
         select(ServiceTemplate).where(ServiceTemplate.name == body.name)
     )
@@ -93,6 +96,9 @@ async def update_template(
 
     if body.dind and user.role != "admin":
         raise HTTPException(403, "DinD templates require admin")
+
+    if (body.cap_add or body.security_opt) and user.role != "admin":
+        raise HTTPException(403, "cap_add/security_opt overrides require admin")
 
     # Apply only allowlisted fields
     for field, value in body.model_dump(exclude_unset=True).items():

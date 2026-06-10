@@ -20,6 +20,9 @@ class TemplateCreate(BaseModel):
     cpu_limit: str | None = None
     shm_size: str | None = None
     dind: bool = False
+    cap_add: list[str] = []
+    security_opt: list[str] = []
+    tls_skip_verify: bool = False
     volumes: list[dict[str, str]] = []
     internal_port: int = 3001
     internal_protocol: str = "https"
@@ -40,6 +43,9 @@ class TemplateUpdate(BaseModel):
     cpu_limit: str | None = None
     shm_size: str | None = None
     dind: bool | None = None
+    cap_add: list[str] | None = None
+    security_opt: list[str] | None = None
+    tls_skip_verify: bool | None = None
     volumes: list[dict[str, str]] | None = None
     internal_port: int | None = None
     internal_protocol: str | None = None

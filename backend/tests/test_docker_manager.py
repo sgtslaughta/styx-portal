@@ -157,9 +157,115 @@ def test_create_container_dind(mock_docker):
         volumes={"dind-store": {"bind": "/var/lib/docker", "mode": "rw"}},
         port=3001,
         dind=True,
+        memory_limit="4g",
+        cpu_limit="2",
     )
 
     call_kwargs = client.containers.create.call_args[1]
     assert call_kwargs["privileged"] is True
     assert call_kwargs["environment"]["START_DOCKER"] == "true"
     assert call_kwargs["volumes"]["dind-store"]["bind"] == "/var/lib/docker"
+
+
+def test_default_container_is_confined(mock_docker):
+    manager, client = mock_docker
+    mock_container = MagicMock()
+    mock_container.id = "confined-container"
+    client.containers.create.return_value = mock_container
+
+    manager.create_container(
+        name="n",
+        image="img",
+        labels={},
+        environment={},
+        volumes={},
+        port=3001,
+    )
+
+    kwargs = client.containers.create.call_args.kwargs
+    assert kwargs["security_opt"] == ["no-new-privileges:true"]
+    assert kwargs["cap_drop"] == ["ALL"]
+    assert kwargs["privileged"] is False
+    assert "sysctls" not in kwargs
+
+
+def test_template_cap_add_and_security_opt_passthrough(mock_docker):
+    manager, client = mock_docker
+    mock_container = MagicMock()
+    mock_container.id = "custom-container"
+    client.containers.create.return_value = mock_container
+
+    manager.create_container(
+        name="n",
+        image="img",
+        labels={},
+        environment={},
+        volumes={},
+        port=3001,
+        cap_add=["SYS_NICE"],
+        security_opt=["seccomp=unconfined"],
+    )
+
+    kwargs = client.containers.create.call_args.kwargs
+    assert kwargs["cap_add"] == ["SYS_NICE"]
+    assert "seccomp=unconfined" in kwargs["security_opt"]
+    assert "no-new-privileges:true" in kwargs["security_opt"]
+
+
+def test_dind_requires_memory_limit(mock_docker):
+    manager, client = mock_docker
+
+    with pytest.raises(ValueError, match="resource limits"):
+        manager.create_container(
+            name="n",
+            image="img",
+            labels={},
+            environment={},
+            volumes={},
+            port=3001,
+            dind=True,
+            memory_limit=None,
+        )
+
+
+def test_dind_still_privileged_with_limits(mock_docker):
+    manager, client = mock_docker
+    mock_container = MagicMock()
+    mock_container.id = "dind-limited"
+    client.containers.create.return_value = mock_container
+
+    manager.create_container(
+        name="n",
+        image="img",
+        labels={},
+        environment={},
+        volumes={},
+        port=3001,
+        dind=True,
+        memory_limit="4g",
+        cpu_limit="2",
+    )
+
+    kwargs = client.containers.create.call_args.kwargs
+    assert kwargs["privileged"] is True
+    assert "cap_drop" not in kwargs
+
+
+def test_cpu_limit_applied(mock_docker):
+    manager, client = mock_docker
+    mock_container = MagicMock()
+    mock_container.id = "cpu-limited"
+    client.containers.create.return_value = mock_container
+
+    manager.create_container(
+        name="n",
+        image="img",
+        labels={},
+        environment={},
+        volumes={},
+        port=3001,
+        cpu_limit="1.5",
+    )
+
+    kwargs = client.containers.create.call_args.kwargs
+    assert kwargs["nano_cpus"] == int(1.5e9)

@@ -21,6 +21,8 @@
     {"name": "{instance_id}-games", "mount": "/games"}
   ],
   "internal_port": 3001,
+  "internal_protocol": "https",
+  "tls_skip_verify": true,
   "category": "gaming",
   "tags": ["gaming", "gpu", "entertainment"],
   "session_config": {

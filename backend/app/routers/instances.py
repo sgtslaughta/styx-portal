@@ -87,8 +87,11 @@ async def _build_and_start_container(instance, template, docker):
         gpu_enabled=template.gpu_enabled,
         gpu_count=template.gpu_count,
         memory_limit=template.memory_limit,
+        cpu_limit=template.cpu_limit,
         shm_size=template.shm_size,
         dind=template.dind,
+        cap_add=template.cap_add,
+        security_opt=template.security_opt,
     )
     instance.container_id = container_id
     await asyncio.to_thread(docker.start_container, container_id)
@@ -162,8 +165,11 @@ async def _launch_instance_background(instance_id: str, template_id: str):
                 gpu_enabled=template.gpu_enabled,
                 gpu_count=template.gpu_count,
                 memory_limit=template.memory_limit,
+                cpu_limit=template.cpu_limit,
                 shm_size=template.shm_size,
                 dind=template.dind,
+                cap_add=template.cap_add,
+                security_opt=template.security_opt,
             )
 
             # Track pulled image
