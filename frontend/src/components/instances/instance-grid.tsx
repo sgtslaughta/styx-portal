@@ -60,7 +60,7 @@ const FILTER_LABELS: Record<StatusFilter, string> = { all: "All", running: "Runn
 const FILTER_CYCLE: StatusFilter[] = ["all", "running", "stopped", "paused"];
 
 export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: InstanceGridProps) {
-  const { data: instances, isLoading, isError } = useInstances();
+  const { data: instances, isLoading, isError, refetch } = useInstances();
   const { data: templates } = useTemplates();
 
   const [view, setView] = useState<ViewMode>(dense ? "compact" : "normal");
@@ -75,6 +75,8 @@ export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: 
   const pauseMut = usePauseInstance();
   const unpauseMut = useUnpauseInstance();
   const destroyMut = useDeleteInstance();
+
+  const bulkBusy = startMut.isPending || stopMut.isPending || pauseMut.isPending || unpauseMut.isPending || destroyMut.isPending;
 
   const processed = useMemo(() => {
     if (!instances) return [];
@@ -159,8 +161,9 @@ export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: 
 
   if (isError) {
     return (
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-center text-sm text-destructive">
-        Backend unavailable — retrying...
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center gap-3 py-12 text-center text-sm text-muted-foreground">
+        <span>Backend unavailable — retrying…</span>
+        <Button size="sm" variant="secondary" onClick={() => refetch()}>Retry now</Button>
       </motion.div>
     );
   }
@@ -268,26 +271,26 @@ export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: 
             <span className="text-xs font-medium text-foreground mr-1">{selected.size} selected</span>
 
             {selStopped.length > 0 && (
-              <Button size="sm" variant="secondary" onClick={bulkStart} className="h-7 text-xs gap-1">
+              <Button size="sm" variant="secondary" onClick={bulkStart} disabled={bulkBusy} className="h-7 text-xs gap-1">
                 <Play className="h-3 w-3" /> Start {selStopped.length}
               </Button>
             )}
             {selRunning.length > 0 && (
-              <Button size="sm" variant="secondary" onClick={bulkPause} className="h-7 text-xs gap-1">
+              <Button size="sm" variant="secondary" onClick={bulkPause} disabled={bulkBusy} className="h-7 text-xs gap-1">
                 <Pause className="h-3 w-3" /> Pause {selRunning.length}
               </Button>
             )}
             {selPaused.length > 0 && (
-              <Button size="sm" variant="secondary" onClick={bulkUnpause} className="h-7 text-xs gap-1">
+              <Button size="sm" variant="secondary" onClick={bulkUnpause} disabled={bulkBusy} className="h-7 text-xs gap-1">
                 <Play className="h-3 w-3" /> Resume {selPaused.length}
               </Button>
             )}
             {(selRunning.length + selPaused.length) > 0 && (
-              <Button size="sm" variant="secondary" onClick={bulkStop} className="h-7 text-xs gap-1">
+              <Button size="sm" variant="secondary" onClick={bulkStop} disabled={bulkBusy} className="h-7 text-xs gap-1">
                 <Square className="h-3 w-3" /> Stop {selRunning.length + selPaused.length}
               </Button>
             )}
-            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive h-7 text-xs gap-1" onClick={bulkDestroy}>
+            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive h-7 text-xs gap-1" onClick={bulkDestroy} disabled={bulkBusy}>
               <Trash2 className="h-3 w-3" /> Destroy
             </Button>
 
