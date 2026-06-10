@@ -306,6 +306,8 @@ Agent daemon startup, crashes, and restarts.
 - **Per-workstation bearer token:** The agent authenticates to the portal with a unique token (stored hashed in the database). Compromising one workstation's token does not affect others.
 - **TLS pinning (optional):** If `SERVER_CA_PIN` is set, enrollment verifies the server's certificate fingerprint. This prevents MITM on the LAN during enrollment and registration.
 - **Per-user access control:** Admins can restrict which users can connect to each workstation in the admin panel.
+- **Stream access (forwardAuth):** Requests to `/w/<subdomain>/` are gated by Traefik forwardAuth against the portal — you must be logged in to the portal in the same browser, and your account must have access to that workstation. A 401 on the stream URL means you are not logged in; a 403 means your account is not assigned to that workstation.
+- **Selkies credentials never reach the browser:** Each workstation's Selkies instance is protected by HTTP basic auth (random password, encrypted at rest). Traefik injects the `Authorization` header server-side after forwardAuth passes, so the password never appears in URLs, browser history, or logs. Direct LAN access to the workstation's Selkies port still requires that password.
 - **Heartbeat revocation:** Admins can revoke a workstation at any time; the agent sees it on the next heartbeat (~30 s) and stops.
 
 ---
