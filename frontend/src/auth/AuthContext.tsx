@@ -58,7 +58,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const reset = () => { if (!showExpiry) armWarnTimer(); };
     const events = ["mousedown", "keydown", "scroll", "touchstart"] as const;
     events.forEach((ev) => window.addEventListener(ev, reset, { passive: true }));
-    return () => events.forEach((ev) => window.removeEventListener(ev, reset));
+    return () => {
+      events.forEach((ev) => window.removeEventListener(ev, reset));
+      window.clearTimeout(warnTimer.current);
+    };
   }, [user, showExpiry, armWarnTimer]);
 
   async function staySignedIn() {
