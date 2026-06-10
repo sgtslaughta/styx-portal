@@ -79,6 +79,24 @@ def build_routes_config(instances: list[dict], domain: str,
         }
     }
 
+    # LAN serving: when the self-signed LAN cert exists, workstations reach
+    # the portal by raw IP (or LAN hostname). Traefik's Host() matcher does
+    # not match bare IP addresses, so we add host-agnostic PathPrefix routers
+    # on the websecure entrypoint. In tunnel mode public traffic arrives on
+    # the `web` entrypoint (via cloudflared) and is untouched; in direct mode
+    # the higher-priority Host() routers win for the real domain.
+    lan_cert = Path(_settings.LAN_CERT_DIR) / "lan.crt"
+    lan_key = Path(_settings.LAN_CERT_DIR) / "lan.key"
+    lan_serving = lan_cert.is_file() and lan_key.is_file()
+
+    def _lan_router(rule: str, service: str, priority: int,
+                    mw: list[str] | None = None) -> dict:
+        r = {"rule": rule, "service": service, "priority": priority,
+             "entryPoints": ["websecure"], "tls": {}}
+        if mw:
+            r["middlewares"] = mw
+        return r
+
     has_https = False
     for inst in instances:
         inst_id = inst["id"]
@@ -130,12 +148,23 @@ def build_routes_config(instances: list[dict], domain: str,
             "priority": 50,
             **_router_transport(deploy_mode, domain),
         }
+        if lan_serving:
+            config["http"]["routers"][f"{rid}-lan"] = _lan_router(
+                f"PathPrefix(`/w/{sub}`)", rid, 50, router_middlewares)
         protocol = ws.get("protocol", "http")
         svc: dict = {"servers": [{"url": f"{protocol}://{ws['lan_ip']}:{ws['port']}"}]}
         if protocol == "https":
             svc["serversTransport"] = "selkies-transport"
             has_https = True
         config["http"]["services"][rid] = {"loadBalancer": svc}
+
+    # Host-agnostic LAN routers (IP / LAN hostname access via websecure).
+    # api beats frontend on /api; ws-*-lan above (prio 50) beats frontend on /w.
+    if lan_serving:
+        config["http"]["routers"]["api-lan"] = _lan_router(
+            "PathPrefix(`/api`)", "api", 100)
+        config["http"]["routers"]["frontend-lan"] = _lan_router(
+            "PathPrefix(`/`)", "frontend", 1)
 
     # Add shared forwardAuth middleware if any workstations exist
     if has_workstations:

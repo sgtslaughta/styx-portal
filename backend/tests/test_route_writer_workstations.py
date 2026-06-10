@@ -58,6 +58,27 @@ def test_no_lan_cert_no_tls_block(tmp_path, monkeypatch):
     monkeypatch.setattr(route_writer._settings, "LAN_CERT_DIR", str(tmp_path))
     cfg = build_routes_config([], "example.com", "tunnel")
     assert "tls" not in cfg
+    # no host-agnostic LAN routers without a LAN cert
+    assert "api-lan" not in cfg["http"]["routers"]
+
+
+def test_lan_routers_emitted_for_ip_access(tmp_path, monkeypatch):
+    from app.services import route_writer
+    monkeypatch.setattr(route_writer._settings, "LAN_CERT_DIR", str(tmp_path))
+    (tmp_path / "lan.crt").write_text("cert")
+    (tmp_path / "lan.key").write_text("key")
+    cfg = build_routes_config([], "example.com", "tunnel", workstations=[_ws()])
+    routers = cfg["http"]["routers"]
+    # Host-agnostic catch-alls on websecure so raw-IP requests route
+    assert routers["api-lan"]["rule"] == "PathPrefix(`/api`)"
+    assert routers["api-lan"]["entryPoints"] == ["websecure"]
+    assert routers["api-lan"]["tls"] == {}
+    assert routers["frontend-lan"]["rule"] == "PathPrefix(`/`)"
+    # per-workstation LAN stream route carries the same forwardAuth + creds
+    ws_lan = routers["ws-ws1-lan"]
+    assert ws_lan["rule"] == "PathPrefix(`/w/desk`)"
+    assert "ws-forward-auth" in ws_lan["middlewares"]
+    assert "auth-ws-desk" in ws_lan["middlewares"]
 
 
 def test_no_workstations_is_default():
