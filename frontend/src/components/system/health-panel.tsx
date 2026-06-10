@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { motion, AnimatePresence } from "framer-motion";
 import { api, type DiagCheck } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,22 +28,18 @@ function HealthCheck({ check }: { check: DiagCheck }) {
   const hint = HINTS[check.key];
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -4 }}
-      transition={{ duration: 0.2 }}
+    <div
       className={`flex gap-3 rounded-lg border p-4 transition-all ${
         isOk
-          ? "border-emerald-500/30 bg-emerald-500/5"
-          : "border-rose-500/30 bg-rose-500/5"
+          ? "border-success/40 bg-success/5"
+          : "border-destructive/40 bg-destructive/5"
       }`}
     >
       <div className="flex-shrink-0 pt-0.5">
         {isOk ? (
-          <CheckCircle2 className="h-5 w-5 text-emerald-500" strokeWidth={2.5} />
+          <CheckCircle2 className="h-5 w-5 text-success" strokeWidth={2.5} />
         ) : (
-          <XCircle className="h-5 w-5 text-rose-500" strokeWidth={2.5} />
+          <XCircle className="h-5 w-5 text-destructive" strokeWidth={2.5} />
         )}
       </div>
 
@@ -61,12 +56,12 @@ function HealthCheck({ check }: { check: DiagCheck }) {
           {check.detail}
         </p>
         {!isOk && hint && (
-          <p className="mt-2 text-xs text-amber-600 dark:text-amber-500 leading-relaxed">
+          <p className="mt-2 text-xs text-warning leading-relaxed">
             {hint}
           </p>
         )}
       </div>
-    </motion.div>
+    </div>
   );
 }
 
@@ -74,14 +69,12 @@ function HistoryStrip({ series }: { series: boolean[] }) {
   return (
     <div className="flex gap-0.5">
       {series.map((up, i) => (
-        <motion.div
+        <div
           key={i}
-          initial={{ opacity: 0.5 }}
-          animate={{ opacity: 1 }}
           className={`h-6 flex-1 rounded-sm transition-colors ${
             up
-              ? "bg-emerald-500/70"
-              : "bg-rose-500/70"
+              ? "bg-success/70"
+              : "bg-destructive/70"
           }`}
           title={up ? "Healthy" : "Failed"}
         />
@@ -132,33 +125,26 @@ export function HealthPanel() {
       </div>
 
       {/* Status banner */}
-      <AnimatePresence mode="wait">
-        {data && (
-          <motion.div
-            key={`status-${allHealthy}`}
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.2 }}
-            className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-medium ${
-              allHealthy
-                ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400"
-                : "border-rose-500/30 bg-rose-500/5 text-rose-700 dark:text-rose-400"
-            }`}
-          >
-            {allHealthy ? (
-              <CheckCircle2 className="h-5 w-5 shrink-0" strokeWidth={2.5} />
-            ) : (
-              <AlertCircle className="h-5 w-5 shrink-0" strokeWidth={2.5} />
-            )}
-            <span>
-              {allHealthy
-                ? "All systems operational"
-                : `${checks.filter((c) => !c.ok).length} of ${checks.length} check${checks.length !== 1 ? "s" : ""} failing`}
-            </span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {data && (
+        <div
+          className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-sm font-medium ${
+            allHealthy
+              ? "border-success/40 bg-success/5 text-success"
+              : "border-destructive/40 bg-destructive/5 text-destructive"
+          }`}
+        >
+          {allHealthy ? (
+            <CheckCircle2 className="h-5 w-5 shrink-0" strokeWidth={2.5} />
+          ) : (
+            <AlertCircle className="h-5 w-5 shrink-0" strokeWidth={2.5} />
+          )}
+          <span>
+            {allHealthy
+              ? "All systems operational"
+              : `${checks.filter((c) => !c.ok).length} of ${checks.length} check${checks.length !== 1 ? "s" : ""} failing`}
+          </span>
+        </div>
+      )}
 
       {/* Checks list */}
       <div className="space-y-2">
@@ -174,11 +160,11 @@ export function HealthPanel() {
             </div>
           </div>
         ) : checks.length > 0 ? (
-          <AnimatePresence mode="popLayout">
+          <div className="space-y-2">
             {checks.map((check) => (
               <HealthCheck key={check.key} check={check} />
             ))}
-          </AnimatePresence>
+          </div>
         ) : (
           <div className="py-8 text-center text-sm text-muted-foreground">
             No diagnostic data available
@@ -195,11 +181,8 @@ export function HealthPanel() {
             </h3>
             <div className="space-y-2">
               {Object.entries(history.status).map(([key, series]) => (
-                <motion.div
+                <div
                   key={key}
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.05 }}
                   className="flex items-center gap-3"
                 >
                   <span className="w-24 shrink-0 text-xs font-medium text-muted-foreground">
@@ -208,7 +191,7 @@ export function HealthPanel() {
                   <div className="flex-1">
                     <HistoryStrip series={series as boolean[]} />
                   </div>
-                </motion.div>
+                </div>
               ))}
             </div>
             <p className="text-xs text-muted-foreground">
