@@ -335,3 +335,39 @@ def test_remove_user_network_tolerates_missing(mock_docker):
 
     client.networks.get.assert_called_once()
     client.networks.create.assert_not_called()
+
+
+def test_ping_returns_true(mock_docker):
+    manager, client = mock_docker
+    client.ping.return_value = True
+    assert manager.ping() is True
+
+
+def test_ping_false_on_error(mock_docker):
+    manager, client = mock_docker
+    client.ping.side_effect = Exception("down")
+    assert manager.ping() is False
+
+
+def test_version_returns_string(mock_docker):
+    manager, client = mock_docker
+    client.version.return_value = {"Version": "29.5.2"}
+    assert manager.version() == "29.5.2"
+
+
+def test_version_none_on_error(mock_docker):
+    manager, client = mock_docker
+    client.version.side_effect = Exception("x")
+    assert manager.version() is None
+
+def test_pull_streaming_parses_tag_and_registry_port(mock_docker):
+    manager, client = mock_docker
+    client.api.pull.return_value = iter([])
+    manager.pull_image_streaming("ghcr.io/foo/bar:debian")
+    assert client.api.pull.call_args.args[0] == "ghcr.io/foo/bar"
+    assert client.api.pull.call_args.kwargs["tag"] == "debian"
+
+    client.api.pull.return_value = iter([])
+    manager.pull_image_streaming("registry:5000/img")  # port, no tag
+    assert client.api.pull.call_args.args[0] == "registry:5000/img"
+    assert client.api.pull.call_args.kwargs["tag"] == "latest"

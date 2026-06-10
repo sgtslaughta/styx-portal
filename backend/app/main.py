@@ -124,10 +124,12 @@ async def lifespan(app: FastAPI):
     task = asyncio.create_task(_session_monitor_loop())
     metrics_task = asyncio.create_task(_metrics_collection_loop())
     screenshot_task = asyncio.create_task(_screenshot_capture_loop())
+    health_task = asyncio.create_task(_health_sample_loop())
     yield
     task.cancel()
     metrics_task.cancel()
     screenshot_task.cancel()
+    health_task.cancel()
 
 
 async def _metrics_collection_loop():
@@ -209,6 +211,24 @@ async def _screenshot_capture_loop():
                 pass
     finally:
         await screenshots.close()
+
+
+async def _health_sample_loop():
+    """Sample diagnostics every 60s and record status + latency."""
+    from app.services.diagnostics import run_diagnostics
+    from app.services.health_store import record
+    import time as _t
+
+    while True:
+        await asyncio.sleep(60)
+        try:
+            async with async_session() as session:
+                result = await run_diagnostics(session)
+            status = {c["key"]: c["ok"] for c in result["checks"]}
+            latency = {c["key"]: c["latency_ms"] for c in result["checks"]}
+            record(_t.time(), status, latency)
+        except Exception:
+            pass
 
 
 app = FastAPI(title="Styx Portal", version="0.1.0", lifespan=lifespan)
@@ -351,4 +371,22 @@ async def system_metrics_history(
     admin: User = Depends(require_admin),
 ):
     from app.services.metrics_store import get_history
+    return get_history(range)
+
+
+@app.get("/api/system/diagnostics")
+async def system_diagnostics(
+    session: AsyncSession = Depends(get_session),
+    admin: User = Depends(require_admin),
+):
+    from app.services.diagnostics import run_diagnostics
+    return await run_diagnostics(session)
+
+
+@app.get("/api/system/diagnostics/history")
+async def system_diagnostics_history(
+    range: str = "1h",
+    admin: User = Depends(require_admin),
+):
+    from app.services.health_store import get_history
     return get_history(range)

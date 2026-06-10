@@ -132,6 +132,17 @@ async def _launch_instance_background(instance_id: str, template_id: str):
             session.add(instance)
             await session.commit()
 
+            if needs_pull:
+                from app.services import pull_progress
+
+                def _cb(pct, detail, _id=instance.id):
+                    pull_progress.set_progress(_id, pct, detail)
+
+                try:
+                    await asyncio.to_thread(docker.pull_image_streaming, template.image, _cb)
+                finally:
+                    pull_progress.clear(instance.id)  # never leave stale progress
+
             volume_names = []
             for vol in template.volumes:
                 vol_name = vol["name"].replace("{instance_id}", instance.id)
@@ -629,6 +640,9 @@ async def get_instance_status(
             last_act = last_act.replace(tzinfo=timezone.utc)
         idle = (now - last_act).total_seconds()
 
+    from app.services import pull_progress
+    pp = pull_progress.get(instance_id)
+
     return InstanceStatus(
         id=instance.id,
         status=docker_status.get("status", instance.status),
@@ -636,6 +650,8 @@ async def get_instance_status(
         uptime_seconds=uptime,
         idle_seconds=idle,
         session_config=instance.session_config,
+        pull_percent=pp["percent"] if pp else None,
+        pull_detail=pp["detail"] if pp else None,
     )
 
 

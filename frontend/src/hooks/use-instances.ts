@@ -97,6 +97,15 @@ export function useInstanceStats(id: string, enabled: boolean) {
   });
 }
 
+export function useInstanceStatus(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["instance-status", id],
+    queryFn: () => api.getInstanceStatus(id),
+    refetchInterval: 2000,
+    enabled,
+  });
+}
+
 export function useKeepalive() {
   const qc = useQueryClient();
   return useMutation({

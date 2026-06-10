@@ -186,6 +186,23 @@ class DockerManager:
         except docker.errors.ImageNotFound:
             return None
 
+    def pull_image_streaming(self, image: str, on_progress=None) -> None:
+        """Pull with layer-progress events. on_progress(percent:int, detail:str)."""
+        # A colon is a tag separator only in the last path segment — otherwise
+        # it's a registry port (e.g. registry:5000/img). Split accordingly.
+        if ":" in image.rsplit("/", 1)[-1]:
+            repo, tag = image.rsplit(":", 1)
+        else:
+            repo, tag = image, "latest"
+        layers: dict[str, dict] = {}
+        for ev in self._client.api.pull(repo, tag=tag or "latest", stream=True, decode=True):
+            if ev.get("id"):
+                layers[ev["id"]] = ev
+            if on_progress:
+                from app.services.pull_progress import overall_percent
+                on_progress(overall_percent(list(layers.values())),
+                            ev.get("status", "Pulling"))
+
     def ensure_user_network(self, user_id: str) -> str:
         """Per-user bridge network; traefik is attached so it can route to
         instance containers. Backend itself never joins user networks."""
@@ -216,3 +233,15 @@ class DockerManager:
             net.remove()
         except docker.errors.APIError:
             pass  # still has containers — leave it
+
+    def ping(self) -> bool:
+        try:
+            return bool(self._client.ping())
+        except Exception:
+            return False
+
+    def version(self) -> str | None:
+        try:
+            return self._client.version().get("Version")
+        except Exception:
+            return None
