@@ -7,6 +7,9 @@ import { useEffect, useRef } from "react";
  * "river current" line recipe (1px lines @23px/41px, 115deg, drifting, bottom-left
  * masked) and refracts it with faint, randomly-placed "slow drips into a pool".
  *
+ * Theme-aware: reads ripple color from --brand-ripple-r/g/b CSS custom properties,
+ * allowing light/dark theme variants with distinct visual character.
+ *
  * Zero dependencies. Visual only — no props, no logic.
  *
  * Graceful degradation: if WebGL is unavailable, the shader fails to compile, or
@@ -38,6 +41,8 @@ uniform vec2 res; uniform float time;
 uniform vec4 drips[${MAX_DRIPS}];   // x, y, age, seed
 uniform int nd;
 uniform float uStrength, uSpec, uCaustic, uChroma, uSpeed, uNorm, uLife;
+uniform vec3 uRippleColor;
+uniform vec3 uBgDark, uBgLight;
 
 float dripH(vec2 q, vec4 d){
   vec2 c = d.xy; float age = d.z;
@@ -78,10 +83,10 @@ void main(){
   float drift1 = time * (23.0 / 14.0), drift2 = time * (41.0 / 26.0);
 
   float gd = distance(uv, vec2(0.15, 0.0));
-  vec3 bg = mix(vec3(0.039, 0.078, 0.149), vec3(0.020, 0.027, 0.051), clamp(gd * 0.95, 0.0, 1.0));
+  vec3 bg = mix(uBgLight, uBgDark, clamp(gd * 0.95, 0.0, 1.0));
 
-  vec3 c1 = vec3(0.275, 0.549, 1.0) * 0.09; // rgba(70,140,255,.09)
-  vec3 c2 = vec3(0.157, 0.353, 0.784) * 0.06; // rgba(40,90,200,.06)
+  vec3 c1 = uRippleColor * 0.09;
+  vec3 c2 = uRippleColor * 0.06;
   float g1r = axis(uv + off * (1.0 + uChroma)) - drift1;
   float g1g = axis(uv + off) - drift1;
   float g1b = axis(uv + off * (1.0 - uChroma)) - drift1;
@@ -97,7 +102,7 @@ void main(){
   vec3 lightDir = normalize(vec3(-0.4, 0.5, 0.8));
   float spec = pow(max(dot(n, lightDir), 0.0), 24.0) * uSpec;
   col += vec3(0.7, 0.85, 1.0) * spec * 0.3 * mask;
-  col += vec3(0.27, 0.55, 1.0) * max(h, 0.0) * uCaustic * mask;
+  col += uRippleColor * max(h, 0.0) * uCaustic * mask;
 
   gl_FragColor = vec4(col, 1.0);
 }`;
@@ -159,6 +164,8 @@ export function RippleCanvas() {
     const uRes = u("res"), uTime = u("time"), uDrips = u("drips"), uNd = u("nd");
     const uStr = u("uStrength"), uSp = u("uSpec"), uCa = u("uCaustic"), uCh = u("uChroma");
     const uSpd = u("uSpeed"), uNo = u("uNorm"), uLi = u("uLife");
+    const uRippleColor = u("uRippleColor");
+    const uBgDark = u("uBgDark"), uBgLight = u("uBgLight");
 
     let w = 0, h = 0;
     const resize = () => {
@@ -175,6 +182,20 @@ export function RippleCanvas() {
     let start = 0, next = 0, last = -99, seed = 0.1, raf = 0;
     let drips: Drip[] = [];
     const arr = new Float32Array(MAX_DRIPS * 4);
+
+    // Helper: read CSS custom property and parse as RGB
+    const parseRgb = (varName: string): [number, number, number] => {
+      const styles = getComputedStyle(canvas);
+      const val = styles.getPropertyValue(varName).trim();
+      const matches = val.match(/(\d+)/g);
+      if (matches && matches.length >= 3) {
+        const r = parseInt(matches[0]!, 10);
+        const g = parseInt(matches[1]!, 10);
+        const b = parseInt(matches[2]!, 10);
+        return [r / 255, g / 255, b / 255];
+      }
+      return [0, 0, 0];
+    };
 
     const frame = (now: number) => {
       if (!start) start = now;
@@ -193,6 +214,17 @@ export function RippleCanvas() {
         arr[i * 4 + 2] = t - d.t0;
         arr[i * 4 + 3] = d.seed;
       });
+
+      // Read theme-aware ripple color from CSS custom properties
+      const [ripR, ripG, ripB] = parseRgb("--brand-ripple-r, var(--brand-ripple-g), var(--brand-ripple-b)");
+      // Dark theme: navy to deep navy. Light theme: pale periwinkle to even paler.
+      const bgLight = document.documentElement.classList.contains("dark")
+        ? [0.039, 0.078, 0.149]
+        : [0.965, 0.973, 0.996]; // #f5f9fe -> normalized
+      const bgDark = document.documentElement.classList.contains("dark")
+        ? [0.020, 0.027, 0.051]
+        : [0.929, 0.922, 0.949]; // #ede8f7 -> normalized
+
       gl.uniform2f(uRes, canvas.width, canvas.height);
       gl.uniform1f(uTime, t);
       gl.uniform4fv(uDrips, arr);
@@ -204,6 +236,9 @@ export function RippleCanvas() {
       gl.uniform1f(uSpd, CFG.speed);
       gl.uniform1f(uNo, CFG.normScale);
       gl.uniform1f(uLi, CFG.life);
+      gl.uniform3f(uRippleColor, ripR, ripG, ripB);
+      gl.uniform3fv(uBgDark, bgDark);
+      gl.uniform3fv(uBgLight, bgLight);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       raf = requestAnimationFrame(frame);
     };

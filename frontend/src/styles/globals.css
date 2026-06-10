@@ -89,12 +89,28 @@
   --radius: 0.5rem;
 }
 
-/* Styx Portal login brand panel — always dark, animated "river current" */
+/* Styx Portal login brand panel — theme-aware, animated "river current" */
 .styx-brand {
   position: relative;
   overflow: hidden;
+  /* Light theme defaults (ethereal sky) */
+  background: radial-gradient(140% 120% at 15% 100%, #f5f9fe 0%, #ede8f7 45%, #e8e4f2 100%);
+  color: #1a2847;
+  --brand-fg: #1a2847;
+  --brand-fg-muted: #6b7280;
+  --brand-ripple-r: 147;
+  --brand-ripple-g: 165;
+  --brand-ripple-b: 216;
+}
+/* Dark theme overrides */
+.dark .styx-brand {
   background: radial-gradient(140% 120% at 15% 100%, #0a1426 0%, #070a12 45%, #05070d 100%);
   color: #fff;
+  --brand-fg: #fff;
+  --brand-fg-muted: rgba(255, 255, 255, 0.6);
+  --brand-ripple-r: 70;
+  --brand-ripple-g: 140;
+  --brand-ripple-b: 255;
 }
 .styx-brand::before,
 .styx-brand::after {
@@ -106,11 +122,13 @@
           mask: radial-gradient(150% 130% at 0% 100%, #000 30%, transparent 72%);
 }
 .styx-brand::before {
-  background: repeating-linear-gradient(115deg, transparent 0 22px, rgba(70, 140, 255, 0.09) 22px 23px);
+  background: repeating-linear-gradient(115deg, transparent 0 22px, rgb(var(--brand-ripple-r), var(--brand-ripple-g), var(--brand-ripple-b)) 22px 23px);
+  opacity: 0.09;
   animation: styx-flow 14s linear infinite;
 }
 .styx-brand::after {
-  background: repeating-linear-gradient(115deg, transparent 0 40px, rgba(40, 90, 200, 0.06) 40px 41px);
+  background: repeating-linear-gradient(115deg, transparent 0 40px, rgb(var(--brand-ripple-r), var(--brand-ripple-g), var(--brand-ripple-b)) 40px 41px);
+  opacity: 0.06;
   animation: styx-flow 26s linear infinite;
 }
 @keyframes styx-flow {
