@@ -53,49 +53,65 @@ sys.exit(0 if (maj, mino) >= (2, 17) else 1)
 PY
 note "python3 + glibc $GLIBC OK"
 
-step 2/8 "Detecting display server (E02)"
-# Existing X display sockets (X0, X1, …) → ":0 :1 …"
+step 2/8 "Choosing capture mode (E02)"
+# Default: the agent runs its OWN virtual desktop (Xvfb) — uniform across
+# headless / X11 / Wayland. --display opts into mirroring an existing X display.
 # shellcheck disable=SC2012  # X-socket names are always Xn; ls is fine here
 X_DISPLAYS=$(ls /tmp/.X11-unix/ 2>/dev/null | sed -n 's/^X\([0-9]\+\)$/:\1/p' | tr '\n' ' ')
-SESSION_TYPE="${XDG_SESSION_TYPE:-}"
-if [[ -z "$SESSION_TYPE" ]] && command -v loginctl >/dev/null; then
-  SESSION_TYPE=$(loginctl show-session "$(loginctl 2>/dev/null | awk -v u="$USER" '$3==u {print $1; exit}')" -p Type --value 2>/dev/null || true)
-fi
-
 if [[ -n "$FORCE_DISPLAY" ]]; then
-  DISPLAY_SERVER="x11"
-  note "Capturing forced X display $FORCE_DISPLAY (--display)."
-elif [[ "$SESSION_TYPE" == "wayland" ]]; then
-  DISPLAY_SERVER="wayland"
-  note "Wayland login detected. Selkies cannot mirror an existing Wayland desktop."
-  if [[ -n "$X_DISPLAYS" ]]; then
-    note "Existing X displays found: $X_DISPLAYS"
-    note "To stream one (e.g. a KasmVNC/Xvnc desktop) re-run with: --display ${X_DISPLAYS%% *}"
-    note "Otherwise the agent starts its OWN virtual desktop (needs xvfb + openbox)."
-  else
-    note "The agent will start its OWN virtual desktop (needs: sudo apt install xvfb openbox)."
-  fi
-elif [[ -n "$X_DISPLAYS" || -n "${DISPLAY:-}" ]]; then
-  DISPLAY_SERVER="x11"
-  note "X11 detected — your existing desktop (${DISPLAY:-${X_DISPLAYS%% *}}) will be streamed."
+  MODE="mirror"; DISPLAY_SERVER="x11"
+  note "Mirror mode — streaming existing X display $FORCE_DISPLAY."
 else
-  fail E02 "No display session found. Log into a graphical session first (or check loginctl show-session)."
+  MODE="own"; DISPLAY_SERVER="virtual"
+  note "Own-desktop mode — the agent runs a private virtual desktop and streams it."
+  note "(Streams a fresh session, not this machine's physical screen.)"
+  [[ -n "$X_DISPLAYS" ]] && \
+    note "To mirror an existing X display instead, re-run with: --display ${X_DISPLAYS%% *}"
 fi
 
-step 3/8 "Detecting GPU encoder (E03)"
+step 3/8 "Installing desktop + GPU dependencies (E03)"
+# Detect the package manager and install what each mode needs. Own-desktop
+# needs Xvfb + a WM + a terminal; both modes benefit from VAAPI (AMD/Intel HW
+# encode). This is the one place we touch the system with sudo.
+install_pkgs() {
+  local mgr="$1"; shift
+  case "$mgr" in
+    apt)    sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends "$@" ;;
+    dnf)    sudo dnf install -y "$@" ;;
+    pacman) sudo pacman -Sy --needed --noconfirm "$@" ;;
+    zypper) sudo zypper --non-interactive install "$@" ;;
+  esac
+}
+# Per-manager package names (Xvfb + VAAPI pkg names differ across distros).
+declare -A XVFB_PKG=( [apt]=xvfb [dnf]=xorg-x11-server-Xvfb [pacman]=xorg-server-xvfb [zypper]=xorg-x11-server-Xvfb )
+declare -A VAAPI_PKG=( [apt]="vainfo mesa-va-drivers" [dnf]="libva-utils mesa-va-drivers" [pacman]="libva-utils libva-mesa-driver" [zypper]="libva-utils" )
+MGR=""
+for m in apt dnf pacman zypper; do
+  command -v "$m" >/dev/null 2>&1 && { MGR="$m"; break; }
+done
+if [[ -z "$MGR" ]]; then
+  note "WARNING (E03): unknown package manager. Install manually: Xvfb, openbox, xterm, vainfo."
+else
+  WANT="${VAAPI_PKG[$MGR]}"
+  [[ "$MODE" == "own" ]] && WANT="$WANT ${XVFB_PKG[$MGR]} openbox xterm"
+  # shellcheck disable=SC2086  # deliberate word-splitting of the package list
+  if install_pkgs "$MGR" $WANT; then
+    note "dependencies installed via $MGR"
+  else
+    note "WARNING (E03): dependency install failed. For own-desktop mode install"
+    note "  Xvfb + openbox + xterm manually, then restart styx-agent."
+  fi
+fi
+
 GPU_VENDOR="none"
 if command -v nvidia-smi >/dev/null && nvidia-smi -L >/dev/null 2>&1; then
   GPU_VENDOR="nvidia"; note "NVIDIA GPU — NVENC hardware encoding"
 elif command -v vainfo >/dev/null && vainfo >/dev/null 2>&1; then
   GPU_VENDOR="vaapi"; note "VAAPI GPU — hardware encoding"
 else
-  note "WARNING: no GPU encoder found — falling back to CPU x264 (higher latency)."
-  note "For gaming performance install GPU drivers (nvidia-smi or vainfo must work)."
+  note "No GPU encoder detected — using CPU x264 (works; higher latency)."
 fi
-if [[ "$DISPLAY_SERVER" == "wayland" ]]; then
-  id -nG | grep -qw video  || note "WARNING (E03): user not in 'video' group — run: sudo usermod -aG video $USER && re-login"
-  id -nG | grep -qw render || note "WARNING (E03): user not in 'render' group — run: sudo usermod -aG render $USER && re-login"
-fi
+id -nG | grep -qw render || note "Note: user not in 'render' group — for HW encode: sudo usermod -aG render $USER && re-login"
 
 step 4/8 "Checking audio stack (E04)"
 if command -v pipewire >/dev/null || command -v pulseaudio >/dev/null || pactl info >/dev/null 2>&1; then
@@ -165,7 +181,7 @@ print(json.dumps({
     "os_info": {"distro": platform.freedesktop_os_release().get("ID", "unknown")
                 if hasattr(platform, "freedesktop_os_release") else "unknown",
                 "kernel": platform.release()},
-    "agent_version": "0.2.1"}))
+    "agent_version": "0.3.0"}))
 PY
 )") || fail E05 "Registration rejected. The token may be expired or already used — mint a new one in the admin Workstations panel."
 

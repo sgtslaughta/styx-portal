@@ -18,7 +18,7 @@ import urllib.request
 from hashlib import sha256
 from pathlib import Path
 
-AGENT_VERSION = "0.2.1"
+AGENT_VERSION = "0.3.0"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -106,17 +106,15 @@ def _find_xauthority(cfg: dict) -> str | None:
 def display_plan(cfg: dict) -> tuple[bool, str]:
     """Return (start_xvfb, display).
 
-    X11 sessions are captured live (mirror the real desktop on :0). Wayland
-    and headless machines get a private Xvfb display — selkies-gstreamer is
-    X11-only (ximagesrc), so this is the 'own session' those machines stream.
+    Default: the agent runs its OWN virtual desktop (private Xvfb). This is
+    uniform across headless / X11 / Wayland machines — selkies-gstreamer is
+    X11-only, and modern desktops are Wayland, so mirroring the physical
+    screen is not portable. An explicit `display` override (enroll --display)
+    opts into mirroring an existing X display (e.g. an Xorg :0 or KasmVNC :1).
     """
-    # An explicit `display` override always wins — capture that live X display
-    # (e.g. a KasmVNC/Xvnc :1 running under an otherwise-Wayland login).
     forced = cfg.get("display")
     if forced:
         return False, forced
-    if cfg["display_server"] == "x11":
-        return False, os.environ.get("DISPLAY") or ":0"
     return True, cfg.get("xvfb_display", XVFB_DISPLAY)
 
 
@@ -179,9 +177,15 @@ def _start_xvfb(display: str, log) -> subprocess.Popen | None:
         ["Xvfb", display, "-screen", "0", "1920x1080x24", "-nolisten", "tcp"],
         stdout=log, stderr=log)
     time.sleep(1.5)  # let the X socket appear before Selkies connects
-    if shutil.which("openbox"):  # bare WM so the session isn't unusable
-        subprocess.Popen(["openbox"], env={**os.environ, "DISPLAY": display},
-                         stdout=log, stderr=log)
+    denv = {**os.environ, "DISPLAY": display}
+    if shutil.which("openbox"):  # window manager so apps are usable
+        subprocess.Popen(["openbox"], env=denv, stdout=log, stderr=log)
+    # A terminal gives an immediately-usable session; from it (or the openbox
+    # right-click menu) the user launches the machine's installed apps.
+    for term in ("xterm", "x-terminal-emulator"):
+        if shutil.which(term):
+            subprocess.Popen([term], env=denv, stdout=log, stderr=log)
+            break
     return proc
 
 

@@ -70,26 +70,20 @@ def test_xauthority_skipped_for_xvfb(tmp_path):
     assert "XAUTHORITY" not in env
 
 
-def test_display_plan_x11_attaches_live(tmp_path, monkeypatch):
-    monkeypatch.delenv("DISPLAY", raising=False)
+def test_display_plan_defaults_to_own_session(tmp_path, monkeypatch):
+    # No --display override: own virtual desktop regardless of host session type.
+    monkeypatch.setenv("DISPLAY", ":0")
     _, cfg = _cfg(tmp_path)
     start_xvfb, display = styx_agent.display_plan(cfg)
-    assert start_xvfb is False
-    assert display == ":0"
+    assert start_xvfb is True
+    assert display == ":100"
 
 
-def test_display_plan_x11_honours_override(tmp_path):
+def test_display_plan_mirror_override(tmp_path):
     _, cfg = _cfg(tmp_path, display=":1")
     start_xvfb, display = styx_agent.display_plan(cfg)
     assert start_xvfb is False
     assert display == ":1"
-
-
-def test_display_plan_wayland_uses_xvfb(tmp_path):
-    _, cfg = _cfg(tmp_path, display_server="wayland")
-    start_xvfb, display = styx_agent.display_plan(cfg)
-    assert start_xvfb is True
-    assert display == ":100"
 
 
 def test_encoder_auto_resolves(monkeypatch, tmp_path):

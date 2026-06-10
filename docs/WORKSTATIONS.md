@@ -263,6 +263,25 @@ To use a different Selkies build (e.g., a newer release or custom build):
 
 ### TLS Pinning
 
+## Capture mode: own desktop vs. mirror
+
+By default the agent runs its **own private virtual desktop** (Xvfb + openbox +
+a terminal) and streams that. This works uniformly on **any** machine — headless
+servers, X11 logins, and Wayland desktops (the modern default) — because
+selkies-gstreamer is X11-only and a Wayland session cannot be mirrored. The
+streamed desktop is a fresh session on that machine's hardware; from its terminal
+or the openbox right-click menu the user launches the machine's installed apps.
+
+`enroll.sh` auto-installs the needed packages (Xvfb, openbox, xterm, and VAAPI
+drivers for hardware encoding) via the machine's package manager (`apt`/`dnf`/
+`pacman`/`zypper`) — this is the one step that uses `sudo`.
+
+To **mirror an existing X display** instead (an Xorg `:0`, or a VNC `:1`), add
+`--display :N` to the enrollment command. Mirroring only works on X11 displays,
+not Wayland. The enrollment output lists any X displays it finds.
+
+## TLS
+
 **Automatic (default):** When the LAN address has no publicly-valid certificate
 (any host in tunnel mode, IP addresses in direct mode), the backend generates a
 persistent self-signed certificate for it (`lan-certs` volume), Traefik serves
