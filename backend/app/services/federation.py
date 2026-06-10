@@ -150,6 +150,7 @@ async def resolve_identity(session: AsyncSession, provider_name: str,
             admin_group_matched = admin_group and admin_group in _groups(identity.claims, role_map)
 
             # Log if admin group matched but elevation was disabled
+            # only reachable when auto_promote_admins is True
             if not auto_promote_admins and admin_group_matched:
                 await audit(session, "admin_claim_pending", resource=identity.email,
                            detail={"provider": provider_name})

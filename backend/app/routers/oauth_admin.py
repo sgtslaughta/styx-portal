@@ -60,9 +60,9 @@ async def list_providers(admin: User = Depends(require_admin),
 
 
 @router.post("", response_model=ProviderOut, status_code=201)
-async def create_provider(body: ProviderCreate, admin: User = Depends(require_admin),
-                          session: AsyncSession = Depends(get_session),
-                          request: Request = None):
+async def create_provider(request: Request, body: ProviderCreate,
+                          admin: User = Depends(require_admin),
+                          session: AsyncSession = Depends(get_session)):
     if body.kind not in ("oidc", "oauth2"):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "kind must be oidc|oauth2")
     _validate_icon(body.icon_url)
@@ -85,10 +85,9 @@ async def create_provider(body: ProviderCreate, admin: User = Depends(require_ad
 
 
 @router.patch("/{provider_id}", response_model=ProviderOut)
-async def update_provider(provider_id: str, body: ProviderUpdate,
+async def update_provider(request: Request, provider_id: str, body: ProviderUpdate,
                           admin: User = Depends(require_admin),
-                          session: AsyncSession = Depends(get_session),
-                          request: Request = None):
+                          session: AsyncSession = Depends(get_session)):
     p = await session.get(OAuthProvider, provider_id)
     if not p:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
@@ -186,9 +185,9 @@ async def test_callback(provider_id: str, request: Request,
 
 
 @router.delete("/{provider_id}", status_code=204)
-async def delete_provider(provider_id: str, admin: User = Depends(require_admin),
-                          session: AsyncSession = Depends(get_session),
-                          request: Request = None):
+async def delete_provider(request: Request, provider_id: str,
+                          admin: User = Depends(require_admin),
+                          session: AsyncSession = Depends(get_session)):
     p = await session.get(OAuthProvider, provider_id)
     if not p:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
