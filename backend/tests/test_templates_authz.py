@@ -111,3 +111,43 @@ async def test_member_can_update_own_template(member_client):
     )
     assert r.status_code == 200
     assert r.json()["display_name"] == "Updated by Owner"
+
+
+@pytest.mark.asyncio
+async def test_non_admin_cannot_create_template_with_cap_add(member_client):
+    """Non-admin cannot create a template with cap_add capability override."""
+    r = await member_client.post(
+        "/api/templates",
+        json={
+            "name": "dangerous-template",
+            "display_name": "Dangerous Template",
+            "image": "ghcr.io/linuxserver/baseimage-selkies:debiantrixie",
+            "cap_add": ["SYS_NICE"],
+        },
+    )
+    assert r.status_code == 403
+    assert "cap_add/security_opt" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_non_admin_cannot_update_own_template_with_security_opt(member_client):
+    """Non-admin cannot update their own template to add security_opt override."""
+    # Member creates a plain template
+    create_resp = await member_client.post(
+        "/api/templates",
+        json={
+            "name": "member-plain-template",
+            "display_name": "Plain Member Template",
+            "image": "ghcr.io/linuxserver/baseimage-selkies:debiantrixie",
+        },
+    )
+    assert create_resp.status_code == 201
+    template_id = create_resp.json()["id"]
+
+    # Member tries to update with security_opt
+    r = await member_client.put(
+        f"/api/templates/{template_id}",
+        json={"security_opt": ["seccomp=unconfined"]},
+    )
+    assert r.status_code == 403
+    assert "cap_add/security_opt" in r.json()["detail"]
