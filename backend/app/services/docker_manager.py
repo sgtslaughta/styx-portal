@@ -186,6 +186,18 @@ class DockerManager:
         except docker.errors.ImageNotFound:
             return None
 
+    def pull_image_streaming(self, image: str, on_progress=None) -> None:
+        """Pull with layer-progress events. on_progress(percent:int, detail:str)."""
+        repo, _, tag = image.partition(":")
+        layers: dict[str, dict] = {}
+        for ev in self._client.api.pull(repo, tag=tag or "latest", stream=True, decode=True):
+            if ev.get("id"):
+                layers[ev["id"]] = ev
+            if on_progress:
+                from app.services.pull_progress import overall_percent
+                on_progress(overall_percent(list(layers.values())),
+                            ev.get("status", "Pulling"))
+
     def ensure_user_network(self, user_id: str) -> str:
         """Per-user bridge network; traefik is attached so it can route to
         instance containers. Backend itself never joins user networks."""

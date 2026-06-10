@@ -95,6 +95,8 @@ class InstanceStatus(BaseModel):
     uptime_seconds: float | None
     idle_seconds: float | None
     session_config: dict[str, Any] | None
+    pull_percent: int | None = None
+    pull_detail: str | None = None
 
 
 class SetupRequest(BaseModel):
