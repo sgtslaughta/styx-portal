@@ -1,8 +1,10 @@
+import logging
 import yaml
 from pathlib import Path
 
 from app.config import Settings
 
+logger = logging.getLogger("styx-portal")
 _settings = Settings()
 
 
@@ -107,15 +109,24 @@ def build_routes_config(instances: list[dict], domain: str, deploy_mode: str = "
 
 
 def write_routes(instances: list[dict], domain: str | None = None):
-    """Render the Traefik dynamic config to the file provider directory."""
+    """Render the Traefik dynamic config to the file provider directory.
+
+    A PermissionError here means the shared traefik-dynamic volume is not
+    writable by the (non-root) backend user — log and continue rather than
+    crash-looping startup; routing degrades but the portal stays up.
+    """
     domain = domain or _settings.DOMAIN
     out_dir = Path(_settings.TRAEFIK_DYNAMIC_DIR)
     try:
         out_dir.mkdir(parents=True, exist_ok=True)
+        config = build_routes_config(instances, domain, _settings.DEPLOY_MODE)
+        (out_dir / "routes.yml").write_text(yaml.dump(config, default_flow_style=False))
     except PermissionError:
-        return
-    config = build_routes_config(instances, domain, _settings.DEPLOY_MODE)
-    (out_dir / "routes.yml").write_text(yaml.dump(config, default_flow_style=False))
+        logger.error(
+            "Cannot write Traefik routes to %s — volume not writable by backend "
+            "user. Instance routing will not update. Fix volume ownership "
+            "(chown 1000:1000) and restart.", out_dir,
+        )
 
 
 async def refresh_routes_from_db(session):

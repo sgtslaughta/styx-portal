@@ -117,8 +117,8 @@ services:
     devices:
       - /dev/dri:/dev/dri
     group_add:
-      - video
-      - render
+      - "${VIDEO_GID:-44}"
+      - "${RENDER_GID:-992}"
     networks:
       - styx-portal
       - styx-docker
