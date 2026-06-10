@@ -21,6 +21,7 @@ from app.routers import users as users_router
 from app.routers import oauth as oauth_router
 from app.routers import oauth_admin as oauth_admin_router
 from app.routers import audit as audit_router
+from app.routers import workstations as workstations_router
 from app.security.deps import get_current_user, require_admin
 from app.services.docker_manager import DockerManager
 from app.services.session_monitor import SessionMonitor
@@ -30,11 +31,14 @@ logger = logging.getLogger("styx-portal")
 _settings = Settings()
 
 _CSRF_EXEMPT = {"/api/auth/login", "/api/auth/setup"}
+_CSRF_EXEMPT_PREFIXES = ("/api/enroll/", "/api/agent/")
 
 
 class CSRFMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
-        if request.method in UNSAFE_METHODS and request.url.path not in _CSRF_EXEMPT:
+        if (request.method in UNSAFE_METHODS
+                and request.url.path not in _CSRF_EXEMPT
+                and not request.url.path.startswith(_CSRF_EXEMPT_PREFIXES)):
             if not csrf_valid(request.cookies.get(CSRF_COOKIE),
                               request.headers.get(CSRF_HEADER)):
                 return JSONResponse({"detail": "CSRF check failed"}, status_code=403)
@@ -261,6 +265,7 @@ app.include_router(users_router.router, prefix="/api/users", tags=["users"])
 app.include_router(oauth_router.router, prefix="/api/auth/oauth", tags=["oauth"])
 app.include_router(oauth_admin_router.router, prefix="/api/oauth-providers", tags=["oauth-admin"])
 app.include_router(audit_router.router, prefix="/api/audit", tags=["audit"])
+app.include_router(workstations_router.router, prefix="/api/workstations", tags=["workstations"])
 
 
 @app.get("/api/health")
