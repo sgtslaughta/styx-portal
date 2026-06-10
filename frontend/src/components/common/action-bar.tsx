@@ -70,13 +70,13 @@ export function ActionBar({ instance, size = "default", showConnect = true, clas
               <ExternalLink /> Connect
             </Button>
           )}
-          <Button size={btn} variant="secondary" title="Restart" onClick={run(restart, "Restart")}>
+          <Button size={btn} variant="secondary" title="Restart" onClick={run(restart, "Restart")} aria-label="Restart">
             <RotateCcw />
           </Button>
-          <Button size={btn} variant="secondary" title="Pause" onClick={run(pause, "Pause")}>
+          <Button size={btn} variant="secondary" title="Pause" onClick={run(pause, "Pause")} aria-label="Pause">
             <Pause />
           </Button>
-          <Button size={btn} variant="secondary" title="Stop" onClick={run(stop, "Stop")}>
+          <Button size={btn} variant="secondary" title="Stop" onClick={run(stop, "Stop")} aria-label="Stop">
             <Square />
           </Button>
         </>
@@ -111,6 +111,7 @@ export function ActionBar({ instance, size = "default", showConnect = true, clas
         className="text-destructive hover:text-destructive"
         title="Destroy"
         onClick={() => setConfirmOpen(true)}
+        aria-label="Destroy"
       >
         <Trash2 />
       </Button>

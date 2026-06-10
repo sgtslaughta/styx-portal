@@ -297,7 +297,7 @@ export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: 
             </Button>
 
             <div className="w-px h-5 bg-border mx-1" />
-            <button onClick={clearSelection} className="rounded-md p-1 text-muted-foreground hover:text-foreground transition-colors" title="Clear selection">
+            <button onClick={clearSelection} className="rounded-md p-1 text-muted-foreground hover:text-foreground transition-colors" title="Clear selection" aria-label="Clear selection">
               <X className="h-4 w-4" />
             </button>
           </motion.div>

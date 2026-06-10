@@ -24,6 +24,7 @@ export function LaunchConfigFields({ cfg, gpuInfo }: LaunchConfigFieldsProps) {
           <div>
             <Label>Name</Label>
             <Input
+              autoFocus
               value={cfg.name}
               onChange={(e) => {
                 cfg.setName(e.target.value);
@@ -136,7 +137,7 @@ export function LaunchConfigFields({ cfg, gpuInfo }: LaunchConfigFieldsProps) {
                     className="flex-1 min-w-0 font-mono text-xs"
                   />
                   {opt.desc && <span className="text-[10px] text-muted-foreground max-w-40 truncate shrink-0" title={opt.desc}>{opt.desc}</span>}
-                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => cfg.setCustomOpts(cfg.customOpts.filter((_, j) => j !== i))}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => cfg.setCustomOpts(cfg.customOpts.filter((_, j) => j !== i))} aria-label="Delete custom option">
                     <Trash2 className="h-3 w-3" />
                   </Button>
                 </div>
@@ -178,7 +179,7 @@ export function LaunchConfigFields({ cfg, gpuInfo }: LaunchConfigFieldsProps) {
                 placeholder="/mount/path"
                 className="flex-1 min-w-0 font-mono text-xs"
               />
-              <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={() => cfg.setVolumes(cfg.volumes.filter((_, j) => j !== i))}>
+              <Button variant="ghost" size="icon" className="h-9 w-9 shrink-0" onClick={() => cfg.setVolumes(cfg.volumes.filter((_, j) => j !== i))} aria-label="Delete volume">
                 <Trash2 className="h-3 w-3" />
               </Button>
             </div>
@@ -243,7 +244,7 @@ export function LaunchConfigFields({ cfg, gpuInfo }: LaunchConfigFieldsProps) {
                 </div>
                 {port.desc && <p className="mt-0.5 text-[10px] text-muted-foreground">{port.desc}</p>}
               </div>
-              <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => cfg.setPorts(cfg.ports.filter((_, j) => j !== i))}>
+              <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => cfg.setPorts(cfg.ports.filter((_, j) => j !== i))} aria-label="Delete port">
                 <Trash2 className="h-3 w-3" />
               </Button>
             </div>
@@ -270,7 +271,7 @@ export function LaunchConfigFields({ cfg, gpuInfo }: LaunchConfigFieldsProps) {
                     <code className="text-xs">{opt.value}</code>
                     {opt.desc && <p className="text-[10px] text-muted-foreground">{opt.desc}</p>}
                   </div>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => cfg.setSecurityOpts(cfg.securityOpts.filter((_, j) => j !== i))}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => cfg.setSecurityOpts(cfg.securityOpts.filter((_, j) => j !== i))} aria-label="Delete security option">
                     <Trash2 className="h-3 w-3" />
                   </Button>
                 </div>

@@ -163,6 +163,7 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
         <div className="-mr-2 flex-1 space-y-3 overflow-y-auto pr-2">
           <Field label="Display name" hint="Shown to users on the login button.">
             <Input
+              autoFocus
               value={form.display_label}
               onChange={(e) => autoName(e.target.value)}
               placeholder="My Authentik"
@@ -273,6 +274,7 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
                 variant="outline"
                 size="sm"
                 onClick={() => fileRef.current?.click()}
+                aria-label="Upload icon"
               >
                 <Upload className="h-4 w-4" />
               </Button>
@@ -282,6 +284,7 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
                   variant="ghost"
                   size="sm"
                   onClick={() => setForm((f) => ({ ...f, icon_url: null }))}
+                  aria-label="Clear icon"
                 >
                   <X className="h-4 w-4" />
                 </Button>
@@ -499,6 +502,7 @@ function CopyRow({ label, value }: { label: string; value: string }) {
             navigator.clipboard?.writeText(value);
             toast.success("Copied");
           }}
+          aria-label="Copy to clipboard"
         >
           <Copy className="h-3.5 w-3.5" />
         </Button>

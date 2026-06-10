@@ -84,6 +84,7 @@ export function UsersPanel() {
                   size="icon"
                   onClick={handleCopyInviteUrl}
                   title="Copy to clipboard"
+                  aria-label="Copy to clipboard"
                 >
                   {copied ? (
                     <Check className="h-4 w-4 text-success" />
