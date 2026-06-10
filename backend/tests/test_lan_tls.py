@@ -43,3 +43,11 @@ def test_regenerates_when_host_not_covered(_cert_dir):
     _, fp2, created = lan_tls.ensure_lan_cert(["10.0.0.5"])
     assert created is True
     assert fp1 != fp2
+
+
+def test_pubkey_pin_format(_cert_dir):
+    cert_path, _, _ = lan_tls.ensure_lan_cert(["192.168.1.10"])
+    pin = lan_tls.cert_pubkey_pin(cert_path)
+    assert pin.startswith("sha256//")
+    # base64 of a 32-byte SHA256 digest is 44 chars (incl. padding "=")
+    assert len(pin.split("//", 1)[1]) == 44

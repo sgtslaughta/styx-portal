@@ -43,6 +43,22 @@ def cert_fingerprint(cert_path: Path) -> str:
     return sha256(cert.public_bytes(serialization.Encoding.DER)).hexdigest()
 
 
+def cert_pubkey_pin(cert_path: Path) -> str:
+    """Return curl --pinnedpubkey value: sha256//<base64(SHA256(SPKI DER))>.
+
+    This pins the public key (Subject Public Key Info), letting the bootstrap
+    `curl` verify the server's identity over self-signed TLS without a CA
+    bundle — the chicken-and-egg fetch of the enrollment script itself.
+    """
+    import base64
+    cert = x509.load_pem_x509_certificate(cert_path.read_bytes())
+    spki = cert.public_key().public_bytes(
+        serialization.Encoding.DER,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    return "sha256//" + base64.b64encode(sha256(spki).digest()).decode()
+
+
 def ensure_lan_cert(hosts: list[str]) -> tuple[Path, str, bool]:
     """Return (cert_path, sha256_fingerprint, created).
 

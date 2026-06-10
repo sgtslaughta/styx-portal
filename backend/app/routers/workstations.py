@@ -39,12 +39,13 @@ async def mint_enroll_token(request: Request,
     public_base = f"https://{_settings.DOMAIN}"
     lan_command = None
     if lan_base:
-        pin, cert_created = lan_ca_pin(lan_base)
+        pin, pubkey_pin, cert_created = lan_ca_pin(lan_base)
         if cert_created:
             # publish the fresh cert to Traefik (defaultCertificate config)
             from app.services.route_writer import refresh_routes_from_db
             await refresh_routes_from_db(session)
-        lan_command = build_enroll_command(raw, lan_base, ca_pin=pin)
+        lan_command = build_enroll_command(
+            raw, lan_base, ca_pin=pin, pubkey_pin=pubkey_pin)
     return EnrollTokenOut(
         token=raw, expires_at=expires.isoformat(),
         lan_command=lan_command,

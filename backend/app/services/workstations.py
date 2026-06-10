@@ -55,23 +55,25 @@ def lan_enroll_url() -> tuple[str | None, str]:
     return None, "none"
 
 
-def lan_ca_pin(lan_base: str) -> tuple[str | None, bool]:
-    """Return (pin, cert_created) for the LAN enrollment command.
+def lan_ca_pin(lan_base: str) -> tuple[str | None, str | None, bool]:
+    """Return (cert_pin, pubkey_pin, cert_created) for the LAN command.
 
-    SERVER_CA_PIN wins when set. Otherwise, for hosts that a public cert
-    cannot cover (any host in tunnel mode, IP addresses in direct mode),
-    ensure the self-signed LAN cert exists and pin its fingerprint. Pin is
-    None when the host is presumed covered by a real cert (direct + DNS).
-    Caller refreshes Traefik routes when cert_created is True so the new
-    cert gets served.
+    - cert_pin (`sha256:<hex>`) is verified inside enroll.sh and pins the
+      saved cert the agent later trusts.
+    - pubkey_pin (`sha256//<b64>`) is curl's --pinnedpubkey value, letting
+      the bootstrap script fetch verify the self-signed cert with no CA.
+
+    SERVER_CA_PIN overrides cert_pin (no pubkey pin: operator manages TLS).
+    Both are None when a public cert is presumed to cover the host (direct
+    mode + DNS name). cert_created=True ⇒ caller refreshes Traefik routes.
     """
     import ipaddress
     from urllib.parse import urlparse
 
     if _settings.SERVER_CA_PIN:
-        return _settings.SERVER_CA_PIN, False
+        return _settings.SERVER_CA_PIN, None, False
     if not lan_base.startswith("https://"):
-        return None, False
+        return None, None, False
     host = urlparse(lan_base).hostname or ""
     try:
         ipaddress.ip_address(host)
@@ -79,21 +81,30 @@ def lan_ca_pin(lan_base: str) -> tuple[str | None, bool]:
     except ValueError:
         is_ip = False
     if _settings.DEPLOY_MODE == "direct" and not is_ip:
-        return None, False  # Let's Encrypt covers DNS names in direct mode
-    from app.services.lan_tls import ensure_lan_cert
+        return None, None, False  # Let's Encrypt covers DNS names in direct mode
+    from app.services.lan_tls import cert_paths, cert_pubkey_pin, ensure_lan_cert
     try:
         _, fp, created = ensure_lan_cert([host])
+        pubkey_pin = cert_pubkey_pin(cert_paths()[0])
     except OSError as e:
         logging.getLogger("styx-portal").error(
             "LAN cert generation failed (%s) — enroll command minted "
-            "without --ca-pin", e)
-        return None, False
-    return f"sha256:{fp}", created
+            "without TLS pin", e)
+        return None, None, False
+    return f"sha256:{fp}", pubkey_pin, created
 
 
 def build_enroll_command(raw_token: str, base: str,
-                         ca_pin: str | None = None) -> str:
-    cmd = (f"curl -fsSL {base}{ENROLL_SCRIPT_PATH} | bash -s -- "
+                         ca_pin: str | None = None,
+                         pubkey_pin: str | None = None) -> str:
+    # --pinnedpubkey pins the server's public key so the bootstrap fetch is
+    # MITM-safe over self-signed TLS; -k only skips CA-chain validation (the
+    # cert is a self-signed root) — identity is still cryptographically
+    # enforced by the pin. The script then re-verifies via --ca-pin.
+    head = "curl -fsSL"
+    if pubkey_pin:
+        head += f" --pinnedpubkey '{pubkey_pin}' -k"
+    cmd = (f"{head} {base}{ENROLL_SCRIPT_PATH} | bash -s -- "
            f"--token {raw_token} --server {base}")
     if ca_pin:
         cmd += f" --ca-pin {ca_pin}"

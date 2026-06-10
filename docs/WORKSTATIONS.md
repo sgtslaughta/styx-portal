@@ -266,9 +266,14 @@ To use a different Selkies build (e.g., a newer release or custom build):
 **Automatic (default):** When the LAN address has no publicly-valid certificate
 (any host in tunnel mode, IP addresses in direct mode), the backend generates a
 persistent self-signed certificate for it (`lan-certs` volume), Traefik serves
-it on port 443, and the minted LAN command includes the matching `--ca-pin`
-automatically. Nothing to configure. The cert (and pin) only changes if you
-change the LAN address.
+it on port 443, and the minted LAN command pins it two ways automatically:
+`curl --pinnedpubkey 'sha256//…'` so the very first fetch of the enrollment
+script verifies the self-signed server cryptographically, and `--ca-pin
+sha256:…` so the script re-verifies and saves the cert the agent trusts.
+Nothing to configure. The cert (and pins) only change if you change the LAN
+address. (`-k` appears on the bootstrap line — it only skips CA-chain
+validation of the self-signed root; identity is still enforced by the pinned
+public key, so MITM fails closed.)
 
 **Tunnel mode prerequisite:** publish ports 80/443 on the `traefik` service —
 uncomment the `ports:` block in `docker-compose.yml`, then

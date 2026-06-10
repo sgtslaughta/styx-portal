@@ -31,9 +31,12 @@ async def test_mint_enroll_token(admin_client, session, monkeypatch, tmp_path):
     assert "/api/enroll/script" in body["lan_command"]
     # tunnel mode + no SERVER_CA_PIN → self-signed LAN cert auto-generated + pinned
     assert "--ca-pin sha256:" in body["lan_command"]
+    # bootstrap fetch pins the public key so it verifies over self-signed TLS
+    assert "--pinnedpubkey 'sha256//" in body["lan_command"]
     assert (tmp_path / "lan.crt").is_file()
     assert "--server https://localhost" in body["public_command"]
     assert "--ca-pin" not in body["public_command"]
+    assert "--pinnedpubkey" not in body["public_command"]
     rows = (await session.exec(select(WorkstationEnrollmentToken))).all()
     assert len(rows) == 1
     assert rows[0].token_hash != body["token"]  # stored hashed
