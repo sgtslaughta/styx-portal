@@ -35,10 +35,17 @@ fetch() {
 
 step 1/8 "Checking distro and glibc (E01)"
 command -v python3 >/dev/null 2>&1 || fail E01 "python3 not found. Install it (apt install python3 / dnf install python3)."
-GLIBC=$(ldd --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+$' || echo "0.0")
+# awk consumes the whole stream (unlike `head`, which closes the pipe early
+# and trips SIGPIPE under pipefail); $2 of the first line is glibc's version.
+GLIBC=$(ldd --version 2>/dev/null | awk 'NR==1{for(i=NF;i>=1;i--) if($i ~ /^[0-9]+\.[0-9]+/){print $i; break}}')
+GLIBC=${GLIBC:-0.0}
 python3 - "$GLIBC" <<'PY' || fail E01 "glibc >= 2.17 required (found $GLIBC). Selkies portable build will not run."
 import sys
-maj, mino = (int(x) for x in sys.argv[1].split("."))
+parts = sys.argv[1].split(".")
+try:
+    maj, mino = int(parts[0]), int(parts[1])
+except (ValueError, IndexError):
+    sys.exit(1)
 sys.exit(0 if (maj, mino) >= (2, 17) else 1)
 PY
 note "python3 + glibc $GLIBC OK"
@@ -105,8 +112,13 @@ note "server reachable"
 
 step 6/8 "Checking port and systemd (E07/E08)"
 SELKIES_PORT=8443
-if command -v ss >/dev/null && ss -ltn "sport = :$SELKIES_PORT" 2>/dev/null | grep -q LISTEN; then
-  fail E07 "Port $SELKIES_PORT already in use. Free it or change WORKSTATION_DEFAULT_PORT on the server."
+# Capture first (no pipe to grep -q, which closes early and trips SIGPIPE
+# under pipefail — masking a busy port).
+if command -v ss >/dev/null; then
+  PORT_LISTEN=$(ss -ltn "sport = :$SELKIES_PORT" 2>/dev/null || true)
+  case "$PORT_LISTEN" in
+    *LISTEN*) fail E07 "Port $SELKIES_PORT already in use. Free it or change WORKSTATION_DEFAULT_PORT on the server." ;;
+  esac
 fi
 systemctl --user show-environment >/dev/null 2>&1 \
   || fail E08 "systemd --user session unavailable. Log in as this user via a normal session (not su/sudo)."
