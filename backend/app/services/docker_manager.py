@@ -5,6 +5,8 @@ import docker
 import docker.errors
 from docker.types import DeviceRequest
 
+from app.config import Settings
+
 TRAEFIK_CONTAINER = "styx-traefik"
 
 
@@ -34,8 +36,9 @@ def detect_gpu() -> dict:
 
 
 class DockerManager:
-    def __init__(self, network_name: str = "styx-portal"):
-        self._client = docker.DockerClient.from_env()
+    def __init__(self, network_name: str = "styx-portal", base_url: str | None = None):
+        url = base_url or Settings().DOCKER_SOCKET
+        self._client = docker.DockerClient(base_url=url)
         self._network_name = network_name
 
     def create_container(

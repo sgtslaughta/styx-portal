@@ -8,7 +8,7 @@ from app.services.docker_manager import DockerManager
 def mock_docker():
     with patch("app.services.docker_manager.docker.DockerClient") as mock_cls:
         client = MagicMock()
-        mock_cls.from_env.return_value = client
+        mock_cls.return_value = client
         manager = DockerManager(network_name="styx-portal")
         yield manager, client
 
@@ -17,6 +17,19 @@ def test_default_network_name():
     with patch("app.services.docker_manager.docker.DockerClient"):
         manager = DockerManager()
         assert manager._network_name == "styx-portal"
+
+
+def test_manager_uses_configured_socket(monkeypatch):
+    """Verify DockerManager respects base_url parameter from DOCKER_SOCKET setting."""
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, base_url=None):
+            captured["url"] = base_url
+
+    monkeypatch.setattr("app.services.docker_manager.docker.DockerClient", FakeClient)
+    DockerManager(base_url="tcp://docker-proxy:2375")
+    assert captured["url"] == "tcp://docker-proxy:2375"
 
 
 def test_create_container(mock_docker):
