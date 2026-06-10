@@ -138,8 +138,10 @@ async def _launch_instance_background(instance_id: str, template_id: str):
                 def _cb(pct, detail, _id=instance.id):
                     pull_progress.set_progress(_id, pct, detail)
 
-                await asyncio.to_thread(docker.pull_image_streaming, template.image, _cb)
-                pull_progress.clear(instance.id)
+                try:
+                    await asyncio.to_thread(docker.pull_image_streaming, template.image, _cb)
+                finally:
+                    pull_progress.clear(instance.id)  # never leave stale progress
 
             volume_names = []
             for vol in template.volumes:

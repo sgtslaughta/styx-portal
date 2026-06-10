@@ -188,7 +188,12 @@ class DockerManager:
 
     def pull_image_streaming(self, image: str, on_progress=None) -> None:
         """Pull with layer-progress events. on_progress(percent:int, detail:str)."""
-        repo, _, tag = image.partition(":")
+        # A colon is a tag separator only in the last path segment — otherwise
+        # it's a registry port (e.g. registry:5000/img). Split accordingly.
+        if ":" in image.rsplit("/", 1)[-1]:
+            repo, tag = image.rsplit(":", 1)
+        else:
+            repo, tag = image, "latest"
         layers: dict[str, dict] = {}
         for ev in self._client.api.pull(repo, tag=tag or "latest", stream=True, decode=True):
             if ev.get("id"):

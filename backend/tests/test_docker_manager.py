@@ -359,3 +359,15 @@ def test_version_none_on_error(mock_docker):
     manager, client = mock_docker
     client.version.side_effect = Exception("x")
     assert manager.version() is None
+
+def test_pull_streaming_parses_tag_and_registry_port(mock_docker):
+    manager, client = mock_docker
+    client.api.pull.return_value = iter([])
+    manager.pull_image_streaming("ghcr.io/foo/bar:debian")
+    assert client.api.pull.call_args.args[0] == "ghcr.io/foo/bar"
+    assert client.api.pull.call_args.kwargs["tag"] == "debian"
+
+    client.api.pull.return_value = iter([])
+    manager.pull_image_streaming("registry:5000/img")  # port, no tag
+    assert client.api.pull.call_args.args[0] == "registry:5000/img"
+    assert client.api.pull.call_args.kwargs["tag"] == "latest"
