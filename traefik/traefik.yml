@@ -7,6 +7,13 @@ ping: {}
 entryPoints:
   web:
     address: ":80"
+  # TLS for LAN access (workstation enrollment/streaming). Serves the
+  # self-signed cert the backend generates (lan-certs volume). Only reachable
+  # from the LAN if you publish port 443 on the traefik service in compose.
+  websecure:
+    address: ":443"
+    http:
+      tls: {}
 
 providers:
   file:

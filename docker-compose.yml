@@ -11,6 +11,7 @@ volumes:
   screenshots:
   traefik-dynamic:
   letsencrypt:
+  lan-certs:
 
 services:
   docker-proxy:
@@ -48,9 +49,17 @@ services:
     image: traefik:v3.4
     container_name: styx-traefik
     restart: unless-stopped
+    # Workstation streaming: uncomment to expose the portal on your LAN so
+    # physical workstations can enroll and stream. The backend auto-generates
+    # a self-signed cert for the LAN address (served on :443) and pins it in
+    # the enrollment command — no manual TLS setup needed.
+    # ports:
+    #   - "80:80"
+    #   - "443:443"
     volumes:
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - traefik-dynamic:/etc/traefik/dynamic:ro
+      - lan-certs:/lan-certs:ro
     networks:
       - styx-portal
     healthcheck:
@@ -74,6 +83,7 @@ services:
       - ./traefik/traefik-direct.yml:/etc/traefik/traefik.yml:ro
       - traefik-dynamic:/etc/traefik/dynamic:ro
       - letsencrypt:/letsencrypt
+      - lan-certs:/lan-certs:ro
     networks:
       - styx-portal
     healthcheck:
@@ -101,13 +111,14 @@ services:
   # on the first migration). Idempotent — safe on every start, fresh or upgrade.
   volume-init:
     image: busybox:1.36
-    command: sh -c "chown -R 1000:1000 /app/data /app/traefik-dynamic"
+    command: sh -c "chown -R 1000:1000 /app/data /app/traefik-dynamic /app/data/lan-certs"
     user: "0:0"
     restart: "no"
     volumes:
       - db-data:/app/data
       - screenshots:/app/data/screenshots
       - traefik-dynamic:/app/traefik-dynamic
+      - lan-certs:/app/data/lan-certs
 
   backend:
     build: ./backend
@@ -132,6 +143,7 @@ services:
       - db-data:/app/data
       - screenshots:/app/data/screenshots
       - traefik-dynamic:/app/traefik-dynamic
+      - lan-certs:/app/data/lan-certs
       - ./templates:/app/templates:ro
       - ./agent:/app/agent:ro
     devices:

@@ -40,6 +40,26 @@ def test_workstation_https_gets_skip_verify_transport():
         "insecureSkipVerify": True}
 
 
+def test_lan_cert_emitted_as_default_certificate(tmp_path, monkeypatch):
+    from app.services import route_writer
+    monkeypatch.setattr(route_writer._settings, "LAN_CERT_DIR", str(tmp_path))
+    (tmp_path / "lan.crt").write_text("cert")
+    (tmp_path / "lan.key").write_text("key")
+    cfg = build_routes_config([], "example.com", "tunnel")
+    default = cfg["tls"]["stores"]["default"]["defaultCertificate"]
+    assert default == {"certFile": "/lan-certs/lan.crt",
+                       "keyFile": "/lan-certs/lan.key"}
+    assert cfg["tls"]["certificates"] == [
+        {"certFile": "/lan-certs/lan.crt", "keyFile": "/lan-certs/lan.key"}]
+
+
+def test_no_lan_cert_no_tls_block(tmp_path, monkeypatch):
+    from app.services import route_writer
+    monkeypatch.setattr(route_writer._settings, "LAN_CERT_DIR", str(tmp_path))
+    cfg = build_routes_config([], "example.com", "tunnel")
+    assert "tls" not in cfg
+
+
 def test_no_workstations_is_default():
     cfg = build_routes_config([], "example.com", "tunnel")
     assert not any(k.startswith("ws-") for k in cfg["http"]["routers"])

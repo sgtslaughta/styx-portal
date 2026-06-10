@@ -15,9 +15,11 @@ async def test_mint_enroll_token_admin_only(client):
 
 
 @pytest.mark.asyncio
-async def test_mint_enroll_token(admin_client, session, monkeypatch):
+async def test_mint_enroll_token(admin_client, session, monkeypatch, tmp_path):
     from app.services import workstations as ws_svc
+    from app.services import lan_tls
     monkeypatch.setattr(ws_svc._settings, "SERVER_LAN_URL", "https://192.168.1.10")
+    monkeypatch.setattr(lan_tls._settings, "LAN_CERT_DIR", str(tmp_path))
     r = await admin_client.post("/api/workstations/enroll-tokens")
     assert r.status_code == 201
     body = r.json()
@@ -27,22 +29,37 @@ async def test_mint_enroll_token(admin_client, session, monkeypatch):
     assert "--token " + body["token"] in body["lan_command"]
     assert "--server https://192.168.1.10" in body["lan_command"]
     assert "/api/enroll/script" in body["lan_command"]
+    # tunnel mode + no SERVER_CA_PIN → self-signed LAN cert auto-generated + pinned
+    assert "--ca-pin sha256:" in body["lan_command"]
+    assert (tmp_path / "lan.crt").is_file()
     assert "--server https://localhost" in body["public_command"]
+    assert "--ca-pin" not in body["public_command"]
     rows = (await session.exec(select(WorkstationEnrollmentToken))).all()
     assert len(rows) == 1
     assert rows[0].token_hash != body["token"]  # stored hashed
 
 
 @pytest.mark.asyncio
-async def test_mint_enroll_token_detected_lan_ip(admin_client, monkeypatch):
+async def test_mint_enroll_token_detected_lan_ip(admin_client, monkeypatch, tmp_path):
     from app.services import workstations as ws_svc
+    from app.services import lan_tls
     monkeypatch.setattr(ws_svc._settings, "SERVER_LAN_URL", "")
     monkeypatch.setattr(ws_svc, "detect_lan_ip", lambda: "10.0.0.5")
+    monkeypatch.setattr(lan_tls._settings, "LAN_CERT_DIR", str(tmp_path))
     r = await admin_client.post("/api/workstations/enroll-tokens")
     body = r.json()
     assert body["lan_url_source"] == "detected"
-    # default DEPLOY_MODE=tunnel → plain http on the LAN entrypoint
-    assert "--server http://10.0.0.5" in body["lan_command"]
+    assert "--server https://10.0.0.5" in body["lan_command"]
+    assert "--ca-pin sha256:" in body["lan_command"]
+
+
+@pytest.mark.asyncio
+async def test_mint_explicit_ca_pin_wins(admin_client, monkeypatch):
+    from app.services import workstations as ws_svc
+    monkeypatch.setattr(ws_svc._settings, "SERVER_LAN_URL", "https://192.168.1.10")
+    monkeypatch.setattr(ws_svc._settings, "SERVER_CA_PIN", "sha256:deadbeef")
+    r = await admin_client.post("/api/workstations/enroll-tokens")
+    assert "--ca-pin sha256:deadbeef" in r.json()["lan_command"]
 
 
 @pytest.mark.asyncio

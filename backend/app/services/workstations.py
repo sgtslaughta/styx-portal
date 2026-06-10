@@ -1,5 +1,6 @@
 """Helpers for physical-workstation enrollment and lifecycle."""
 import hashlib
+import logging
 import re
 import socket
 from datetime import datetime, timedelta, timezone
@@ -48,17 +49,54 @@ def lan_enroll_url() -> tuple[str | None, str]:
         return _settings.SERVER_LAN_URL.rstrip("/"), "env"
     ip = detect_lan_ip()
     if ip:
-        # direct mode terminates TLS on :443; tunnel mode only listens on :80
-        scheme = "https" if _settings.DEPLOY_MODE == "direct" else "http"
-        return f"{scheme}://{ip}", "detected"
+        # https in both modes: direct = Let's Encrypt on :443, tunnel = the
+        # auto-generated self-signed LAN cert on websecure (pinned in command)
+        return f"https://{ip}", "detected"
     return None, "none"
 
 
-def build_enroll_command(raw_token: str, base: str) -> str:
+def lan_ca_pin(lan_base: str) -> tuple[str | None, bool]:
+    """Return (pin, cert_created) for the LAN enrollment command.
+
+    SERVER_CA_PIN wins when set. Otherwise, for hosts that a public cert
+    cannot cover (any host in tunnel mode, IP addresses in direct mode),
+    ensure the self-signed LAN cert exists and pin its fingerprint. Pin is
+    None when the host is presumed covered by a real cert (direct + DNS).
+    Caller refreshes Traefik routes when cert_created is True so the new
+    cert gets served.
+    """
+    import ipaddress
+    from urllib.parse import urlparse
+
+    if _settings.SERVER_CA_PIN:
+        return _settings.SERVER_CA_PIN, False
+    if not lan_base.startswith("https://"):
+        return None, False
+    host = urlparse(lan_base).hostname or ""
+    try:
+        ipaddress.ip_address(host)
+        is_ip = True
+    except ValueError:
+        is_ip = False
+    if _settings.DEPLOY_MODE == "direct" and not is_ip:
+        return None, False  # Let's Encrypt covers DNS names in direct mode
+    from app.services.lan_tls import ensure_lan_cert
+    try:
+        _, fp, created = ensure_lan_cert([host])
+    except OSError as e:
+        logging.getLogger("styx-portal").error(
+            "LAN cert generation failed (%s) — enroll command minted "
+            "without --ca-pin", e)
+        return None, False
+    return f"sha256:{fp}", created
+
+
+def build_enroll_command(raw_token: str, base: str,
+                         ca_pin: str | None = None) -> str:
     cmd = (f"curl -fsSL {base}{ENROLL_SCRIPT_PATH} | bash -s -- "
            f"--token {raw_token} --server {base}")
-    if _settings.SERVER_CA_PIN:
-        cmd += f" --ca-pin {_settings.SERVER_CA_PIN}"
+    if ca_pin:
+        cmd += f" --ca-pin {ca_pin}"
     return cmd
 
 

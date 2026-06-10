@@ -16,7 +16,7 @@ from app.schemas import (
 from app.security.deps import require_admin, get_current_user
 from app.services.audit import audit_request
 from app.services.workstations import (
-    build_enroll_command, lan_enroll_url, sha256_hex,
+    build_enroll_command, lan_ca_pin, lan_enroll_url, sha256_hex,
 )
 
 router = APIRouter()
@@ -37,9 +37,17 @@ async def mint_enroll_token(request: Request,
     await session.commit()
     lan_base, lan_source = lan_enroll_url()
     public_base = f"https://{_settings.DOMAIN}"
+    lan_command = None
+    if lan_base:
+        pin, cert_created = lan_ca_pin(lan_base)
+        if cert_created:
+            # publish the fresh cert to Traefik (defaultCertificate config)
+            from app.services.route_writer import refresh_routes_from_db
+            await refresh_routes_from_db(session)
+        lan_command = build_enroll_command(raw, lan_base, ca_pin=pin)
     return EnrollTokenOut(
         token=raw, expires_at=expires.isoformat(),
-        lan_command=build_enroll_command(raw, lan_base) if lan_base else None,
+        lan_command=lan_command,
         public_command=build_enroll_command(raw, public_base),
         lan_url_source=lan_source)
 

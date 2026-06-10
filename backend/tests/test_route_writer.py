@@ -70,9 +70,11 @@ def test_tunnel_mode_routes_use_web_and_no_dashboard():
     cfg = build_routes_config([], "example.com", deploy_mode="tunnel")
     routers = cfg["http"]["routers"]
     assert "dashboard" not in routers
-    assert routers["frontend"]["entryPoints"] == ["web"]
-    assert routers["api"]["entryPoints"] == ["web"]
-    assert routers["instances_fallback"]["entryPoints"] == ["web"]
+    # websecure included so the self-signed LAN cert can serve workstation
+    # enrollment when the operator publishes ports 80/443
+    assert routers["frontend"]["entryPoints"] == ["web", "websecure"]
+    assert routers["api"]["entryPoints"] == ["web", "websecure"]
+    assert routers["instances_fallback"]["entryPoints"] == ["web", "websecure"]
     assert "tls" not in routers["frontend"]
     assert "tls" not in routers["api"]
     assert "tls" not in routers["instances_fallback"]

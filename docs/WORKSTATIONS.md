@@ -65,7 +65,7 @@ All settings are environment variables or `.env` file entries on the **server**.
 | Variable | Default | Purpose |
 |---|---|---|
 | `SERVER_LAN_URL` | `""` (auto-detects the server's local IP) | Local LAN address used in the enrollment one-liner. Example: `https://192.168.1.10` or `https://portal.local`. Workstations must reach this address. When unset, the portal auto-detects its local IP (`http://<ip>` in tunnel mode, `https://<ip>` in direct mode) — inside a bridge-network container this detects the container IP, which is usually wrong, so set this explicitly in Docker deployments. The enroll dialog always also shows a public-URL command (`https://{DOMAIN}`) for machines outside the LAN; note streaming still requires the server to reach the workstation's IP. |
-| `SERVER_CA_PIN` | `""` | Optional TLS certificate fingerprint for self-signed LAN certs. Format: `sha256:<hex>`. If set, enrollment verifies the portal's cert matches the pin before fetching anything. |
+| `SERVER_CA_PIN` | `""` (auto-pin) | Override for the TLS pin in the enrollment command. Format: `sha256:<hex>`. Leave empty: the backend auto-generates a self-signed LAN cert and pins it automatically (see TLS Pinning below). |
 | `SELKIES_TARBALL_URL` | `https://github.com/selkies-project/selkies-gstreamer/releases/download/v1.6.2/selkies-gstreamer-portable-v1.6.2_amd64.tar.gz` | Public URL to the Selkies portable tarball. The server downloads and caches it; workstations fetch from the server, not directly from GitHub. |
 | `ARTIFACT_CACHE_DIR` | `/app/data/artifacts` | Server-side cache directory for the Selkies tarball. Pre-place `selkies.tar.gz` here for air-gapped deployments. |
 | `AGENT_DIR` | `/app/agent` | Server path to the `agent/` directory (scripts and daemon). Mounted from the repo in Docker Compose. |
@@ -263,18 +263,24 @@ To use a different Selkies build (e.g., a newer release or custom build):
 
 ### TLS Pinning
 
-If the portal uses a self-signed certificate on the LAN:
+**Automatic (default):** When the LAN address has no publicly-valid certificate
+(any host in tunnel mode, IP addresses in direct mode), the backend generates a
+persistent self-signed certificate for it (`lan-certs` volume), Traefik serves
+it on port 443, and the minted LAN command includes the matching `--ca-pin`
+automatically. Nothing to configure. The cert (and pin) only changes if you
+change the LAN address.
 
-1. **Generate the fingerprint:**
-   ```bash
-   echo | openssl s_client -connect <SERVER_LAN_URL> 2>/dev/null \
-     | openssl x509 -fingerprint -sha256 -noout
-   # Outputs: sha256=AB:CD:...
-   # Format for enrollment: sha256:ABCD...
-   ```
+**Tunnel mode prerequisite:** publish ports 80/443 on the `traefik` service —
+uncomment the `ports:` block in `docker-compose.yml`, then
+`docker compose up -d traefik`.
 
-2. **In the admin panel,** when minting an enrollment token, set `SERVER_CA_PIN` to `sha256:<HEX>` (remove colons).
-3. **Enrollment will verify the cert** before fetching anything, preventing MITM attacks on the LAN.
+**Manual override:** to pin your own certificate instead, set `SERVER_CA_PIN`:
+
+```bash
+echo | openssl s_client -connect <HOST>:443 2>/dev/null \
+  | openssl x509 -fingerprint -sha256 -noout
+# Outputs: sha256=AB:CD:...  → format as sha256:ABCD... (remove colons)
+```
 
 ---
 
@@ -304,7 +310,7 @@ Agent daemon startup, crashes, and restarts.
 
 - **Token-based enrollment:** Enrollment tokens are single-use and expire after 24 hours (configurable). Each token mints a unique agent token at registration.
 - **Per-workstation bearer token:** The agent authenticates to the portal with a unique token (stored hashed in the database). Compromising one workstation's token does not affect others.
-- **TLS pinning (optional):** If `SERVER_CA_PIN` is set, enrollment verifies the server's certificate fingerprint. This prevents MITM on the LAN during enrollment and registration.
+- **TLS pinning (automatic):** The enrollment command pins the portal's LAN certificate fingerprint (auto-generated self-signed cert, or `SERVER_CA_PIN` override). Enrollment and all agent traffic verify against the pinned cert — MITM on the LAN fails closed, and no insecure connections are ever made.
 - **Per-user access control:** Admins can restrict which users can connect to each workstation in the admin panel.
 - **Stream access (forwardAuth):** Requests to `/w/<subdomain>/` are gated by Traefik forwardAuth against the portal — you must be logged in to the portal in the same browser, and your account must have access to that workstation. A 401 on the stream URL means you are not logged in; a 403 means your account is not assigned to that workstation.
 - **Selkies credentials never reach the browser:** Each workstation's Selkies instance is protected by HTTP basic auth (random password, encrypted at rest). Traefik injects the `Authorization` header server-side after forwardAuth passes, so the password never appears in URLs, browser history, or logs. Direct LAN access to the workstation's Selkies port still requires that password.
