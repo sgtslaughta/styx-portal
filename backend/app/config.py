@@ -37,6 +37,19 @@ class Settings(BaseSettings):
     MAX_INSTANCES_PER_USER: int = 3      # 0 = unlimited; admins exempt
     OAUTH_REDIRECT_BASE: str = ""   # e.g. https://s.jmolabs.dev ; defaults to https://{DOMAIN}
     SECRETS_FILE: str = "/app/data/secrets.json"
+    # --- Workstation streaming (physical machines) ---
+    SERVER_LAN_URL: str = ""        # e.g. https://192.168.1.10 — used in enrollment one-liner
+    SERVER_CA_PIN: str = ""         # optional sha256:<hex fp> for self-signed LAN TLS
+    SELKIES_TARBALL_URL: str = (
+        "https://github.com/selkies-project/selkies-gstreamer/releases/download/"
+        "v1.6.2/selkies-gstreamer-portable-v1.6.2_amd64.tar.gz"
+    )
+    ARTIFACT_CACHE_DIR: str = "/app/data/artifacts"
+    AGENT_DIR: str = "/app/agent"   # mounted from repo ./agent; dev fallback in enroll router
+    ENROLL_TOKEN_TTL_HOURS: int = 24
+    WORKSTATION_OFFLINE_AFTER_S: int = 90
+    WORKSTATION_DEFAULT_PORT: int = 8443
+    WORKSTATION_HEARTBEAT_S: int = 30
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
@@ -83,3 +96,6 @@ class Settings(BaseSettings):
 
     def oauth_redirect_base(self) -> str:
         return self.OAUTH_REDIRECT_BASE or f"https://{self.DOMAIN}"
+
+    def server_lan_url(self) -> str:
+        return (self.SERVER_LAN_URL or f"https://{self.DOMAIN}").rstrip("/")

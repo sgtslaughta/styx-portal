@@ -132,3 +132,11 @@ def test_short_persisted_secret_regenerates(tmp_path):
     secret = s.jwt_secret_or_raise()
     assert len(secret) >= 32
     assert json.loads(p.read_text())["jwt_secret"] == secret
+
+
+def test_server_lan_url_falls_back_to_domain():
+    from app.config import Settings
+    s = Settings(DOMAIN="example.com", SERVER_LAN_URL="")
+    assert s.server_lan_url() == "https://example.com"
+    s2 = Settings(SERVER_LAN_URL="https://192.168.1.10/")
+    assert s2.server_lan_url() == "https://192.168.1.10"
