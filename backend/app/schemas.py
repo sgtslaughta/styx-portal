@@ -218,3 +218,85 @@ class ConnectedIdentity(BaseModel):
     provider: str
     email: str | None
     created_at: str
+
+
+class WorkstationOut(BaseModel):
+    id: str
+    name: str
+    subdomain: str
+    hostname: str
+    lan_ip: str
+    port: int
+    status: str
+    display_server: str
+    gpu_info: dict[str, Any]
+    os_info: dict[str, Any]
+    agent_version: str
+    stream_settings: dict[str, Any]
+    all_users: bool
+    last_heartbeat: str | None
+    last_error: str | None
+    created_at: str
+    allowed_user_ids: list[str] = []
+
+
+class EnrollTokenOut(BaseModel):
+    token: str
+    expires_at: str
+    command: str
+
+
+class WorkstationRegisterRequest(BaseModel):
+    token: str
+    hostname: str = Field(min_length=1, max_length=255)
+    lan_ip: str = Field(min_length=1, max_length=64)
+    display_server: str = "x11"           # x11 | wayland
+    gpu_info: dict[str, Any] = {}
+    os_info: dict[str, Any] = {}
+    agent_version: str = ""
+    port: int | None = None
+
+    @field_validator("display_server")
+    @classmethod
+    def _valid_display(cls, v: str) -> str:
+        if v not in ("x11", "wayland"):
+            raise ValueError("display_server must be 'x11' or 'wayland'")
+        return v
+
+
+class WorkstationRegisterResponse(BaseModel):
+    workstation_id: str
+    agent_token: str
+    subdomain: str
+    selkies_user: str
+    selkies_password: str
+    port: int
+    stream_settings: dict[str, Any]
+    heartbeat_interval_s: int
+
+
+class WorkstationHeartbeatRequest(BaseModel):
+    status: str = "online"                # online | error
+    lan_ip: str | None = None
+    last_error: str | None = None
+    health: dict[str, Any] = {}
+
+
+class WorkstationHeartbeatResponse(BaseModel):
+    state: str                            # ok | revoked
+    stream_settings: dict[str, Any]
+    heartbeat_interval_s: int
+
+
+class WorkstationUpdate(BaseModel):
+    name: str | None = None
+    all_users: bool | None = None
+    stream_settings: dict[str, Any] | None = None
+
+
+class WorkstationAccessUpdate(BaseModel):
+    user_ids: list[str]
+
+
+class WorkstationConnectOut(BaseModel):
+    url: str
