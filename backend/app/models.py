@@ -177,3 +177,52 @@ class AuditLog(SQLModel, table=True):
     action: str = Field(index=True)
     resource: str | None = None
     detail: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+
+
+class Workstation(SQLModel, table=True):
+    __tablename__ = "workstations"
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    name: str
+    subdomain: str = Field(unique=True, index=True)
+    hostname: str = ""
+    lan_ip: str = ""
+    port: int = 8443
+    protocol: str = "http"               # selkies on the workstation; http for v1
+    status: str = "pending"              # pending | online | offline | revoked
+    display_server: str = "x11"          # x11 | wayland
+    gpu_info: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    os_info: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    agent_version: str = ""
+    agent_token_hash: str = Field(default="", index=True)
+    selkies_password_enc: str = ""
+    stream_settings: dict[str, Any] = Field(
+        default_factory=lambda: {"encoder": "auto", "framerate": 60, "bitrate_kbps": 16000},
+        sa_column=Column(JSON),
+    )
+    all_users: bool = False
+    last_heartbeat: datetime | None = None
+    last_error: str | None = None
+    created_by: str = Field(foreign_key="users.id")
+    created_at: datetime = Field(default_factory=_now)
+
+
+class WorkstationEnrollmentToken(SQLModel, table=True):
+    __tablename__ = "workstation_enrollment_tokens"
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    token_hash: str = Field(unique=True, index=True)
+    created_by: str = Field(foreign_key="users.id")
+    expires_at: datetime
+    used_at: datetime | None = None
+    created_at: datetime = Field(default_factory=_now)
+
+
+class WorkstationAccess(SQLModel, table=True):
+    __tablename__ = "workstation_access"
+    __table_args__ = (UniqueConstraint("workstation_id", "user_id", name="uq_workstation_user"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    workstation_id: str = Field(foreign_key="workstations.id", index=True)
+    user_id: str = Field(foreign_key="users.id", index=True)
+    created_at: datetime = Field(default_factory=_now)
