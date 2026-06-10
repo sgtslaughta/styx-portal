@@ -96,6 +96,9 @@ async def setup(body: SetupRequest, request: Request, response: Response,
     await session.exec(update(Instance).where(Instance.owner_id == None).values(owner_id=user.id))  # noqa: E711
     await session.exec(update(ServiceTemplate).where(ServiceTemplate.owner_id == None).values(owner_id=user.id))  # noqa: E711
     await _issue_session(response, session, user, request)
+    await audit_request(session, request, "auth.signup", user_id=user.id,
+                        detail={"role": user.role, "via": "setup"})
+    await session.commit()
     return UserOut(id=user.id, username=user.username, email=user.email,
                    role=user.role, is_active=user.is_active)
 
@@ -155,10 +158,12 @@ async def refresh(request: Request, response: Response,
 @router.post("/logout")
 async def logout(request: Request, response: Response,
                  session: AsyncSession = Depends(get_session)):
+    user_id = None
     raw = request.cookies.get("refresh_token")
     if raw:
         try:
             claims = tokens.decode_token(raw)
+            user_id = claims.get("sub")
             stored = await session.get(RefreshToken, claims.get("jti"))
             if stored:
                 stored.revoked = True
@@ -166,6 +171,8 @@ async def logout(request: Request, response: Response,
                 await session.commit()
         except tokens.TokenError:
             pass
+    await audit_request(session, request, "auth.logout", user_id=user_id)
+    await session.commit()
     _clear_auth_cookies(response)
     return {"ok": True}
 
@@ -195,6 +202,9 @@ async def accept_invite(body: AcceptInviteRequest, request: Request, response: R
     inv.used_at = _now()
     session.add_all([user, inv])
     await _issue_session(response, session, user, request)
+    await audit_request(session, request, "auth.accept_invite", user_id=user.id,
+                        detail={"role": user.role})
+    await session.commit()
     return {"id": user.id, "username": user.username, "role": user.role}
 
 
