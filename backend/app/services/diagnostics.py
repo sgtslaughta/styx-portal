@@ -15,8 +15,13 @@ _DISK_FREE_WARN_PCT = 10.0
 
 
 async def _timed(fn):
+    # Spec: a check must never raise out of run_diagnostics. Any unexpected
+    # error from a check becomes a failed result, not a 500.
     start = time.monotonic()
-    ok, detail = await fn()
+    try:
+        ok, detail = await fn()
+    except Exception as e:  # noqa: BLE001
+        ok, detail = False, f"error: {e}"
     return ok, detail, round((time.monotonic() - start) * 1000)
 
 

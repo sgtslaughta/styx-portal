@@ -24,16 +24,19 @@ def record(ts: float, status: dict[str, bool], latency: dict[str, int]) -> None:
     with _lock:
         _timestamps.append(ts)
         n = len(_timestamps)
-        for key, ok in status.items():
-            _status.setdefault(key, deque(maxlen=_MAXLEN))
-            while len(_status[key]) < n - 1:
-                _status[key].append(ok)
-            _status[key].append(ok)
-        for key, ms in latency.items():
-            _latency.setdefault(key, deque(maxlen=_MAXLEN))
-            while len(_latency[key]) < n - 1:
-                _latency[key].append(ms)
-            _latency[key].append(ms)
+        # Keep every series aligned to the timestamp count: pad a series that was
+        # present before but absent this sample (and back-pad new keys) so no row
+        # drifts shorter than `timestamps`.
+        for key in set(_status) | set(status):
+            series = _status.setdefault(key, deque(maxlen=_MAXLEN))
+            while len(series) < n - 1:
+                series.append(series[-1] if series else False)
+            series.append(status.get(key, series[-1] if series else False))
+        for key in set(_latency) | set(latency):
+            series = _latency.setdefault(key, deque(maxlen=_MAXLEN))
+            while len(series) < n - 1:
+                series.append(0)
+            series.append(latency.get(key, 0))
 
 
 def get_history(range_str: str = "1h") -> dict:
