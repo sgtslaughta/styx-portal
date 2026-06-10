@@ -4,11 +4,21 @@ WORKDIR /app
 
 COPY pyproject.toml .
 RUN pip install --no-cache-dir .
-RUN playwright install --with-deps chromium
 
-COPY app/ app/
+# System deps for chromium need root
+RUN playwright install-deps chromium
 
-RUN mkdir -p /app/data
+# Non-root runtime user
+RUN useradd -m -u 1000 appuser \
+    && mkdir -p /app/data \
+    && chown -R appuser:appuser /app
+
+COPY --chown=appuser:appuser app/ app/
+
+USER appuser
+
+# Install the browser binary into the appuser cache (no root needed)
+RUN playwright install chromium
 
 EXPOSE 8000
 

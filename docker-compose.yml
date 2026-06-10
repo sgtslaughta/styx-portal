@@ -55,6 +55,9 @@ services:
       - ./templates:/app/templates:ro
     devices:
       - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
     networks:
       - styx-portal
 
