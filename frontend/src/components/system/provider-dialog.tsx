@@ -161,6 +161,7 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
         </DialogHeader>
 
         <div className="-mr-2 flex-1 space-y-3 overflow-y-auto pr-2">
+          {/* BASIC SECTION — always visible */}
           <Field label="Display name" hint="Shown to users on the login button.">
             <Input
               autoFocus
@@ -191,41 +192,6 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
             </select>
           </Field>
 
-          {form.kind === "oidc" && (
-            <Field label="Issuer URL" hint="We auto-discover endpoints from here.">
-              <Input
-                value={form.issuer_url || ""}
-                onChange={set("issuer_url")}
-                placeholder="https://auth.example.com/application/o/styx/"
-              />
-            </Field>
-          )}
-
-          <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
-            <div className="flex items-center gap-1.5 text-xs font-medium">
-              <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
-              Redirect URI — register this in your identity provider
-            </div>
-            <CopyRow
-              label="Login callback"
-              value={
-                editing
-                  ? editing.redirect_uri
-                  : `${window.location.origin}/api/auth/oauth/${form.name || "your-provider"}/callback`
-              }
-            />
-            {editing ? (
-              <CopyRow label="Test-login callback" value={editing.test_redirect_uri} />
-            ) : (
-              <p className="text-[11px] text-muted-foreground">
-                Save the provider to get its Test-login callback URL.
-              </p>
-            )}
-            <p className="text-[11px] text-muted-foreground">
-              Must match exactly — scheme, host, path, and case. Use Strict matching in your IdP.
-            </p>
-          </div>
-
           <Field label="Client ID">
             <Input value={form.client_id} onChange={set("client_id")} />
           </Field>
@@ -240,10 +206,6 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
               onChange={set("client_secret")}
               placeholder={editing ? "•••• unchanged" : ""}
             />
-          </Field>
-
-          <Field label="Scopes">
-            <Input value={form.scopes || ""} onChange={set("scopes")} />
           </Field>
 
           <Field label="Icon" hint="URL or upload. Shown on the login button.">
@@ -292,103 +254,167 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
             </div>
           </Field>
 
-          <label className="flex items-start gap-3 rounded-md border border-border p-3 cursor-pointer hover:bg-muted/20 transition-colors">
-            <input
-              type="checkbox"
-              checked={!!form.trust_email}
-              className="mt-0.5 h-4 w-4"
-              onChange={(e) =>
-                setForm((f) => ({ ...f, trust_email: e.target.checked }))
-              }
-            />
-            <span className="text-sm">
-              <span className="font-medium">Trust emails from this provider</span>
-              <span className="block text-xs text-muted-foreground">
-                Enable if your IdP (e.g. Authentik) doesn't send a verified-email claim.
-                Email is still required.
-              </span>
-            </span>
-          </label>
-
-          <div className="space-y-3 rounded-md border border-border p-3">
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={!!form.allow_signup}
-                className="mt-0.5 h-4 w-4"
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, allow_signup: e.target.checked }))
-                }
-              />
-              <span className="text-sm">
-                <span className="font-medium">Allow new users to sign up</span>
-                <span className="block text-xs text-muted-foreground">
-                  Auto-create accounts on first login without an invite. Otherwise sign-in
-                  is invite-only.
-                </span>
-              </span>
-            </label>
-
-            <div className="grid grid-cols-3 gap-2">
-              <Field label="Groups claim" hint="Userinfo claim holding the user's groups.">
-                <Input
-                  value={groupsClaim}
-                  onChange={(e) => setGroupsClaim(e.target.value)}
-                  placeholder="groups"
-                />
-              </Field>
-              <Field label="User group" hint="Required to sign up (blank = anyone).">
-                <Input
-                  value={userGroup}
-                  onChange={(e) => setUserGroup(e.target.value)}
-                  placeholder="styx-users"
-                />
-              </Field>
-              <Field label="Admin group" hint="Members get the admin role.">
-                <Input
-                  value={adminGroup}
-                  onChange={(e) => setAdminGroup(e.target.value)}
-                  placeholder="styx-admins"
-                />
-              </Field>
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              Admin group → admin. With a user group set, only its members may sign up; leave it
-              blank to allow anyone the provider authenticates. Group mapping also applies to
-              invited users.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setAdvanced((v) => !v)}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          {/* ENDPOINTS SECTION — collapsible, open by default for oauth2 */}
+          <details
+            className="rounded-md border border-border"
+            open={form.kind === "oauth2"}
           >
-            <ChevronDown
-              className={`h-3 w-3 transition-transform ${advanced ? "rotate-180" : ""}`}
-            />
-            Advanced — manual endpoint overrides
-          </button>
+            <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium hover:bg-muted/40 transition-colors">
+              Endpoints
+            </summary>
+            <div className="space-y-3 px-3 pb-3">
+              {form.kind === "oidc" && (
+                <Field label="Issuer URL" hint="We auto-discover endpoints from here.">
+                  <Input
+                    value={form.issuer_url || ""}
+                    onChange={set("issuer_url")}
+                    placeholder="https://auth.example.com/application/o/styx/"
+                  />
+                </Field>
+              )}
 
-          {advanced && (
-            <div className="space-y-2 rounded-md border border-border p-3">
-              <Input
-                placeholder="authorize_url"
-                value={form.authorize_url || ""}
-                onChange={set("authorize_url")}
-              />
-              <Input
-                placeholder="token_url"
-                value={form.token_url || ""}
-                onChange={set("token_url")}
-              />
-              <Input
-                placeholder="userinfo_url"
-                value={form.userinfo_url || ""}
-                onChange={set("userinfo_url")}
-              />
+              <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+                <div className="flex items-center gap-1.5 text-xs font-medium">
+                  <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
+                  Redirect URI — register this in your identity provider
+                </div>
+                <CopyRow
+                  label="Login callback"
+                  value={
+                    editing
+                      ? editing.redirect_uri
+                      : `${window.location.origin}/api/auth/oauth/${form.name || "your-provider"}/callback`
+                  }
+                />
+                {editing ? (
+                  <CopyRow label="Test-login callback" value={editing.test_redirect_uri} />
+                ) : (
+                  <p className="text-[11px] text-muted-foreground">
+                    Save the provider to get its Test-login callback URL.
+                  </p>
+                )}
+                <p className="text-[11px] text-muted-foreground">
+                  Must match exactly — scheme, host, path, and case. Use Strict matching in your IdP.
+                </p>
+              </div>
+
+              <Field label="Scopes">
+                <Input value={form.scopes || ""} onChange={set("scopes")} />
+              </Field>
+
+              <button
+                type="button"
+                onClick={() => setAdvanced((v) => !v)}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <ChevronDown
+                  className={`h-3 w-3 transition-transform ${advanced ? "rotate-180" : ""}`}
+                />
+                Advanced — manual endpoint overrides
+              </button>
+
+              {advanced && (
+                <div className="space-y-2 rounded-md border border-border p-3">
+                  <Input
+                    placeholder="authorize_url"
+                    value={form.authorize_url || ""}
+                    onChange={set("authorize_url")}
+                  />
+                  <Input
+                    placeholder="token_url"
+                    value={form.token_url || ""}
+                    onChange={set("token_url")}
+                  />
+                  <Input
+                    placeholder="userinfo_url"
+                    value={form.userinfo_url || ""}
+                    onChange={set("userinfo_url")}
+                  />
+                </div>
+              )}
             </div>
-          )}
+          </details>
+
+          {/* ROLE MAPPING SECTION — collapsible, closed by default */}
+          <details className="rounded-md border border-border">
+            <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium hover:bg-muted/40 transition-colors">
+              Role mapping
+            </summary>
+            <div className="space-y-3 px-3 pb-3">
+              <div className="grid grid-cols-3 gap-2">
+                <Field label="Groups claim" hint="Userinfo claim holding the user's groups.">
+                  <Input
+                    value={groupsClaim}
+                    onChange={(e) => setGroupsClaim(e.target.value)}
+                    placeholder="groups"
+                  />
+                </Field>
+                <Field label="User group" hint="Required to sign up (blank = anyone).">
+                  <Input
+                    value={userGroup}
+                    onChange={(e) => setUserGroup(e.target.value)}
+                    placeholder="styx-users"
+                  />
+                </Field>
+                <Field label="Admin group" hint="Members get the admin role.">
+                  <Input
+                    value={adminGroup}
+                    onChange={(e) => setAdminGroup(e.target.value)}
+                    placeholder="styx-admins"
+                  />
+                </Field>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Admin group → admin. With a user group set, only its members may sign up; leave it
+                blank to allow anyone the provider authenticates. Group mapping also applies to
+                invited users.
+              </p>
+            </div>
+          </details>
+
+          {/* SELF-SERVICE SECTION — collapsible, closed by default */}
+          <details className="rounded-md border border-border">
+            <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium hover:bg-muted/40 transition-colors">
+              Self-service
+            </summary>
+            <div className="space-y-3 px-3 pb-3">
+              <label className="flex items-start gap-3 rounded-md border border-border p-3 cursor-pointer hover:bg-muted/20 transition-colors">
+                <input
+                  type="checkbox"
+                  checked={!!form.trust_email}
+                  className="mt-0.5 h-4 w-4"
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, trust_email: e.target.checked }))
+                  }
+                />
+                <span className="text-sm">
+                  <span className="font-medium">Trust emails from this provider</span>
+                  <span className="block text-xs text-muted-foreground">
+                    Enable if your IdP (e.g. Authentik) doesn't send a verified-email claim.
+                    Email is still required.
+                  </span>
+                </span>
+              </label>
+
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={!!form.allow_signup}
+                  className="mt-0.5 h-4 w-4"
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, allow_signup: e.target.checked }))
+                  }
+                />
+                <span className="text-sm">
+                  <span className="font-medium">Allow new users to sign up</span>
+                  <span className="block text-xs text-muted-foreground">
+                    Auto-create accounts on first login without an invite. Otherwise sign-in
+                    is invite-only.
+                  </span>
+                </span>
+              </label>
+            </div>
+          </details>
 
           {editing && (
             <div className="flex gap-2">
