@@ -27,6 +27,14 @@ export type ProviderTestResult = {
   checks: { label: string; ok: boolean; detail: string }[];
 };
 
+export type DiagCheck = { key: string; ok: boolean; latency_ms: number; detail: string };
+export type Diagnostics = { ok: boolean; checked_at: string; checks: DiagCheck[] };
+export type DiagHistory = {
+  timestamps: number[];
+  status: Record<string, boolean[]>;
+  latency_ms: Record<string, number[]>;
+};
+
 const BASE = "/api";
 
 function getCookie(name: string): string | null {
@@ -130,6 +138,9 @@ export const api = {
     recent_events: { type: string; instance: string; time: string; details?: string }[];
     host: { docker_version?: string; gpu?: string; network?: string; uptime?: number };
   }>("/system/metrics"),
+  getDiagnostics: () => request<Diagnostics>("/system/diagnostics"),
+  getDiagnosticsHistory: (range: string) =>
+    request<DiagHistory>(`/system/diagnostics/history?range=${range}`),
 
   getSessionEvents: (instanceId: string) =>
     request<{ type: string; time: string; details?: string }[]>(`/instances/${instanceId}/events`),
