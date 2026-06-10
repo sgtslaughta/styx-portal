@@ -89,7 +89,18 @@ def test_display_plan_mirror_override(tmp_path):
 def test_encoder_auto_resolves(monkeypatch, tmp_path):
     _, cfg = _cfg(tmp_path)
     cfg["stream_settings"]["encoder"] = "auto"
-    monkeypatch.setattr(styx_agent, "detect_encoder", lambda: "nvh264enc")
+    monkeypatch.setattr(styx_agent, "detect_encoder", lambda _d: "nvh264enc")
     cmd, env = styx_agent.build_selkies_cmd(cfg, ":0")
     assert "--encoder=nvh264enc" in cmd
     assert env["SELKIES_ENCODER"] == "nvh264enc"
+
+
+def test_detect_encoder_probes_bundled_gst(monkeypatch):
+    # vah264enc present in gst -> chosen over x264enc; HW-first ordering
+    monkeypatch.setattr(styx_agent, "_gst_has_element",
+                        lambda d, e: e in ("vah264enc", "x264enc"))
+    assert styx_agent.detect_encoder("/x") == "vah264enc"
+    # only x264enc available (the real portable-tarball case) -> x264enc
+    monkeypatch.setattr(styx_agent, "_gst_has_element",
+                        lambda d, e: e == "x264enc")
+    assert styx_agent.detect_encoder("/x") == "x264enc"

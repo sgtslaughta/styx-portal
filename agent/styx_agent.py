@@ -69,13 +69,30 @@ def api(cfg: dict, path: str, payload: dict | None = None) -> dict:
 
 
 # --- Selkies process -------------------------------------------------------
-def detect_encoder() -> str:
-    if shutil.which("nvidia-smi") and subprocess.run(
-            ["nvidia-smi", "-L"], capture_output=True).returncode == 0:
-        return "nvh264enc"
-    if shutil.which("vainfo") and subprocess.run(
-            ["vainfo"], capture_output=True).returncode == 0:
-        return "vah264enc"
+def _gst_has_element(selkies_dir: str, element: str) -> bool:
+    """True if the BUNDLED GStreamer actually provides this element. Probing
+    gst-inspect is the only reliable check — `vainfo`/`nvidia-smi` being present
+    says nothing about whether the portable GStreamer was built with that
+    encoder plugin (the v1.6.2 tarball ships CPU encoders only)."""
+    gi = Path(selkies_dir) / "bin" / "gst-inspect-1.0"
+    if not gi.is_file():
+        return False
+    env = {**os.environ, "PYTHONNOUSERSITE": "1"}
+    for v in ("PYTHONPATH", "PYTHONHOME"):
+        env.pop(v, None)
+    try:
+        return subprocess.run([str(gi), element], capture_output=True,
+                              env=env, timeout=30).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def detect_encoder(selkies_dir: str) -> str:
+    """Pick the best H.264 encoder the bundled GStreamer can actually create,
+    HW first. Falls back to CPU x264enc, which the portable build always has."""
+    for enc in ("nvh264enc", "vah264enc", "x264enc"):
+        if _gst_has_element(selkies_dir, enc):
+            return enc
     return "x264enc"
 
 
@@ -127,7 +144,7 @@ def build_selkies_cmd(cfg: dict, display: str,
     s = cfg["stream_settings"]
     encoder = s.get("encoder", "auto")
     if encoder == "auto":
-        encoder = detect_encoder()
+        encoder = detect_encoder(cfg["selkies_dir"])
     env = os.environ.copy()
     env["DISPLAY"] = display
     # Capturing an existing X display (e.g. KasmVNC :1) needs its auth cookie;
@@ -290,7 +307,7 @@ def doctor(cfg: dict) -> int:
         ok &= _check("server reachable + token valid", False, str(e))
     enc = cfg["stream_settings"].get("encoder", "auto")
     ok &= _check("encoder", True,
-                 detect_encoder() if enc == "auto" else enc)
+                 detect_encoder(cfg["selkies_dir"]) if enc == "auto" else enc)
     print("All checks passed." if ok else
           f"Some checks failed. Logs: {LOG_DIR}")
     return 0 if ok else 1
