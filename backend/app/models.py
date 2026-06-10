@@ -46,6 +46,7 @@ class RefreshToken(SQLModel, table=True):
 
     jti: str = Field(primary_key=True)
     user_id: str = Field(foreign_key="users.id", index=True)
+    family_id: str = Field(default="", index=True)
     expires_at: datetime
     revoked: bool = False
     user_agent: str | None = None
