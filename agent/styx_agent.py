@@ -18,7 +18,7 @@ import urllib.request
 from hashlib import sha256
 from pathlib import Path
 
-AGENT_VERSION = "0.1.0"
+AGENT_VERSION = "0.2.0"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -79,31 +79,45 @@ def detect_encoder() -> str:
     return "x264enc"
 
 
-def build_selkies_cmd(cfg: dict) -> tuple[list[str], dict]:
+XVFB_DISPLAY = ":100"
+
+
+def display_plan(cfg: dict) -> tuple[bool, str]:
+    """Return (start_xvfb, display).
+
+    X11 sessions are captured live (mirror the real desktop on :0). Wayland
+    and headless machines get a private Xvfb display — selkies-gstreamer is
+    X11-only (ximagesrc), so this is the 'own session' those machines stream.
+    """
+    if cfg["display_server"] == "x11":
+        return False, cfg.get("display") or os.environ.get("DISPLAY") or ":0"
+    return True, cfg.get("xvfb_display", XVFB_DISPLAY)
+
+
+def build_selkies_cmd(cfg: dict, display: str) -> tuple[list[str], dict]:
+    """selkies-gstreamer v1.6.x is configured by CLI flags (addr/port/encoder/
+    basic auth are flags, NOT env vars). It serves HTTP + WebSocket + WebRTC on
+    a single port, so Traefik proxies straight to it.
+    """
     s = cfg["stream_settings"]
     encoder = s.get("encoder", "auto")
     if encoder == "auto":
         encoder = detect_encoder()
     env = os.environ.copy()
-    env.update({
-        "SELKIES_ADDR": "0.0.0.0",
-        "SELKIES_PORT": str(cfg["port"]),
-        "SELKIES_ENCODER": encoder,
-        "SELKIES_FRAMERATE": str(s.get("framerate", 60)),
-        "SELKIES_VIDEO_BITRATE": str(s.get("bitrate_kbps", 16000)),
-        "SELKIES_ENABLE_BASIC_AUTH": "true",
-        "SELKIES_BASIC_AUTH_USER": cfg["selkies_user"],
-        "SELKIES_BASIC_AUTH_PASSWORD": cfg["selkies_password"],
-        "SELKIES_ENABLE_RESIZE": "false",
-        "SELKIES_AUDIO_BITRATE": "128000",
-    })
-    if cfg["display_server"] == "wayland":
-        # Own-compositor takeover: pixelflux starts a Smithay compositor.
-        env["PIXELFLUX_WAYLAND"] = "true"
-    else:
-        env.setdefault("DISPLAY", ":0")
+    env["DISPLAY"] = display
+    env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    env.setdefault("PULSE_SERVER", f"unix:{env['XDG_RUNTIME_DIR']}/pulse/native")
+    env["SELKIES_ENCODER"] = encoder  # belt-and-suspenders; the flag is authoritative
     launcher = Path(cfg["selkies_dir"]) / "selkies-gstreamer-run"
-    return [str(launcher)], env
+    cmd = [
+        str(launcher),
+        "--addr=0.0.0.0",
+        f"--port={cfg['port']}",
+        f"--encoder={encoder}",
+        f"--basic_auth_user={cfg['selkies_user']}",
+        f"--basic_auth_password={cfg['selkies_password']}",
+    ]
+    return cmd, env
 
 
 def _write_state(d: dict) -> None:
@@ -111,11 +125,29 @@ def _write_state(d: dict) -> None:
     STATE_PATH.write_text(json.dumps(d))
 
 
+def _start_xvfb(display: str, log) -> subprocess.Popen | None:
+    """Start a private X server for Wayland/headless machines. Returns the
+    Xvfb process, or None if Xvfb is missing (caller reports the error)."""
+    if not shutil.which("Xvfb"):
+        return None
+    proc = subprocess.Popen(
+        ["Xvfb", display, "-screen", "0", "1920x1080x24", "-nolisten", "tcp"],
+        stdout=log, stderr=log)
+    time.sleep(1.5)  # let the X socket appear before Selkies connects
+    if shutil.which("openbox"):  # bare WM so the session isn't unusable
+        subprocess.Popen(["openbox"], env={**os.environ, "DISPLAY": display},
+                         stdout=log, stderr=log)
+    return proc
+
+
 def run(cfg: dict) -> int:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     selkies_log = open(LOG_DIR / "selkies.log", "ab", buffering=0)
-    cmd, env = build_selkies_cmd(cfg)
+    xvfb_log = open(LOG_DIR / "xvfb.log", "ab", buffering=0)
+    start_xvfb, display = display_plan(cfg)
+    cmd, env = build_selkies_cmd(cfg, display)
     proc: subprocess.Popen | None = None
+    xvfb: subprocess.Popen | None = None
     interval = 30
     backoff = 2
     stopping = False
@@ -127,6 +159,8 @@ def run(cfg: dict) -> int:
     signal.signal(signal.SIGINT, _stop)
 
     while not stopping:
+        if start_xvfb and (xvfb is None or xvfb.poll() is not None):
+            xvfb = _start_xvfb(display, xvfb_log)
         if proc is None or proc.poll() is not None:
             if proc is not None:
                 print(f"selkies exited rc={proc.returncode}; restarting in {backoff}s",
@@ -135,12 +169,16 @@ def run(cfg: dict) -> int:
                 backoff *= 2
             proc = subprocess.Popen(cmd, env=env, stdout=selkies_log,
                                     stderr=selkies_log)
-        err = None
+        if start_xvfb and xvfb is None:
+            last_error = ("Xvfb not installed — Wayland/headless needs a virtual "
+                          "X display. Run: sudo apt install xvfb openbox")
+        elif proc.poll() is not None:
+            last_error = f"selkies exited rc={proc.returncode} — see logs/selkies.log"
+        else:
+            last_error = None
         try:
             hb = api(cfg, "/api/agent/heartbeat", {
-                "status": "online",
-                "last_error": None if proc.poll() is None
-                              else f"selkies exited rc={proc.returncode}",
+                "status": "online", "last_error": last_error,
             })
             _write_state({"ts": time.time(), "ok": True, "state": hb["state"]})
             if hb["state"] == "revoked":
@@ -151,7 +189,7 @@ def run(cfg: dict) -> int:
             if hb["stream_settings"] != cfg["stream_settings"]:
                 cfg["stream_settings"] = hb["stream_settings"]
                 CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
-                cmd, env = build_selkies_cmd(cfg)
+                cmd, env = build_selkies_cmd(cfg, display)
                 proc.terminate()
                 proc.wait(timeout=10)
                 proc = None
@@ -164,12 +202,13 @@ def run(cfg: dict) -> int:
             print(f"heartbeat failed: {err}", flush=True)
         time.sleep(interval)
 
-    if proc is not None and proc.poll() is None:
-        proc.terminate()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.kill()
+    for p in (proc, xvfb):
+        if p is not None and p.poll() is None:
+            p.terminate()
+            try:
+                p.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                p.kill()
     return 0
 
 

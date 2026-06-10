@@ -30,27 +30,46 @@ def test_load_config(tmp_path):
     assert loaded["port"] == 8443
 
 
-def test_build_selkies_cmd_x11(tmp_path):
+def test_build_selkies_cmd_uses_cli_flags(tmp_path):
     _, cfg = _cfg(tmp_path)
-    cmd, env = styx_agent.build_selkies_cmd(cfg)
+    cmd, env = styx_agent.build_selkies_cmd(cfg, ":0")
     assert cmd[0].endswith("selkies-gstreamer-run")
-    assert env["SELKIES_PORT"] == "8443"
-    assert env["SELKIES_ENCODER"] == "x264enc"
-    assert env["SELKIES_FRAMERATE"] == "60"
-    assert env["SELKIES_ENABLE_BASIC_AUTH"] == "true"
-    assert env["SELKIES_BASIC_AUTH_PASSWORD"] == "pw"
-    assert env["DISPLAY"]  # attaches to a display
+    # selkies-gstreamer 1.6.x reads CLI flags, not env vars
+    assert "--addr=0.0.0.0" in cmd
+    assert "--port=8443" in cmd
+    assert "--encoder=x264enc" in cmd
+    assert "--basic_auth_user=styx" in cmd
+    assert "--basic_auth_password=pw" in cmd
+    assert env["DISPLAY"] == ":0"
+    assert "PULSE_SERVER" in env
 
 
-def test_build_selkies_cmd_wayland_sets_pixelflux(tmp_path):
+def test_display_plan_x11_attaches_live(tmp_path, monkeypatch):
+    monkeypatch.delenv("DISPLAY", raising=False)
+    _, cfg = _cfg(tmp_path)
+    start_xvfb, display = styx_agent.display_plan(cfg)
+    assert start_xvfb is False
+    assert display == ":0"
+
+
+def test_display_plan_x11_honours_override(tmp_path):
+    _, cfg = _cfg(tmp_path, display=":1")
+    start_xvfb, display = styx_agent.display_plan(cfg)
+    assert start_xvfb is False
+    assert display == ":1"
+
+
+def test_display_plan_wayland_uses_xvfb(tmp_path):
     _, cfg = _cfg(tmp_path, display_server="wayland")
-    cmd, env = styx_agent.build_selkies_cmd(cfg)
-    assert env["PIXELFLUX_WAYLAND"] == "true"
+    start_xvfb, display = styx_agent.display_plan(cfg)
+    assert start_xvfb is True
+    assert display == ":100"
 
 
 def test_encoder_auto_resolves(monkeypatch, tmp_path):
     _, cfg = _cfg(tmp_path)
     cfg["stream_settings"]["encoder"] = "auto"
     monkeypatch.setattr(styx_agent, "detect_encoder", lambda: "nvh264enc")
-    _, env = styx_agent.build_selkies_cmd(cfg)
+    cmd, env = styx_agent.build_selkies_cmd(cfg, ":0")
+    assert "--encoder=nvh264enc" in cmd
     assert env["SELKIES_ENCODER"] == "nvh264enc"
