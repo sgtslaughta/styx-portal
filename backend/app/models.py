@@ -160,3 +160,15 @@ class PulledImage(SQLModel, table=True):
     image: str = Field(unique=True, index=True)
     size_mb: int | None = None
     pulled_at: datetime = Field(default_factory=_now)
+
+
+class AuditLog(SQLModel, table=True):
+    __tablename__ = "audit_log"
+
+    id: int | None = Field(default=None, primary_key=True)
+    ts: datetime = Field(default_factory=_now, index=True)
+    user_id: str | None = Field(default=None, index=True)
+    actor_ip: str | None = None
+    action: str = Field(index=True)
+    resource: str | None = None
+    detail: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
