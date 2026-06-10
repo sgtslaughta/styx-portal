@@ -35,6 +35,13 @@ export type DiagHistory = {
   latency_ms: Record<string, number[]>;
 };
 
+export type SetupPreflight = {
+  docker: { ok: boolean; detail: string };
+  deploy_mode: string;
+  domain_set: boolean;
+  data_writable: boolean;
+};
+
 const BASE = "/api";
 
 function getCookie(name: string): string | null {
@@ -156,6 +163,7 @@ export const api = {
     request<string[]>(`/instances/${instanceId}/logs`),
 
   setupRequired: () => request<{ setup_required: boolean }>("/auth/setup-required"),
+  setupPreflight: () => request<SetupPreflight>("/auth/setup-preflight"),
   setup: (data: { username: string; email?: string; password: string }) =>
     request<{ id: string; username: string; role: string }>("/auth/setup", {
       method: "POST", body: JSON.stringify(data) }),
