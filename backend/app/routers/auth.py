@@ -244,7 +244,10 @@ async def link_callback(name: str, request: Request,
         return RedirectResponse("/?link=error", status_code=302)
     try:
         identity = await oauth.fetch_identity(provider, "link", str(request.url), tx["verifier"])
-        await federation.link_identity(session, user, name, identity, provider.trust_email)
+        await federation.link_identity(session, user, name, identity)
+        await audit_request(session, request, "sso.link", user_id=user.id,
+                            resource=name, detail={"email": identity.email})
+        await session.commit()
     except federation.FederationError:
         return RedirectResponse("/?link=conflict", status_code=302)
     except Exception:
@@ -255,7 +258,7 @@ async def link_callback(name: str, request: Request,
 
 
 @router.delete("/link/{name}")
-async def unlink_provider(name: str, user: User = Depends(get_current_user),
+async def unlink_provider(name: str, request: Request, user: User = Depends(get_current_user),
                           session: AsyncSession = Depends(get_session)):
     rows = (await session.exec(select(FederatedIdentity).where(
         FederatedIdentity.user_id == user.id))).all()
@@ -267,5 +270,6 @@ async def unlink_provider(name: str, user: User = Depends(get_current_user),
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "cannot unlink the only login method")
     await session.delete(target)
+    await audit_request(session, request, "sso.unlink", user_id=user.id, resource=name)
     await session.commit()
     return {"ok": True}

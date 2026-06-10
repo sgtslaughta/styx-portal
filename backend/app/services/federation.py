@@ -122,8 +122,10 @@ async def resolve_identity(session: AsyncSession, provider_name: str,
 
 
 async def link_identity(session: AsyncSession, user: User, provider_name: str,
-                        identity: OAuthIdentity, trust_email: bool = False) -> None:
-    if not identity.email_verified and not trust_email:
+                        identity: OAuthIdentity) -> None:
+    # Linking is account-takeover surface (COAT): always require a verified
+    # email regardless of the provider's trust_email login setting.
+    if not identity.email_verified:
         raise EmailUnverified("IdP did not provide a verified email")
     taken = (await session.exec(select(FederatedIdentity).where(
         FederatedIdentity.provider == provider_name,

@@ -135,3 +135,27 @@ async def test_signup_admin_group_grants_admin(session):
         session, "authentik",
         _ident(claims=_claims(["styx-admins"])), role_map=rm, allow_signup=True)
     assert out.role == "admin"
+
+
+@pytest.mark.asyncio
+async def test_link_rejects_unverified_email_even_with_trust_email(session):
+    u = User(username="bob", password_hash=hash_password("x"))
+    session.add(u)
+    await session.flush()
+    identity = OAuthIdentity(sub="s1", email="a@b.c", email_verified=False, claims={})
+    with pytest.raises(federation.EmailUnverified):
+        await federation.link_identity(session, u, "google", identity)
+
+
+@pytest.mark.asyncio
+async def test_link_accepts_verified_email(session):
+    u = User(username="bob", password_hash=hash_password("x"))
+    session.add(u)
+    await session.flush()
+    identity = OAuthIdentity(sub="s2", email="a@b.c", email_verified=True, claims={})
+    await federation.link_identity(session, u, "google", identity)
+    from sqlmodel import select
+    rows = (await session.exec(select(FederatedIdentity).where(
+        FederatedIdentity.user_id == u.id, FederatedIdentity.provider == "google"))).all()
+    assert len(rows) == 1
+    assert rows[0].subject == "s2"
