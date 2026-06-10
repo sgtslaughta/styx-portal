@@ -73,6 +73,8 @@ async def test_reuse_of_rotated_token_revokes_family(client, session):
 
     # Now try to use the OLD (rotated) token
     client.cookies.set("refresh_token", old_refresh_token)
+    # Update CSRF header to the current cookie value (updated during last refresh)
+    client.headers.update({"X-CSRF-Token": client.cookies.get("csrf_token")})
     r = await client.post("/api/auth/refresh")
     assert r.status_code == 401
 

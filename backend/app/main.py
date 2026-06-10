@@ -29,7 +29,7 @@ from app.security.csrf import csrf_valid, CSRF_COOKIE, CSRF_HEADER, UNSAFE_METHO
 logger = logging.getLogger("styx-portal")
 _settings = Settings()
 
-_CSRF_EXEMPT = {"/api/auth/login", "/api/auth/setup", "/api/auth/refresh", "/api/auth/accept-invite"}
+_CSRF_EXEMPT = {"/api/auth/login", "/api/auth/setup"}
 
 
 class CSRFMiddleware(BaseHTTPMiddleware):

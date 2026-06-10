@@ -49,6 +49,13 @@ async def test_link_callback_rejects_mismatched_user(admin_client, session):
     # invite + provision a SECOND user (bob) in a fresh client
     inv = (await admin_client.post("/api/users/invites", json={"role": "user"})).json()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as bob:
+        # Bootstrap CSRF for bob
+        csrf_r = await bob.get("/api/auth/csrf")
+        assert csrf_r.status_code == 200
+        csrf = bob.cookies.get("csrf_token")
+        assert csrf
+        bob.headers.update({"X-CSRF-Token": csrf})
+
         r = await bob.post("/api/auth/accept-invite", json={
             "token": inv["token"], "username": "bob", "password": "bobs long password"})
         assert r.status_code == 201

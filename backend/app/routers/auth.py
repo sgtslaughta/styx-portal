@@ -67,6 +67,18 @@ async def _issue_session(resp: Response, session: AsyncSession, user: User, requ
     _set_auth_cookies(resp, access, refresh, new_csrf_token())
 
 
+@router.get("/csrf")
+async def csrf_bootstrap(response: Response):
+    """Issue an anonymous CSRF cookie so pre-auth POSTs (accept-invite) can
+    pass the double-submit check."""
+    response.set_cookie(
+        CSRF_COOKIE, new_csrf_token(), max_age=600,
+        httponly=False, secure=_settings.COOKIE_SECURE,
+        samesite="strict", domain=_settings.COOKIE_DOMAIN,
+    )
+    return {"ok": True}
+
+
 @router.get("/setup-required")
 async def setup_required(session: AsyncSession = Depends(get_session)):
     return {"setup_required": not await users_exist(session)}
