@@ -32,7 +32,7 @@ async def test_user_sees_only_own_instances(admin_client):
     # admin creates an instance owned by admin
     inst = await admin_client.post(
         "/api/instances",
-        json={"template_id": template_id, "name": "admin-instance", "subdomain": "admin"},
+        json={"template_id": template_id, "name": "admin-instance", "subdomain": "adm-inst"},
     )
     assert inst.status_code == 201, inst.text
 

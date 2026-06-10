@@ -1,6 +1,10 @@
+import re
 from dataclasses import dataclass
 from typing import Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+SUBDOMAIN_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
+RESERVED_SUBDOMAINS = {"api", "traefik", "www", "admin", "auth", "portal"}
 
 
 class TemplateCreate(BaseModel):
@@ -50,6 +54,18 @@ class InstanceCreate(BaseModel):
     subdomain: str
     env_overrides: dict[str, str] = {}
     session_config: dict[str, Any] | None = None
+
+    @field_validator("subdomain")
+    @classmethod
+    def _valid_subdomain(cls, v: str) -> str:
+        if not SUBDOMAIN_RE.match(v):
+            raise ValueError(
+                "subdomain must be 1-63 chars: lowercase letters, digits, "
+                "hyphens (no leading/trailing hyphen)"
+            )
+        if v in RESERVED_SUBDOMAINS:
+            raise ValueError(f"'{v}' is a reserved name")
+        return v
 
 
 class InstanceUpdate(BaseModel):
