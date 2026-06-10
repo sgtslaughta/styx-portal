@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Navigate } from "react-router";
+import { toast } from "sonner";
 import { api } from "@/api/client";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,13 @@ export function LoginPage() {
         unknown_provider: "Single sign-on failed. Please try again.",
       };
       setErr(errorMap[ssoError] || "An error occurred during sign-in. Please try again.");
+    }
+  }, []);
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("expired")) {
+      toast("Your session expired — please sign in again.");
+      window.history.replaceState({}, "", "/login");
     }
   }, []);
 
