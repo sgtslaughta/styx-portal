@@ -96,3 +96,11 @@ export function useInstanceStats(id: string, enabled: boolean) {
     enabled,
   });
 }
+
+export function useKeepalive() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.keepalive(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["instances"] }),
+  });
+}

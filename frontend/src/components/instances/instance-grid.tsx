@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { LayoutGrid, List, Maximize2, Filter, Play, Square, Pause, Trash2, CheckSquare, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchSortBar } from "@/components/common/search-sort-bar";
@@ -10,6 +10,7 @@ import { InstanceCard } from "./instance-card";
 import { InstanceCardSm } from "./instance-card-sm";
 import { InstanceRow } from "./instance-row";
 import { toast } from "sonner";
+import { shortError } from "@/lib/utils";
 import type { Instance } from "@/lib/types";
 
 type ViewMode = "compact" | "normal" | "large";
@@ -60,8 +61,9 @@ const FILTER_LABELS: Record<StatusFilter, string> = { all: "All", running: "Runn
 const FILTER_CYCLE: StatusFilter[] = ["all", "running", "stopped", "paused"];
 
 export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: InstanceGridProps) {
-  const { data: instances, isLoading, isError } = useInstances();
+  const { data: instances, isLoading, isError, refetch } = useInstances();
   const { data: templates } = useTemplates();
+  const reduce = useReducedMotion();
 
   const [view, setView] = useState<ViewMode>(dense ? "compact" : "normal");
   const [sort, setSort] = useState<SortKey>("status");
@@ -75,6 +77,8 @@ export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: 
   const pauseMut = usePauseInstance();
   const unpauseMut = useUnpauseInstance();
   const destroyMut = useDeleteInstance();
+
+  const bulkBusy = startMut.isPending || stopMut.isPending || pauseMut.isPending || unpauseMut.isPending || destroyMut.isPending;
 
   const processed = useMemo(() => {
     if (!instances) return [];
@@ -111,27 +115,27 @@ export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: 
   const selPaused = selectedInstances.filter((i) => i.status === "paused");
 
   function bulkStart() {
-    selStopped.forEach((i) => startMut.mutate(i.id, { onError: (e) => toast.error(`${i.name}: ${e.message}`) }));
+    selStopped.forEach((i) => startMut.mutate(i.id, { onError: (e) => { console.error(i.name, e); toast.error(shortError(`${i.name}: ${e.message}`)); } }));
     toast.success(`Starting ${selStopped.length} instance(s)`);
     clearSelection();
   }
   function bulkStop() {
-    [...selRunning, ...selPaused].forEach((i) => stopMut.mutate(i.id, { onError: (e) => toast.error(`${i.name}: ${e.message}`) }));
+    [...selRunning, ...selPaused].forEach((i) => stopMut.mutate(i.id, { onError: (e) => { console.error(i.name, e); toast.error(shortError(`${i.name}: ${e.message}`)); } }));
     toast.success(`Stopping ${selRunning.length + selPaused.length} instance(s)`);
     clearSelection();
   }
   function bulkPause() {
-    selRunning.forEach((i) => pauseMut.mutate(i.id, { onError: (e) => toast.error(`${i.name}: ${e.message}`) }));
+    selRunning.forEach((i) => pauseMut.mutate(i.id, { onError: (e) => { console.error(i.name, e); toast.error(shortError(`${i.name}: ${e.message}`)); } }));
     toast.success(`Pausing ${selRunning.length} instance(s)`);
     clearSelection();
   }
   function bulkUnpause() {
-    selPaused.forEach((i) => unpauseMut.mutate(i.id, { onError: (e) => toast.error(`${i.name}: ${e.message}`) }));
+    selPaused.forEach((i) => unpauseMut.mutate(i.id, { onError: (e) => { console.error(i.name, e); toast.error(shortError(`${i.name}: ${e.message}`)); } }));
     toast.success(`Resuming ${selPaused.length} instance(s)`);
     clearSelection();
   }
   function runBulkDestroy() {
-    selectedInstances.forEach((i) => destroyMut.mutate({ id: i.id, removeVolumes: false }, { onError: (e) => toast.error(`${i.name}: ${e.message}`) }));
+    selectedInstances.forEach((i) => destroyMut.mutate({ id: i.id, removeVolumes: false }, { onError: (e) => { console.error(i.name, e); toast.error(shortError(`${i.name}: ${e.message}`)); } }));
     toast.success(`Destroying ${selected.size} instance(s)`);
     clearSelection();
   }
@@ -159,8 +163,9 @@ export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: 
 
   if (isError) {
     return (
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-center text-sm text-destructive">
-        Backend unavailable — retrying...
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center gap-3 py-12 text-center text-sm text-muted-foreground">
+        <span>Backend unavailable — retrying…</span>
+        <Button size="sm" variant="secondary" onClick={() => refetch()}>Retry now</Button>
       </motion.div>
     );
   }
@@ -259,40 +264,40 @@ export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: 
       <AnimatePresence>
         {hasSelection && (
           <motion.div
-            initial={{ y: 60, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 60, opacity: 0 }}
+            initial={reduce ? undefined : { y: 60, opacity: 0 }}
+            animate={reduce ? undefined : { y: 0, opacity: 1 }}
+            exit={reduce ? undefined : { y: 60, opacity: 0 }}
             transition={{ type: "spring", stiffness: 400, damping: 30 }}
             className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 shadow-2xl"
           >
             <span className="text-xs font-medium text-foreground mr-1">{selected.size} selected</span>
 
             {selStopped.length > 0 && (
-              <Button size="sm" variant="secondary" onClick={bulkStart} className="h-7 text-xs gap-1">
+              <Button size="sm" variant="secondary" onClick={bulkStart} disabled={bulkBusy} className="h-7 text-xs gap-1">
                 <Play className="h-3 w-3" /> Start {selStopped.length}
               </Button>
             )}
             {selRunning.length > 0 && (
-              <Button size="sm" variant="secondary" onClick={bulkPause} className="h-7 text-xs gap-1">
+              <Button size="sm" variant="secondary" onClick={bulkPause} disabled={bulkBusy} className="h-7 text-xs gap-1">
                 <Pause className="h-3 w-3" /> Pause {selRunning.length}
               </Button>
             )}
             {selPaused.length > 0 && (
-              <Button size="sm" variant="secondary" onClick={bulkUnpause} className="h-7 text-xs gap-1">
+              <Button size="sm" variant="secondary" onClick={bulkUnpause} disabled={bulkBusy} className="h-7 text-xs gap-1">
                 <Play className="h-3 w-3" /> Resume {selPaused.length}
               </Button>
             )}
             {(selRunning.length + selPaused.length) > 0 && (
-              <Button size="sm" variant="secondary" onClick={bulkStop} className="h-7 text-xs gap-1">
+              <Button size="sm" variant="secondary" onClick={bulkStop} disabled={bulkBusy} className="h-7 text-xs gap-1">
                 <Square className="h-3 w-3" /> Stop {selRunning.length + selPaused.length}
               </Button>
             )}
-            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive h-7 text-xs gap-1" onClick={bulkDestroy}>
+            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive h-7 text-xs gap-1" onClick={bulkDestroy} disabled={bulkBusy}>
               <Trash2 className="h-3 w-3" /> Destroy
             </Button>
 
             <div className="w-px h-5 bg-border mx-1" />
-            <button onClick={clearSelection} className="rounded-md p-1 text-muted-foreground hover:text-foreground transition-colors" title="Clear selection">
+            <button onClick={clearSelection} className="rounded-md p-1 text-muted-foreground hover:text-foreground transition-colors" title="Clear selection" aria-label="Clear selection">
               <X className="h-4 w-4" />
             </button>
           </motion.div>

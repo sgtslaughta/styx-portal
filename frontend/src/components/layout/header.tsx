@@ -19,7 +19,7 @@ function ThemeToggle() {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button onClick={cycle} className="rounded-md p-2 hover:bg-secondary">
+        <button onClick={cycle} className="rounded-md p-2 hover:bg-secondary" aria-label="Toggle theme">
           <Icon className="h-4 w-4" />
         </button>
       </TooltipTrigger>

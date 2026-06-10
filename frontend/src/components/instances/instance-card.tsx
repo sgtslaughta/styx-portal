@@ -5,7 +5,7 @@ import { IconViewport } from "./icon-viewport";
 import { ActionBar } from "@/components/common/action-bar";
 import { formatDuration } from "@/lib/utils";
 import { useInstanceStats } from "@/hooks/use-instances";
-import { fadeSlideIn, hoverLift, spring } from "@/lib/motion";
+import { useFadeSlideIn, hoverLift, spring } from "@/lib/motion";
 import { CHART_COLORS } from "@/lib/chart";
 import type { Instance } from "@/lib/types";
 
@@ -19,6 +19,7 @@ export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
   const isRunning = instance.status === "running" || instance.status === "idle";
 
   const { data: stats } = useInstanceStats(instance.id, isRunning);
+  const variants = useFadeSlideIn();
 
   const uptimeSeconds = instance.started_at && isRunning
     ? (Date.now() - new Date(instance.started_at + "Z").getTime()) / 1000
@@ -30,7 +31,7 @@ export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
   return (
     <motion.div
       layout
-      variants={fadeSlideIn}
+      variants={variants}
       initial="initial"
       animate="animate"
       exit="exit"
@@ -71,9 +72,9 @@ export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
 
         {/* Error message */}
         {instance.status === "error" && instance.error_message && (
-          <div className="rounded-md bg-destructive/10 border border-destructive/20 px-2.5 py-1.5 text-[11px] text-destructive leading-tight break-all">
+          <p className="line-clamp-3 break-all text-xs text-destructive" title={instance.error_message}>
             {instance.error_message}
-          </div>
+          </p>
         )}
 
         {/* Overlaid sparkline — CPU + RAM */}

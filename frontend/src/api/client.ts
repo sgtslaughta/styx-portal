@@ -13,13 +13,13 @@ export type OAuthProviderRow = {
   issuer_url: string | null; client_id: string; scopes: string;
   role_map: Record<string, unknown>; enabled: boolean; has_secret: boolean;
   icon_url: string | null; trust_email: boolean; allow_signup: boolean;
-  redirect_uri: string; test_redirect_uri: string;
+  auto_promote_admins: boolean; redirect_uri: string; test_redirect_uri: string;
 };
 export type OAuthProviderCreate = {
   name: string; display_label: string; kind: string; issuer_url?: string;
   authorize_url?: string; token_url?: string; userinfo_url?: string;
   client_id: string; client_secret: string; scopes?: string; role_map?: Record<string, unknown>;
-  icon_url?: string | null; trust_email?: boolean; allow_signup?: boolean;
+  icon_url?: string | null; trust_email?: boolean; allow_signup?: boolean; auto_promote_admins?: boolean;
 };
 
 export type ProviderTestResult = {
@@ -50,7 +50,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers,
   });
   if (res.status === 401 && !path.startsWith("/auth/")) {
-    window.location.href = "/login";
+    window.location.href = "/login?expired=1";
     throw new Error("Unauthorized");
   }
   if (!res.ok) {
@@ -152,6 +152,7 @@ export const api = {
     request<{ id: string; username: string; role: string }>("/auth/login", {
       method: "POST", body: JSON.stringify(data) }),
   logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
+  refreshSession: () => request<{ ok: boolean }>("/auth/refresh", { method: "POST" }),
   me: () => request<{ id: string; username: string; email: string | null; role: string }>("/auth/me"),
   acceptInvite: (data: { token: string; username: string; password: string }) =>
     request<{ id: string; username: string; role: string }>("/auth/accept-invite", {

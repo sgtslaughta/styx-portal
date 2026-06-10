@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import {
   useInstances,
@@ -163,6 +163,7 @@ function SessionRow({
   const restart = useRestartInstance();
   const pause = usePauseInstance();
   const unpause = useUnpauseInstance();
+  const reduce = useReducedMotion();
   const { data: events } = useSessionEvents(instance.id, expanded);
 
   const isRunning = instance.status === "running" || instance.status === "idle";
@@ -226,9 +227,9 @@ function SessionRow({
       <AnimatePresence>
         {expanded && (
           <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
+            initial={reduce ? undefined : { height: 0, opacity: 0 }}
+            animate={reduce ? undefined : { height: "auto", opacity: 1 }}
+            exit={reduce ? undefined : { height: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >

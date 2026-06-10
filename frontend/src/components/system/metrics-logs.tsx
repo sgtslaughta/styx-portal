@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useInstances } from "@/hooks/use-instances";
 import { useLogs } from "@/hooks/use-system";
@@ -17,6 +17,7 @@ export function MetricsLogs() {
   const [searchQuery, setSearchQuery] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
   const logContainerRef = useRef<HTMLDivElement>(null);
+  const reduce = useReducedMotion();
 
   const { data: logs, refetch } = useLogs(selectedId, liveTail);
 
@@ -153,8 +154,8 @@ export function MetricsLogs() {
         {/* Scroll-to-bottom indicator */}
         {!autoScroll && (
           <motion.button
-            initial={{ opacity: 0, y: 5 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={reduce ? false : { opacity: 0, y: 5 }}
+            animate={reduce ? {} : { opacity: 1, y: 0 }}
             onClick={() => {
               if (logContainerRef.current) {
                 logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;

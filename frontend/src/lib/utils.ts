@@ -27,3 +27,7 @@ export function linuxserverImageName(image: string): string | null {
   const m = image.match(/(?:lscr\.io\/)?linuxserver\/([^:@/]+)/i);
   return m ? m[1]! : null;
 }
+
+export function shortError(msg: string, max = 140): string {
+  return msg.length > max ? msg.slice(0, max - 1) + "…" : msg;
+}
