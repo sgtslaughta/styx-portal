@@ -335,3 +335,27 @@ def test_remove_user_network_tolerates_missing(mock_docker):
 
     client.networks.get.assert_called_once()
     client.networks.create.assert_not_called()
+
+
+def test_ping_returns_true(mock_docker):
+    manager, client = mock_docker
+    client.ping.return_value = True
+    assert manager.ping() is True
+
+
+def test_ping_false_on_error(mock_docker):
+    manager, client = mock_docker
+    client.ping.side_effect = Exception("down")
+    assert manager.ping() is False
+
+
+def test_version_returns_string(mock_docker):
+    manager, client = mock_docker
+    client.version.return_value = {"Version": "29.5.2"}
+    assert manager.version() == "29.5.2"
+
+
+def test_version_none_on_error(mock_docker):
+    manager, client = mock_docker
+    client.version.side_effect = Exception("x")
+    assert manager.version() is None

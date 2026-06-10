@@ -216,3 +216,15 @@ class DockerManager:
             net.remove()
         except docker.errors.APIError:
             pass  # still has containers — leave it
+
+    def ping(self) -> bool:
+        try:
+            return bool(self._client.ping())
+        except Exception:
+            return False
+
+    def version(self) -> str | None:
+        try:
+            return self._client.version().get("Version")
+        except Exception:
+            return None
