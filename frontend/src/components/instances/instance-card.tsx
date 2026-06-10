@@ -4,7 +4,7 @@ import { OverlaySparkline } from "./sparkline";
 import { IconViewport } from "./icon-viewport";
 import { ActionBar } from "@/components/common/action-bar";
 import { formatDuration } from "@/lib/utils";
-import { useInstanceStats } from "@/hooks/use-instances";
+import { useInstanceStats, useInstanceStatus } from "@/hooks/use-instances";
 import { useFadeSlideIn, hoverLift, spring } from "@/lib/motion";
 import { CHART_COLORS } from "@/lib/chart";
 import type { Instance } from "@/lib/types";
@@ -17,8 +17,10 @@ interface InstanceCardProps {
 
 export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
   const isRunning = instance.status === "running" || instance.status === "idle";
+  const isPulling = instance.status === "pulling" || instance.status === "starting";
 
   const { data: stats } = useInstanceStats(instance.id, isRunning);
+  const { data: status } = useInstanceStatus(instance.id, isPulling);
   const variants = useFadeSlideIn();
 
   const uptimeSeconds = instance.started_at && isRunning
@@ -75,6 +77,19 @@ export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
           <p className="line-clamp-3 break-all text-xs text-destructive" title={instance.error_message}>
             {instance.error_message}
           </p>
+        )}
+
+        {/* Image pull progress bar */}
+        {status?.pull_percent != null && (
+          <div className="space-y-1">
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>{status.pull_detail ?? "Pulling image"}</span>
+              <span>{status.pull_percent}%</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div className="h-full bg-primary transition-all" style={{ width: `${status.pull_percent}%` }} />
+            </div>
+          </div>
         )}
 
         {/* Overlaid sparkline — CPU + RAM */}
