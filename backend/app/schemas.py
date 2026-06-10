@@ -134,6 +134,7 @@ class ProviderCreate(BaseModel):
     icon_url: str | None = None
     trust_email: bool = False
     allow_signup: bool = False
+    auto_promote_admins: bool = True
 
 
 class ProviderUpdate(BaseModel):
@@ -150,6 +151,7 @@ class ProviderUpdate(BaseModel):
     icon_url: str | None = None
     trust_email: bool | None = None
     allow_signup: bool | None = None
+    auto_promote_admins: bool | None = None
 
 
 class ProviderOut(BaseModel):
@@ -166,6 +168,7 @@ class ProviderOut(BaseModel):
     icon_url: str | None
     trust_email: bool
     allow_signup: bool
+    auto_promote_admins: bool
     redirect_uri: str                         # register this in the IdP (login flow)
     test_redirect_uri: str                    # register this too to use "Test login"
 
