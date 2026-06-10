@@ -152,6 +152,7 @@ export const api = {
     request<{ id: string; username: string; role: string }>("/auth/login", {
       method: "POST", body: JSON.stringify(data) }),
   logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
+  refreshSession: () => request<{ ok: boolean }>("/auth/refresh", { method: "POST" }),
   me: () => request<{ id: string; username: string; email: string | null; role: string }>("/auth/me"),
   acceptInvite: (data: { token: string; username: string; password: string }) =>
     request<{ id: string; username: string; role: string }>("/auth/accept-invite", {
