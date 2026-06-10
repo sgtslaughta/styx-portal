@@ -95,12 +95,28 @@ services:
     networks:
       - styx-portal
 
+  # Runs as root before the backend to fix volume ownership. Named Docker volumes
+  # are created root-owned; the non-root backend (uid 1000) cannot write them on
+  # upgrade from a pre-1000 image (symptom: "attempt to write a readonly database"
+  # on the first migration). Idempotent — safe on every start, fresh or upgrade.
+  volume-init:
+    image: busybox:1.36
+    command: sh -c "chown -R 1000:1000 /app/data /app/traefik-dynamic"
+    user: "0:0"
+    restart: "no"
+    volumes:
+      - db-data:/app/data
+      - screenshots:/app/data/screenshots
+      - traefik-dynamic:/app/traefik-dynamic
+
   backend:
     build: ./backend
     restart: unless-stopped
     depends_on:
       docker-proxy:
         condition: service_healthy
+      volume-init:
+        condition: service_completed_successfully
     environment:
       - DOMAIN=${DOMAIN}
       - DATABASE_URL=sqlite+aiosqlite:///./data/styx-portal.db
