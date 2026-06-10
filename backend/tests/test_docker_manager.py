@@ -371,3 +371,23 @@ def test_pull_streaming_parses_tag_and_registry_port(mock_docker):
     manager.pull_image_streaming("registry:5000/img")  # port, no tag
     assert client.api.pull.call_args.args[0] == "registry:5000/img"
     assert client.api.pull.call_args.kwargs["tag"] == "latest"
+
+def test_create_container_removes_stale_same_name(mock_docker):
+    manager, client = mock_docker
+    client.images.get.return_value = object()  # image present, no pull
+    stale = MagicMock()
+    client.containers.get.return_value = stale  # a same-named orphan exists
+    manager.create_container(name="selkies-chrome", image="img", labels={},
+                             environment={}, volumes={}, port=3001)
+    stale.remove.assert_called_once_with(force=True)
+    client.containers.create.assert_called_once()
+
+
+def test_create_container_no_stale_is_fine(mock_docker):
+    import docker.errors
+    manager, client = mock_docker
+    client.images.get.return_value = object()
+    client.containers.get.side_effect = docker.errors.NotFound("x")  # none exists
+    manager.create_container(name="selkies-new", image="img", labels={},
+                             environment={}, volumes={}, port=3001)
+    client.containers.create.assert_called_once()

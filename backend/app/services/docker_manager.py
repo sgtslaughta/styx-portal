@@ -116,6 +116,15 @@ class DockerManager:
                 raise
             self._client.images.pull(image)
 
+        # The name is deterministic + unique per instance (selkies-<subdomain>),
+        # so a pre-existing container with this name is always a stale orphan of
+        # this same instance (e.g. left by a crash before container_id was saved).
+        # Remove it so launch/recreate is idempotent instead of 409-conflicting.
+        try:
+            self._client.containers.get(name).remove(force=True)
+        except docker.errors.NotFound:
+            pass
+
         container = self._client.containers.create(**kwargs)
         return container.id
 
