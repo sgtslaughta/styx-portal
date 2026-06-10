@@ -1,6 +1,8 @@
 import json
 import logging
 import os
+import stat
+from pathlib import Path
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlmodel import SQLModel, select
@@ -19,10 +21,21 @@ engine = create_async_engine(
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
+def _restrict_db_perms():
+    """Restrict SQLite database file permissions to 0600 (owner read/write only)."""
+    url = settings.DATABASE_URL
+    if "sqlite" not in url:
+        return
+    path = Path(url.split("///")[-1])
+    if path.exists():
+        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)  # 0600
+
+
 async def init_db():
     async with engine.begin() as conn:
         await _run_migrations(conn)
         await conn.run_sync(SQLModel.metadata.create_all)
+    _restrict_db_perms()
     async with async_session() as session:
         await seed_templates(session, settings.TEMPLATES_DIR)
 

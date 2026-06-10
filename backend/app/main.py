@@ -220,9 +220,13 @@ app.add_middleware(
     auth_spec=_settings.RATE_LIMIT_AUTH,
     default_spec=_settings.RATE_LIMIT_DEFAULT,
 )
+_cors_origins = [f"https://{_settings.DOMAIN}"]
+if not _settings.COOKIE_SECURE:
+    _cors_origins.append("http://localhost:5173")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", f"https://{_settings.DOMAIN}"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "X-CSRF-Token"],
