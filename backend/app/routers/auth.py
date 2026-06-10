@@ -1,5 +1,7 @@
+import asyncio
 import hashlib
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
@@ -82,6 +84,34 @@ async def csrf_bootstrap(response: Response):
 @router.get("/setup-required")
 async def setup_required(session: AsyncSession = Depends(get_session)):
     return {"setup_required": not await users_exist(session)}
+
+
+@router.get("/setup-preflight")
+async def setup_preflight(session: AsyncSession = Depends(get_session)):
+    # Only meaningful during genuine first-run; hide once an admin exists so infra
+    # status is never exposed post-setup without auth.
+    if await users_exist(session):
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    from app.services.docker_manager import DockerManager
+    docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
+    reachable = await asyncio.to_thread(docker.ping)
+    data_dir = Path(_settings.SCREENSHOT_CACHE_DIR).parent  # /app/data
+    try:
+        probe = data_dir / ".preflight"
+        probe.write_text("x")
+        probe.unlink()
+        writable = True
+    except Exception:  # noqa: BLE001
+        writable = False
+    return {
+        "docker": {
+            "ok": reachable,
+            "detail": "reachable" if reachable else "not reachable — is docker-proxy running?",
+        },
+        "deploy_mode": _settings.DEPLOY_MODE,
+        "domain_set": bool(_settings.DOMAIN) and _settings.DOMAIN != "localhost",
+        "data_writable": writable,
+    }
 
 
 @router.post("/setup", response_model=UserOut, status_code=201)
