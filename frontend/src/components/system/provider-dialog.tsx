@@ -6,6 +6,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import {
   api, type OAuthProviderRow, type OAuthProviderCreate, type ProviderTestResult,
 } from "@/api/client";
@@ -205,8 +206,7 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
             label="Client secret"
             hint={editing ? "Leave blank to keep the current secret." : undefined}
           >
-            <Input
-              type="password"
+            <PasswordInput
               value={form.client_secret}
               onChange={set("client_secret")}
               placeholder={editing ? "•••• unchanged" : ""}
