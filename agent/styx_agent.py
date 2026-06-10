@@ -108,14 +108,18 @@ def build_selkies_cmd(cfg: dict, display: str) -> tuple[list[str], dict]:
     env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
     env.setdefault("PULSE_SERVER", f"unix:{env['XDG_RUNTIME_DIR']}/pulse/native")
     env["SELKIES_ENCODER"] = encoder  # belt-and-suspenders; the flag is authoritative
+    # Credentials go through the environment, NOT argv — argv is world-readable
+    # via /proc/<pid>/cmdline. These SELKIES_BASIC_AUTH_* names are the same
+    # ones the upstream container entrypoints use.
+    env["SELKIES_ENABLE_BASIC_AUTH"] = "true"
+    env["SELKIES_BASIC_AUTH_USER"] = cfg["selkies_user"]
+    env["SELKIES_BASIC_AUTH_PASSWORD"] = cfg["selkies_password"]
     launcher = Path(cfg["selkies_dir"]) / "selkies-gstreamer-run"
     cmd = [
         str(launcher),
         "--addr=0.0.0.0",
         f"--port={cfg['port']}",
         f"--encoder={encoder}",
-        f"--basic_auth_user={cfg['selkies_user']}",
-        f"--basic_auth_password={cfg['selkies_password']}",
     ]
     return cmd, env
 

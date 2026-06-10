@@ -38,8 +38,10 @@ def test_build_selkies_cmd_uses_cli_flags(tmp_path):
     assert "--addr=0.0.0.0" in cmd
     assert "--port=8443" in cmd
     assert "--encoder=x264enc" in cmd
-    assert "--basic_auth_user=styx" in cmd
-    assert "--basic_auth_password=pw" in cmd
+    # secret must travel via env, never argv (/proc/<pid>/cmdline is readable)
+    assert not any("pw" in a for a in cmd)
+    assert env["SELKIES_BASIC_AUTH_USER"] == "styx"
+    assert env["SELKIES_BASIC_AUTH_PASSWORD"] == "pw"
     assert env["DISPLAY"] == ":0"
     assert "PULSE_SERVER" in env
 
