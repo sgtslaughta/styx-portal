@@ -253,7 +253,7 @@ class WorkstationRegisterRequest(BaseModel):
     token: str
     hostname: str = Field(min_length=1, max_length=255)
     lan_ip: str = Field(min_length=1, max_length=64)
-    display_server: str = "x11"           # x11 | wayland
+    display_server: str = "virtual"       # virtual (own desktop) | x11 | wayland
     gpu_info: dict[str, Any] = {}
     os_info: dict[str, Any] = {}
     agent_version: str = ""
@@ -271,8 +271,8 @@ class WorkstationRegisterRequest(BaseModel):
     @field_validator("display_server")
     @classmethod
     def _valid_display(cls, v: str) -> str:
-        if v not in ("x11", "wayland"):
-            raise ValueError("display_server must be 'x11' or 'wayland'")
+        if v not in ("virtual", "x11", "wayland"):
+            raise ValueError("display_server must be 'virtual', 'x11', or 'wayland'")
         return v
 
 
