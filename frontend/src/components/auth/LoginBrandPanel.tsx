@@ -1,5 +1,7 @@
 import { Waves } from "lucide-react";
 
+import { RippleCanvas } from "./RippleCanvas";
+
 /**
  * Always-dark animated brand panel for the login split layout.
  * Visual only — no props, no logic. Theme-independent by design.
@@ -7,6 +9,7 @@ import { Waves } from "lucide-react";
 export function LoginBrandPanel() {
   return (
     <div className="styx-brand hidden md:flex flex-col justify-between p-10">
+      <RippleCanvas />
       <div className="flex items-center gap-2">
         <Waves className="h-6 w-6 text-sky-400" />
         <span className="text-lg font-extrabold tracking-wider">STYX PORTAL</span>
