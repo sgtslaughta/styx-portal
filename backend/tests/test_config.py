@@ -112,3 +112,23 @@ def test_rejects_placeholder_secret(tmp_path, placeholder):
 def test_no_dev_fallback_secret(tmp_path):
     s = _settings(tmp_path, JWT_SECRET="", COOKIE_SECURE=False)
     assert s.jwt_secret_or_raise() != "dev-insecure-secret-do-not-use-in-prod"
+
+
+def test_corrupt_secrets_file_regenerates(tmp_path):
+    """Test that corrupt JSON in secrets.json is detected and regenerated."""
+    p = tmp_path / "secrets.json"
+    p.write_text("{not json")
+    s = _settings(tmp_path, JWT_SECRET="")
+    secret = s.jwt_secret_or_raise()
+    assert len(secret) >= 32
+    assert json.loads(p.read_text())["jwt_secret"] == secret
+
+
+def test_short_persisted_secret_regenerates(tmp_path):
+    """Test that persisted secret under 32 chars triggers regeneration."""
+    p = tmp_path / "secrets.json"
+    p.write_text(json.dumps({"jwt_secret": "tiny"}))
+    s = _settings(tmp_path, JWT_SECRET="")
+    secret = s.jwt_secret_or_raise()
+    assert len(secret) >= 32
+    assert json.loads(p.read_text())["jwt_secret"] == secret

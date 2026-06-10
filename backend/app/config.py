@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import secrets as _secrets
 from pathlib import Path
 
@@ -53,17 +54,23 @@ class Settings(BaseSettings):
 
     def _load_or_create_secret(self) -> str:
         path = Path(self.SECRETS_FILE)
+        data: dict = {}
         if path.exists():
-            data = json.loads(path.read_text())
-            if data.get("jwt_secret"):
-                return data["jwt_secret"]
-        else:
-            data = {}
+            try:
+                data = json.loads(path.read_text())
+            except (json.JSONDecodeError, OSError):
+                logger.warning("Secrets file %s unreadable/corrupt — regenerating", path)
+                data = {}
+            secret = data.get("jwt_secret")
+            if isinstance(secret, str) and len(secret) >= 32:
+                return secret
         secret = _secrets.token_urlsafe(48)
         data["jwt_secret"] = secret
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2))
-        path.chmod(0o600)
+        fd = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(json.dumps(data, indent=2))
+        path.chmod(0o600)  # belt-and-suspenders if file pre-existed with wider mode
         logger.warning(
             "JWT_SECRET not set — generated one and saved to %s. "
             "Back this file up; losing it logs everyone out and invalidates "
