@@ -80,8 +80,10 @@ async def _session_monitor_loop():
         try:
             async with async_session() as session:
                 changed = await _run_monitor_pass(session, monitor, docker)
+                from app.services.workstations import mark_stale_offline
+                ws_changed = await mark_stale_offline(session)
                 await session.commit()
-                if changed:
+                if changed or ws_changed:
                     await refresh_routes_from_db(session)
         except Exception:
             pass

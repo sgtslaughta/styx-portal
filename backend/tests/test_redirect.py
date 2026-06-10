@@ -38,7 +38,7 @@ async def test_refresh_routes_from_db_only_running(session, monkeypatch):
     captured = {}
     monkeypatch.setattr(
         "app.services.route_writer.write_routes",
-        lambda data, domain=None: captured.setdefault("data", data),
+        lambda data, domain=None, workstations=None: captured.setdefault("data", data),
     )
     t = await _make_template(session)
     session.add(Instance(template_id=t.id, name="a", subdomain="a", status="running", container_id="c-a"))
