@@ -1,6 +1,7 @@
 """Helpers for physical-workstation enrollment and lifecycle."""
 import hashlib
 import re
+import socket
 from datetime import datetime, timedelta, timezone
 
 from sqlmodel import select
@@ -18,8 +19,42 @@ def sha256_hex(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def build_enroll_command(raw_token: str) -> str:
-    base = _settings.server_lan_url()
+def detect_lan_ip() -> str | None:
+    """Best-effort local IP via the UDP routing trick (no packet is sent).
+
+    On a host-network or bare-metal deployment this is the host's LAN IP.
+    Inside a bridge-network container it yields the container IP, which is
+    not reachable from the LAN — set SERVER_LAN_URL to override in that case.
+    """
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+        finally:
+            s.close()
+    except OSError:
+        return None
+    return None if ip.startswith("127.") else ip
+
+
+def lan_enroll_url() -> tuple[str | None, str]:
+    """Return (base_url, source) for LAN enrollment.
+
+    source: "env" (SERVER_LAN_URL set), "detected" (auto-detected IP),
+    or "none" (no LAN URL available — public command only).
+    """
+    if _settings.SERVER_LAN_URL:
+        return _settings.SERVER_LAN_URL.rstrip("/"), "env"
+    ip = detect_lan_ip()
+    if ip:
+        # direct mode terminates TLS on :443; tunnel mode only listens on :80
+        scheme = "https" if _settings.DEPLOY_MODE == "direct" else "http"
+        return f"{scheme}://{ip}", "detected"
+    return None, "none"
+
+
+def build_enroll_command(raw_token: str, base: str) -> str:
     cmd = (f"curl -fsSL {base}{ENROLL_SCRIPT_PATH} | bash -s -- "
            f"--token {raw_token} --server {base}")
     if _settings.SERVER_CA_PIN:

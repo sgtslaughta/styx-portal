@@ -16,7 +16,11 @@ export type Workstation = {
   all_users: boolean; last_heartbeat: string | null; last_error: string | null;
   created_at: string; allowed_user_ids: string[];
 };
-export type EnrollToken = { token: string; expires_at: string; command: string };
+export type EnrollToken = {
+  token: string; expires_at: string;
+  lan_command: string | null; public_command: string;
+  lan_url_source: "env" | "detected" | "none";
+};
 
 export type OAuthProviderRow = {
   id: string; name: string; display_label: string; kind: string;

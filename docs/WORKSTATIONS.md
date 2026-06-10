@@ -64,7 +64,7 @@ All settings are environment variables or `.env` file entries on the **server**.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `SERVER_LAN_URL` | `""` (falls back to `https://{DOMAIN}`) | Local LAN address used in the enrollment one-liner. Example: `https://192.168.1.10` or `https://portal.local`. Workstations must reach this address. |
+| `SERVER_LAN_URL` | `""` (auto-detects the server's local IP) | Local LAN address used in the enrollment one-liner. Example: `https://192.168.1.10` or `https://portal.local`. Workstations must reach this address. When unset, the portal auto-detects its local IP (`http://<ip>` in tunnel mode, `https://<ip>` in direct mode) — inside a bridge-network container this detects the container IP, which is usually wrong, so set this explicitly in Docker deployments. The enroll dialog always also shows a public-URL command (`https://{DOMAIN}`) for machines outside the LAN; note streaming still requires the server to reach the workstation's IP. |
 | `SERVER_CA_PIN` | `""` | Optional TLS certificate fingerprint for self-signed LAN certs. Format: `sha256:<hex>`. If set, enrollment verifies the portal's cert matches the pin before fetching anything. |
 | `SELKIES_TARBALL_URL` | `https://github.com/selkies-project/selkies-gstreamer/releases/download/v1.6.2/selkies-gstreamer-portable-v1.6.2_amd64.tar.gz` | Public URL to the Selkies portable tarball. The server downloads and caches it; workstations fetch from the server, not directly from GitHub. |
 | `ARTIFACT_CACHE_DIR` | `/app/data/artifacts` | Server-side cache directory for the Selkies tarball. Pre-place `selkies.tar.gz` here for air-gapped deployments. |

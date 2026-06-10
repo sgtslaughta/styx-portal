@@ -244,7 +244,9 @@ class WorkstationOut(BaseModel):
 class EnrollTokenOut(BaseModel):
     token: str
     expires_at: str
-    command: str
+    lan_command: str | None        # None when no LAN URL configured or detected
+    public_command: str
+    lan_url_source: str            # env | detected | none
 
 
 class WorkstationRegisterRequest(BaseModel):

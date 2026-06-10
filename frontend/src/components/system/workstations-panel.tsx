@@ -17,7 +17,7 @@ export function WorkstationsPanel() {
   const [users, setUsers] = useState<{ id: string; username: string }[]>([]);
   const [enroll, setEnroll] = useState<EnrollToken | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<"lan" | "public" | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<Workstation | null>(null);
   const [purgeTarget, setPurgeTarget] = useState<Workstation | null>(null);
 
@@ -37,10 +37,10 @@ export function WorkstationsPanel() {
     try { setEnroll(await api.mintEnrollToken()); }
     catch (e) { setError(String(e)); }
   };
-  const copy = async (text: string) => {
+  const copy = async (text: string, which: "lan" | "public") => {
     await navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    setCopied(which);
+    setTimeout(() => setCopied(null), 1500);
   };
   const toggleAllUsers = (ws: Workstation) =>
     api.updateWorkstation(ws.id, { all_users: !ws.all_users }).then(refresh);
@@ -99,21 +99,54 @@ export function WorkstationsPanel() {
           {error && <p className="text-sm text-rose-400">{error}</p>}
 
           {enroll && (
-            <div className="rounded-lg border border-border bg-surface p-4 space-y-2">
+            <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
               <p className="text-sm">Run this on the workstation (token valid until{" "}
                 {new Date(enroll.expires_at).toLocaleString()}, single use):</p>
-              <div className="flex items-start gap-2">
-                <code className="flex-1 break-all rounded bg-muted px-2 py-1 text-xs">
-                  {enroll.command}
-                </code>
-                <Button
-                  onClick={() => copy(enroll.command)}
-                  variant="secondary"
-                  size="sm"
-                  title="Copy to clipboard"
-                >
-                  <Copy className="h-4 w-4" /> {copied ? "Copied" : "Copy"}
-                </Button>
+              {enroll.lan_command ? (
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Same network (LAN)
+                    {enroll.lan_url_source === "detected" &&
+                      " — auto-detected IP; set SERVER_LAN_URL to override"}
+                  </p>
+                  <div className="flex items-start gap-2">
+                    <code className="flex-1 break-all rounded bg-muted px-2 py-1 text-xs">
+                      {enroll.lan_command}
+                    </code>
+                    <Button
+                      onClick={() => copy(enroll.lan_command!, "lan")}
+                      variant="secondary"
+                      size="sm"
+                      title="Copy to clipboard"
+                    >
+                      <Copy className="h-4 w-4" /> {copied === "lan" ? "Copied" : "Copy"}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-amber-400">
+                  No LAN address available — set SERVER_LAN_URL on the server for
+                  LAN enrollment.
+                </p>
+              )}
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Outside the LAN (public URL) — note: streaming still requires the
+                  server to reach the workstation&apos;s IP
+                </p>
+                <div className="flex items-start gap-2">
+                  <code className="flex-1 break-all rounded bg-muted px-2 py-1 text-xs">
+                    {enroll.public_command}
+                  </code>
+                  <Button
+                    onClick={() => copy(enroll.public_command, "public")}
+                    variant="secondary"
+                    size="sm"
+                    title="Copy to clipboard"
+                  >
+                    <Copy className="h-4 w-4" /> {copied === "public" ? "Copied" : "Copy"}
+                  </Button>
+                </div>
               </div>
             </div>
           )}

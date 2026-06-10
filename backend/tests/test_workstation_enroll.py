@@ -15,17 +15,46 @@ async def test_mint_enroll_token_admin_only(client):
 
 
 @pytest.mark.asyncio
-async def test_mint_enroll_token(admin_client, session):
+async def test_mint_enroll_token(admin_client, session, monkeypatch):
+    from app.services import workstations as ws_svc
+    monkeypatch.setattr(ws_svc._settings, "SERVER_LAN_URL", "https://192.168.1.10")
     r = await admin_client.post("/api/workstations/enroll-tokens")
     assert r.status_code == 201
     body = r.json()
     assert len(body["token"]) > 30
-    assert "curl -fsSL" in body["command"]
-    assert "--token " + body["token"] in body["command"]
-    assert "/api/enroll/script" in body["command"]
+    assert body["lan_url_source"] == "env"
+    assert "curl -fsSL" in body["lan_command"]
+    assert "--token " + body["token"] in body["lan_command"]
+    assert "--server https://192.168.1.10" in body["lan_command"]
+    assert "/api/enroll/script" in body["lan_command"]
+    assert "--server https://localhost" in body["public_command"]
     rows = (await session.exec(select(WorkstationEnrollmentToken))).all()
     assert len(rows) == 1
     assert rows[0].token_hash != body["token"]  # stored hashed
+
+
+@pytest.mark.asyncio
+async def test_mint_enroll_token_detected_lan_ip(admin_client, monkeypatch):
+    from app.services import workstations as ws_svc
+    monkeypatch.setattr(ws_svc._settings, "SERVER_LAN_URL", "")
+    monkeypatch.setattr(ws_svc, "detect_lan_ip", lambda: "10.0.0.5")
+    r = await admin_client.post("/api/workstations/enroll-tokens")
+    body = r.json()
+    assert body["lan_url_source"] == "detected"
+    # default DEPLOY_MODE=tunnel → plain http on the LAN entrypoint
+    assert "--server http://10.0.0.5" in body["lan_command"]
+
+
+@pytest.mark.asyncio
+async def test_mint_enroll_token_no_lan_detection(admin_client, monkeypatch):
+    from app.services import workstations as ws_svc
+    monkeypatch.setattr(ws_svc._settings, "SERVER_LAN_URL", "")
+    monkeypatch.setattr(ws_svc, "detect_lan_ip", lambda: None)
+    r = await admin_client.post("/api/workstations/enroll-tokens")
+    body = r.json()
+    assert body["lan_url_source"] == "none"
+    assert body["lan_command"] is None
+    assert "--server https://localhost" in body["public_command"]
 
 
 async def _mint(session, admin_id: str, *, expired=False, used=False) -> str:

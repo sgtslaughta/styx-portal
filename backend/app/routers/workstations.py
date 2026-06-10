@@ -15,7 +15,9 @@ from app.schemas import (
 )
 from app.security.deps import require_admin, get_current_user
 from app.services.audit import audit_request
-from app.services.workstations import build_enroll_command, sha256_hex
+from app.services.workstations import (
+    build_enroll_command, lan_enroll_url, sha256_hex,
+)
 
 router = APIRouter()
 _settings = Settings()
@@ -33,8 +35,13 @@ async def mint_enroll_token(request: Request,
     await audit_request(session, request, "workstation.enroll_token_create",
                         user_id=admin.id)
     await session.commit()
-    return EnrollTokenOut(token=raw, expires_at=expires.isoformat(),
-                          command=build_enroll_command(raw))
+    lan_base, lan_source = lan_enroll_url()
+    public_base = f"https://{_settings.DOMAIN}"
+    return EnrollTokenOut(
+        token=raw, expires_at=expires.isoformat(),
+        lan_command=build_enroll_command(raw, lan_base) if lan_base else None,
+        public_command=build_enroll_command(raw, public_base),
+        lan_url_source=lan_source)
 
 
 def _out(ws: Workstation, allowed: list[str]) -> WorkstationOut:
