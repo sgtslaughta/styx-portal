@@ -64,3 +64,38 @@ async def test_deregister_deletes_row(client, session):
     r = await client.post("/api/agent/deregister", json={}, headers=_auth())
     assert r.status_code == 200
     assert (await session.get(Workstation, ws.id)) is None
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_rejects_invalid_lan_ip(client, session):
+    await _make_ws(session)
+    # Test invalid IP with port and path
+    r = await client.post("/api/agent/heartbeat",
+                          json={"status": "online", "lan_ip": "192.168.1.50:9999/evil"},
+                          headers=_auth())
+    assert r.status_code == 422
+    # Test other invalid format
+    r = await client.post("/api/agent/heartbeat",
+                          json={"status": "online", "lan_ip": "not-an-ip"},
+                          headers=_auth())
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_accepts_valid_lan_ip_and_none(client, session):
+    await _make_ws(session)
+    # Test valid IP
+    r = await client.post("/api/agent/heartbeat",
+                          json={"status": "online", "lan_ip": "192.168.1.99"},
+                          headers=_auth())
+    assert r.status_code == 200
+    # Test None (optional field)
+    r = await client.post("/api/agent/heartbeat",
+                          json={"status": "online"},
+                          headers=_auth())
+    assert r.status_code == 200
+    # Test IPv6
+    r = await client.post("/api/agent/heartbeat",
+                          json={"status": "online", "lan_ip": "2001:db8::1"},
+                          headers=_auth())
+    assert r.status_code == 200

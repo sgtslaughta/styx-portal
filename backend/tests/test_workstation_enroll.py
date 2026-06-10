@@ -100,3 +100,31 @@ async def test_agent_py_served(client):
     r = await client.get("/api/enroll/agent.py")
     assert r.status_code == 200
     assert "def main" in r.text
+
+
+@pytest.mark.asyncio
+async def test_register_rejects_invalid_lan_ip(client, admin_client, session):
+    raw = await _mint(session, await _admin_id(session))
+    # Test invalid IP with port and path (route injection attempt)
+    r = await client.post("/api/enroll/register", json={
+        "token": raw, "hostname": "desk", "lan_ip": "192.168.1.50:9999/evil"})
+    assert r.status_code == 422
+    # Test other invalid formats
+    r = await client.post("/api/enroll/register", json={
+        "token": raw, "hostname": "desk", "lan_ip": "not-an-ip"})
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_register_accepts_valid_ipv4_and_ipv6(client, admin_client, session):
+    aid = await _admin_id(session)
+    # Test IPv4
+    raw = await _mint(session, aid)
+    r = await client.post("/api/enroll/register", json={
+        "token": raw, "hostname": "desk-ipv4", "lan_ip": "192.168.1.50"})
+    assert r.status_code == 201
+    # Test IPv6
+    raw = await _mint(session, aid)
+    r = await client.post("/api/enroll/register", json={
+        "token": raw, "hostname": "desk-ipv6", "lan_ip": "::1"})
+    assert r.status_code == 201

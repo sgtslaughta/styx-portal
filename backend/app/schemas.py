@@ -1,4 +1,5 @@
 import re
+import ipaddress
 from dataclasses import dataclass
 from typing import Any
 from pydantic import BaseModel, Field, field_validator
@@ -256,6 +257,15 @@ class WorkstationRegisterRequest(BaseModel):
     agent_version: str = ""
     port: int | None = None
 
+    @field_validator("lan_ip")
+    @classmethod
+    def _valid_lan_ip(cls, v: str) -> str:
+        try:
+            ipaddress.ip_address(v)
+        except ValueError:
+            raise ValueError("lan_ip must be a valid IPv4 or IPv6 address")
+        return v
+
     @field_validator("display_server")
     @classmethod
     def _valid_display(cls, v: str) -> str:
@@ -280,6 +290,17 @@ class WorkstationHeartbeatRequest(BaseModel):
     lan_ip: str | None = None
     last_error: str | None = None
     health: dict[str, Any] = {}
+
+    @field_validator("lan_ip")
+    @classmethod
+    def _valid_lan_ip(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        try:
+            ipaddress.ip_address(v)
+        except ValueError:
+            raise ValueError("lan_ip must be a valid IPv4 or IPv6 address")
+        return v
 
 
 class WorkstationHeartbeatResponse(BaseModel):
