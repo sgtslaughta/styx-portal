@@ -16,7 +16,7 @@ const MAX_ICON_BYTES = 200 * 1024;
 const EMPTY: OAuthProviderCreate = {
   name: "", display_label: "", kind: "oidc", issuer_url: "",
   client_id: "", client_secret: "", scopes: "openid email profile",
-  icon_url: null, trust_email: false, allow_signup: false,
+  icon_url: null, trust_email: false, allow_signup: false, auto_promote_admins: true,
 };
 
 type RoleMap = { claim?: string; user_group?: string; admin_group?: string };
@@ -54,6 +54,7 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
         icon_url: editing.icon_url,
         trust_email: editing.trust_email,
         allow_signup: editing.allow_signup,
+        auto_promote_admins: editing.auto_promote_admins,
       });
       const rm = (editing.role_map ?? {}) as RoleMap;
       setGroupsClaim(rm.claim || "groups");
@@ -107,6 +108,7 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
           icon_url: form.icon_url,
           trust_email: form.trust_email,
           allow_signup: form.allow_signup,
+          auto_promote_admins: form.auto_promote_admins,
           role_map: buildRoleMap(),
           authorize_url: form.authorize_url,
           token_url: form.token_url,
@@ -341,6 +343,19 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
               Role mapping
             </summary>
             <div className="space-y-3 px-3 pb-3">
+              <label className="flex items-start gap-2 text-sm">
+                <input type="checkbox" className="mt-0.5"
+                  checked={form.auto_promote_admins ?? true}
+                  onChange={(e) => setForm((f) => ({ ...f, auto_promote_admins: e.target.checked }))} />
+                <span>
+                  Auto-promote admins from the identity provider
+                  <span className="block text-xs text-muted-foreground">
+                    When on, a user whose groups claim contains the admin group below becomes an
+                    admin automatically. Turn off to require manual promotion.
+                  </span>
+                </span>
+              </label>
+
               <div className="grid grid-cols-3 gap-2">
                 <Field label="Groups claim" hint="Userinfo claim holding the user's groups.">
                   <Input
@@ -364,8 +379,13 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
                   />
                 </Field>
               </div>
+
+              <p className="text-xs text-muted-foreground">
+                If a user's <code>{groupsClaim || "groups"}</code> claim contains
+                "{adminGroup || "<admin group>"}", they'll be made an admin.
+              </p>
               <p className="text-[11px] text-muted-foreground">
-                Admin group → admin. With a user group set, only its members may sign up; leave it
+                With a user group set, only its members may sign up; leave it
                 blank to allow anyone the provider authenticates. Group mapping also applies to
                 invited users.
               </p>
@@ -461,19 +481,24 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
           )}
 
           {probe && (
-            <div className="rounded-md border border-border p-3 text-xs">
-              <div
-                className={
-                  probe.would_pass ? "text-success font-medium" : "text-destructive font-medium"
-                }
-              >
-                {probe.would_pass
-                  ? "✓ A real login would succeed"
-                  : "✗ A real login would be rejected"}
+            <div className="mt-2 space-y-1 rounded-md border border-border p-3 text-xs">
+              <div className={probe.would_pass ? "font-medium text-success" : "font-medium text-destructive"}>
+                {probe.would_pass ? "✓ A real login would succeed" : "✗ A real login would be rejected"}
               </div>
-              <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap text-[10px] text-muted-foreground font-mono">
-                {JSON.stringify(probe, null, 2)}
-              </pre>
+              {typeof probe.email === "string" && (
+                <div className="text-muted-foreground">
+                  Email: {probe.email}{probe.email_verified ? " (verified)" : " (unverified)"}
+                </div>
+              )}
+              {!probe.would_pass && !probe.email && (
+                <div className="text-muted-foreground">No email returned by the provider.</div>
+              )}
+              <details className="mt-1">
+                <summary className="cursor-pointer select-none text-muted-foreground">Raw response</summary>
+                <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap text-[10px] text-muted-foreground font-mono">
+                  {JSON.stringify(probe, null, 2)}
+                </pre>
+              </details>
             </div>
           )}
         </div>
