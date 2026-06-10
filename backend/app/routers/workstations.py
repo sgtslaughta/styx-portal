@@ -1,3 +1,4 @@
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -12,10 +13,9 @@ from app.schemas import (
     EnrollTokenOut, WorkstationAccessUpdate, WorkstationConnectOut, WorkstationOut,
     WorkstationUpdate,
 )
-from app.security.crypto import decrypt_secret
 from app.security.deps import require_admin, get_current_user
 from app.services.audit import audit_request
-from app.services.workstations import build_enroll_command, sha256_hex, SELKIES_USER
+from app.services.workstations import build_enroll_command, sha256_hex
 
 router = APIRouter()
 _settings = Settings()
@@ -69,6 +69,36 @@ async def list_workstations(admin: User = Depends(require_admin),
     return [_out(ws, await _allowed_ids(session, ws.id)) for ws in rows]
 
 
+@router.get("/auth-check")
+async def auth_check(request: Request,
+                     session: AsyncSession = Depends(get_session)):
+    """Traefik forwardAuth target gating /w/ stream routes. 200 = allow."""
+    from app.security import tokens as _tokens
+    raw = request.cookies.get("access_token")
+    if not raw:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated")
+    try:
+        claims = _tokens.decode_token(raw)
+    except _tokens.TokenError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token")
+    user = await session.get(User, claims.get("sub"))
+    if not user or not user.is_active:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User inactive")
+    uri = request.headers.get("x-forwarded-uri", "")
+    m = re.match(r"^/w/([a-z0-9-]+)", uri)
+    if not m:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Unknown stream path")
+    result = await session.exec(select(Workstation).where(
+        Workstation.subdomain == m.group(1)))
+    ws = result.first()
+    if ws is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Unknown workstation")
+    allowed = await _allowed_ids(session, ws.id)
+    if not (user.role == "admin" or ws.all_users or user.id in allowed):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "No access")
+    return {"ok": True}
+
+
 @router.get("/mine", response_model=list[WorkstationOut])
 async def my_workstations(user: User = Depends(get_current_user),
                           session: AsyncSession = Depends(get_session)):
@@ -92,9 +122,7 @@ async def connect_url(ws_id: str, user: User = Depends(get_current_user),
     if ws.status != "online":
         raise HTTPException(status.HTTP_409_CONFLICT,
                             f"Workstation is {ws.status}, not online")
-    password = decrypt_secret(ws.selkies_password_enc)
-    url = (f"https://{_settings.DOMAIN}/w/{ws.subdomain}/"
-           f"?username={SELKIES_USER}&password={password}")
+    url = f"https://{_settings.DOMAIN}/w/{ws.subdomain}/"
     return WorkstationConnectOut(url=url)
 
 

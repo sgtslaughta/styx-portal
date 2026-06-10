@@ -1,3 +1,4 @@
+import base64
 import logging
 import yaml
 from pathlib import Path
@@ -102,14 +103,27 @@ def build_routes_config(instances: list[dict], domain: str,
             has_https = True
         config["http"]["services"][inst_id] = {"loadBalancer": svc_config}
 
+    has_workstations = bool(workstations)
     for ws in workstations or []:
         sub = ws["subdomain"]
         strip_mw = f"strip-w-{sub}"
+        auth_header_mw = f"auth-ws-{sub}"
         middlewares[strip_mw] = {"stripPrefix": {"prefixes": [f"/w/{sub}"]}}
+
+        # Credential injection middleware (if selkies_password is available)
+        if "selkies_password" in ws and ws["selkies_password"]:
+            creds = base64.b64encode(
+                f"styx:{ws['selkies_password']}".encode()).decode()
+            middlewares[auth_header_mw] = {"headers": {"customRequestHeaders": {
+                "Authorization": f"Basic {creds}"}}}
+
         rid = f"ws-{ws['id']}"
+        router_middlewares = ["instance-unavailable-errors", "ws-forward-auth", strip_mw]
+        if "selkies_password" in ws and ws["selkies_password"]:
+            router_middlewares.insert(2, auth_header_mw)
         config["http"]["routers"][rid] = {
             "rule": f"Host(`{domain}`) && PathPrefix(`/w/{sub}`)",
-            "middlewares": ["instance-unavailable-errors", strip_mw],
+            "middlewares": router_middlewares,
             "service": rid,
             "priority": 50,
             **_router_transport(deploy_mode, domain),
@@ -120,6 +134,11 @@ def build_routes_config(instances: list[dict], domain: str,
             svc["serversTransport"] = "selkies-transport"
             has_https = True
         config["http"]["services"][rid] = {"loadBalancer": svc}
+
+    # Add shared forwardAuth middleware if any workstations exist
+    if has_workstations:
+        middlewares["ws-forward-auth"] = {"forwardAuth": {
+            "address": "http://backend:8000/api/workstations/auth-check"}}
 
     config["http"]["middlewares"] = middlewares
     if has_https:
@@ -155,6 +174,7 @@ async def refresh_routes_from_db(session):
     """Query running/idle instances and (re)write the Traefik routes file."""
     from sqlmodel import select
     from app.models import Instance, ServiceTemplate, Workstation
+    from app.security.crypto import decrypt_secret
 
     result = await session.exec(
         select(Instance).where(Instance.status.in_(["running", "idle"]))
@@ -172,8 +192,14 @@ async def refresh_routes_from_db(session):
         })
     ws_result = await session.exec(
         select(Workstation).where(Workstation.status == "online"))
-    ws_data = [{
-        "id": w.id, "subdomain": w.subdomain, "lan_ip": w.lan_ip,
-        "port": w.port, "protocol": w.protocol,
-    } for w in ws_result.all()]
+    ws_data = []
+    for w in ws_result.all():
+        ws_dict = {
+            "id": w.id, "subdomain": w.subdomain, "lan_ip": w.lan_ip,
+            "port": w.port, "protocol": w.protocol,
+        }
+        # Include decrypted password if available
+        if w.selkies_password_enc:
+            ws_dict["selkies_password"] = decrypt_secret(w.selkies_password_enc)
+        ws_data.append(ws_dict)
     write_routes(data, workstations=ws_data)

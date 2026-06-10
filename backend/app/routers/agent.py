@@ -66,7 +66,9 @@ async def deregister(request: Request,
     await session.exec(delete(WorkstationAccess).where(
         WorkstationAccess.workstation_id == ws.id))
     await audit_request(session, request, "workstation.deregister",
-                        resource=ws.id, detail={"hostname": ws.hostname})
+                        resource=ws.id, detail={"hostname": ws.hostname,
+                                               "agent_version": ws.agent_version,
+                                               "lan_ip": ws.lan_ip})
     await session.delete(ws)
     await session.commit()
     from app.services.route_writer import refresh_routes_from_db
