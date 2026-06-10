@@ -71,9 +71,9 @@ export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
 
         {/* Error message */}
         {instance.status === "error" && instance.error_message && (
-          <div className="rounded-md bg-destructive/10 border border-destructive/20 px-2.5 py-1.5 text-[11px] text-destructive leading-tight break-all">
+          <p className="line-clamp-3 break-all text-xs text-destructive" title={instance.error_message}>
             {instance.error_message}
-          </div>
+          </p>
         )}
 
         {/* Overlaid sparkline — CPU + RAM */}

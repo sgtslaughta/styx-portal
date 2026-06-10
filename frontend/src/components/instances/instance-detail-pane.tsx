@@ -184,8 +184,9 @@ export function InstanceDetailPane({ instanceId }: InstanceDetailPaneProps) {
 
   if (!instanceId || !instance) {
     return (
-      <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
-        Select an instance to view details
+      <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+        <p>No instance selected.</p>
+        <p>Pick one from the list, or launch a new one from the Template Gallery.</p>
       </div>
     );
   }
@@ -202,7 +203,7 @@ export function InstanceDetailPane({ instanceId }: InstanceDetailPaneProps) {
       {/* Header: name + status + action bar */}
       <div className="flex-shrink-0 p-4 border-b border-border space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold truncate">{instance.name}</h2>
+          <h2 className="text-lg font-semibold truncate" title={instance.name}>{instance.name}</h2>
           <StatusBadge status={instance.status} showIcon />
         </div>
         <ActionBar instance={instance} />

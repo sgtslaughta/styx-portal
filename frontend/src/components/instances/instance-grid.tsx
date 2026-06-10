@@ -10,6 +10,7 @@ import { InstanceCard } from "./instance-card";
 import { InstanceCardSm } from "./instance-card-sm";
 import { InstanceRow } from "./instance-row";
 import { toast } from "sonner";
+import { shortError } from "@/lib/utils";
 import type { Instance } from "@/lib/types";
 
 type ViewMode = "compact" | "normal" | "large";
@@ -113,27 +114,27 @@ export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: 
   const selPaused = selectedInstances.filter((i) => i.status === "paused");
 
   function bulkStart() {
-    selStopped.forEach((i) => startMut.mutate(i.id, { onError: (e) => toast.error(`${i.name}: ${e.message}`) }));
+    selStopped.forEach((i) => startMut.mutate(i.id, { onError: (e) => { console.error(i.name, e); toast.error(shortError(`${i.name}: ${e.message}`)); } }));
     toast.success(`Starting ${selStopped.length} instance(s)`);
     clearSelection();
   }
   function bulkStop() {
-    [...selRunning, ...selPaused].forEach((i) => stopMut.mutate(i.id, { onError: (e) => toast.error(`${i.name}: ${e.message}`) }));
+    [...selRunning, ...selPaused].forEach((i) => stopMut.mutate(i.id, { onError: (e) => { console.error(i.name, e); toast.error(shortError(`${i.name}: ${e.message}`)); } }));
     toast.success(`Stopping ${selRunning.length + selPaused.length} instance(s)`);
     clearSelection();
   }
   function bulkPause() {
-    selRunning.forEach((i) => pauseMut.mutate(i.id, { onError: (e) => toast.error(`${i.name}: ${e.message}`) }));
+    selRunning.forEach((i) => pauseMut.mutate(i.id, { onError: (e) => { console.error(i.name, e); toast.error(shortError(`${i.name}: ${e.message}`)); } }));
     toast.success(`Pausing ${selRunning.length} instance(s)`);
     clearSelection();
   }
   function bulkUnpause() {
-    selPaused.forEach((i) => unpauseMut.mutate(i.id, { onError: (e) => toast.error(`${i.name}: ${e.message}`) }));
+    selPaused.forEach((i) => unpauseMut.mutate(i.id, { onError: (e) => { console.error(i.name, e); toast.error(shortError(`${i.name}: ${e.message}`)); } }));
     toast.success(`Resuming ${selPaused.length} instance(s)`);
     clearSelection();
   }
   function runBulkDestroy() {
-    selectedInstances.forEach((i) => destroyMut.mutate({ id: i.id, removeVolumes: false }, { onError: (e) => toast.error(`${i.name}: ${e.message}`) }));
+    selectedInstances.forEach((i) => destroyMut.mutate({ id: i.id, removeVolumes: false }, { onError: (e) => { console.error(i.name, e); toast.error(shortError(`${i.name}: ${e.message}`)); } }));
     toast.success(`Destroying ${selected.size} instance(s)`);
     clearSelection();
   }

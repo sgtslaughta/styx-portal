@@ -46,7 +46,7 @@ export function InstanceRow({ instance, icon, onSelect }: InstanceRowProps) {
       </div>
 
       {/* Name */}
-      <span className="font-medium text-sm truncate w-36 shrink-0">{instance.name}</span>
+      <span className="font-medium text-sm truncate w-36 shrink-0" title={instance.name}>{instance.name}</span>
 
       {/* Status */}
       <div className="w-20 shrink-0">

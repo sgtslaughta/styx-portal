@@ -49,7 +49,7 @@ export function InstanceCardSm({ instance, icon, onSelect }: Props) {
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-sm truncate">{instance.name}</h3>
+          <h3 className="font-semibold text-sm truncate" title={instance.name}>{instance.name}</h3>
           <div className="flex items-center gap-2 mt-0.5">
             <StatusBadge status={instance.status} />
             {uptimeSeconds != null && (
