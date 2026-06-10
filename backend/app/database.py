@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
@@ -7,6 +8,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Settings
 from app.models import ServiceTemplate
+
+logger = logging.getLogger("styx-portal")
 
 settings = Settings()
 engine = create_async_engine(
@@ -27,33 +30,52 @@ async def init_db():
 async def _run_migrations(conn):
     """Add missing columns to existing tables."""
     import sqlalchemy
+    from sqlalchemy.exc import OperationalError
 
     migrations = [
         ("instances", "error_message", "TEXT"),
         ("instances", "owner_id", "TEXT"),
         ("service_templates", "owner_id", "TEXT"),
         ("service_templates", "dind", "BOOLEAN"),
+        ("service_templates", "cap_add", "TEXT"),
+        ("service_templates", "security_opt", "TEXT"),
+        ("service_templates", "tls_skip_verify", "BOOLEAN"),
         ("oauth_providers", "icon_url", "TEXT"),
         ("oauth_providers", "trust_email", "BOOLEAN"),
         ("oauth_providers", "allow_signup", "BOOLEAN"),
+        ("oauth_providers", "auto_promote_admins", "BOOLEAN"),
+        ("refresh_tokens", "family_id", "TEXT"),
     ]
     for table, column, col_type in migrations:
         try:
             await conn.execute(sqlalchemy.text(
                 f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"
             ))
-        except Exception:
-            pass
+        except OperationalError as e:
+            msg = str(e).lower()
+            # expected on fresh installs / re-runs; anything else is a real failure
+            if "duplicate column" not in msg and "no such table" not in msg:
+                logger.error("Migration failed for %s.%s: %s", table, column, e)
+                raise
 
     # ADD COLUMN ... BOOLEAN has no default, so rows that predate a column get NULL.
     # These are non-nullable bools downstream — backfill NULLs to False.
-    for column in ("trust_email", "allow_signup"):
+    backfills = [
+        ("oauth_providers", "trust_email", "0"),
+        ("oauth_providers", "allow_signup", "0"),
+        ("oauth_providers", "auto_promote_admins", "1"),
+        ("service_templates", "tls_skip_verify", "0"),
+        ("refresh_tokens", "family_id", "jti"),  # legacy rows: own family
+    ]
+    for table, column, default in backfills:
         try:
             await conn.execute(sqlalchemy.text(
-                f"UPDATE oauth_providers SET {column} = 0 WHERE {column} IS NULL"
+                f"UPDATE {table} SET {column} = {default} WHERE {column} IS NULL"
             ))
-        except Exception:
-            pass
+        except OperationalError as e:
+            if "no such table" not in str(e).lower():
+                logger.error("Backfill failed for %s.%s: %s", table, column, e)
+                raise
 
 
 async def get_session():
