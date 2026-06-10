@@ -5,7 +5,6 @@ import { api } from "@/api/client";
 import { Users, Copy, Trash2, Check, ShieldCheck, ShieldOff } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 
 export function UsersPanel() {
   const qc = useQueryClient();
@@ -65,34 +64,26 @@ export function UsersPanel() {
         </CardHeader>
         <CardContent className="space-y-4">
           {inviteUrl && (
-            <div className="rounded-lg border border-success/30 bg-success/5 p-4 space-y-2">
-              <div className="text-sm font-medium text-foreground">
-                Invitation link generated
-              </div>
-              <div className="text-xs text-muted-foreground mb-3">
-                Single-use, valid for 72 hours
-              </div>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="text"
-                  value={inviteUrl}
-                  readOnly
-                  className="font-mono text-xs"
-                />
+            <div className="rounded-md border border-primary/40 bg-primary/5 p-3">
+              <p className="text-xs font-medium">Invite link (single-use)</p>
+              <div className="mt-1 flex items-center gap-2">
+                <code className="flex-1 truncate text-xs">{inviteUrl}</code>
                 <Button
-                  variant="outline"
-                  size="icon"
+                  size="sm"
+                  variant="secondary"
                   onClick={handleCopyInviteUrl}
+                  disabled={copied}
                   title="Copy to clipboard"
                   aria-label="Copy to clipboard"
                 >
                   {copied ? (
-                    <Check className="h-4 w-4 text-success" />
+                    <Check className="h-3.5 w-3.5" />
                   ) : (
-                    <Copy className="h-4 w-4" />
+                    <Copy className="h-3.5 w-3.5" />
                   )}
                 </Button>
               </div>
+              <p className="mt-1 text-xs text-warning">Valid for 72 hours. Share securely — anyone with this link can join.</p>
             </div>
           )}
 
