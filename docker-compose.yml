@@ -125,6 +125,9 @@ services:
       - TEMPLATES_DIR=/app/templates
       - JWT_SECRET=${JWT_SECRET:-}
       - COOKIE_SECURE=${COOKIE_SECURE:-true}
+      - DEPLOY_MODE=${DEPLOY_MODE:-tunnel}
+      - SERVER_LAN_URL=${SERVER_LAN_URL:-}
+      - SERVER_CA_PIN=${SERVER_CA_PIN:-}
     volumes:
       - db-data:/app/data
       - screenshots:/app/data/screenshots
