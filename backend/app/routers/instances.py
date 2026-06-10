@@ -21,6 +21,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 _settings = Settings()
 
+# Field allowlist for instance updates. Only these fields can be modified via PATCH.
+_INSTANCE_UPDATE_FIELDS = {"name", "env_overrides", "session_config"}
+
 
 def _dind_store_volume(instance_id: str) -> str:
     return f"selkies-{instance_id}-dockerstore"
@@ -632,8 +635,10 @@ async def update_instance(
         raise HTTPException(404, "Instance not found")
     require_owner_or_admin(instance.owner_id, user)
 
+    # Apply only allowlisted fields
     for field, value in body.model_dump(exclude_unset=True).items():
-        setattr(instance, field, value)
+        if field in _INSTANCE_UPDATE_FIELDS:
+            setattr(instance, field, value)
 
     session.add(instance)
     await session.commit()
