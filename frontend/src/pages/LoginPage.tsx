@@ -1,16 +1,21 @@
 import { useEffect, useState } from "react";
 import { useNavigate, Navigate } from "react-router";
+import { toast } from "sonner";
 import { api } from "@/api/client";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { LoginBrandPanel } from "@/components/auth/LoginBrandPanel";
+import { friendlyLoginError } from "@/lib/auth-errors";
+import { KeyRound, Loader2 } from "lucide-react";
 
 export function LoginPage() {
   const [username, setU] = useState("");
   const [password, setP] = useState("");
   const [err, setErr] = useState("");
-  const [providers, setProviders] = useState<{ name: string; display_label: string }[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [providers, setProviders] = useState<{ name: string; display_label: string; icon_url: string | null }[]>([]);
   const nav = useNavigate();
   const { refresh, setupRequired, loading } = useAuth();
 
@@ -35,15 +40,25 @@ export function LoginPage() {
     }
   }, []);
 
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("expired")) {
+      toast("Your session expired — please sign in again.");
+      window.history.replaceState({}, "", "/login");
+    }
+  }, []);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr("");
+    setSubmitting(true);
     try {
       await api.login({ username, password });
       await refresh();
       nav("/");
     } catch (e) {
-      setErr((e as Error).message);
+      setErr(friendlyLoginError((e as Error).message));
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -67,8 +82,11 @@ export function LoginPage() {
                 <a
                   key={p.name}
                   href={api.oauthStartUrl(p.name)}
-                  className="flex w-full items-center justify-center rounded-md border border-border bg-background p-2.5 text-sm font-medium hover:bg-accent"
+                  className="flex w-full items-center justify-center gap-2 rounded-md border border-border bg-background p-2.5 text-sm font-medium hover:bg-accent"
                 >
+                  {p.icon_url
+                    ? <img src={p.icon_url} alt="" className="h-5 w-5 object-contain" />
+                    : <KeyRound className="h-4 w-4 text-muted-foreground" />}
                   Continue with {p.display_label}
                 </a>
               ))}
@@ -90,6 +108,7 @@ export function LoginPage() {
                 placeholder="you@example.com"
                 value={username}
                 onChange={(e) => setU(e.target.value)}
+                aria-invalid={err ? true : undefined}
                 required
               />
             </div>
@@ -97,22 +116,27 @@ export function LoginPage() {
               <label htmlFor="password" className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Password
               </label>
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setP(e.target.value)}
+                aria-invalid={err ? true : undefined}
+                aria-describedby={err ? "login-error" : undefined}
                 required
               />
             </div>
             {err && (
-              <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-                {err}
+              <div id="login-error" role="alert" className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                <div>{err}</div>
+                <button type="button" onClick={() => { setErr(""); window.history.replaceState({}, "", "/login"); }}
+                        className="mt-1 text-xs underline underline-offset-2 hover:no-underline">
+                  Dismiss
+                </button>
               </div>
             )}
-            <Button type="submit" className="w-full" size="default">
-              Sign in
+            <Button type="submit" className="w-full" size="default" disabled={submitting}>
+              {submitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Signing in…</> : "Sign in"}
             </Button>
           </form>
         </div>

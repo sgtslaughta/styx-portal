@@ -1,31 +1,48 @@
 import { useState } from "react";
 import { useNavigate, Navigate } from "react-router";
+import { useQuery } from "@tanstack/react-query";
 import zxcvbn from "zxcvbn";
 import { api } from "@/api/client";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
+import { Loader2 } from "lucide-react";
 import { LoginBrandPanel } from "@/components/auth/LoginBrandPanel";
 
 const STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Good", "Strong"];
 const STRENGTH_COLORS = ["bg-destructive", "bg-warning", "bg-warning", "bg-success", "bg-success"];
 
+function PreRow({ ok, label, detail, warnOnly }: { ok: boolean; label: string; detail: string; warnOnly?: boolean }) {
+  const color = ok ? "text-success" : warnOnly ? "text-warning" : "text-destructive";
+  return (
+    <div className="flex items-center justify-between">
+      <span>{label}</span>
+      <span className={color}>{ok ? "✓" : warnOnly ? "!" : "✗"} {detail}</span>
+    </div>
+  );
+}
+
 export function SetupWizard() {
   const [username, setU] = useState("");
   const [password, setP] = useState("");
   const [err, setErr] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const nav = useNavigate();
   const { refresh, setupRequired, loading } = useAuth();
   const score = password ? zxcvbn(password).score : 0;
+  const { data: pre } = useQuery({ queryKey: ["setup-preflight"], queryFn: api.setupPreflight, retry: false });
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (score < 3) { setErr("Password too weak"); return; }
+    setSubmitting(true);
     try {
       await api.setup({ username, password });
       await refresh();
       nav("/");
     } catch (e) { setErr((e as Error).message); }
+    finally { setSubmitting(false); }
   }
 
   // Setup is a one-time flow: once an admin exists, never show it again.
@@ -40,6 +57,16 @@ export function SetupWizard() {
             <h1 className="text-2xl font-bold">Create admin account</h1>
             <p className="text-sm text-muted-foreground">Set up your Styx Portal administrator account.</p>
           </div>
+
+          {pre && (
+            <div className="space-y-1 rounded-md border border-border p-3 text-xs">
+              <p className="font-medium">Environment check</p>
+              <PreRow ok={pre.docker.ok} label="Docker" detail={pre.docker.detail} />
+              <PreRow ok={pre.data_writable} label="Data volume" detail={pre.data_writable ? "writable" : "not writable"} />
+              <PreRow ok={pre.domain_set} label="Domain" detail={pre.domain_set ? "configured" : "DOMAIN not set — using localhost"} warnOnly />
+              <p className="text-muted-foreground">Ingress mode: {pre.deploy_mode}</p>
+            </div>
+          )}
 
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-2">
@@ -58,13 +85,13 @@ export function SetupWizard() {
               <label htmlFor="password" className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Password
               </label>
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setP(e.target.value)}
                 required
+                aria-invalid={err ? true : undefined}
               />
               {password && (
                 <div className="space-y-2 pt-2">
@@ -90,8 +117,8 @@ export function SetupWizard() {
                 {err}
               </div>
             )}
-            <Button type="submit" className="w-full" disabled={score < 3}>
-              Create admin
+            <Button type="submit" className="w-full" disabled={score < 3 || submitting}>
+              {submitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creating…</> : "Create admin"}
             </Button>
           </form>
         </div>

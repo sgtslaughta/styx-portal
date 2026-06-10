@@ -2,26 +2,88 @@ networks:
   styx-portal:
     name: styx-portal
     driver: bridge
+  styx-docker:
+    name: styx-docker
+    internal: true
 
 volumes:
   db-data:
   screenshots:
   traefik-dynamic:
+  letsencrypt:
 
 services:
-  traefik:
-    image: traefik:v3.4
+  docker-proxy:
+    image: lscr.io/linuxserver/socket-proxy:latest
     restart: unless-stopped
-    # ports:
-    #   - "80:80"       # Uncomment for local access without Cloudflare
-    #   - "8080:8080"   # Traefik dashboard
+    read_only: true
+    tmpfs:
+      - /run
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - CONTAINERS=1
+      - IMAGES=1
+      - NETWORKS=1
+      - VOLUMES=1
+      - POST=1
+      - INFO=1
+      - EVENTS=1
+      - PING=1
+      - EXEC=0
+      - BUILD=0
+      - COMMIT=0
+      - SWARM=0
+      - SYSTEM=0
+    networks:
+      - styx-docker
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:2375/_ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  traefik:
+    profiles: ["tunnel"]
+    image: traefik:v3.4
+    container_name: styx-traefik
+    restart: unless-stopped
     volumes:
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - traefik-dynamic:/etc/traefik/dynamic:ro
     networks:
       - styx-portal
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  traefik-direct:
+    profiles: ["direct"]
+    image: traefik:v3.4
+    container_name: styx-traefik
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - LE_EMAIL=${LE_EMAIL:-}
+      - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN:-}
+    volumes:
+      - ./traefik/traefik-direct.yml:/etc/traefik/traefik.yml:ro
+      - traefik-dynamic:/etc/traefik/dynamic:ro
+      - letsencrypt:/letsencrypt
+    networks:
+      - styx-portal
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   cloudflared:
+    profiles: ["tunnel"]
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
     command: tunnel run
@@ -33,29 +95,55 @@ services:
     networks:
       - styx-portal
 
+  # Runs as root before the backend to fix volume ownership. Named Docker volumes
+  # are created root-owned; the non-root backend (uid 1000) cannot write them on
+  # upgrade from a pre-1000 image (symptom: "attempt to write a readonly database"
+  # on the first migration). Idempotent — safe on every start, fresh or upgrade.
+  volume-init:
+    image: busybox:1.36
+    command: sh -c "chown -R 1000:1000 /app/data /app/traefik-dynamic"
+    user: "0:0"
+    restart: "no"
+    volumes:
+      - db-data:/app/data
+      - screenshots:/app/data/screenshots
+      - traefik-dynamic:/app/traefik-dynamic
+
   backend:
     build: ./backend
     restart: unless-stopped
     depends_on:
-      - traefik
+      docker-proxy:
+        condition: service_healthy
+      volume-init:
+        condition: service_completed_successfully
     environment:
       - DOMAIN=${DOMAIN}
       - DATABASE_URL=sqlite+aiosqlite:///./data/styx-portal.db
+      - DOCKER_SOCKET=tcp://docker-proxy:2375
       - DOCKER_NETWORK=styx-portal
       - TEMPLATES_DIR=/app/templates
-      - AUTHENTIK_MIDDLEWARE=authentik@file
-      - JWT_SECRET=${JWT_SECRET}
+      - JWT_SECRET=${JWT_SECRET:-}
       - COOKIE_SECURE=${COOKIE_SECURE:-true}
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - db-data:/app/data
       - screenshots:/app/data/screenshots
       - traefik-dynamic:/app/traefik-dynamic
       - ./templates:/app/templates:ro
     devices:
       - /dev/dri:/dev/dri
+    group_add:
+      - "${VIDEO_GID:-44}"
+      - "${RENDER_GID:-992}"
     networks:
       - styx-portal
+      - styx-docker
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   frontend:
     build: ./frontend
@@ -64,3 +152,8 @@ services:
       - backend
     networks:
       - styx-portal
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

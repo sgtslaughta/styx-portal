@@ -1,12 +1,27 @@
+import logging
 import yaml
 from pathlib import Path
 
 from app.config import Settings
 
+logger = logging.getLogger("styx-portal")
 _settings = Settings()
 
 
-def build_routes_config(instances: list[dict], domain: str) -> dict:
+def _router_transport(deploy_mode: str, domain: str) -> dict:
+    """Return entryPoints and TLS config dict based on deploy mode."""
+    if deploy_mode == "direct":
+        return {
+            "entryPoints": ["websecure"],
+            "tls": {
+                "certResolver": "letsencrypt",
+                "domains": [{"main": domain, "sans": [f"*.{domain}"]}],
+            },
+        }
+    return {"entryPoints": ["web"]}
+
+
+def build_routes_config(instances: list[dict], domain: str, deploy_mode: str = "tunnel") -> dict:
     """Build the Traefik dynamic config dict for all services + running instances.
 
     Always emits the static `unavailable-rewrite` / `instance-unavailable-errors`
@@ -30,27 +45,22 @@ def build_routes_config(instances: list[dict], domain: str) -> dict:
             "routers": {
                 "frontend": {
                     "rule": f"Host(`{domain}`)",
-                    "entryPoints": ["web"],
                     "service": "frontend",
                     "priority": 1,
+                    **_router_transport(deploy_mode, domain),
                 },
                 "api": {
                     "rule": f"Host(`{domain}`) && PathPrefix(`/api`)",
-                    "entryPoints": ["web"],
                     "service": "api",
                     "priority": 100,
-                },
-                "dashboard": {
-                    "rule": f"Host(`traefik.{domain}`)",
-                    "entryPoints": ["web"],
-                    "service": "api@internal",
+                    **_router_transport(deploy_mode, domain),
                 },
                 "instances_fallback": {
                     "rule": f"Host(`{domain}`) && PathPrefix(`/i/`)",
-                    "entryPoints": ["web"],
                     "middlewares": ["unavailable-rewrite"],
                     "service": "api",
                     "priority": 10,
+                    **_router_transport(deploy_mode, domain),
                 },
             },
             "services": {
@@ -77,15 +87,15 @@ def build_routes_config(instances: list[dict], domain: str) -> dict:
 
         config["http"]["routers"][inst_id] = {
             "rule": f"Host(`{domain}`) && PathPrefix(`/i/{subdomain}`)",
-            "entryPoints": ["web"],
             "middlewares": ["instance-unavailable-errors", strip_mw],
             "service": inst_id,
             "priority": 50,
+            **_router_transport(deploy_mode, domain),
         }
         svc_config: dict = {
             "servers": [{"url": f"{protocol}://{container_name}:{port}"}],
         }
-        if protocol == "https":
+        if protocol == "https" and inst.get("tls_skip_verify"):
             svc_config["serversTransport"] = "selkies-transport"
             has_https = True
         config["http"]["services"][inst_id] = {"loadBalancer": svc_config}
@@ -99,15 +109,24 @@ def build_routes_config(instances: list[dict], domain: str) -> dict:
 
 
 def write_routes(instances: list[dict], domain: str | None = None):
-    """Render the Traefik dynamic config to the file provider directory."""
+    """Render the Traefik dynamic config to the file provider directory.
+
+    A PermissionError here means the shared traefik-dynamic volume is not
+    writable by the (non-root) backend user — log and continue rather than
+    crash-looping startup; routing degrades but the portal stays up.
+    """
     domain = domain or _settings.DOMAIN
     out_dir = Path(_settings.TRAEFIK_DYNAMIC_DIR)
     try:
         out_dir.mkdir(parents=True, exist_ok=True)
+        config = build_routes_config(instances, domain, _settings.DEPLOY_MODE)
+        (out_dir / "routes.yml").write_text(yaml.dump(config, default_flow_style=False))
     except PermissionError:
-        return
-    config = build_routes_config(instances, domain)
-    (out_dir / "routes.yml").write_text(yaml.dump(config, default_flow_style=False))
+        logger.error(
+            "Cannot write Traefik routes to %s — volume not writable by backend "
+            "user. Instance routing will not update. Fix volume ownership "
+            "(chown 1000:1000) and restart.", out_dir,
+        )
 
 
 async def refresh_routes_from_db(session):
@@ -127,5 +146,6 @@ async def refresh_routes_from_db(session):
             "subdomain": i.subdomain,
             "port": tmpl.internal_port if tmpl else 3001,
             "protocol": tmpl.internal_protocol if tmpl else "https",
+            "tls_skip_verify": bool(tmpl.tls_skip_verify) if tmpl else False,
         })
     write_routes(data)

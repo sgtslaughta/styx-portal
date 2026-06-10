@@ -54,6 +54,8 @@ export interface InstanceStatus {
   uptime_seconds: number | null;
   idle_seconds: number | null;
   session_config: SessionConfig | null;
+  pull_percent: number | null;
+  pull_detail: string | null;
 }
 
 export interface RegistryImage {

@@ -42,5 +42,10 @@ async def test_unauthenticated_instances_401(client):
 async def test_logout_revokes_refresh(admin_client):
     r = await admin_client.post("/api/auth/logout")
     assert r.status_code == 200
+    # After logout, CSRF cookie is cleared, so bootstrap a new one to reach the auth check
+    csrf_r = await admin_client.get("/api/auth/csrf")
+    assert csrf_r.status_code == 200
+    csrf = admin_client.cookies.get("csrf_token")
+    admin_client.headers.update({"X-CSRF-Token": csrf})
     r2 = await admin_client.post("/api/auth/refresh")
     assert r2.status_code == 401

@@ -1,3 +1,5 @@
+import pytest
+
 from app.security import oauth
 from app.schemas import OAuthIdentity
 
@@ -37,3 +39,22 @@ def test_pack_unpack_tx_roundtrip():
     assert data["state"] == "st"
     assert data["verifier"] == "vf"
     assert data["mode"] == "login"
+
+
+@pytest.mark.asyncio
+async def test_build_authorize_uses_redirect_override(monkeypatch):
+    from app.models import OAuthProvider
+    from app.security import oauth
+    from app.security.crypto import encrypt_secret
+
+    async def fake_endpoints(_p):
+        return {"authorize": "https://idp.test/authorize",
+                "token": "https://idp.test/token", "userinfo": "https://idp.test/userinfo"}
+    monkeypatch.setattr(oauth, "_endpoints", fake_endpoints)
+
+    p = OAuthProvider(name="authentik", display_label="A", kind="oidc",
+                      client_id="cid", client_secret_enc=encrypt_secret("s"),
+                      issuer_url="https://idp.test")
+    url, _state, _verifier = await oauth.build_authorize(
+        p, mode="login", redirect_uri="https://app.test/custom/callback")
+    assert "redirect_uri=https%3A%2F%2Fapp.test%2Fcustom%2Fcallback" in url

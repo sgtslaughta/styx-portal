@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import { useInstances } from "@/hooks/use-instances";
 import { useSystemMetrics } from "@/hooks/use-system";
 import {
@@ -38,6 +38,7 @@ function EventRow({ event }: { event: { type: string; instance: string; time: st
 export function MetricsOverview() {
   const { data: instances } = useInstances();
   const { data: metrics } = useSystemMetrics();
+  const reduce = useReducedMotion();
 
   const counts = {
     running: 0,
@@ -66,8 +67,8 @@ export function MetricsOverview() {
       {/* Health banner */}
       {counts.error > 0 && (
         <motion.div
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: "auto" }}
+          initial={reduce ? false : { opacity: 0, height: 0 }}
+          animate={reduce ? {} : { opacity: 1, height: "auto" }}
           className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3"
         >
           <AlertTriangle className="h-4 w-4 text-destructive" />

@@ -1,19 +1,24 @@
 import os
-os.environ.setdefault("JWT_SECRET", "test-secret")
-os.environ.setdefault("COOKIE_SECURE", "false")
-os.environ.setdefault("RATE_LIMIT_AUTH", "1000/60")
-os.environ.setdefault("RATE_LIMIT_DEFAULT", "1000/60")
+import tempfile
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
-from unittest.mock import AsyncMock, MagicMock
 
-from app.main import app
-from app.database import get_session
-from app.routers.instances import get_docker_manager, get_screenshot_service
+# noqa: E402 — set environment variables BEFORE importing app modules
+os.environ.setdefault("JWT_SECRET", "test-secret-long-enough-32-chars")
+os.environ.setdefault("COOKIE_SECURE", "false")
+os.environ.setdefault("RATE_LIMIT_AUTH", "1000/60")
+os.environ.setdefault("RATE_LIMIT_DEFAULT", "1000/60")
+_test_tmpdir = tempfile.mkdtemp()
+os.environ.setdefault("SECRETS_FILE", os.path.join(_test_tmpdir, "secrets.json"))
+
+from app.main import app  # noqa: E402
+from app.database import get_session  # noqa: E402
+from app.routers.instances import get_docker_manager, get_screenshot_service  # noqa: E402
 
 
 @pytest.fixture(name="session")

@@ -5,7 +5,7 @@ import { ActionBar } from "@/components/common/action-bar";
 import { formatDuration } from "@/lib/utils";
 import { useInstanceStats } from "@/hooks/use-instances";
 import { statusMeta } from "@/lib/status";
-import { fadeSlideIn, hoverLift, spring } from "@/lib/motion";
+import { useFadeSlideIn, hoverLift, spring } from "@/lib/motion";
 import { CHART_COLORS } from "@/lib/chart";
 import type { Instance } from "@/lib/types";
 
@@ -22,6 +22,7 @@ export function InstanceCardSm({ instance, icon, onSelect }: Props) {
 
   const { data: stats } = useInstanceStats(instance.id, isRunning);
   const { dotClass, pulse } = statusMeta(instance.status);
+  const variants = useFadeSlideIn();
 
   const uptimeSeconds = instance.started_at && isRunning
     ? (Date.now() - new Date(instance.started_at + "Z").getTime()) / 1000
@@ -30,7 +31,7 @@ export function InstanceCardSm({ instance, icon, onSelect }: Props) {
   return (
     <motion.div
       layout
-      variants={fadeSlideIn}
+      variants={variants}
       initial="initial"
       animate="animate"
       exit="exit"
@@ -49,7 +50,7 @@ export function InstanceCardSm({ instance, icon, onSelect }: Props) {
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-sm truncate">{instance.name}</h3>
+          <h3 className="font-semibold text-sm truncate" title={instance.name}>{instance.name}</h3>
           <div className="flex items-center gap-2 mt-0.5">
             <StatusBadge status={instance.status} />
             {uptimeSeconds != null && (

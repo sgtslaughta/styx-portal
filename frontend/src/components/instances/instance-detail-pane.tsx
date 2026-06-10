@@ -19,6 +19,7 @@ import {
   useStopInstance,
   useUpdateInstance,
   useRecreateInstance,
+  useKeepalive,
 } from "@/hooks/use-instances";
 import { useTemplates, useUpdateTemplate } from "@/hooks/use-templates";
 import { useGpuInfo } from "@/hooks/use-gpu";
@@ -38,12 +39,17 @@ export function InstanceDetailPane({ instanceId }: InstanceDetailPaneProps) {
   const update = useUpdateInstance();
   const recreate = useRecreateInstance();
   const updateTemplate = useUpdateTemplate();
+  const keepalive = useKeepalive();
 
   const [showConfirmRebuild, setShowConfirmRebuild] = useState(false);
 
   // Resolve instance and template
   const instance = instances?.find((i) => i.id === instanceId) ?? null;
   const template = instance ? templates?.find((t) => t.id === instance.template_id) ?? null : null;
+
+  // Session config for idle timeout notice
+  const sc = instance?.session_config as { idle_timeout?: string; never_timeout?: boolean } | null;
+  const hasTimeout = !!(sc && !sc.never_timeout && sc.idle_timeout);
 
   // Registry image lookup
   const lsName = template ? linuxserverImageName(template.image) : null;
@@ -178,8 +184,9 @@ export function InstanceDetailPane({ instanceId }: InstanceDetailPaneProps) {
 
   if (!instanceId || !instance) {
     return (
-      <div className="flex h-full items-center justify-center text-muted-foreground text-sm">
-        Select an instance to view details
+      <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+        <p>No instance selected.</p>
+        <p>Pick one from the list, or launch a new one from the Template Gallery.</p>
       </div>
     );
   }
@@ -196,7 +203,7 @@ export function InstanceDetailPane({ instanceId }: InstanceDetailPaneProps) {
       {/* Header: name + status + action bar */}
       <div className="flex-shrink-0 p-4 border-b border-border space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold truncate">{instance.name}</h2>
+          <h2 className="text-lg font-semibold truncate" title={instance.name}>{instance.name}</h2>
           <StatusBadge status={instance.status} showIcon />
         </div>
         <ActionBar instance={instance} />
@@ -248,6 +255,22 @@ export function InstanceDetailPane({ instanceId }: InstanceDetailPaneProps) {
                     <div className="font-mono text-sm">{formatDuration(idleSeconds)}</div>
                   </div>
                 </div>
+
+                {/* Idle auto-stop notice + keep-awake button */}
+                {hasTimeout && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>Auto-stops when idle ({sc!.idle_timeout}).</span>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="h-6 text-xs"
+                      disabled={keepalive.isPending}
+                      onClick={() => keepalive.mutate(instance.id)}
+                    >
+                      {keepalive.isPending ? "Keeping awake…" : "Keep awake"}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
 

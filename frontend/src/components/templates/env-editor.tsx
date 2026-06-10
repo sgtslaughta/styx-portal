@@ -37,7 +37,7 @@ export function EnvEditor({ value, onChange, descriptions }: EnvEditorProps) {
             {descriptions?.[key] && <p className="mt-0.5 text-[10px] text-muted-foreground truncate">{descriptions[key]}</p>}
           </div>
           <Input value={val} onChange={(e) => update(key, key, e.target.value)} placeholder="value" className="flex-1 min-w-0 font-mono text-xs" />
-          <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => remove(key)}>
+          <Button variant="ghost" size="icon" className="h-9 w-9" onClick={() => remove(key)} aria-label="Delete variable">
             <Trash2 className="h-3 w-3" />
           </Button>
         </div>

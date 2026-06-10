@@ -36,7 +36,8 @@ def _err_redirect(code: str) -> RedirectResponse:
 async def list_public_providers(session: AsyncSession = Depends(get_session)):
     rows = (await session.exec(select(OAuthProvider).where(
         OAuthProvider.enabled == True))).all()  # noqa: E712
-    return [PublicProvider(name=p.name, display_label=p.display_label) for p in rows]
+    return [PublicProvider(name=p.name, display_label=p.display_label,
+                           icon_url=p.icon_url) for p in rows]
 
 
 @router.get("/{name}/start")
@@ -69,7 +70,9 @@ async def callback(name: str, request: Request, session: AsyncSession = Depends(
     try:
         identity = await oauth.fetch_identity(
             provider, "login", str(request.url), tx["verifier"])
-        user = await federation.resolve_identity(session, name, identity, provider.role_map)
+        user = await federation.resolve_identity(
+            session, name, identity, provider.role_map, provider.trust_email,
+            provider.allow_signup, bool(provider.auto_promote_admins))
     except federation.EmailUnverified:
         return _err_redirect("email_unverified")
     except federation.Disabled:

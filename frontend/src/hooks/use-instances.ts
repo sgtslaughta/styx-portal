@@ -96,3 +96,20 @@ export function useInstanceStats(id: string, enabled: boolean) {
     enabled,
   });
 }
+
+export function useInstanceStatus(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ["instance-status", id],
+    queryFn: () => api.getInstanceStatus(id),
+    refetchInterval: 2000,
+    enabled,
+  });
+}
+
+export function useKeepalive() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.keepalive(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["instances"] }),
+  });
+}

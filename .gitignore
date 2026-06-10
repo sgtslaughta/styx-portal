@@ -6,7 +6,10 @@ __pycache__/
 data/
 .superpowers/
 .ruff_cache/
-plans/
+/plans/
 node_modules/
 dist/
 traefik/dynamic.yml
+
+# Local Claude Code runtime/settings
+.claude/

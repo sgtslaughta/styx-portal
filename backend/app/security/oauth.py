@@ -73,17 +73,37 @@ async def _endpoints(provider: OAuthProvider) -> dict:
             "userinfo": provider.userinfo_url}
 
 
+async def discovery_checks(provider: OAuthProvider) -> tuple[bool, list[dict]]:
+    """Server-side reachability/validity checks. Never raises."""
+    checks: list[dict] = []
+    checks.append({"label": "client_id set", "ok": bool(provider.client_id),
+                   "detail": "" if provider.client_id else "missing"})
+    try:
+        eps = await _endpoints(provider)
+        src = "discovery" if provider.kind == "oidc" else "config"
+        for key in ("authorize", "token", "userinfo"):
+            val = eps.get(key)
+            checks.append({"label": f"{key} endpoint", "ok": bool(val),
+                           "detail": val or f"missing in {src}"})
+    except Exception as e:  # noqa: BLE001 — surface, never 500
+        checks.append({"label": "endpoint discovery", "ok": False, "detail": str(e)})
+    ok = all(c["ok"] for c in checks)
+    return ok, checks
+
+
 def _redirect_uri(provider_name: str, mode: str) -> str:
     leg = "link" if mode == "link" else "oauth"
     return f"{_settings.oauth_redirect_base()}/api/auth/{leg}/{provider_name}/callback"
 
 
-async def build_authorize(provider: OAuthProvider, mode: str) -> tuple[str, str, str]:
+async def build_authorize(provider: OAuthProvider, mode: str,
+                          redirect_uri: str | None = None) -> tuple[str, str, str]:
     """Returns (authorize_url, state, code_verifier)."""
     eps = await _endpoints(provider)
     client = AsyncOAuth2Client(
         provider.client_id, decrypt_secret(provider.client_secret_enc),
-        scope=provider.scopes, redirect_uri=_redirect_uri(provider.name, mode),
+        scope=provider.scopes,
+        redirect_uri=redirect_uri or _redirect_uri(provider.name, mode),
         code_challenge_method="S256",
     )
     verifier = generate_token(48)
@@ -92,11 +112,13 @@ async def build_authorize(provider: OAuthProvider, mode: str) -> tuple[str, str,
 
 
 async def fetch_identity(provider: OAuthProvider, mode: str,
-                         authorization_response: str, verifier: str) -> OAuthIdentity:
+                         authorization_response: str, verifier: str,
+                         redirect_uri: str | None = None) -> OAuthIdentity:
     eps = await _endpoints(provider)
     client = AsyncOAuth2Client(
         provider.client_id, decrypt_secret(provider.client_secret_enc),
-        scope=provider.scopes, redirect_uri=_redirect_uri(provider.name, mode),
+        scope=provider.scopes,
+        redirect_uri=redirect_uri or _redirect_uri(provider.name, mode),
         code_challenge_method="S256",
     )
     headers = {"Accept": "application/json"} if provider.name == "github" else None

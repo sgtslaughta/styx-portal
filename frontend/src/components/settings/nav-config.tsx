@@ -1,12 +1,13 @@
 import type { ComponentType } from "react";
 import {
   Activity, Terminal, Cpu, ScrollText, Users, KeyRound, HardDrive,
-  Link2, BarChart3, Shield, UserCircle,
+  Link2, BarChart3, Shield, UserCircle, Heart,
 } from "lucide-react";
 import { MetricsOverview } from "@/components/system/metrics-overview";
 import { MetricsSessions } from "@/components/system/metrics-sessions";
 import { MetricsResources } from "@/components/system/metrics-resources";
 import { MetricsLogs } from "@/components/system/metrics-logs";
+import { HealthPanel } from "@/components/system/health-panel";
 import { UsersPanel } from "@/components/system/users-panel";
 import { OAuthProvidersPanel } from "@/components/system/oauth-providers-panel";
 import { ImageManager } from "@/components/system/image-manager";
@@ -36,6 +37,9 @@ export const CATEGORIES: SettingsCategory[] = [
       { id: "overview", label: "Overview", icon: Activity,
         description: "Live system and instance health at a glance.",
         tooltip: "Aggregate CPU/RAM, instance counts, host info", Component: MetricsOverview },
+      { id: "health", label: "Health", icon: Heart,
+        description: "Real-time diagnostic checks and 1-hour history.",
+        tooltip: "Docker, database, routing, disk, and GPU diagnostics", Component: HealthPanel },
       { id: "sessions", label: "Sessions", icon: Terminal,
         description: "Running instances and their lifecycle actions.",
         tooltip: "View and control active instances", Component: MetricsSessions },

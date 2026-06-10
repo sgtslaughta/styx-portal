@@ -2,7 +2,7 @@
   "name": "xfce-desktop",
   "display_name": "XFCE Desktop (Wayland)",
   "image": "selkies-desktop:latest",
-  "icon": "🖥️",
+  "icon": "\ud83d\udda5\ufe0f",
   "description": "Full XFCE desktop on Wayland with Firefox, Chrome, dev tools, zsh",
   "env_vars": {
     "PUID": "1000",
@@ -16,17 +16,45 @@
   "cpu_limit": "4.0",
   "shm_size": "2g",
   "volumes": [
-    {"name": "{instance_id}-home", "mount": "/config"}
+    {
+      "name": "{instance_id}-home",
+      "mount": "/config"
+    }
   ],
   "internal_port": 3000,
   "internal_protocol": "http",
   "category": "desktop",
-  "tags": ["desktop", "xfce", "wayland", "development"],
+  "tags": [
+    "desktop",
+    "xfce",
+    "wayland",
+    "development"
+  ],
   "session_config": {
     "idle_timeout": "60m",
     "grace_period": "10m",
     "timeout_action": "stop",
     "never_timeout": false,
     "max_session_duration": null
-  }
+  },
+  "cap_add": [
+    "CHOWN",
+    "DAC_OVERRIDE",
+    "FSETID",
+    "FOWNER",
+    "MKNOD",
+    "NET_RAW",
+    "SETGID",
+    "SETUID",
+    "SETFCAP",
+    "SETPCAP",
+    "NET_BIND_SERVICE",
+    "SYS_CHROOT",
+    "KILL",
+    "AUDIT_WRITE"
+  ],
+  "security_opt": [
+    "seccomp=unconfined",
+    "apparmor=unconfined"
+  ]
 }

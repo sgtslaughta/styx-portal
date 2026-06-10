@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { Trash2, HardDrive, AlertTriangle } from "lucide-react";
 import { useImages, useDeleteImage, usePurgeImages } from "@/hooks/use-images";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
@@ -24,6 +24,7 @@ export function ImageManager() {
   const { data: images, isLoading } = useImages();
   const deleteMut = useDeleteImage();
   const purgeMut = usePurgeImages();
+  const reduce = useReducedMotion();
   const [confirmPurge, setConfirmPurge] = useState(false);
 
   const totalSize = images?.reduce((sum, img) => sum + (img.size_mb ?? 0), 0) ?? 0;
@@ -88,9 +89,9 @@ export function ImageManager() {
               <motion.div
                 key={img.id}
                 layout
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, x: -20 }}
+                initial={reduce ? undefined : { opacity: 0, y: 8 }}
+                animate={reduce ? undefined : { opacity: 1, y: 0 }}
+                exit={reduce ? undefined : { opacity: 0, x: -20 }}
                 className="styx-card group flex items-center gap-3 rounded-lg px-4 py-3 transition-colors hover:border-border/80"
               >
                 <div className="min-w-0 flex-1">

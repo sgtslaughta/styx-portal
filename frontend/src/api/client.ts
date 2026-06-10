@@ -12,11 +12,34 @@ export type OAuthProviderRow = {
   id: string; name: string; display_label: string; kind: string;
   issuer_url: string | null; client_id: string; scopes: string;
   role_map: Record<string, unknown>; enabled: boolean; has_secret: boolean;
+  icon_url: string | null; trust_email: boolean; allow_signup: boolean;
+  auto_promote_admins: boolean; redirect_uri: string; test_redirect_uri: string;
 };
 export type OAuthProviderCreate = {
   name: string; display_label: string; kind: string; issuer_url?: string;
   authorize_url?: string; token_url?: string; userinfo_url?: string;
   client_id: string; client_secret: string; scopes?: string; role_map?: Record<string, unknown>;
+  icon_url?: string | null; trust_email?: boolean; allow_signup?: boolean; auto_promote_admins?: boolean;
+};
+
+export type ProviderTestResult = {
+  ok: boolean;
+  checks: { label: string; ok: boolean; detail: string }[];
+};
+
+export type DiagCheck = { key: string; ok: boolean; latency_ms: number; detail: string };
+export type Diagnostics = { ok: boolean; checked_at: string; checks: DiagCheck[] };
+export type DiagHistory = {
+  timestamps: number[];
+  status: Record<string, boolean[]>;
+  latency_ms: Record<string, number[]>;
+};
+
+export type SetupPreflight = {
+  docker: { ok: boolean; detail: string };
+  deploy_mode: string;
+  domain_set: boolean;
+  data_writable: boolean;
 };
 
 const BASE = "/api";
@@ -42,7 +65,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers,
   });
   if (res.status === 401 && !path.startsWith("/auth/")) {
-    window.location.href = "/login";
+    window.location.href = "/login?expired=1";
     throw new Error("Unauthorized");
   }
   if (!res.ok) {
@@ -122,6 +145,9 @@ export const api = {
     recent_events: { type: string; instance: string; time: string; details?: string }[];
     host: { docker_version?: string; gpu?: string; network?: string; uptime?: number };
   }>("/system/metrics"),
+  getDiagnostics: () => request<Diagnostics>("/system/diagnostics"),
+  getDiagnosticsHistory: (range: string) =>
+    request<DiagHistory>(`/system/diagnostics/history?range=${range}`),
 
   getSessionEvents: (instanceId: string) =>
     request<{ type: string; time: string; details?: string }[]>(`/instances/${instanceId}/events`),
@@ -137,6 +163,7 @@ export const api = {
     request<string[]>(`/instances/${instanceId}/logs`),
 
   setupRequired: () => request<{ setup_required: boolean }>("/auth/setup-required"),
+  setupPreflight: () => request<SetupPreflight>("/auth/setup-preflight"),
   setup: (data: { username: string; email?: string; password: string }) =>
     request<{ id: string; username: string; role: string }>("/auth/setup", {
       method: "POST", body: JSON.stringify(data) }),
@@ -144,6 +171,7 @@ export const api = {
     request<{ id: string; username: string; role: string }>("/auth/login", {
       method: "POST", body: JSON.stringify(data) }),
   logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
+  refreshSession: () => request<{ ok: boolean }>("/auth/refresh", { method: "POST" }),
   me: () => request<{ id: string; username: string; email: string | null; role: string }>("/auth/me"),
   acceptInvite: (data: { token: string; username: string; password: string }) =>
     request<{ id: string; username: string; role: string }>("/auth/accept-invite", {
@@ -156,7 +184,7 @@ export const api = {
   changeRole: (id: string, role: string) =>
     request<unknown>(`/users/${id}/role?role=${role}`, { method: "PATCH" }),
 
-  oauthProviders: () => request<{ name: string; display_label: string }[]>("/auth/oauth/providers"),
+  oauthProviders: () => request<{ name: string; display_label: string; icon_url: string | null }[]>("/auth/oauth/providers"),
   oauthStartUrl: (name: string) => `/api/auth/oauth/${name}/start`,
   linkStartUrl: (name: string) => `/api/auth/link/${name}/start`,
   linkedProviders: () => request<{ provider: string; email: string | null; created_at: string }[]>("/auth/link/providers"),
@@ -167,4 +195,7 @@ export const api = {
   updateOAuthProvider: (id: string, data: Partial<OAuthProviderCreate> & { enabled?: boolean }) =>
     request<OAuthProviderRow>(`/oauth-providers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteOAuthProvider: (id: string) => request<void>(`/oauth-providers/${id}`, { method: "DELETE" }),
+  testOAuthConfig: (id: string) =>
+    request<ProviderTestResult>(`/oauth-providers/${id}/test/config`, { method: "POST" }),
+  oauthTestStartUrl: (id: string) => `/api/oauth-providers/${id}/test/start`,
 };

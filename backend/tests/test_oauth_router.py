@@ -63,3 +63,15 @@ async def test_callback_state_mismatch(client, session):
                          follow_redirects=False)
     assert r.status_code == 302
     assert "error=state_mismatch" in r.headers["location"]
+
+
+@pytest.mark.asyncio
+async def test_public_list_includes_icon_url(client, session):
+    session.add(OAuthProvider(name="authentik", display_label="Authentik", kind="oidc",
+                              client_id="cid", client_secret_enc="x",
+                              icon_url="https://idp.test/logo.svg", enabled=True))
+    await session.commit()
+    r = await client.get("/api/auth/oauth/providers")
+    assert r.status_code == 200
+    row = next(p for p in r.json() if p["name"] == "authentik")
+    assert row["icon_url"] == "https://idp.test/logo.svg"

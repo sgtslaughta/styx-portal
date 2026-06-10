@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router";
 import zxcvbn from "zxcvbn";
 import { api } from "@/api/client";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
+import { Loader2 } from "lucide-react";
 import { LoginBrandPanel } from "@/components/auth/LoginBrandPanel";
 
 const STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Good", "Strong"];
@@ -15,18 +17,25 @@ export function AcceptInvitePage() {
   const [username, setU] = useState("");
   const [password, setP] = useState("");
   const [err, setErr] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const nav = useNavigate();
   const { refresh } = useAuth();
   const score = password ? zxcvbn(password).score : 0;
 
+  useEffect(() => {
+    void fetch("/api/auth/csrf", { credentials: "include" });
+  }, []);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (score < 3) { setErr("Password too weak"); return; }
+    setSubmitting(true);
     try {
       await api.acceptInvite({ token, username, password });
       await refresh();
       nav("/");
     } catch (e) { setErr((e as Error).message); }
+    finally { setSubmitting(false); }
   }
 
   return (
@@ -56,13 +65,13 @@ export function AcceptInvitePage() {
               <label htmlFor="password" className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Password
               </label>
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setP(e.target.value)}
                 required
+                aria-invalid={err ? true : undefined}
               />
               {password && (
                 <div className="space-y-2 pt-2">
@@ -88,8 +97,8 @@ export function AcceptInvitePage() {
                 {err}
               </div>
             )}
-            <Button type="submit" className="w-full" disabled={score < 3}>
-              Join
+            <Button type="submit" className="w-full" disabled={score < 3 || submitting}>
+              {submitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Joining…</> : "Join"}
             </Button>
           </form>
         </div>
