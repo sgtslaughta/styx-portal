@@ -4,12 +4,15 @@
 #          --token <TOKEN> --server https://SERVER [--ca-pin sha256:<FP>]
 set -euo pipefail
 
-TOKEN="" SERVER="" CA_PIN=""
+TOKEN="" SERVER="" CA_PIN="" FORCE_DISPLAY=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --token)  TOKEN="$2"; shift 2 ;;
-    --server) SERVER="$2"; shift 2 ;;
-    --ca-pin) CA_PIN="$2"; shift 2 ;;
+    --token)   TOKEN="$2"; shift 2 ;;
+    --server)  SERVER="$2"; shift 2 ;;
+    --ca-pin)  CA_PIN="$2"; shift 2 ;;
+    # Capture this existing X display instead of auto-detecting (e.g. a
+    # KasmVNC/Xvnc :1 under a Wayland login). Implies x11 capture.
+    --display) FORCE_DISPLAY="$2"; shift 2 ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -51,17 +54,30 @@ PY
 note "python3 + glibc $GLIBC OK"
 
 step 2/8 "Detecting display server (E02)"
-DISPLAY_SERVER="x11"
+# Existing X display sockets (X0, X1, …) → ":0 :1 …"
+# shellcheck disable=SC2012  # X-socket names are always Xn; ls is fine here
+X_DISPLAYS=$(ls /tmp/.X11-unix/ 2>/dev/null | sed -n 's/^X\([0-9]\+\)$/:\1/p' | tr '\n' ' ')
 SESSION_TYPE="${XDG_SESSION_TYPE:-}"
 if [[ -z "$SESSION_TYPE" ]] && command -v loginctl >/dev/null; then
   SESSION_TYPE=$(loginctl show-session "$(loginctl 2>/dev/null | awk -v u="$USER" '$3==u {print $1; exit}')" -p Type --value 2>/dev/null || true)
 fi
-if [[ "$SESSION_TYPE" == "wayland" ]]; then
+
+if [[ -n "$FORCE_DISPLAY" ]]; then
+  DISPLAY_SERVER="x11"
+  note "Capturing forced X display $FORCE_DISPLAY (--display)."
+elif [[ "$SESSION_TYPE" == "wayland" ]]; then
   DISPLAY_SERVER="wayland"
-  note "Wayland session detected. Selkies cannot mirror an existing Wayland desktop;"
-  note "the agent will start its OWN desktop session on this machine instead."
-elif [[ -S "/tmp/.X11-unix/X0" || -n "${DISPLAY:-}" ]]; then
-  note "X11 detected — your existing desktop (:0) will be streamed."
+  note "Wayland login detected. Selkies cannot mirror an existing Wayland desktop."
+  if [[ -n "$X_DISPLAYS" ]]; then
+    note "Existing X displays found: $X_DISPLAYS"
+    note "To stream one (e.g. a KasmVNC/Xvnc desktop) re-run with: --display ${X_DISPLAYS%% *}"
+    note "Otherwise the agent starts its OWN virtual desktop (needs xvfb + openbox)."
+  else
+    note "The agent will start its OWN virtual desktop (needs: sudo apt install xvfb openbox)."
+  fi
+elif [[ -n "$X_DISPLAYS" || -n "${DISPLAY:-}" ]]; then
+  DISPLAY_SERVER="x11"
+  note "X11 detected — your existing desktop (${DISPLAY:-${X_DISPLAYS%% *}}) will be streamed."
 else
   fail E02 "No display session found. Log into a graphical session first (or check loginctl show-session)."
 fi
@@ -149,11 +165,11 @@ print(json.dumps({
     "os_info": {"distro": platform.freedesktop_os_release().get("ID", "unknown")
                 if hasattr(platform, "freedesktop_os_release") else "unknown",
                 "kernel": platform.release()},
-    "agent_version": "0.1.0"}))
+    "agent_version": "0.2.1"}))
 PY
 )") || fail E05 "Registration rejected. The token may be expired or already used — mint a new one in the admin Workstations panel."
 
-python3 - "$REGISTER_RESPONSE" "$SERVER" "$CA_PIN" "$DISPLAY_SERVER" "$INSTALL_DIR" "$CONFIG_DIR" <<'PY'
+python3 - "$REGISTER_RESPONSE" "$SERVER" "$CA_PIN" "$DISPLAY_SERVER" "$INSTALL_DIR" "$CONFIG_DIR" "$FORCE_DISPLAY" <<'PY'
 import json, sys
 r = json.loads(sys.argv[1])
 cfg = {"server": sys.argv[2], "agent_token": r["agent_token"],
@@ -162,6 +178,8 @@ cfg = {"server": sys.argv[2], "agent_token": r["agent_token"],
        "display_server": sys.argv[4], "stream_settings": r["stream_settings"],
        "selkies_dir": sys.argv[5] + "/selkies", "ca_pin": sys.argv[3],
        "server_cert": (sys.argv[6] + "/server-cert.pem") if sys.argv[3] else ""}
+if len(sys.argv) > 7 and sys.argv[7]:
+    cfg["display"] = sys.argv[7]   # forced X display (e.g. :1)
 with open(sys.argv[6] + "/config.json", "w") as f:
     json.dump(cfg, f, indent=2)
 print("  → registered as: " + r["subdomain"])

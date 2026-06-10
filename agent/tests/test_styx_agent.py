@@ -44,6 +44,16 @@ def test_build_selkies_cmd_uses_cli_flags(tmp_path):
     assert env["SELKIES_BASIC_AUTH_PASSWORD"] == "pw"
     assert env["DISPLAY"] == ":0"
     assert "PULSE_SERVER" in env
+    # bundled interpreter must ignore the user's site-packages
+    assert env["PYTHONNOUSERSITE"] == "1"
+    assert "PYTHONPATH" not in env
+
+
+def test_display_override_wins_over_wayland(tmp_path):
+    _, cfg = _cfg(tmp_path, display_server="wayland", display=":1")
+    start_xvfb, display = styx_agent.display_plan(cfg)
+    assert start_xvfb is False
+    assert display == ":1"
 
 
 def test_display_plan_x11_attaches_live(tmp_path, monkeypatch):

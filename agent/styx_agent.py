@@ -18,7 +18,7 @@ import urllib.request
 from hashlib import sha256
 from pathlib import Path
 
-AGENT_VERSION = "0.2.0"
+AGENT_VERSION = "0.2.1"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -89,8 +89,13 @@ def display_plan(cfg: dict) -> tuple[bool, str]:
     and headless machines get a private Xvfb display — selkies-gstreamer is
     X11-only (ximagesrc), so this is the 'own session' those machines stream.
     """
+    # An explicit `display` override always wins — capture that live X display
+    # (e.g. a KasmVNC/Xvnc :1 running under an otherwise-Wayland login).
+    forced = cfg.get("display")
+    if forced:
+        return False, forced
     if cfg["display_server"] == "x11":
-        return False, cfg.get("display") or os.environ.get("DISPLAY") or ":0"
+        return False, os.environ.get("DISPLAY") or ":0"
     return True, cfg.get("xvfb_display", XVFB_DISPLAY)
 
 
@@ -107,6 +112,13 @@ def build_selkies_cmd(cfg: dict, display: str) -> tuple[list[str], dict]:
     env["DISPLAY"] = display
     env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
     env.setdefault("PULSE_SERVER", f"unix:{env['XDG_RUNTIME_DIR']}/pulse/native")
+    # Isolate the bundled portable interpreter from the user's site-packages.
+    # ~/.local/lib/python3.12 can hold a newer `websockets` (and editable .pth
+    # hooks) that shadow Selkies' pinned deps, causing create_server(loop=...)
+    # / extra_headers TypeErrors and ABI 'undefined symbol' import crashes.
+    env["PYTHONNOUSERSITE"] = "1"
+    for var in ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP"):
+        env.pop(var, None)
     env["SELKIES_ENCODER"] = encoder  # belt-and-suspenders; the flag is authoritative
     # Credentials go through the environment, NOT argv — argv is world-readable
     # via /proc/<pid>/cmdline. These SELKIES_BASIC_AUTH_* names are the same
