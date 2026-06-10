@@ -76,6 +76,11 @@ async def _build_and_start_container(instance, template, docker):
         port=template.internal_port,
         template_name=template.name,
     )
+
+    net = None
+    if instance.owner_id:
+        net = await asyncio.to_thread(docker.ensure_user_network, instance.owner_id)
+
     container_id = await asyncio.to_thread(
         docker.create_container,
         name=f"selkies-{instance.subdomain}",
@@ -92,6 +97,7 @@ async def _build_and_start_container(instance, template, docker):
         dind=template.dind,
         cap_add=template.cap_add,
         security_opt=template.security_opt,
+        network=net,
     )
     instance.container_id = container_id
     await asyncio.to_thread(docker.start_container, container_id)
@@ -154,6 +160,10 @@ async def _launch_instance_background(instance_id: str, template_id: str):
                 template_name=template.name,
             )
 
+            net = None
+            if instance.owner_id:
+                net = await asyncio.to_thread(docker.ensure_user_network, instance.owner_id)
+
             container_id = await asyncio.to_thread(
                 docker.create_container,
                 name=f"selkies-{instance.subdomain}",
@@ -170,6 +180,7 @@ async def _launch_instance_background(instance_id: str, template_id: str):
                 dind=template.dind,
                 cap_add=template.cap_add,
                 security_opt=template.security_opt,
+                network=net,
             )
 
             # Track pulled image
@@ -515,6 +526,7 @@ async def delete_instance(
 
     # Capture subdomain before deletion for audit
     subdomain = instance.subdomain
+    owner_id = instance.owner_id
 
     if instance.container_id:
         status = await asyncio.to_thread(docker.get_container_status, instance.container_id)
@@ -573,6 +585,14 @@ async def delete_instance(
         if not remaining_t.first():
             await session.delete(template)
             await session.commit()
+
+    # Clean up per-user network if this was the last instance for the user
+    if owner_id:
+        remaining_user_instances = await session.exec(
+            select(Instance).where(Instance.owner_id == owner_id)
+        )
+        if not remaining_user_instances.first():
+            await asyncio.to_thread(docker.remove_user_network, owner_id)
 
     await _refresh_routes(session)
     return Response(status_code=204)

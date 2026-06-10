@@ -269,3 +269,56 @@ def test_cpu_limit_applied(mock_docker):
 
     kwargs = client.containers.create.call_args.kwargs
     assert kwargs["nano_cpus"] == int(1.5e9)
+
+
+def test_ensure_user_network_creates_and_attaches_traefik(mock_docker):
+    manager, client = mock_docker
+    mock_network = MagicMock()
+    client.networks.get.side_effect = docker.errors.NotFound("x")
+    client.networks.create.return_value = mock_network
+
+    name = manager.ensure_user_network("user-1234567890ab-extra")
+
+    assert name == "styx-u-user-1234567"
+    client.networks.create.assert_called_once_with(name, driver="bridge")
+    mock_network.connect.assert_called_once_with("styx-traefik")
+
+
+def test_ensure_user_network_idempotent(mock_docker):
+    manager, client = mock_docker
+    mock_network = MagicMock()
+    client.networks.get.return_value = mock_network
+
+    manager.ensure_user_network("u1")
+
+    client.networks.create.assert_not_called()
+
+
+def test_create_container_uses_network_override(mock_docker):
+    manager, client = mock_docker
+    mock_container = MagicMock()
+    mock_container.id = "net-override-container"
+    client.containers.create.return_value = mock_container
+
+    manager.create_container(
+        name="n",
+        image="img",
+        labels={},
+        environment={},
+        volumes={},
+        port=3001,
+        network="styx-u-abc",
+    )
+
+    call_kwargs = client.containers.create.call_args.kwargs
+    assert call_kwargs["network"] == "styx-u-abc"
+
+
+def test_remove_user_network_tolerates_missing(mock_docker):
+    manager, client = mock_docker
+    client.networks.get.side_effect = docker.errors.NotFound("x")
+
+    manager.remove_user_network("u1")
+
+    client.networks.get.assert_called_once()
+    client.networks.create.assert_not_called()

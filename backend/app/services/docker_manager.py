@@ -5,6 +5,8 @@ import docker
 import docker.errors
 from docker.types import DeviceRequest
 
+TRAEFIK_CONTAINER = "styx-traefik"
+
 
 def detect_gpu() -> dict:
     """Detect available GPU on host."""
@@ -53,6 +55,7 @@ class DockerManager:
         dind: bool = False,
         cap_add: list[str] | None = None,
         security_opt: list[str] | None = None,
+        network: str | None = None,
     ) -> str:
         if dind:
             privileged = True
@@ -69,7 +72,7 @@ class DockerManager:
             "environment": {"PIXELFLUX_WAYLAND": "true", **environment},
             "volumes": volumes,
             "detach": True,
-            "network": self._network_name,
+            "network": network or self._network_name,
             "privileged": privileged,
         }
         if privileged:
@@ -179,3 +182,34 @@ class DockerManager:
             return {"size_mb": size_mb, "id": img.id}
         except docker.errors.ImageNotFound:
             return None
+
+    def ensure_user_network(self, user_id: str) -> str:
+        """Per-user bridge network; traefik is attached so it can route to
+        instance containers. Backend itself never joins user networks."""
+        name = f"styx-u-{user_id[:12]}"
+        try:
+            self._client.networks.get(name)
+            return name
+        except docker.errors.NotFound:
+            pass
+        net = self._client.networks.create(name, driver="bridge")
+        try:
+            net.connect(TRAEFIK_CONTAINER)
+        except docker.errors.APIError:
+            pass  # already connected or traefik not present (tests/dev)
+        return name
+
+    def remove_user_network(self, user_id: str) -> None:
+        name = f"styx-u-{user_id[:12]}"
+        try:
+            net = self._client.networks.get(name)
+        except docker.errors.NotFound:
+            return
+        try:
+            net.disconnect(TRAEFIK_CONTAINER)
+        except docker.errors.APIError:
+            pass
+        try:
+            net.remove()
+        except docker.errors.APIError:
+            pass  # still has containers — leave it
