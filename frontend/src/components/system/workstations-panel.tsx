@@ -3,6 +3,7 @@ import { Copy, Monitor, RefreshCw, Trash2 } from "lucide-react";
 import { api, type EnrollToken, type Workstation } from "@/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
 
 const STATUS_STYLES: Record<string, string> = {
   online: "bg-emerald-500/15 text-emerald-400",
@@ -17,6 +18,8 @@ export function WorkstationsPanel() {
   const [enroll, setEnroll] = useState<EnrollToken | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [revokeTarget, setRevokeTarget] = useState<Workstation | null>(null);
+  const [purgeTarget, setPurgeTarget] = useState<Workstation | null>(null);
 
   const refresh = useCallback(() => {
     api.listWorkstations().then(setRows).catch((e) => setError(String(e)));
@@ -47,13 +50,21 @@ export function WorkstationsPanel() {
       : [...ws.allowed_user_ids, uid];
     api.setWorkstationAccess(ws.id, next).then(refresh);
   };
-  const revoke = (ws: Workstation) => {
-    if (!confirm(`Revoke "${ws.name}"? The agent will stop streaming and show uninstall instructions.`)) return;
-    api.revokeWorkstation(ws.id).then(refresh);
+  const handleRevoke = () => {
+    if (revokeTarget) {
+      api.revokeWorkstation(revokeTarget.id).then(() => {
+        setRevokeTarget(null);
+        refresh();
+      });
+    }
   };
-  const purge = (ws: Workstation) => {
-    if (!confirm(`Permanently remove "${ws.name}" from the portal? Run the uninstall on the machine too.`)) return;
-    api.revokeWorkstation(ws.id, true).then(refresh);
+  const handlePurge = () => {
+    if (purgeTarget) {
+      api.revokeWorkstation(purgeTarget.id, true).then(() => {
+        setPurgeTarget(null);
+        refresh();
+      });
+    }
   };
 
   return (
@@ -123,7 +134,7 @@ export function WorkstationsPanel() {
                 </div>
                 <div className="flex gap-2">
                   <Button
-                    onClick={() => revoke(ws)}
+                    onClick={() => setRevokeTarget(ws)}
                     variant="secondary"
                     size="sm"
                     disabled={ws.status === "revoked"}
@@ -131,7 +142,7 @@ export function WorkstationsPanel() {
                     Revoke
                   </Button>
                   <Button
-                    onClick={() => purge(ws)}
+                    onClick={() => setPurgeTarget(ws)}
                     variant="destructive"
                     size="sm"
                     title="Remove from portal"
@@ -173,6 +184,27 @@ export function WorkstationsPanel() {
           ))}
         </CardContent>
       </Card>
+
+      {/* Revoke confirmation dialog */}
+      <ConfirmDialog
+        open={revokeTarget !== null}
+        onOpenChange={(open) => !open && setRevokeTarget(null)}
+        title="Revoke Workstation"
+        description="The agent will stop streaming and show uninstall instructions."
+        confirmLabel="Revoke"
+        onConfirm={handleRevoke}
+      />
+
+      {/* Purge confirmation dialog */}
+      <ConfirmDialog
+        open={purgeTarget !== null}
+        onOpenChange={(open) => !open && setPurgeTarget(null)}
+        title={`Purge "${purgeTarget?.name ?? ""}"`}
+        description="Permanently removes it from the portal. Run the uninstall on the machine too."
+        variant="destructive"
+        confirmLabel="Purge"
+        onConfirm={handlePurge}
+      />
     </div>
   );
 }
