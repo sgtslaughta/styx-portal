@@ -5,6 +5,8 @@ import { api } from "@/api/client";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
+import { Loader2 } from "lucide-react";
 import { LoginBrandPanel } from "@/components/auth/LoginBrandPanel";
 
 const STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Good", "Strong"];
@@ -14,6 +16,7 @@ export function SetupWizard() {
   const [username, setU] = useState("");
   const [password, setP] = useState("");
   const [err, setErr] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const nav = useNavigate();
   const { refresh, setupRequired, loading } = useAuth();
   const score = password ? zxcvbn(password).score : 0;
@@ -21,11 +24,13 @@ export function SetupWizard() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (score < 3) { setErr("Password too weak"); return; }
+    setSubmitting(true);
     try {
       await api.setup({ username, password });
       await refresh();
       nav("/");
     } catch (e) { setErr((e as Error).message); }
+    finally { setSubmitting(false); }
   }
 
   // Setup is a one-time flow: once an admin exists, never show it again.
@@ -58,13 +63,13 @@ export function SetupWizard() {
               <label htmlFor="password" className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Password
               </label>
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setP(e.target.value)}
                 required
+                aria-invalid={err ? true : undefined}
               />
               {password && (
                 <div className="space-y-2 pt-2">
@@ -90,8 +95,8 @@ export function SetupWizard() {
                 {err}
               </div>
             )}
-            <Button type="submit" className="w-full" disabled={score < 3}>
-              Create admin
+            <Button type="submit" className="w-full" disabled={score < 3 || submitting}>
+              {submitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creating…</> : "Create admin"}
             </Button>
           </form>
         </div>
