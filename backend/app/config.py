@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     SCREENSHOT_INTERVAL_SECONDS: int = 30
     TRAEFIK_DYNAMIC_DIR: str = "/app/traefik-dynamic"
     AUTHENTIK_MIDDLEWARE: str = "authentik@file"
+    DEPLOY_MODE: str = "tunnel"   # tunnel | direct
     JWT_SECRET: str = ""
     ACCESS_TTL: int = 900          # 15 minutes
     REFRESH_TTL: int = 604800      # 7 days

@@ -6,7 +6,20 @@ from app.config import Settings
 _settings = Settings()
 
 
-def build_routes_config(instances: list[dict], domain: str) -> dict:
+def _router_transport(deploy_mode: str, domain: str) -> dict:
+    """Return entryPoints and TLS config dict based on deploy mode."""
+    if deploy_mode == "direct":
+        return {
+            "entryPoints": ["websecure"],
+            "tls": {
+                "certResolver": "letsencrypt",
+                "domains": [{"main": domain, "sans": [f"*.{domain}"]}],
+            },
+        }
+    return {"entryPoints": ["web"]}
+
+
+def build_routes_config(instances: list[dict], domain: str, deploy_mode: str = "tunnel") -> dict:
     """Build the Traefik dynamic config dict for all services + running instances.
 
     Always emits the static `unavailable-rewrite` / `instance-unavailable-errors`
@@ -30,27 +43,22 @@ def build_routes_config(instances: list[dict], domain: str) -> dict:
             "routers": {
                 "frontend": {
                     "rule": f"Host(`{domain}`)",
-                    "entryPoints": ["web"],
                     "service": "frontend",
                     "priority": 1,
+                    **_router_transport(deploy_mode, domain),
                 },
                 "api": {
                     "rule": f"Host(`{domain}`) && PathPrefix(`/api`)",
-                    "entryPoints": ["web"],
                     "service": "api",
                     "priority": 100,
-                },
-                "dashboard": {
-                    "rule": f"Host(`traefik.{domain}`)",
-                    "entryPoints": ["web"],
-                    "service": "api@internal",
+                    **_router_transport(deploy_mode, domain),
                 },
                 "instances_fallback": {
                     "rule": f"Host(`{domain}`) && PathPrefix(`/i/`)",
-                    "entryPoints": ["web"],
                     "middlewares": ["unavailable-rewrite"],
                     "service": "api",
                     "priority": 10,
+                    **_router_transport(deploy_mode, domain),
                 },
             },
             "services": {
@@ -77,10 +85,10 @@ def build_routes_config(instances: list[dict], domain: str) -> dict:
 
         config["http"]["routers"][inst_id] = {
             "rule": f"Host(`{domain}`) && PathPrefix(`/i/{subdomain}`)",
-            "entryPoints": ["web"],
             "middlewares": ["instance-unavailable-errors", strip_mw],
             "service": inst_id,
             "priority": 50,
+            **_router_transport(deploy_mode, domain),
         }
         svc_config: dict = {
             "servers": [{"url": f"{protocol}://{container_name}:{port}"}],
@@ -106,7 +114,7 @@ def write_routes(instances: list[dict], domain: str | None = None):
         out_dir.mkdir(parents=True, exist_ok=True)
     except PermissionError:
         return
-    config = build_routes_config(instances, domain)
+    config = build_routes_config(instances, domain, _settings.DEPLOY_MODE)
     (out_dir / "routes.yml").write_text(yaml.dump(config, default_flow_style=False))
 
 
