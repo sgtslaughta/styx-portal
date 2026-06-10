@@ -8,6 +8,16 @@ import type {
   TemplateCreate,
 } from "@/lib/types";
 
+export type Workstation = {
+  id: string; name: string; subdomain: string; hostname: string;
+  lan_ip: string; port: number; status: string; display_server: string;
+  gpu_info: Record<string, unknown>; os_info: Record<string, unknown>;
+  agent_version: string; stream_settings: { encoder: string; framerate: number; bitrate_kbps: number };
+  all_users: boolean; last_heartbeat: string | null; last_error: string | null;
+  created_at: string; allowed_user_ids: string[];
+};
+export type EnrollToken = { token: string; expires_at: string; command: string };
+
 export type OAuthProviderRow = {
   id: string; name: string; display_label: string; kind: string;
   issuer_url: string | null; client_id: string; scopes: string;
@@ -183,6 +193,21 @@ export const api = {
   disableUser: (id: string) => request<unknown>(`/users/${id}/disable`, { method: "PATCH" }),
   changeRole: (id: string, role: string) =>
     request<unknown>(`/users/${id}/role?role=${role}`, { method: "PATCH" }),
+
+  // Workstations
+  listWorkstations: () => request<Workstation[]>("/workstations"),
+  myWorkstations: () => request<Workstation[]>("/workstations/mine"),
+  mintEnrollToken: () =>
+    request<EnrollToken>("/workstations/enroll-tokens", { method: "POST" }),
+  updateWorkstation: (id: string, data: { name?: string; all_users?: boolean;
+    stream_settings?: Record<string, unknown> }) =>
+    request<Workstation>(`/workstations/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  setWorkstationAccess: (id: string, user_ids: string[]) =>
+    request<Workstation>(`/workstations/${id}/access`, { method: "PUT", body: JSON.stringify({ user_ids }) }),
+  revokeWorkstation: (id: string, purge = false) =>
+    request<{ ok: boolean }>(`/workstations/${id}?purge=${purge}`, { method: "DELETE" }),
+  workstationConnectUrl: (id: string) =>
+    request<{ url: string }>(`/workstations/${id}/connect`),
 
   oauthProviders: () => request<{ name: string; display_label: string; icon_url: string | null }[]>("/auth/oauth/providers"),
   oauthStartUrl: (name: string) => `/api/auth/oauth/${name}/start`,
