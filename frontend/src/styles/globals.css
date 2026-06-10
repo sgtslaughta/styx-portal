@@ -19,8 +19,8 @@
   --accent: oklch(0.93 0.006 265);
   --accent-foreground: oklch(0.2 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.87 0.008 265);
-  --input: oklch(0.87 0.008 265);
+  --border: oklch(0.82 0.012 265);
+  --input: oklch(0.82 0.012 265);
   --ring: oklch(0.55 0.17 255);
   --success: oklch(0.55 0.2 162.48);
   --warning: oklch(0.65 0.18 86.047);
@@ -145,8 +145,8 @@
 :root {
   --surface-gradient: radial-gradient(120% 140% at 10% 0%, #eef3fb 0%, #e7ecf4 60%);
   --card-gradient: linear-gradient(160deg, #ffffff, #eef3fb);
-  --card-border-color: #d4def0;
-  --card-glow: 0 1px 2px rgba(40, 90, 200, 0.06), 0 8px 20px -14px rgba(40, 90, 200, 0.35);
+  --card-border-color: #c8d5e8;
+  --card-glow: 0 1px 3px rgba(40, 90, 200, 0.08), 0 8px 20px -14px rgba(40, 90, 200, 0.35);
   --brand-accent: #2f6fe0;
   --motif-color: rgba(40, 90, 200, 0.05);
   --header-gradient: linear-gradient(90deg, #e9eff8, #eef3fb);
