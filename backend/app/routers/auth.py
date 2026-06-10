@@ -16,6 +16,7 @@ from app.security.csrf import new_csrf_token, CSRF_COOKIE
 from app.security.deps import get_current_user
 from app.security.setup_gate import users_exist
 from app.services import federation
+from app.services.audit import audit_request
 
 router = APIRouter()
 _settings = Settings()
@@ -50,11 +51,13 @@ def _clear_auth_cookies(resp: Response) -> None:
         resp.delete_cookie(name, domain=_settings.COOKIE_DOMAIN)
 
 
-async def _issue_session(resp: Response, session: AsyncSession, user: User, request: Request) -> None:
+async def _issue_session(resp: Response, session: AsyncSession, user: User, request: Request,
+                         family_id: str | None = None) -> None:
     access = tokens.create_access_token(user.id, user.role)
     refresh, jti = tokens.create_refresh_token(user.id)
     session.add(RefreshToken(
         jti=jti, user_id=user.id,
+        family_id=family_id or jti,
         expires_at=_now() + timedelta(seconds=_settings.REFRESH_TTL),
         user_agent=request.headers.get("user-agent"),
     ))
@@ -62,6 +65,18 @@ async def _issue_session(resp: Response, session: AsyncSession, user: User, requ
     session.add(user)
     await session.commit()
     _set_auth_cookies(resp, access, refresh, new_csrf_token())
+
+
+@router.get("/csrf")
+async def csrf_bootstrap(response: Response):
+    """Issue an anonymous CSRF cookie so pre-auth POSTs (accept-invite) can
+    pass the double-submit check."""
+    response.set_cookie(
+        CSRF_COOKIE, new_csrf_token(), max_age=600,
+        httponly=False, secure=_settings.COOKIE_SECURE,
+        samesite="strict", domain=_settings.COOKIE_DOMAIN,
+    )
+    return {"ok": True}
 
 
 @router.get("/setup-required")
@@ -81,6 +96,9 @@ async def setup(body: SetupRequest, request: Request, response: Response,
     await session.exec(update(Instance).where(Instance.owner_id == None).values(owner_id=user.id))  # noqa: E711
     await session.exec(update(ServiceTemplate).where(ServiceTemplate.owner_id == None).values(owner_id=user.id))  # noqa: E711
     await _issue_session(response, session, user, request)
+    await audit_request(session, request, "auth.signup", user_id=user.id,
+                        detail={"role": user.role, "via": "setup"})
+    await session.commit()
     return UserOut(id=user.id, username=user.username, email=user.email,
                    role=user.role, is_active=user.is_active)
 
@@ -91,8 +109,13 @@ async def login(body: LoginRequest, request: Request, response: Response,
     result = await session.exec(select(User).where(User.username == body.username))
     user = result.first()
     if not user or not user.is_active or not verify_password(body.password, user.password_hash):
+        await audit_request(session, request, "auth.login_failed",
+                            detail={"username": body.username})
+        await session.commit()
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
     await _issue_session(response, session, user, request)
+    await audit_request(session, request, "auth.login", user_id=user.id)
+    await session.commit()
     return {"id": user.id, "username": user.username, "role": user.role,
             "must_change_pw": user.must_change_pw}
 
@@ -110,24 +133,37 @@ async def refresh(request: Request, response: Response,
     if claims.get("type") != "refresh":
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Wrong token type")
     stored = await session.get(RefreshToken, claims["jti"])
-    if not stored or stored.revoked:
+    if not stored:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh revoked")
+    if stored.revoked:
+        # RFC 9700: replay of a rotated token — assume theft, kill the family
+        await session.exec(
+            update(RefreshToken)
+            .where(RefreshToken.family_id == stored.family_id)
+            .values(revoked=True)
+        )
+        await audit_request(session, request, "auth.refresh_reuse",
+                            user_id=stored.user_id, resource=stored.family_id)
+        await session.commit()
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh revoked")
     user = await session.get(User, claims["sub"])
     if not user or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User inactive")
     stored.revoked = True
     session.add(stored)
-    await _issue_session(response, session, user, request)
+    await _issue_session(response, session, user, request, family_id=stored.family_id)
     return {"ok": True}
 
 
 @router.post("/logout")
 async def logout(request: Request, response: Response,
                  session: AsyncSession = Depends(get_session)):
+    user_id = None
     raw = request.cookies.get("refresh_token")
     if raw:
         try:
             claims = tokens.decode_token(raw)
+            user_id = claims.get("sub")
             stored = await session.get(RefreshToken, claims.get("jti"))
             if stored:
                 stored.revoked = True
@@ -135,6 +171,8 @@ async def logout(request: Request, response: Response,
                 await session.commit()
         except tokens.TokenError:
             pass
+    await audit_request(session, request, "auth.logout", user_id=user_id)
+    await session.commit()
     _clear_auth_cookies(response)
     return {"ok": True}
 
@@ -164,6 +202,9 @@ async def accept_invite(body: AcceptInviteRequest, request: Request, response: R
     inv.used_at = _now()
     session.add_all([user, inv])
     await _issue_session(response, session, user, request)
+    await audit_request(session, request, "auth.accept_invite", user_id=user.id,
+                        detail={"role": user.role})
+    await session.commit()
     return {"id": user.id, "username": user.username, "role": user.role}
 
 
@@ -213,7 +254,10 @@ async def link_callback(name: str, request: Request,
         return RedirectResponse("/?link=error", status_code=302)
     try:
         identity = await oauth.fetch_identity(provider, "link", str(request.url), tx["verifier"])
-        await federation.link_identity(session, user, name, identity, provider.trust_email)
+        await federation.link_identity(session, user, name, identity)
+        await audit_request(session, request, "sso.link", user_id=user.id,
+                            resource=name, detail={"email": identity.email})
+        await session.commit()
     except federation.FederationError:
         return RedirectResponse("/?link=conflict", status_code=302)
     except Exception:
@@ -224,7 +268,7 @@ async def link_callback(name: str, request: Request,
 
 
 @router.delete("/link/{name}")
-async def unlink_provider(name: str, user: User = Depends(get_current_user),
+async def unlink_provider(name: str, request: Request, user: User = Depends(get_current_user),
                           session: AsyncSession = Depends(get_session)):
     rows = (await session.exec(select(FederatedIdentity).where(
         FederatedIdentity.user_id == user.id))).all()
@@ -236,5 +280,6 @@ async def unlink_provider(name: str, user: User = Depends(get_current_user),
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
                             "cannot unlink the only login method")
     await session.delete(target)
+    await audit_request(session, request, "sso.unlink", user_id=user.id, resource=name)
     await session.commit()
     return {"ok": True}

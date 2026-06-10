@@ -30,17 +30,21 @@ def get_history(range_str: str = "1h") -> dict:
     total_gb = disk.total / 1024**3
     free_gb = disk.free / 1024**3
 
+    images_size = 0.0
+    volumes_size = 0.0
     try:
         import docker
-        client = docker.from_env()
-        df = client.df()
-        images_size = sum(img.get("Size", 0) for img in df.get("Images", [])) / 1024**3
-        volumes_size = sum(
-            v.get("UsageData", {}).get("Size", 0) for v in df.get("Volumes", [])
-        ) / 1024**3
+        from app.config import Settings
+        client = docker.DockerClient(base_url=Settings().DOCKER_SOCKET)
+        # IMAGES endpoint is permitted by the socket proxy; /system/df is not.
+        for img in client.images.list():
+            images_size += img.attrs.get("Size", 0)
+        images_size /= 1024**3
+        # Volume sizes require /system/df (proxy-denied); report 0 rather than
+        # bypass the proxy. Disk totals below still reflect real usage.
     except Exception:
-        images_size = 0
-        volumes_size = 0
+        images_size = 0.0
+        volumes_size = 0.0
 
     return {
         "aggregate_cpu": cpu,

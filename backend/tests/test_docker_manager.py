@@ -8,7 +8,7 @@ from app.services.docker_manager import DockerManager
 def mock_docker():
     with patch("app.services.docker_manager.docker.DockerClient") as mock_cls:
         client = MagicMock()
-        mock_cls.from_env.return_value = client
+        mock_cls.return_value = client
         manager = DockerManager(network_name="styx-portal")
         yield manager, client
 
@@ -17,6 +17,19 @@ def test_default_network_name():
     with patch("app.services.docker_manager.docker.DockerClient"):
         manager = DockerManager()
         assert manager._network_name == "styx-portal"
+
+
+def test_manager_uses_configured_socket(monkeypatch):
+    """Verify DockerManager respects base_url parameter from DOCKER_SOCKET setting."""
+    captured = {}
+
+    class FakeClient:
+        def __init__(self, base_url=None):
+            captured["url"] = base_url
+
+    monkeypatch.setattr("app.services.docker_manager.docker.DockerClient", FakeClient)
+    DockerManager(base_url="tcp://docker-proxy:2375")
+    assert captured["url"] == "tcp://docker-proxy:2375"
 
 
 def test_create_container(mock_docker):
@@ -157,9 +170,168 @@ def test_create_container_dind(mock_docker):
         volumes={"dind-store": {"bind": "/var/lib/docker", "mode": "rw"}},
         port=3001,
         dind=True,
+        memory_limit="4g",
+        cpu_limit="2",
     )
 
     call_kwargs = client.containers.create.call_args[1]
     assert call_kwargs["privileged"] is True
     assert call_kwargs["environment"]["START_DOCKER"] == "true"
     assert call_kwargs["volumes"]["dind-store"]["bind"] == "/var/lib/docker"
+
+
+def test_default_container_is_confined(mock_docker):
+    manager, client = mock_docker
+    mock_container = MagicMock()
+    mock_container.id = "confined-container"
+    client.containers.create.return_value = mock_container
+
+    manager.create_container(
+        name="n",
+        image="img",
+        labels={},
+        environment={},
+        volumes={},
+        port=3001,
+    )
+
+    kwargs = client.containers.create.call_args.kwargs
+    assert kwargs["security_opt"] == ["no-new-privileges:true"]
+    assert kwargs["cap_drop"] == ["ALL"]
+    assert kwargs["privileged"] is False
+    assert "sysctls" not in kwargs
+
+
+def test_template_cap_add_and_security_opt_passthrough(mock_docker):
+    manager, client = mock_docker
+    mock_container = MagicMock()
+    mock_container.id = "custom-container"
+    client.containers.create.return_value = mock_container
+
+    manager.create_container(
+        name="n",
+        image="img",
+        labels={},
+        environment={},
+        volumes={},
+        port=3001,
+        cap_add=["SYS_NICE"],
+        security_opt=["seccomp=unconfined"],
+    )
+
+    kwargs = client.containers.create.call_args.kwargs
+    assert kwargs["cap_add"] == ["SYS_NICE"]
+    assert "seccomp=unconfined" in kwargs["security_opt"]
+    assert "no-new-privileges:true" in kwargs["security_opt"]
+
+
+def test_dind_requires_memory_limit(mock_docker):
+    manager, client = mock_docker
+
+    with pytest.raises(ValueError, match="resource limits"):
+        manager.create_container(
+            name="n",
+            image="img",
+            labels={},
+            environment={},
+            volumes={},
+            port=3001,
+            dind=True,
+            memory_limit=None,
+        )
+
+
+def test_dind_still_privileged_with_limits(mock_docker):
+    manager, client = mock_docker
+    mock_container = MagicMock()
+    mock_container.id = "dind-limited"
+    client.containers.create.return_value = mock_container
+
+    manager.create_container(
+        name="n",
+        image="img",
+        labels={},
+        environment={},
+        volumes={},
+        port=3001,
+        dind=True,
+        memory_limit="4g",
+        cpu_limit="2",
+    )
+
+    kwargs = client.containers.create.call_args.kwargs
+    assert kwargs["privileged"] is True
+    assert "cap_drop" not in kwargs
+
+
+def test_cpu_limit_applied(mock_docker):
+    manager, client = mock_docker
+    mock_container = MagicMock()
+    mock_container.id = "cpu-limited"
+    client.containers.create.return_value = mock_container
+
+    manager.create_container(
+        name="n",
+        image="img",
+        labels={},
+        environment={},
+        volumes={},
+        port=3001,
+        cpu_limit="1.5",
+    )
+
+    kwargs = client.containers.create.call_args.kwargs
+    assert kwargs["nano_cpus"] == int(1.5e9)
+
+
+def test_ensure_user_network_creates_and_attaches_traefik(mock_docker):
+    manager, client = mock_docker
+    mock_network = MagicMock()
+    client.networks.get.side_effect = docker.errors.NotFound("x")
+    client.networks.create.return_value = mock_network
+
+    name = manager.ensure_user_network("user-1234567890ab-extra")
+
+    assert name == "styx-u-user-1234567"
+    client.networks.create.assert_called_once_with(name, driver="bridge")
+    mock_network.connect.assert_called_once_with("styx-traefik")
+
+
+def test_ensure_user_network_idempotent(mock_docker):
+    manager, client = mock_docker
+    mock_network = MagicMock()
+    client.networks.get.return_value = mock_network
+
+    manager.ensure_user_network("u1")
+
+    client.networks.create.assert_not_called()
+
+
+def test_create_container_uses_network_override(mock_docker):
+    manager, client = mock_docker
+    mock_container = MagicMock()
+    mock_container.id = "net-override-container"
+    client.containers.create.return_value = mock_container
+
+    manager.create_container(
+        name="n",
+        image="img",
+        labels={},
+        environment={},
+        volumes={},
+        port=3001,
+        network="styx-u-abc",
+    )
+
+    call_kwargs = client.containers.create.call_args.kwargs
+    assert call_kwargs["network"] == "styx-u-abc"
+
+
+def test_remove_user_network_tolerates_missing(mock_docker):
+    manager, client = mock_docker
+    client.networks.get.side_effect = docker.errors.NotFound("x")
+
+    manager.remove_user_network("u1")
+
+    client.networks.get.assert_called_once()
+    client.networks.create.assert_not_called()

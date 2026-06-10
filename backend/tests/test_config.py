@@ -1,4 +1,9 @@
-from app.config import Settings
+import json
+import stat
+
+import pytest
+
+from app.config import Settings, PLACEHOLDER_SECRETS
 
 
 def test_default_settings():
@@ -39,21 +44,91 @@ def test_jwt_settings_defaults():
 
 def test_jwt_secret_or_raise_with_secret():
     """Test jwt_secret_or_raise returns provided secret."""
-    s = Settings(JWT_SECRET="test-secret")
-    assert s.jwt_secret_or_raise() == "test-secret"
+    secret = "a" * 32  # 32 chars minimum
+    s = Settings(JWT_SECRET=secret)
+    assert s.jwt_secret_or_raise() == secret
 
 
-def test_jwt_secret_or_raise_empty_with_secure_false():
-    """Test jwt_secret_or_raise returns dev secret when COOKIE_SECURE=False."""
-    s = Settings(JWT_SECRET="", COOKIE_SECURE=False)
-    assert s.jwt_secret_or_raise() == "dev-insecure-secret-do-not-use-in-prod"
+def test_jwt_secret_or_raise_empty_with_secure_false(tmp_path):
+    """Test jwt_secret_or_raise generates a secret when JWT_SECRET empty and COOKIE_SECURE=False."""
+    s = _settings(tmp_path, JWT_SECRET="", COOKIE_SECURE=False)
+    secret = s.jwt_secret_or_raise()
+    assert len(secret) >= 32  # Should generate, not use old dev fallback
 
 
-def test_jwt_secret_or_raise_empty_with_secure_true_raises():
-    """Test jwt_secret_or_raise raises RuntimeError when JWT_SECRET empty and COOKIE_SECURE=True."""
-    s = Settings(JWT_SECRET="", COOKIE_SECURE=True)
-    try:
+def test_jwt_secret_or_raise_empty_with_secure_true_generates(tmp_path):
+    """Test jwt_secret_or_raise generates a secret when JWT_SECRET empty and COOKIE_SECURE=True."""
+    s = _settings(tmp_path, JWT_SECRET="", COOKIE_SECURE=True)
+    secret = s.jwt_secret_or_raise()
+    assert len(secret) >= 32  # Should generate, not raise
+
+
+def _settings(tmp_path, **kw):
+    kw.setdefault("SECRETS_FILE", str(tmp_path / "secrets.json"))
+    return Settings(_env_file=None, **kw)
+
+
+def test_autogenerates_secret_when_unset(tmp_path):
+    s = _settings(tmp_path, JWT_SECRET="")
+    secret = s.jwt_secret_or_raise()
+    assert len(secret) >= 32
+    data = json.loads((tmp_path / "secrets.json").read_text())
+    assert data["jwt_secret"] == secret
+
+
+def test_generated_secret_persists_across_instances(tmp_path):
+    path = str(tmp_path / "secrets.json")
+    a = Settings(_env_file=None, JWT_SECRET="", SECRETS_FILE=path)
+    b = Settings(_env_file=None, JWT_SECRET="", SECRETS_FILE=path)
+    assert a.jwt_secret_or_raise() == b.jwt_secret_or_raise()
+
+
+def test_secrets_file_mode_0600(tmp_path):
+    s = _settings(tmp_path, JWT_SECRET="")
+    s.jwt_secret_or_raise()
+    mode = stat.S_IMODE((tmp_path / "secrets.json").stat().st_mode)
+    assert mode == 0o600
+
+
+def test_env_secret_wins_over_file(tmp_path):
+    (tmp_path / "secrets.json").write_text(json.dumps({"jwt_secret": "f" * 40}))
+    s = _settings(tmp_path, JWT_SECRET="e" * 40)
+    assert s.jwt_secret_or_raise() == "e" * 40
+
+
+def test_rejects_short_secret(tmp_path):
+    s = _settings(tmp_path, JWT_SECRET="short")
+    with pytest.raises(RuntimeError, match="32"):
         s.jwt_secret_or_raise()
-        assert False, "Expected RuntimeError"
-    except RuntimeError as e:
-        assert "JWT_SECRET must be set when COOKIE_SECURE=true" in str(e)
+
+
+@pytest.mark.parametrize("placeholder", sorted(PLACEHOLDER_SECRETS))
+def test_rejects_placeholder_secret(tmp_path, placeholder):
+    s = _settings(tmp_path, JWT_SECRET=placeholder)
+    with pytest.raises(RuntimeError, match="placeholder"):
+        s.jwt_secret_or_raise()
+
+
+def test_no_dev_fallback_secret(tmp_path):
+    s = _settings(tmp_path, JWT_SECRET="", COOKIE_SECURE=False)
+    assert s.jwt_secret_or_raise() != "dev-insecure-secret-do-not-use-in-prod"
+
+
+def test_corrupt_secrets_file_regenerates(tmp_path):
+    """Test that corrupt JSON in secrets.json is detected and regenerated."""
+    p = tmp_path / "secrets.json"
+    p.write_text("{not json")
+    s = _settings(tmp_path, JWT_SECRET="")
+    secret = s.jwt_secret_or_raise()
+    assert len(secret) >= 32
+    assert json.loads(p.read_text())["jwt_secret"] == secret
+
+
+def test_short_persisted_secret_regenerates(tmp_path):
+    """Test that persisted secret under 32 chars triggers regeneration."""
+    p = tmp_path / "secrets.json"
+    p.write_text(json.dumps({"jwt_secret": "tiny"}))
+    s = _settings(tmp_path, JWT_SECRET="")
+    secret = s.jwt_secret_or_raise()
+    assert len(secret) >= 32
+    assert json.loads(p.read_text())["jwt_secret"] == secret

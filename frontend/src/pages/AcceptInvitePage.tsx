@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router";
 import zxcvbn from "zxcvbn";
 import { api } from "@/api/client";
@@ -18,6 +18,10 @@ export function AcceptInvitePage() {
   const nav = useNavigate();
   const { refresh } = useAuth();
   const score = password ? zxcvbn(password).score : 0;
+
+  useEffect(() => {
+    void fetch("/api/auth/csrf", { credentials: "include" });
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

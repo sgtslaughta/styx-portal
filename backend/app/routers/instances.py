@@ -15,11 +15,20 @@ from app.security.deps import get_current_user, require_owner_or_admin
 from app.services.docker_manager import DockerManager
 from app.services.screenshot import ScreenshotService
 from app.services.traefik_labels import generate_traefik_labels
+from app.services.audit import audit
+from app.middleware.rate_limit import SlidingWindow
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 _settings = Settings()
+
+# Parse rate limit config and create instance creation limiter
+_limit, _window = _settings.RATE_LIMIT_INSTANCE_CREATE.split("/")
+_create_limiter = SlidingWindow(int(_limit), int(_window))
+
+# Field allowlist for instance updates. Only these fields can be modified via PATCH.
+_INSTANCE_UPDATE_FIELDS = {"name", "env_overrides", "session_config"}
 
 
 def _dind_store_volume(instance_id: str) -> str:
@@ -67,6 +76,11 @@ async def _build_and_start_container(instance, template, docker):
         port=template.internal_port,
         template_name=template.name,
     )
+
+    net = None
+    if instance.owner_id:
+        net = await asyncio.to_thread(docker.ensure_user_network, instance.owner_id)
+
     container_id = await asyncio.to_thread(
         docker.create_container,
         name=f"selkies-{instance.subdomain}",
@@ -78,8 +92,12 @@ async def _build_and_start_container(instance, template, docker):
         gpu_enabled=template.gpu_enabled,
         gpu_count=template.gpu_count,
         memory_limit=template.memory_limit,
+        cpu_limit=template.cpu_limit,
         shm_size=template.shm_size,
         dind=template.dind,
+        cap_add=template.cap_add,
+        security_opt=template.security_opt,
+        network=net,
     )
     instance.container_id = container_id
     await asyncio.to_thread(docker.start_container, container_id)
@@ -142,6 +160,10 @@ async def _launch_instance_background(instance_id: str, template_id: str):
                 template_name=template.name,
             )
 
+            net = None
+            if instance.owner_id:
+                net = await asyncio.to_thread(docker.ensure_user_network, instance.owner_id)
+
             container_id = await asyncio.to_thread(
                 docker.create_container,
                 name=f"selkies-{instance.subdomain}",
@@ -153,8 +175,12 @@ async def _launch_instance_background(instance_id: str, template_id: str):
                 gpu_enabled=template.gpu_enabled,
                 gpu_count=template.gpu_count,
                 memory_limit=template.memory_limit,
+                cpu_limit=template.cpu_limit,
                 shm_size=template.shm_size,
                 dind=template.dind,
+                cap_add=template.cap_add,
+                security_opt=template.security_opt,
+                network=net,
             )
 
             # Track pulled image
@@ -211,6 +237,24 @@ async def create_instance(
     if not template:
         raise HTTPException(404, "Template not found")
 
+    # Rate limit check for non-admin users
+    if user.role != "admin":
+        if not _create_limiter.allow(user.id):
+            raise HTTPException(429, "Too many instances created recently — try again later")
+
+        # Quota check for non-admin users
+        quota = _settings.MAX_INSTANCES_PER_USER
+        if quota > 0:
+            owned = await session.exec(
+                select(Instance).where(Instance.owner_id == user.id)
+            )
+            owned_count = len(owned.all())
+            if owned_count >= quota:
+                raise HTTPException(
+                    429,
+                    f"Instance limit reached ({quota}). Delete an instance first."
+                )
+
     result = await session.exec(
         select(Instance).where(Instance.subdomain == body.subdomain)
     )
@@ -230,6 +274,16 @@ async def create_instance(
     session.add(instance)
     await session.commit()
     await session.refresh(instance)
+
+    # Audit the instance creation
+    await audit(
+        session,
+        "instance.create",
+        user_id=user.id,
+        resource=instance.id,
+        detail={"template": template.name, "subdomain": instance.subdomain}
+    )
+    await session.commit()
 
     asyncio.create_task(_launch_instance_background(instance.id, template.id))
     return instance
@@ -470,6 +524,10 @@ async def delete_instance(
         raise HTTPException(404, "Instance not found")
     require_owner_or_admin(instance.owner_id, user)
 
+    # Capture subdomain before deletion for audit
+    subdomain = instance.subdomain
+    owner_id = instance.owner_id
+
     if instance.container_id:
         status = await asyncio.to_thread(docker.get_container_status, instance.container_id)
         if status["status"] != "not_found":
@@ -487,6 +545,16 @@ async def delete_instance(
     event = SessionEvent(instance_id=instance.id, event_type="destroyed")
     session.add(event)
     await session.delete(instance)
+    await session.commit()
+
+    # Audit the instance deletion
+    await audit(
+        session,
+        "instance.delete",
+        user_id=user.id,
+        resource=instance_id,
+        detail={"subdomain": subdomain}
+    )
     await session.commit()
 
     # Opt-in image prune — only when requested AND no other instance uses the image.
@@ -517,6 +585,14 @@ async def delete_instance(
         if not remaining_t.first():
             await session.delete(template)
             await session.commit()
+
+    # Clean up per-user network if this was the last instance for the user
+    if owner_id:
+        remaining_user_instances = await session.exec(
+            select(Instance).where(Instance.owner_id == owner_id)
+        )
+        if not remaining_user_instances.first():
+            await asyncio.to_thread(docker.remove_user_network, owner_id)
 
     await _refresh_routes(session)
     return Response(status_code=204)
@@ -632,8 +708,10 @@ async def update_instance(
         raise HTTPException(404, "Instance not found")
     require_owner_or_admin(instance.owner_id, user)
 
+    # Apply only allowlisted fields
     for field, value in body.model_dump(exclude_unset=True).items():
-        setattr(instance, field, value)
+        if field in _INSTANCE_UPDATE_FIELDS:
+            setattr(instance, field, value)
 
     session.add(instance)
     await session.commit()

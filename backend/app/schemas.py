@@ -1,6 +1,10 @@
+import re
 from dataclasses import dataclass
 from typing import Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+SUBDOMAIN_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
+RESERVED_SUBDOMAINS = {"api", "traefik", "www", "admin", "auth", "portal"}
 
 
 class TemplateCreate(BaseModel):
@@ -16,6 +20,9 @@ class TemplateCreate(BaseModel):
     cpu_limit: str | None = None
     shm_size: str | None = None
     dind: bool = False
+    cap_add: list[str] = []
+    security_opt: list[str] = []
+    tls_skip_verify: bool = False
     volumes: list[dict[str, str]] = []
     internal_port: int = 3001
     internal_protocol: str = "https"
@@ -36,6 +43,9 @@ class TemplateUpdate(BaseModel):
     cpu_limit: str | None = None
     shm_size: str | None = None
     dind: bool | None = None
+    cap_add: list[str] | None = None
+    security_opt: list[str] | None = None
+    tls_skip_verify: bool | None = None
     volumes: list[dict[str, str]] | None = None
     internal_port: int | None = None
     internal_protocol: str | None = None
@@ -50,6 +60,18 @@ class InstanceCreate(BaseModel):
     subdomain: str
     env_overrides: dict[str, str] = {}
     session_config: dict[str, Any] | None = None
+
+    @field_validator("subdomain")
+    @classmethod
+    def _valid_subdomain(cls, v: str) -> str:
+        if not SUBDOMAIN_RE.match(v):
+            raise ValueError(
+                "subdomain must be 1-63 chars: lowercase letters, digits, "
+                "hyphens (no leading/trailing hyphen)"
+            )
+        if v in RESERVED_SUBDOMAINS:
+            raise ValueError(f"'{v}' is a reserved name")
+        return v
 
 
 class InstanceUpdate(BaseModel):
@@ -134,6 +156,7 @@ class ProviderCreate(BaseModel):
     icon_url: str | None = None
     trust_email: bool = False
     allow_signup: bool = False
+    auto_promote_admins: bool = True
 
 
 class ProviderUpdate(BaseModel):
@@ -150,6 +173,7 @@ class ProviderUpdate(BaseModel):
     icon_url: str | None = None
     trust_email: bool | None = None
     allow_signup: bool | None = None
+    auto_promote_admins: bool | None = None
 
 
 class ProviderOut(BaseModel):
@@ -166,6 +190,7 @@ class ProviderOut(BaseModel):
     icon_url: str | None
     trust_email: bool
     allow_signup: bool
+    auto_promote_admins: bool
     redirect_uri: str                         # register this in the IdP (login flow)
     test_redirect_uri: str                    # register this too to use "Test login"
 

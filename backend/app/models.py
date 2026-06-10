@@ -46,6 +46,7 @@ class RefreshToken(SQLModel, table=True):
 
     jti: str = Field(primary_key=True)
     user_id: str = Field(foreign_key="users.id", index=True)
+    family_id: str = Field(default="", index=True)
     expires_at: datetime
     revoked: bool = False
     user_agent: str | None = None
@@ -69,6 +70,7 @@ class OAuthProvider(SQLModel, table=True):
     icon_url: str | None = None                        # remote URL or base64 data URI
     trust_email: bool = False                          # treat missing email_verified as verified
     allow_signup: bool = False                          # auto-provision users without an invite
+    auto_promote_admins: bool = True                   # IdP admin-group claim elevates role
     role_map: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     enabled: bool = True
     created_at: datetime = Field(default_factory=_now)
@@ -104,6 +106,9 @@ class ServiceTemplate(SQLModel, table=True):
     cpu_limit: str | None = None
     shm_size: str | None = None
     dind: bool = False
+    cap_add: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    security_opt: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    tls_skip_verify: bool = False
     volumes: list[dict[str, str]] = Field(default_factory=list, sa_column=Column(JSON))
     internal_port: int = 3001
     internal_protocol: str = "https"
@@ -160,3 +165,15 @@ class PulledImage(SQLModel, table=True):
     image: str = Field(unique=True, index=True)
     size_mb: int | None = None
     pulled_at: datetime = Field(default_factory=_now)
+
+
+class AuditLog(SQLModel, table=True):
+    __tablename__ = "audit_log"
+
+    id: int | None = Field(default=None, primary_key=True)
+    ts: datetime = Field(default_factory=_now, index=True)
+    user_id: str | None = Field(default=None, index=True)
+    actor_ip: str | None = None
+    action: str = Field(index=True)
+    resource: str | None = None
+    detail: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))

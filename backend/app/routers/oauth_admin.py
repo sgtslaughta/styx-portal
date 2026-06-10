@@ -12,6 +12,7 @@ from app.schemas import ProviderCreate, ProviderUpdate, ProviderOut, ProviderTes
 from app.security import oauth
 from app.security.crypto import encrypt_secret
 from app.security.deps import require_admin
+from app.services.audit import audit_request
 import json as _json
 
 _settings = Settings()
@@ -35,6 +36,7 @@ def _out(p: OAuthProvider) -> ProviderOut:
                        has_secret=bool(p.client_secret_enc),
                        icon_url=p.icon_url, trust_email=bool(p.trust_email),
                        allow_signup=bool(p.allow_signup),
+                       auto_promote_admins=bool(p.auto_promote_admins),
                        redirect_uri=_login_redirect_uri(p.name),
                        test_redirect_uri=_test_redirect_uri(p.id))
 
@@ -58,7 +60,8 @@ async def list_providers(admin: User = Depends(require_admin),
 
 
 @router.post("", response_model=ProviderOut, status_code=201)
-async def create_provider(body: ProviderCreate, admin: User = Depends(require_admin),
+async def create_provider(request: Request, body: ProviderCreate,
+                          admin: User = Depends(require_admin),
                           session: AsyncSession = Depends(get_session)):
     if body.kind not in ("oidc", "oauth2"):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "kind must be oidc|oauth2")
@@ -72,14 +75,17 @@ async def create_provider(body: ProviderCreate, admin: User = Depends(require_ad
         client_id=body.client_id, client_secret_enc=encrypt_secret(body.client_secret),
         scopes=body.scopes, role_map=body.role_map, enabled=body.enabled,
         icon_url=body.icon_url, trust_email=body.trust_email,
-        allow_signup=body.allow_signup)
+        allow_signup=body.allow_signup, auto_promote_admins=body.auto_promote_admins)
     session.add(p)
+    await session.flush()
+    if request:
+        await audit_request(session, request, "provider.create", user_id=admin.id, resource=p.name)
     await session.commit()
     return _out(p)
 
 
 @router.patch("/{provider_id}", response_model=ProviderOut)
-async def update_provider(provider_id: str, body: ProviderUpdate,
+async def update_provider(request: Request, provider_id: str, body: ProviderUpdate,
                           admin: User = Depends(require_admin),
                           session: AsyncSession = Depends(get_session)):
     p = await session.get(OAuthProvider, provider_id)
@@ -96,6 +102,9 @@ async def update_provider(provider_id: str, body: ProviderUpdate,
         setattr(p, k, v)
     p.updated_at = datetime.now(timezone.utc)
     session.add(p)
+    await session.flush()
+    if request:
+        await audit_request(session, request, "provider.update", user_id=admin.id, resource=p.name)
     await session.commit()
     return _out(p)
 
@@ -176,10 +185,14 @@ async def test_callback(provider_id: str, request: Request,
 
 
 @router.delete("/{provider_id}", status_code=204)
-async def delete_provider(provider_id: str, admin: User = Depends(require_admin),
+async def delete_provider(request: Request, provider_id: str,
+                          admin: User = Depends(require_admin),
                           session: AsyncSession = Depends(get_session)):
     p = await session.get(OAuthProvider, provider_id)
     if not p:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    provider_name = p.name
     await session.delete(p)
+    if request:
+        await audit_request(session, request, "provider.delete", user_id=admin.id, resource=provider_name)
     await session.commit()

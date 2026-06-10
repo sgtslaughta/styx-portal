@@ -20,6 +20,7 @@ from app.routers import auth as auth_router
 from app.routers import users as users_router
 from app.routers import oauth as oauth_router
 from app.routers import oauth_admin as oauth_admin_router
+from app.routers import audit as audit_router
 from app.security.deps import get_current_user, require_admin
 from app.services.docker_manager import DockerManager
 from app.services.session_monitor import SessionMonitor
@@ -28,7 +29,7 @@ from app.security.csrf import csrf_valid, CSRF_COOKIE, CSRF_HEADER, UNSAFE_METHO
 logger = logging.getLogger("styx-portal")
 _settings = Settings()
 
-_CSRF_EXEMPT = {"/api/auth/login", "/api/auth/setup", "/api/auth/refresh", "/api/auth/accept-invite"}
+_CSRF_EXEMPT = {"/api/auth/login", "/api/auth/setup"}
 
 
 class CSRFMiddleware(BaseHTTPMiddleware):
@@ -87,10 +88,7 @@ async def lifespan(app: FastAPI):
     try:
         _settings.jwt_secret_or_raise()
     except RuntimeError as e:
-        logger.critical(
-            "FATAL: %s. Set JWT_SECRET in the environment (e.g. "
-            "`openssl rand -base64 48`), or set COOKIE_SECURE=false for local dev.", e
-        )
+        logger.critical("FATAL: %s", e)
         raise
 
     await init_db()
@@ -222,9 +220,13 @@ app.add_middleware(
     auth_spec=_settings.RATE_LIMIT_AUTH,
     default_spec=_settings.RATE_LIMIT_DEFAULT,
 )
+_cors_origins = [f"https://{_settings.DOMAIN}"]
+if not _settings.COOKIE_SECURE:
+    _cors_origins.append("http://localhost:5173")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", f"https://{_settings.DOMAIN}"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "X-CSRF-Token"],
@@ -238,6 +240,7 @@ app.include_router(auth_router.router, prefix="/api/auth", tags=["auth"])
 app.include_router(users_router.router, prefix="/api/users", tags=["users"])
 app.include_router(oauth_router.router, prefix="/api/auth/oauth", tags=["oauth"])
 app.include_router(oauth_admin_router.router, prefix="/api/oauth-providers", tags=["oauth-admin"])
+app.include_router(audit_router.router, prefix="/api/audit", tags=["audit"])
 
 
 @app.get("/api/health")

@@ -5,6 +5,10 @@ import docker
 import docker.errors
 from docker.types import DeviceRequest
 
+from app.config import Settings
+
+TRAEFIK_CONTAINER = "styx-traefik"
+
 
 def detect_gpu() -> dict:
     """Detect available GPU on host."""
@@ -32,8 +36,9 @@ def detect_gpu() -> dict:
 
 
 class DockerManager:
-    def __init__(self, network_name: str = "styx-portal"):
-        self._client = docker.DockerClient.from_env()
+    def __init__(self, network_name: str = "styx-portal", base_url: str | None = None):
+        url = base_url or Settings().DOCKER_SOCKET
+        self._client = docker.DockerClient(base_url=url)
         self._network_name = network_name
 
     def create_container(
@@ -51,10 +56,17 @@ class DockerManager:
         shm_size: str | None = None,
         privileged: bool = False,
         dind: bool = False,
+        cap_add: list[str] | None = None,
+        security_opt: list[str] | None = None,
+        network: str | None = None,
     ) -> str:
         if dind:
             privileged = True
             environment = {**environment, "START_DOCKER": "true"}
+            if not memory_limit or not cpu_limit:
+                raise ValueError(
+                    "DinD templates require explicit resource limits (memory + cpu)"
+                )
 
         kwargs: dict = {
             "name": name,
@@ -63,11 +75,16 @@ class DockerManager:
             "environment": {"PIXELFLUX_WAYLAND": "true", **environment},
             "volumes": volumes,
             "detach": True,
-            "network": self._network_name,
+            "network": network or self._network_name,
             "privileged": privileged,
-            "security_opt": ["seccomp=unconfined", "apparmor=unconfined"],
-            "sysctls": {"net.ipv4.ip_unprivileged_port_start": "0"},
         }
+        if privileged:
+            # privileged grants all caps; cap flags would be rejected
+            kwargs["security_opt"] = list(security_opt or [])
+        else:
+            kwargs["security_opt"] = ["no-new-privileges:true"] + list(security_opt or [])
+            kwargs["cap_drop"] = ["ALL"]
+            kwargs["cap_add"] = list(cap_add or [])
         if gpu_enabled:
             gpu_info = detect_gpu()
             if gpu_info["type"] == "nvidia":
@@ -89,6 +106,8 @@ class DockerManager:
             kwargs["mem_limit"] = memory_limit
         if shm_size:
             kwargs["shm_size"] = shm_size
+        if cpu_limit:
+            kwargs["nano_cpus"] = int(float(cpu_limit) * 1e9)
 
         try:
             self._client.images.get(image)
@@ -166,3 +185,34 @@ class DockerManager:
             return {"size_mb": size_mb, "id": img.id}
         except docker.errors.ImageNotFound:
             return None
+
+    def ensure_user_network(self, user_id: str) -> str:
+        """Per-user bridge network; traefik is attached so it can route to
+        instance containers. Backend itself never joins user networks."""
+        name = f"styx-u-{user_id[:12]}"
+        try:
+            self._client.networks.get(name)
+            return name
+        except docker.errors.NotFound:
+            pass
+        net = self._client.networks.create(name, driver="bridge")
+        try:
+            net.connect(TRAEFIK_CONTAINER)
+        except docker.errors.APIError:
+            pass  # already connected or traefik not present (tests/dev)
+        return name
+
+    def remove_user_network(self, user_id: str) -> None:
+        name = f"styx-u-{user_id[:12]}"
+        try:
+            net = self._client.networks.get(name)
+        except docker.errors.NotFound:
+            return
+        try:
+            net.disconnect(TRAEFIK_CONTAINER)
+        except docker.errors.APIError:
+            pass
+        try:
+            net.remove()
+        except docker.errors.APIError:
+            pass  # still has containers — leave it
