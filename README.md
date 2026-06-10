@@ -11,20 +11,20 @@ Cloudflare Tunnel → Traefik (auto-discovery) → Services
                                                 └── N × Selkies Containers (:3001)
 ```
 
-- **Backend** manages sibling containers via Docker socket mount
+- **Backend** manages sibling containers via docker-socket-proxy (read-only, filtered)
 - **Traefik** auto-discovers containers via Docker labels
-- **Cloudflare Tunnel** routes `*.domain.com` to Traefik
-- **Authentik** provides SSO via ForwardAuth middleware
+- **Cloudflare Tunnel** routes `*.domain.com` to Traefik (tunnel mode)
+- **TLS** via Cloudflare Tunnel edge (tunnel) or Let's Encrypt DNS-01 wildcard (direct)
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
 | Backend | Python 3.12+, FastAPI, SQLModel, aiosqlite |
-| Docker | docker-py (socket mount) |
+| Docker | docker-py via socket-proxy |
 | Proxy | Traefik v3 (label-based auto-discovery) |
 | Tunnel | Cloudflare Tunnel |
-| Auth | Authentik (ForwardAuth) |
+| Auth | Native JWT + OIDC/OAuth SSO |
 | Frontend | React (planned) |
 
 ## Upgrading from Selkies Hub (rebrand)
@@ -43,14 +43,50 @@ docker compose up -d                 # recreates the styx-portal network + fresh
 ```bash
 # 1. Copy environment config
 cp .env.example .env
-# Edit .env with your domain and CF tunnel token
 
-# 2. Start infrastructure
+# 2. Edit .env with your domain and Cloudflare Tunnel token
+#    DOMAIN=your.domain.com
+#    CF_TUNNEL_TOKEN=<your-token>
+#    Leave JWT_SECRET empty; a strong secret will be auto-generated on first start.
+
+# 3. Start infrastructure
 docker compose up -d
 
-# 3. Access API
+# 4. Access the backend health check
 curl http://localhost:8000/api/health
 ```
+
+## Deployment Modes
+
+Set `COMPOSE_PROFILES` and `DEPLOY_MODE` to the same value to select your ingress strategy:
+
+### tunnel (default)
+- **TLS:** Cloudflare Tunnel terminates TLS at the edge; backend traffic is plaintext.
+- **Setup:** Set `DOMAIN` and `CF_TUNNEL_TOKEN` in `.env`; no port exposure on the host.
+- **Best for:** Public deployments with Cloudflare, zero-trust networking.
+
+### direct
+- **TLS:** Traefik owns ports 80/443; automatic Let's Encrypt wildcard certificates via DNS-01.
+- **Setup:** Set `DOMAIN`, `LE_EMAIL`, and `CF_DNS_API_TOKEN` (or equivalent for your DNS provider) in `.env`. See `traefik/traefik-direct.yml` for provider-specific ACME configuration.
+- **Best for:** Self-hosted on a static IP, direct domain control.
+
+## Secrets Management
+
+- **JWT_SECRET:** Leave empty in `.env` for automatic generation. On first start, a strong secret is generated and saved to `/app/data/secrets.json` (mode 0600) on the persistent data volume. **Back this file up** — losing it will log out all users and invalidate stored OAuth client secrets.
+- **To pin your own secret:** `openssl rand -base64 48` and set `JWT_SECRET` in `.env` before first start.
+- **OAuth client secrets:** Encrypted at rest using a Fernet key derived from `JWT_SECRET`.
+
+## Instance Quotas
+
+Set `MAX_INSTANCES_PER_USER` to limit concurrent instances per non-admin user (default: 3). Set to 0 for unlimited. Admins are always exempt.
+
+## Security Notes
+
+- **Confined containers:** Instances run confined by default (no privileged mode or host access).
+- **DinD templates:** Templates with Docker-in-Docker are privileged and admin-only; they **require** memory and CPU resource limits in their spec.
+- **Traefik dashboard:** Disabled by default for security.
+- **Audit log:** Admin users can fetch the audit log at `GET /api/audit` (JSON format).
+- **Socket proxy:** Backend talks to a read-only docker-socket-proxy sidecar, not the raw Docker socket.
 
 ## Development
 
