@@ -21,7 +21,9 @@ def _router_transport(deploy_mode: str, domain: str) -> dict:
     return {"entryPoints": ["web"]}
 
 
-def build_routes_config(instances: list[dict], domain: str, deploy_mode: str = "tunnel") -> dict:
+def build_routes_config(instances: list[dict], domain: str,
+                        deploy_mode: str = "tunnel",
+                        workstations: list[dict] | None = None) -> dict:
     """Build the Traefik dynamic config dict for all services + running instances.
 
     Always emits the static `unavailable-rewrite` / `instance-unavailable-errors`
@@ -100,6 +102,25 @@ def build_routes_config(instances: list[dict], domain: str, deploy_mode: str = "
             has_https = True
         config["http"]["services"][inst_id] = {"loadBalancer": svc_config}
 
+    for ws in workstations or []:
+        sub = ws["subdomain"]
+        strip_mw = f"strip-w-{sub}"
+        middlewares[strip_mw] = {"stripPrefix": {"prefixes": [f"/w/{sub}"]}}
+        rid = f"ws-{ws['id']}"
+        config["http"]["routers"][rid] = {
+            "rule": f"Host(`{domain}`) && PathPrefix(`/w/{sub}`)",
+            "middlewares": ["instance-unavailable-errors", strip_mw],
+            "service": rid,
+            "priority": 50,
+            **_router_transport(deploy_mode, domain),
+        }
+        protocol = ws.get("protocol", "http")
+        svc: dict = {"servers": [{"url": f"{protocol}://{ws['lan_ip']}:{ws['port']}"}]}
+        if protocol == "https":
+            svc["serversTransport"] = "selkies-transport"
+            has_https = True
+        config["http"]["services"][rid] = {"loadBalancer": svc}
+
     config["http"]["middlewares"] = middlewares
     if has_https:
         config["http"]["serversTransports"] = {
@@ -108,7 +129,8 @@ def build_routes_config(instances: list[dict], domain: str, deploy_mode: str = "
     return config
 
 
-def write_routes(instances: list[dict], domain: str | None = None):
+def write_routes(instances: list[dict], domain: str | None = None,
+                 workstations: list[dict] | None = None):
     """Render the Traefik dynamic config to the file provider directory.
 
     A PermissionError here means the shared traefik-dynamic volume is not
@@ -119,7 +141,7 @@ def write_routes(instances: list[dict], domain: str | None = None):
     out_dir = Path(_settings.TRAEFIK_DYNAMIC_DIR)
     try:
         out_dir.mkdir(parents=True, exist_ok=True)
-        config = build_routes_config(instances, domain, _settings.DEPLOY_MODE)
+        config = build_routes_config(instances, domain, _settings.DEPLOY_MODE, workstations)
         (out_dir / "routes.yml").write_text(yaml.dump(config, default_flow_style=False))
     except PermissionError:
         logger.error(
@@ -132,7 +154,7 @@ def write_routes(instances: list[dict], domain: str | None = None):
 async def refresh_routes_from_db(session):
     """Query running/idle instances and (re)write the Traefik routes file."""
     from sqlmodel import select
-    from app.models import Instance, ServiceTemplate
+    from app.models import Instance, ServiceTemplate, Workstation
 
     result = await session.exec(
         select(Instance).where(Instance.status.in_(["running", "idle"]))
@@ -148,4 +170,10 @@ async def refresh_routes_from_db(session):
             "protocol": tmpl.internal_protocol if tmpl else "https",
             "tls_skip_verify": bool(tmpl.tls_skip_verify) if tmpl else False,
         })
-    write_routes(data)
+    ws_result = await session.exec(
+        select(Workstation).where(Workstation.status == "online"))
+    ws_data = [{
+        "id": w.id, "subdomain": w.subdomain, "lan_ip": w.lan_ip,
+        "port": w.port, "protocol": w.protocol,
+    } for w in ws_result.all()]
+    write_routes(data, workstations=ws_data)
