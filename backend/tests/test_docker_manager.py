@@ -305,6 +305,18 @@ def test_ensure_user_network_idempotent(mock_docker):
     manager.ensure_user_network("u1")
 
     client.networks.create.assert_not_called()
+    # Even when the network already exists, traefik must be (re)attached — it may
+    # have been recreated since the network was first made.
+    mock_network.connect.assert_called_once_with("styx-traefik")
+
+
+def test_ensure_user_network_tolerates_redundant_connect(mock_docker):
+    manager, client = mock_docker
+    mock_network = MagicMock()
+    mock_network.connect.side_effect = docker.errors.APIError("already connected")
+    client.networks.get.return_value = mock_network
+    # must not raise when traefik is already on the network
+    assert manager.ensure_user_network("u1") == "styx-u-u1"
 
 
 def test_create_container_uses_network_override(mock_docker):

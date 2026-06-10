@@ -217,15 +217,17 @@ class DockerManager:
         instance containers. Backend itself never joins user networks."""
         name = f"styx-u-{user_id[:12]}"
         try:
-            self._client.networks.get(name)
-            return name
+            net = self._client.networks.get(name)
         except docker.errors.NotFound:
-            pass
-        net = self._client.networks.create(name, driver="bridge")
+            net = self._client.networks.create(name, driver="bridge")
+        # Always (re)attach traefik, even when the network already existed —
+        # traefik may have been recreated (new container, lost membership) since
+        # the network was first made. Idempotent: a redundant connect raises
+        # APIError, which we ignore.
         try:
             net.connect(TRAEFIK_CONTAINER)
         except docker.errors.APIError:
-            pass  # already connected or traefik not present (tests/dev)
+            pass  # already connected, or traefik not present (tests/dev)
         return name
 
     def remove_user_network(self, user_id: str) -> None:
