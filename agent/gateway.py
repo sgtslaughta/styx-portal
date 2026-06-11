@@ -91,7 +91,7 @@ def main() -> None:
     user = os.environ["STYX_GW_USER"]
     password = os.environ["STYX_GW_PASSWORD"]
     files_dir = os.path.expanduser(
-        os.environ.get("STYX_FILES_DIR", "~/Desktop"))
+        os.environ.get("STYX_FILES_DIR", "~/Downloads"))
     web.run_app(create_app(web_dir, user, password, upstream_port, files_dir),
                 host="0.0.0.0", port=listen_port)
 

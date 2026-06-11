@@ -178,6 +178,9 @@ def build_selkies_cmd(cfg: dict, internal_port: int, control_port: int) -> tuple
         "LD_LIBRARY_PATH": str(install / "lib"),   # libva/libwayland shim
         "PYTHONNOUSERSITE": "1",
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        # Upload target; must match the gateway's /files dir (downloads).
+        "FILE_MANAGER_PATH": os.environ.get("FILE_MANAGER_PATH",
+                                            str(HOME / "Downloads")),
     }
 
     cmd = [
