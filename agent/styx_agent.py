@@ -159,16 +159,20 @@ def run(cfg: dict) -> int:
                 pass  # default-sink monitor still works; just leaks to speakers
         before = {p.name for p in Path(runtime_dir).glob("wayland-*")
                   if not p.name.endswith(".lock")}
+        since_ts = time.time() - 1  # 1s slack for coarse fs timestamps
         proc = subprocess.Popen(cmd, env=env, stdout=selkies_log,
                                 stderr=selkies_log)
         if seat_mode:
-            sock = engine.wait_for_wayland_socket(runtime_dir, before)
+            sock = engine.wait_for_wayland_socket(runtime_dir, before, since_ts)
             if sock:
                 seat_socket = sock
                 procs["shell"] = start_shell()
                 if procs["shell"] is None and not shutil.which("labwc"):
                     last_error = ("labwc not installed — seat has no window "
                                   "manager. Install: sudo apt install labwc")
+            else:
+                last_error = ("compositor socket not found — seat has no "
+                              "window manager. See logs/selkies.log")
         return proc
 
     while not stopping:

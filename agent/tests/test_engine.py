@@ -81,11 +81,24 @@ def test_audio_disabled_when_no_pulse(tmp_path, monkeypatch):
 
 
 def test_wait_for_wayland_socket(tmp_path):
-    before = set()
+    import time
     (tmp_path / "wayland-1").touch()
-    name = engine.wait_for_wayland_socket(str(tmp_path), before, timeout=1)
+    name = engine.wait_for_wayland_socket(str(tmp_path), set(),
+                                          since_ts=time.time() + 60, timeout=1)
+    assert name == "wayland-1"          # new name counts even with future ts
+    assert engine.wait_for_wayland_socket(str(tmp_path), {"wayland-1"},
+                                          since_ts=time.time() + 60,
+                                          timeout=0.2) is None
+
+
+def test_wait_for_wayland_socket_stale_file_rebound(tmp_path):
+    # Socket file survived a previous run (name in `before`) but the
+    # compositor recreated it after since_ts -> must be detected.
+    import time
+    (tmp_path / "wayland-1").touch()
+    name = engine.wait_for_wayland_socket(str(tmp_path), {"wayland-1"},
+                                          since_ts=time.time() - 60, timeout=1)
     assert name == "wayland-1"
-    assert engine.wait_for_wayland_socket(str(tmp_path), {"wayland-1"}, timeout=0.2) is None
 
 
 def test_pick_dri_node(tmp_path, monkeypatch):

@@ -94,15 +94,23 @@ def ensure_seat_sink() -> str:
 
 
 def wait_for_wayland_socket(runtime_dir: str, before: set[str],
-                            timeout: float = 15) -> str | None:
-    """The compositor picks the first free wayland-N; detect it by diffing."""
+                            since_ts: float, timeout: float = 15) -> str | None:
+    """The compositor picks the first free wayland-N. A socket counts if its
+    name is new OR its file was (re)created after `since_ts` — stale socket
+    files survive process death, so a pure before/after name diff misses a
+    compositor that rebinds the same wayland-N (seen on agent restart)."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        now = {p.name for p in Path(runtime_dir).glob("wayland-*")
-               if not p.name.endswith(".lock")}
-        new = now - before
-        if new:
-            return sorted(new)[0]
+        for p in sorted(Path(runtime_dir).glob("wayland-*")):
+            if p.name.endswith(".lock"):
+                continue
+            if p.name not in before:
+                return p.name
+            try:
+                if p.stat().st_mtime >= since_ts:
+                    return p.name
+            except FileNotFoundError:
+                continue
         time.sleep(0.2)
     return None
 
