@@ -4,17 +4,17 @@ Styx Portal can stream physical Linux workstations to browsers alongside contain
 
 ## Overview
 
-**What it is:** Styx Agent is a lightweight Python daemon that runs on physical Linux machines and streams their desktop via [Selkies](https://github.com/selkies-project/selkies-gstreamer) — a WebRTC+GStreamer streaming stack that encodes desktop video/audio and sends it to the browser.
+**What it is:** Styx Agent is a lightweight Python daemon that runs on physical Linux machines and streams their desktop to browsers via the [Selkies 2.x](https://github.com/selkies-project/selkies) WebSocket streaming protocol. The native desktop (X11 session or a private virtual desktop) is encoded in real-time using GPU hardware (NVENC or VA-API) or CPU fallback, with audio support.
 
-**Desktop modes:**
-- **X11:** The agent mirrors your existing running X11 desktop (`:0`). Whatever you see locally is streamed.
-- **Wayland:** Selkies cannot capture an existing Wayland session (upstream limitation; see [selkies-gstreamer#46](https://github.com/selkies-project/selkies-gstreamer/issues/46)). Instead, the agent starts its own separate desktop session (via Pixelflux compositor) on that machine. This session runs independently of your interactive login.
+**Desktop modes (auto-detected at enrollment):**
+- **Mirror mode:** Your existing X11 desktop is live-streamed. The remote user and you share control of the same session — input from the browser moves your local cursor. Requires a running X11 graphical session (`:0`, `:1`, etc.).
+- **Second-seat mode:** A private GPU-accelerated desktop runs on the machine (via pixelflux's Smithay compositor + labwc window manager) alongside your login session. The physical screen is untouched. Your desktop, apps, and files are available to the remote user; no interference with local work. Used when the host is Wayland, headless, or when mirror mode is explicitly disabled.
 
 **Architecture:**
-- Enrollment script (`enroll.sh`) performs 8-step preflight, fetches the agent daemon and Selkies tarball from the server, and registers the workstation.
-- Agent daemon (`styx_agent.py`) runs as a systemd `--user` service, supervises Selkies, and sends heartbeats every 30 seconds.
-- Traefik routes `/w/{subdomain}` traffic to the workstation's LAN IP on port 8443, where Selkies listens.
-- Admin Workstations panel in **System → Workstations** controls access, streams settings, and enrollment status.
+- Enrollment script (`enroll.sh`) performs 8-step preflight, downloads agent daemon and prebuilt wheels from the portal, and registers the workstation.
+- Agent daemon (`styx_agent.py`) runs as a systemd `--user` service, supervises the Selkies streaming engine (pixelflux + pcmflux), and sends heartbeats every 30 seconds.
+- Traefik routes `/w/{subdomain}` traffic to the workstation's LAN IP on port 8443, where Selkies listens over WebSocket.
+- Admin Workstations panel in **System → Workstations** controls access, stream settings, and enrollment status.
 
 ---
 
@@ -27,10 +27,12 @@ Styx Portal can stream physical Linux workstations to browsers alongside contain
 3. **On the workstation:** Log in to a graphical session and paste the command in a terminal.
 
 The enrollment script will:
-- Check for Python 3, glibc ≥ 2.17, a graphical session (X11 or Wayland), and audio (PipeWire or PulseAudio).
+- Check for Python 3.10+, glibc ≥ 2.34, a graphical session or headless capability, and audio (PipeWire or PulseAudio).
+- Auto-detect the capture mode: mirror (if X11 is found) or second-seat (if Wayland or headless). Can be overridden with `--mode mirror|seat`.
 - Verify TLS fingerprint if `--ca-pin` is set.
-- Download Selkies (cached on the server; ~200 MB).
-- Register the machine with the portal.
+- Install mode-specific dependencies (labwc + wl-clipboard for second-seat; VAAPI drivers for both).
+- Download agent code, prebuilt wheels, and the Selkies app tarball from the server (all cached; ~150 MB total).
+- Register the machine with the portal and save encrypted config.
 - Start a systemd `--user` service that streams immediately.
 
 **Token validity:** Tokens expire after 24 hours (configurable `ENROLL_TOKEN_TTL_HOURS`). If yours expires, mint a new one in the admin panel.
@@ -39,66 +41,68 @@ The enrollment script will:
 
 Before running enrollment on a workstation, ensure:
 
+- **Distro:** Ubuntu 22.04+, Debian 12+, RHEL 9+, or equivalent (glibc ≥ 2.34). Check: `ldd --version`.
 - **Network:** The machine can reach the portal's LAN address (`SERVER_LAN_URL`). This must be the portal's **local** IP or hostname (e.g., `https://192.168.1.10`), **not** a public tunnel.
-- **Python 3:** `python3` command available.
-- **glibc ≥ 2.17:** Selkies portable build requires it. Check with `ldd --version`.
-- **Graphical session:** X11 (`:0` is standard) or Wayland. SSH sessions and headless machines are not supported.
-- **Audio stack:** PipeWire or PulseAudio (usually bundled with desktop environments).
+- **Python 3.10+:** `python3` and `python3-venv` command available. Check: `python3 -V && python3 -m venv --help`.
+- **Graphical environment:** X11 session (`:0`, `:1`, …) OR Wayland session OR headless with audio. For X11, `DISPLAY` and `XAUTHORITY` must be resolvable. Mirror mode requires an active X display.
+- **Audio stack:** PipeWire or PulseAudio. Check: `pactl info` (should not error).
 - **Port 8443:** Must be free; the Selkies listener binds to it.
-- **systemd --user:** Required for service management. Standard in all user sessions; fails only in `su` / `sudo` shells.
-- **GPU drivers (optional):** For hardware encoding:
-  - **NVIDIA:** `nvidia-smi` + `nvidia-smi -L` must work.
-  - **AMD/Intel:** `vainfo` must work (VAAPI).
-  - Without GPU drivers, encoding falls back to CPU x264 (higher latency; suitable for low-framerate work).
-- **Wayland group membership (Wayland only):** The user must be in `video` and `render` groups for hardware GPU access on Wayland:
-  ```bash
-  sudo usermod -aG video render $USER
-  # Then log out and back in for the group to take effect
-  ```
+- **systemd --user:** Required for service management. Standard in all graphical logins; fails only in `su` / `sudo` shells.
+- **GPU drivers (optional, for hardware encoding):**
+  - **NVIDIA:** `nvidia-smi` and `nvidia-smi -L` must work.
+  - **AMD/Intel:** `vainfo` must work (VA-API).
+  - Without GPU drivers, encoding falls back to CPU x264 (acceptable for low-bandwidth work).
+  - **GPU group access:** On Wayland, be in the `render` group: `id -nG | grep -w render`. If not, `sudo usermod -aG render $USER && logout && login`.
 
 ---
 
+## Server Setup
+
+**Before first enrollment**, build and cache the agent artifacts on the server:
+
+```bash
+scripts/build_agent_artifacts.sh ./data/artifacts
+```
+
+This generates:
+- `wheelhouse-x86_64.tar.gz` — Python wheels for pixelflux, pcmflux, selkies 2.x, and dependencies (covers Python 3.10–3.13).
+- `selkies-web.tar.gz` — Browser UI dashboard.
+- `libshim-x86_64.tar.gz` — Compatibility libraries (libva, libwayland) for older distros.
+
+Rerun this after portal upgrades to sync agent versions.
+
 ## Configuration
 
-All settings are environment variables or `.env` file entries on the **server**. Adjust them before launching workstations:
+All settings are environment variables or `.env` file entries on the **server**. Adjust them before enrolling workstations:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `SERVER_LAN_URL` | `""` (auto-detects the server's local IP) | Local LAN address used in the enrollment one-liner. Example: `https://192.168.1.10` or `https://portal.local`. Workstations must reach this address. When unset, the portal auto-detects its local IP (`http://<ip>` in tunnel mode, `https://<ip>` in direct mode) — inside a bridge-network container this detects the container IP, which is usually wrong, so set this explicitly in Docker deployments. The enroll dialog always also shows a public-URL command (`https://{DOMAIN}`) for machines outside the LAN; note streaming still requires the server to reach the workstation's IP. |
-| `SERVER_CA_PIN` | `""` (auto-pin) | Override for the TLS pin in the enrollment command. Format: `sha256:<hex>`. Leave empty: the backend auto-generates a self-signed LAN cert and pins it automatically (see TLS Pinning below). |
-| `SELKIES_TARBALL_URL` | `https://github.com/selkies-project/selkies-gstreamer/releases/download/v1.6.2/selkies-gstreamer-portable-v1.6.2_amd64.tar.gz` | Public URL to the Selkies portable tarball. The server downloads and caches it; workstations fetch from the server, not directly from GitHub. |
-| `ARTIFACT_CACHE_DIR` | `/app/data/artifacts` | Server-side cache directory for the Selkies tarball. Pre-place `selkies.tar.gz` here for air-gapped deployments. |
+| `SERVER_LAN_URL` | `""` (auto-detects) | Local LAN address for enrollment commands. Example: `https://192.168.1.10` or `https://portal.local`. Workstations must reach this address. When unset, the portal auto-detects (usually correct; set explicitly in Docker bridge networks). |
+| `SERVER_CA_PIN` | `""` (auto-pin) | Override for the TLS pin in enrollment commands. Format: `sha256:<hex>`. Leave empty: the portal auto-generates a self-signed LAN cert and pins it automatically. |
+| `ARTIFACT_CACHE_DIR` | `/app/data/artifacts` | Server-side directory for cached agent wheelhouse, Selkies app tarball, and lib shims. Must be writable. Enrollment artifacts are served from here. |
 | `AGENT_DIR` | `/app/agent` | Server path to the `agent/` directory (scripts and daemon). Mounted from the repo in Docker Compose. |
 | `ENROLL_TOKEN_TTL_HOURS` | `24` | Lifetime of enrollment tokens (hours). Tokens are single-use and expire after this duration. |
-| `WORKSTATION_OFFLINE_AFTER_S` | `90` | Heartbeat timeout (seconds). If a workstation doesn't heartbeat for 90+ seconds, it is marked offline and routes are refreshed. |
-| `WORKSTATION_DEFAULT_PORT` | `8443` | Default Selkies port on workstations. Enrollment tries to use this; if busy, enrollment fails (E07). |
-| `WORKSTATION_HEARTBEAT_S` | `30` | Agent heartbeat interval (seconds). The agent sends a heartbeat to the server every 30 seconds to report status. |
-
-### Air-Gapped Deployments
-
-If workstations cannot reach the internet:
-
-1. **Download the Selkies tarball** from the configured `SELKIES_TARBALL_URL` on a machine with internet access.
-2. **Place it** at `{ARTIFACT_CACHE_DIR}/selkies.tar.gz` on the portal server (e.g., `/app/data/artifacts/selkies.tar.gz` in the container, or `./data/artifacts/selkies.tar.gz` locally).
-3. **Enrollment will use the cached file** instead of downloading.
+| `WORKSTATION_OFFLINE_AFTER_S` | `90` | Heartbeat timeout (seconds). If a workstation doesn't heartbeat for 90+ seconds, it is marked offline. |
+| `WORKSTATION_DEFAULT_PORT` | `8443` | Default Selkies port on workstations. Enrollment uses this; if busy, enrollment fails (E07). |
+| `WORKSTATION_HEARTBEAT_S` | `30` | Agent heartbeat interval (seconds). Heartbeat reports status, config changes, and health. |
 
 ---
 
 ## Error Codes and Remediation
 
-Enrollment runs 8 preflight checks. If any fail, the script prints an error code (E00–E08) with a message. Resolve each as follows:
+Enrollment runs 8 preflight checks. If any fail, the script prints an error code (E00–E08). Resolve each as follows:
 
 | Code | Message | Remediation |
 |---|---|---|
-| E00 | `--token and --server are required.` | Run the command from the admin Workstations panel; the token and server are prepended. If copying the one-liner manually, ensure both `--token <TOKEN>` and `--server <URL>` are present. |
-| E01 | `python3 not found. Install it (apt install python3 / dnf install python3).` | Install Python 3: `sudo apt install python3` (Debian/Ubuntu) or `sudo dnf install python3` (Fedora/RHEL). Also: `glibc >= 2.17 required (found X.Y). Selkies portable build will not run.` — Update your OS or compile glibc locally (rare). Most distributions from 2015+ have glibc 2.17+. |
-| E02 | `No display session found. Log into a graphical session first (or check loginctl show-session).` | You are in a headless/SSH environment. Log into the machine via the graphical login screen (GDM, LightDM, SDDM, etc.) or start an X server / Wayland session locally. Check: `echo $DISPLAY` (X11) or `echo $XDG_SESSION_TYPE` (Wayland). |
-| E03 | `(Warning only)` Warning about missing GPU encoder or video/render group membership on Wayland. | To enable hardware encoding, install GPU drivers: **NVIDIA:** `nvidia-driver-*` package + verify `nvidia-smi -L` works. **AMD/Intel:** `libva` + `vainfo` must work. **Wayland users:** Run `sudo usermod -aG video render $USER` and log out/in. Without GPU drivers, encoding defaults to CPU x264 (acceptable for low-bandwidth work). |
-| E04 | `Neither PipeWire nor PulseAudio found. Install one (apt install pipewire) for audio streaming.` | Install PipeWire or PulseAudio: `sudo apt install pipewire` (Debian/Ubuntu) or `sudo dnf install pipewire` (Fedora). Verify: `pactl info` (should print audio daemon info, not error). |
-| E05 | `Cannot reach $SERVER from this machine. Check LAN routing/firewall (this must be the portal's LOCAL address, not the public tunnel).` | The workstation cannot reach `SERVER_LAN_URL`. Check: 1) Is `SERVER_LAN_URL` set to the **local LAN address**, not a public tunnel? 2) Is the portal listening on that address? 3) Is there a firewall blocking port 443 (HTTPS)? Try: `curl -kv https://<SERVER_LAN_URL>/api/health` from the workstation. Also appears for "Selkies download failed" or "Registration rejected" — check the server logs. |
-| E06 | `TLS certificate fingerprint mismatch (expected ..., got ...). Wrong server or MITM.` | The server's TLS certificate does not match the pinned `--ca-pin`. Causes: 1) The cert changed (cert renewal/rotation); mint a new token with the new pin. 2) MITM attack (unlikely on LAN); verify the cert fingerprint manually: `openssl s_client -connect <HOST>:<PORT> 2>/dev/null \| openssl x509 -fingerprint -sha256 -noout`. 3) Wrong host/IP in `--ca-pin` — re-check the enrollment command. |
-| E07 | `Port 8443 already in use. Free it or change WORKSTATION_DEFAULT_PORT on the server.` | Another service is listening on port 8443. Find and kill it: `sudo lsof -i :8443` or `sudo ss -ltnp \| grep :8443`. Or on the server, change `WORKSTATION_DEFAULT_PORT` to an unused port and re-enroll. |
-| E08 | `systemd --user session unavailable. Log in as this user via a normal session (not su/sudo).` | You are running enrollment in a `su` or `sudo` shell, which doesn't start a systemd user session. Log in as the target user normally (via SSH to the machine, or `su - <user>` instead of `su <user>`), then re-run enrollment. |
+| E00 | `--token and --server are required.` | Run the one-liner from the admin Workstations panel. If copying manually, ensure both `--token <TOKEN>` and `--server <URL>` are present. |
+| E01 | `Distro too old / python3 not found / glibc < 2.34` | Install Python 3.10+: `sudo apt install python3 python3-venv`. Update OS if glibc < 2.34 (need Ubuntu 22.04+, Debian 12+, RHEL 9+). |
+| E02 | `Mirror mode requested but no X display found.` | Mirror mode requires an active X11 display. Either log into an X11 session, or use `--mode seat` for a private virtual desktop. Check X displays: `ls /tmp/.X11-unix/`. |
+| E03 | `Dependency install failed (labwc, GPU drivers, etc).` | For seat mode, install manually: `sudo apt install labwc wl-clipboard` (Debian/Ubuntu). For GPU: `sudo apt install mesa-va-drivers` (AMD/Intel) or NVIDIA driver package. Restart agent afterward: `systemctl --user restart styx-agent`. |
+| E04 | `Audio stack not found (PipeWire/PulseAudio).` | Install one: `sudo apt install pipewire` (Debian/Ubuntu) or `sudo dnf install pipewire` (Fedora). Verify: `pactl info` should succeed. |
+| E05 | `Cannot reach server. Artifact download failed.` | Check: 1) Is `SERVER_LAN_URL` the **local LAN address**, not a tunnel? 2) Can the workstation reach it: `curl -kv https://<SERVER_LAN_URL>/api/health`? 3) On the server, did you run `scripts/build_agent_artifacts.sh ./data/artifacts`? |
+| E06 | `TLS certificate fingerprint mismatch.` | The server's cert doesn't match the pinned `--ca-pin`. Causes: cert rotated (mint a new token), MITM (unlikely on LAN), or wrong host. Verify: `openssl s_client -connect <HOST>:443 2>/dev/null \| openssl x509 -fingerprint -sha256 -noout`. |
+| E07 | `Port 8443 already in use.` | Find and kill the occupant: `sudo lsof -i :8443` or `sudo ss -ltnp \| grep :8443`. Or on the server, change `WORKSTATION_DEFAULT_PORT` to an unused port and re-enroll. |
+| E08 | `systemd --user session unavailable.` | You are in a `su` or `sudo` shell. Log in as the user normally (SSH or `su - <user>`), then re-run enrollment. |
 
 ---
 
@@ -150,56 +154,50 @@ tail -f ~/.local/share/styx-agent/logs/selkies.log
 
 ### Workstation Shows Offline
 
-**Symptom:** Status badge says "Offline" even though the machine is powered on and you logged in.
+**Symptom:** Status badge says "Offline" even though the machine is powered on.
 
 **Causes & fixes:**
-1. **Service not running:** On the workstation, check:
+1. **Service not running:**
    ```bash
    systemctl --user status styx-agent
    ```
    If stopped: `systemctl --user restart styx-agent`.
 
-2. **Stale heartbeat (> 90 seconds):** The agent hasn't sent a heartbeat in 90+ seconds (default `WORKSTATION_OFFLINE_AFTER_S`). Check:
+2. **Heartbeat timeout (>90s):** The agent hasn't called home. Run diagnostics:
    ```bash
-   python3 ~/.local/share/styx-agent/styx_agent.py status
+   ~/.local/share/styx-agent/venv/bin/python ~/.local/share/styx-agent/styx_agent.py doctor
    ```
-   If it fails, run:
-   ```bash
-   python3 ~/.local/share/styx-agent/styx_agent.py doctor
-   ```
-   to diagnose. Common issues: network unreachable, cert mismatch, Selkies crashed.
+   This checks service, port, cert, connectivity, and encoder. Common issues: network unreachable, cert mismatch, engine crash.
 
-3. **Network:** Verify the workstation can reach the portal:
+3. **Network unreachable:**
    ```bash
    curl -kv https://<SERVER_LAN_URL>/api/health
    ```
 
 ### Stream is Black or Laggy
 
-**Symptoms:** Window opens but shows black screen, or video is very choppy / delayed.
+**Symptoms:** Window opens but shows black screen, or video is choppy/delayed.
 
 **Causes & fixes:**
-1. **Encoder fallback (no GPU):** If `doctor` reports `encoder: x264enc` and your machine has a GPU, install drivers:
-   - **NVIDIA:** `sudo apt install nvidia-driver-*` + reboot + verify `nvidia-smi -L` works.
-   - **AMD/Intel:** Install `libva` + verify `vainfo` works.
-   - Then restart the agent: `systemctl --user restart styx-agent`.
+1. **No GPU encoder:** If `doctor` reports `encoder: x264enc` and you have a GPU:
+   - **NVIDIA:** `sudo apt install nvidia-driver-*` + reboot.
+   - **AMD/Intel:** `sudo apt install mesa-va-drivers` then check `vainfo`.
+   - Restart: `systemctl --user restart styx-agent`.
 
-2. **X11 / Wayland not detected:** The agent may not be attached to the correct display. On X11:
+2. **Mirror mode X display issue:** For mirror mode, check the X display is accessible:
    ```bash
    echo $DISPLAY  # Should be :0 or similar
+   XAUTHORITY=~/.Xauthority xauth list | grep $DISPLAY
    ```
-   On Wayland, the agent starts its own session; no display needed.
+   If empty, the agent cannot access the display. Run doctor to diagnose.
 
-3. **Selkies crashed:** Check logs:
+3. **Engine logs:** Check for errors:
    ```bash
    tail -50 ~/.local/share/styx-agent/logs/selkies.log
-   ```
-   Look for errors like permission denied, missing dependencies, or encoder issues. Restart:
-   ```bash
-   systemctl --user restart styx-agent
+   tail -50 ~/.local/share/styx-agent/logs/gateway.log
    ```
 
-4. **High bitrate on slow network:** If latency is high, reduce `bitrate_kbps` in the admin panel (e.g., from 16000 to 8000) and lower `framerate` (e.g., to 30).
+4. **Network/bitrate:** Reduce bitrate in admin panel (e.g., 16000 → 8000 kbps) if latency is high.
 
 ### "Revoked by server" Message
 
@@ -251,36 +249,28 @@ bash ~/.local/share/styx-agent/uninstall.sh
 
 ## Advanced
 
-### Custom Selkies Version
+### Capture Mode Overrides
 
-To use a different Selkies build (e.g., a newer release or custom build):
+By default, `enroll.sh` auto-detects the capture mode:
+- **X11 session running** → mirror mode (live desktop capture).
+- **Wayland session or headless** → second-seat mode (private virtual desktop).
 
-1. Set `SELKIES_TARBALL_URL` to the download URL.
-2. Or, download the tarball manually and place it at `{ARTIFACT_CACHE_DIR}/selkies.tar.gz` on the server.
-3. Re-enroll workstations.
+To override:
+```bash
+# Force mirror mode on an X display
+curl ... | bash -s -- --token ... --server ... --mode mirror --display :0
 
-**Note:** The agent code assumes the tarball contains `selkies-gstreamer-run` as the launcher and specific environment variable names (`SELKIES_PORT`, `SELKIES_ENCODER`, etc.). If the tarball structure or naming differs, update `build_selkies_cmd` in `agent/styx_agent.py`.
+# Force second-seat mode (private virtual desktop)
+curl ... | bash -s -- --token ... --server ... --mode seat
+```
 
-### TLS Pinning
+For X11 workstations where you prefer a private session, use `--mode seat`. The physical screen remains untouched, and the remote user gets a fresh desktop with access to the machine's apps and files.
 
-## Capture mode: own desktop vs. mirror
+### Hardware Encoder Selection
 
-By default the agent runs its **own private virtual desktop** (Xvfb + openbox +
-a terminal) and streams that. This works uniformly on **any** machine — headless
-servers, X11 logins, and Wayland desktops (the modern default) — because
-selkies-gstreamer is X11-only and a Wayland session cannot be mirrored. The
-streamed desktop is a fresh session on that machine's hardware; from its terminal
-or the openbox right-click menu the user launches the machine's installed apps.
+The agent auto-probes in order: NVENC (NVIDIA) → VA-API (AMD/Intel) → x264 (CPU). To force a specific encoder, edit the workstation config in the admin panel under `stream_settings.encoder`. Options: `nvh264enc`, `vah264enc`, `x264enc`, or `auto` (default).
 
-`enroll.sh` auto-installs the needed packages (Xvfb, openbox, xterm, and VAAPI
-drivers for hardware encoding) via the machine's package manager (`apt`/`dnf`/
-`pacman`/`zypper`) — this is the one step that uses `sudo`.
-
-To **mirror an existing X display** instead (an Xorg `:0`, or a VNC `:1`), add
-`--display :N` to the enrollment command. Mirroring only works on X11 displays,
-not Wayland. The enrollment output lists any X displays it finds.
-
-## TLS
+### TLS
 
 **Automatic (default):** When the LAN address has no publicly-valid certificate
 (any host in tunnel mode, IP addresses in direct mode), the backend generates a
@@ -314,19 +304,20 @@ echo | openssl s_client -connect <HOST>:443 2>/dev/null \
 ```
 ~/.local/share/styx-agent/state.json
 ```
-Last heartbeat timestamp, status (ok/failed), and error message (if failed).
+Last heartbeat timestamp, status (ok/failed), and error message.
 
-**Selkies streaming logs:**
+**Engine logs:**
 ```
-~/.local/share/styx-agent/logs/selkies.log
+~/.local/share/styx-agent/logs/selkies.log   # Video/audio capture and stream
+~/.local/share/styx-agent/logs/gateway.log   # HTTP gateway (auth, credential injection)
+~/.local/share/styx-agent/logs/seat.log      # Second-seat mode logs (compositor, labwc)
 ```
-GStreamer output, encoder diagnostics, and WebRTC connection info.
 
 **systemd user service logs:**
 ```bash
 journalctl --user -u styx-agent -n 50
 ```
-Agent daemon startup, crashes, and restarts.
+Agent daemon startup, crashes, restarts.
 
 ---
 
@@ -345,20 +336,20 @@ Agent daemon startup, crashes, and restarts.
 ## Limits and Caveats
 
 - **No SSH tunneling:** Workstations must have direct LAN connectivity to `SERVER_LAN_URL`. Remote access requires a VPN or SSH tunnel set up outside the portal.
-- **Single display per machine:** The agent streams one display per machine. For multi-monitor setups, use a virtual compositor or extended desktop.
-- **Wayland limitation:** The agent cannot mirror an existing Wayland desktop (upstream Selkies limitation). It runs a separate session instead.
-- **Filemode:** Selkies streams the visual desktop only; no file transfer or terminal is provided. Use file sharing (NFS, Samba) or SSH for files.
-- **Performance:** Streaming quality depends on network bandwidth, encoder choice, and the machine's GPU availability. Start with default settings and adjust as needed.
+- **Single stream per machine:** The agent streams one desktop per machine. For multi-monitor setups, use a virtual compositor or extended desktop.
+- **Wayland mirror not supported:** The agent cannot mirror an existing Wayland desktop (upstream Selkies limitation; see [selkies#46](https://github.com/selkies-project/selkies/issues/46)). Wayland machines get a private second-seat desktop instead.
+- **Display-only streaming:** Selkies streams the visual desktop; no file transfer or additional terminal. Use file sharing (NFS, Samba, sshfs) or SSH for files.
+- **Performance:** Quality depends on network bandwidth, encoder choice, and GPU availability. Start with default settings and reduce bitrate/framerate on slow links.
 
 ---
 
 ## Support
 
-For issues:
-1. Run `python3 ~/.local/share/styx-agent/styx_agent.py doctor` on the workstation.
-2. Check logs (`tail -50 ~/.local/share/styx-agent/logs/selkies.log`).
-3. Check the admin panel for the workstation's "Last error" field.
-4. Review the error codes above (E00–E08).
-5. Check server logs for rejected heartbeats or registration errors.
+For enrollment or streaming issues:
+1. Run diagnostics: `~/.local/share/styx-agent/venv/bin/python ~/.local/share/styx-agent/styx_agent.py doctor`
+2. Check logs: `tail -50 ~/.local/share/styx-agent/logs/{selkies,gateway,seat}.log`
+3. Review the admin panel: click the workstation card to see "Last error".
+4. Check the error codes above (E00–E08).
+5. Consult server logs for registration/heartbeat failures.
 
-For Selkies-specific issues (black screen, encoder errors, WebRTC negotiation), see the [Selkies GitHub repository](https://github.com/selkies-project/selkies-gstreamer).
+For Selkies 2.x or pixelflux issues, see the [Selkies GitHub repository](https://github.com/selkies-project/selkies).
