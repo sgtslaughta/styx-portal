@@ -33,12 +33,12 @@ def test_agent_version_bumped():
 
 def test_gateway_cmd_secrets_via_env(tmp_path):
     _, cfg = _cfg(tmp_path)
-    cmd, env = styx_agent.build_gateway_cmd(cfg)
+    cmd, env = styx_agent.build_gateway_cmd(cfg, 18444)
     assert cmd[0].endswith("venv/bin/python")
     assert cmd[1].endswith("gateway.py")
     assert cmd[2].endswith("/web")
     assert cmd[3] == "8443"          # LAN port
-    assert cmd[4] == "8444"          # loopback selkies
+    assert cmd[4] == "18444"         # loopback selkies
     assert env["STYX_GW_USER"] == "styx"
     assert env["STYX_GW_PASSWORD"] == "pw"
     assert not any("pw" in a for a in cmd)

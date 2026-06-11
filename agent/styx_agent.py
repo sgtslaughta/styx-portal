@@ -72,7 +72,7 @@ def api(cfg: dict, path: str, payload: dict | None = None) -> dict:
         return json.loads(resp.read().decode() or "{}")
 
 
-def build_gateway_cmd(cfg: dict) -> tuple[list[str], dict]:
+def build_gateway_cmd(cfg: dict, upstream_port: int) -> tuple[list[str], dict]:
     install = Path(cfg["install_dir"])
     env = {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
@@ -81,7 +81,7 @@ def build_gateway_cmd(cfg: dict) -> tuple[list[str], dict]:
     }
     cmd = [str(install / "venv/bin/python"), str(install / "gateway.py"),
            str(install / "web"), str(cfg["port"]),
-           str(cfg["port"] + engine.INTERNAL_WS_OFFSET)]
+           str(upstream_port)]
     return cmd, env
 
 
@@ -114,6 +114,8 @@ def run(cfg: dict) -> int:
     seat_socket: str | None = None
     interval, backoff, stopping = 30, 2, False
     last_error: str | None = None
+    internal_port = engine.pick_free_port()
+    control_port = engine.pick_free_port()
 
     def _stop(*_):
         nonlocal stopping
@@ -133,7 +135,7 @@ def run(cfg: dict) -> int:
         nonlocal last_error, seat_socket
         seat_socket = None
         try:
-            cmd, env = engine.build_selkies_cmd(cfg)
+            cmd, env = engine.build_selkies_cmd(cfg, internal_port, control_port)
         except Exception as e:
             last_error = f"engine setup failed: {e}"
             return None
@@ -167,7 +169,7 @@ def run(cfg: dict) -> int:
                 backoff *= 2
             procs["selkies"] = start_selkies()
         if procs["gateway"] is None or procs["gateway"].poll() is not None:
-            cmd, env = build_gateway_cmd(cfg)
+            cmd, env = build_gateway_cmd(cfg, internal_port)
             procs["gateway"] = subprocess.Popen(cmd, env=env,
                                                 stdout=gateway_log,
                                                 stderr=gateway_log)

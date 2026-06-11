@@ -6,12 +6,12 @@ seat:   pixelflux's own Wayland compositor; host apps join via WAYLAND_DISPLAY.
 """
 import glob
 import os
+import socket
 import time
 from pathlib import Path
 
 HOME = Path.home()
 DRI_DIR = "/dev/dri"
-INTERNAL_WS_OFFSET = 1     # selkies binds loopback on port+1; gateway owns port
 SEAT_SINK = "styx-seat"    # null sink so seat audio never hits the speakers
 
 
@@ -31,6 +31,14 @@ def _find_xauthority(cfg: dict) -> str | None:
         if c and Path(c).is_file():
             return c
     return None
+
+
+def pick_free_port() -> int:
+    """A free loopback port for the selkies<->gateway link (race window
+    between close and child bind is acceptable on loopback)."""
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
 
 
 def pick_dri_node() -> str:
@@ -99,16 +107,18 @@ def wait_for_wayland_socket(runtime_dir: str, before: set[str],
     return None
 
 
-def build_selkies_cmd(cfg: dict) -> tuple[list[str], dict]:
+def build_selkies_cmd(cfg: dict, internal_port: int, control_port: int) -> tuple[list[str], dict]:
     """argv + env for the selkies process (run through selkies_launcher.py,
     which forces a loopback bind). Secrets travel via env, never argv.
+
+    internal_port: dynamically allocated loopback port for selkies<->gateway.
+    control_port: dynamically allocated control port (independent of internal_port).
 
     Mirror mode queries the live X display and may raise (Xlib connection/
     auth errors) — the supervisor catches and reports via heartbeat.
     """
     install = Path(cfg["install_dir"])
     s = cfg.get("stream_settings", {})
-    internal_port = cfg["port"] + INTERNAL_WS_OFFSET
 
     env = {
         "HOME": str(HOME),
@@ -123,7 +133,7 @@ def build_selkies_cmd(cfg: dict) -> tuple[list[str], dict]:
         str(install / "venv/bin/python"),
         str(install / "selkies_launcher.py"),
         f"--port={internal_port}",
-        f"--control-port={internal_port + 1}",
+        f"--control-port={control_port}",
         "--encoder=x264enc",          # pixelflux switches to VAAPI/NVENC itself
         f"--framerate={s.get('framerate', 60)}",
         "--mode=websockets",
