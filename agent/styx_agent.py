@@ -153,7 +153,7 @@ def run(cfg: dict) -> int:
             if sock:
                 seat_socket = sock
                 procs["shell"] = start_shell()
-                if procs["shell"] is None and shutil.which("labwc"):
+                if procs["shell"] is None and not shutil.which("labwc"):
                     last_error = ("labwc not installed — seat has no window "
                                   "manager. Install: sudo apt install labwc")
         return proc
