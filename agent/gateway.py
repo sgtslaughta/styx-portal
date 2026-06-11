@@ -72,7 +72,10 @@ def create_app(web_dir: str, user: str, password: str,
         return web.FileResponse(os.path.join(web_dir, "index.html"))
 
     app = web.Application(middlewares=[auth_mw])
+    # The dashboard appends "websockets" to its base path (selkies-core.js);
+    # upstream nginx also exposes /websocket. Route both.
     app.router.add_get("/websocket", ws_proxy)
+    app.router.add_get("/websockets", ws_proxy)
     app.router.add_get("/", index)
     app.router.add_static("/", web_dir)
     return app
