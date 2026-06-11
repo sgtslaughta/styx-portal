@@ -128,8 +128,19 @@ def run(cfg: dict) -> int:
             return None
         shell_env = {**os.environ, "WAYLAND_DISPLAY": seat_socket,
                      "XDG_RUNTIME_DIR": runtime_dir}
-        return subprocess.Popen(["labwc"], env=shell_env,
+        proc = subprocess.Popen(["labwc"], env=shell_env,
                                 stdout=seat_log, stderr=seat_log)
+        # A terminal gives an immediately-usable session; from it the user
+        # launches the machine's installed apps. Untracked on purpose —
+        # closing it intentionally shouldn't respawn it.
+        for term in ("foot", "alacritty", "kitty", "kgx", "gnome-terminal",
+                     "konsole", "xterm"):
+            if shutil.which(term):
+                time.sleep(1)  # let labwc claim the compositor first
+                subprocess.Popen([term], env=shell_env,
+                                 stdout=seat_log, stderr=seat_log)
+                break
+        return proc
 
     def start_selkies():
         nonlocal last_error, seat_socket
