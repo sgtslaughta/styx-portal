@@ -188,6 +188,11 @@ def build_selkies_cmd(cfg: dict, internal_port: int, control_port: int) -> tuple
         "--encoder=x264enc",          # pixelflux switches to VAAPI/NVENC itself
         f"--framerate={s.get('framerate', 60)}",
         "--mode=websockets",
+        # Second screen: upstream's Wayland path captures every display at
+        # offset 0,0 on a single-output compositor (mirror, broken input);
+        # the X11 path would xrandr-resize the REAL display in mirror mode.
+        # Server rejects display2 clients with a clear message.
+        "--second-screen=false",
     ]
     if cfg.get("mode") == "seat":
         # Steers WAYLAND_DISPLAY for selkies' helper tools (wl-copy/wl-paste
