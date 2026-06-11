@@ -111,6 +111,7 @@ def run(cfg: dict) -> int:
     runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
     procs: dict[str, subprocess.Popen | None] = {
         "selkies": None, "gateway": None, "shell": None}
+    seat_socket: str | None = None
     interval, backoff, stopping = 30, 2, False
     last_error: str | None = None
 
@@ -120,8 +121,17 @@ def run(cfg: dict) -> int:
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
 
+    def start_shell():
+        if not (seat_socket and shutil.which("labwc")):
+            return None
+        shell_env = {**os.environ, "WAYLAND_DISPLAY": seat_socket,
+                     "XDG_RUNTIME_DIR": runtime_dir}
+        return subprocess.Popen(["labwc"], env=shell_env,
+                                stdout=seat_log, stderr=seat_log)
+
     def start_selkies():
-        nonlocal last_error
+        nonlocal last_error, seat_socket
+        seat_socket = None
         try:
             cmd, env = engine.build_selkies_cmd(cfg)
         except Exception as e:
@@ -140,14 +150,12 @@ def run(cfg: dict) -> int:
                                 stderr=selkies_log)
         if seat_mode:
             sock = engine.wait_for_wayland_socket(runtime_dir, before)
-            if sock and shutil.which("labwc"):
-                shell_env = {**os.environ, "WAYLAND_DISPLAY": sock,
-                             "XDG_RUNTIME_DIR": runtime_dir}
-                procs["shell"] = subprocess.Popen(
-                    ["labwc"], env=shell_env, stdout=seat_log, stderr=seat_log)
-            elif sock:
-                last_error = ("labwc not installed — seat has no window "
-                              "manager. Install: sudo apt install labwc")
+            if sock:
+                seat_socket = sock
+                procs["shell"] = start_shell()
+                if procs["shell"] is None and shutil.which("labwc"):
+                    last_error = ("labwc not installed — seat has no window "
+                                  "manager. Install: sudo apt install labwc")
         return proc
 
     while not stopping:
@@ -163,6 +171,11 @@ def run(cfg: dict) -> int:
             procs["gateway"] = subprocess.Popen(cmd, env=env,
                                                 stdout=gateway_log,
                                                 stderr=gateway_log)
+        if (seat_mode and seat_socket
+                and procs["selkies"] is not None
+                and procs["selkies"].poll() is None
+                and (procs["shell"] is None or procs["shell"].poll() is not None)):
+            procs["shell"] = start_shell()
         selkies_ok = procs["selkies"] is not None and procs["selkies"].poll() is None
         gateway_ok = procs["gateway"] is not None and procs["gateway"].poll() is None
         if selkies_ok and gateway_ok:
