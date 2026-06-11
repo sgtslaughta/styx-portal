@@ -189,6 +189,11 @@ def build_selkies_cmd(cfg: dict, internal_port: int, control_port: int) -> tuple
         f"--framerate={s.get('framerate', 60)}",
         "--mode=websockets",
     ]
+    if cfg.get("mode") == "seat":
+        # Steers WAYLAND_DISPLAY for selkies' helper tools (wl-copy/wl-paste
+        # clipboard, wlr-randr DPI) — the compositor's own bind is independent,
+        # so the supervisor verifies the actual socket and corrects this.
+        cmd.append(f"--wayland-socket-index={cfg.get('seat_socket_index', 1)}")
 
     dri = pick_dri_node()
     if dri:

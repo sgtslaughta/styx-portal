@@ -59,6 +59,15 @@ def test_seat_cmd_uses_wayland_backend(tmp_path, monkeypatch):
     assert env["DRINODE"] == "/dev/dri/renderD128"
     assert "DISPLAY" not in env
     assert "--is-manual-resolution-mode=true" not in cmd
+    assert "--wayland-socket-index=1" in cmd      # default until detected
+
+
+def test_seat_cmd_uses_persisted_socket_index(tmp_path, monkeypatch):
+    cfg = _cfg(tmp_path, mode="seat", display="", seat_socket_index=3)
+    monkeypatch.setattr(engine, "pick_dri_node", lambda: "")
+    monkeypatch.setattr(engine, "resolve_monitor_source", lambda: "")
+    cmd, _ = engine.build_selkies_cmd(cfg, 18444, 18445)
+    assert "--wayland-socket-index=3" in cmd
 
 
 def test_seat_cmd_without_gpu_falls_back_to_cpu(tmp_path, monkeypatch):

@@ -159,6 +159,21 @@ def run(cfg: dict) -> int:
             sock = engine.wait_for_wayland_socket(runtime_dir, before, since_ts)
             if sock:
                 seat_socket = sock
+                # Clipboard/DPI helpers inside selkies address the seat as
+                # wayland-{seat_socket_index}; if the compositor bound a
+                # different index, persist it and restart selkies once.
+                idx = int(sock.rsplit("-", 1)[1])
+                if idx != cfg.get("seat_socket_index", 1):
+                    cfg["seat_socket_index"] = idx
+                    CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
+                    print(f"seat socket is {sock}; restarting selkies with "
+                          f"matching index", flush=True)
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                    return None
                 procs["shell"] = start_shell()
                 if procs["shell"] is None and not shutil.which("labwc"):
                     last_error = ("labwc not installed — seat has no window "
