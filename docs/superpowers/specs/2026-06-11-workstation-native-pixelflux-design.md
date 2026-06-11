@@ -107,15 +107,17 @@ No WebRTC, no STUN/TURN, no UDP. Credentials stay in env
 ### Install layout & removal
 
 ```
-/opt/styx-agent/
-  venv/            system python3 venv (pixelflux, pcmflux, selkies, deps)
+~/.local/share/styx-agent/
+  venv/            system python3 venv (pixelflux, pcmflux, selkies, aiohttp…)
   web/             dashboard dist
-  config.json      0600
+  lib/             shim libs (libva.so.2, libva-drm.so.2, libwayland-server.so.0)
+  logs/
+~/.config/styx-agent/config.json   (0600)
 ```
-systemd user unit `styx-agent.service` (existing pattern). Removal =
-stop+disable unit, `rm -rf /opt/styx-agent`, deregister. Nothing else touched.
-`/opt` is created with sudo during enrollment (enroll.sh already escalates for
-distro package installs) and chowned to the enrolling user.
+systemd user unit `styx-agent.service` (existing v1 pattern). Removal =
+stop+disable unit, `rm -rf ~/.local/share/styx-agent ~/.config/styx-agent`,
+deregister — **no sudo required** (amended from /opt: sudo-less removal is a
+core goal; /opt would need sudo to create and to remove).
 
 ### Distribution
 
