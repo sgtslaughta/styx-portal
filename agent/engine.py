@@ -39,16 +39,28 @@ def pick_dri_node() -> str:
 
 
 def query_display_geometry(display: str, xauthority: str | None) -> tuple[int, int]:
-    """Screen size of a live X display, via the venv's python-xlib."""
+    """Screen size of a live X display, via the venv's python-xlib.
+
+    Xlib reads XAUTHORITY from the process env at connect time; set it only
+    for the duration of the query so the supervisor's env stays clean.
+    """
     from Xlib import display as xdisplay  # venv dep of selkies
+    saved = os.environ.get("XAUTHORITY")
     if xauthority:
         os.environ["XAUTHORITY"] = xauthority
-    d = xdisplay.Display(display)
     try:
-        s = d.screen()
-        return s.width_in_pixels, s.height_in_pixels
+        d = xdisplay.Display(display)
+        try:
+            s = d.screen()
+            return s.width_in_pixels, s.height_in_pixels
+        finally:
+            d.close()
     finally:
-        d.close()
+        if xauthority:
+            if saved is None:
+                os.environ.pop("XAUTHORITY", None)
+            else:
+                os.environ["XAUTHORITY"] = saved
 
 
 def resolve_monitor_source() -> str:
@@ -89,7 +101,11 @@ def wait_for_wayland_socket(runtime_dir: str, before: set[str],
 
 def build_selkies_cmd(cfg: dict) -> tuple[list[str], dict]:
     """argv + env for the selkies process (run through selkies_launcher.py,
-    which forces a loopback bind). Secrets travel via env, never argv."""
+    which forces a loopback bind). Secrets travel via env, never argv.
+
+    Mirror mode queries the live X display and may raise (Xlib connection/
+    auth errors) — the supervisor catches and reports via heartbeat.
+    """
     install = Path(cfg["install_dir"])
     s = cfg.get("stream_settings", {})
     internal_port = cfg["port"] + INTERNAL_WS_OFFSET
