@@ -150,6 +150,55 @@ Run on this machine (live X display, AMD iGPU, PipeWire):
 Each spike result is recorded in this spec's companion notes before the
 implementation plan is written.
 
+### Spike results (2026-06-11, Ubuntu 24.04 / AMD iGPU / PipeWire — ALL PASS)
+
+1. **Mirror: PASS.** selkies 2.x (pinned commit 0d134b6) + pixelflux attached
+   to a pre-existing external X display, streamed 60 H.264 stripe frames at
+   the display's true resolution over the data websocket, and
+   **"VAAPI Encoder Initialized successfully"** with `--dri-node`
+   (`DRI_NODE` env). The `display=1024x768` init log line is a constructor
+   placeholder, not the capture size — the earlier container POC conclusion
+   was a misread; capture sizing is correct.
+2. **Second-seat: PASS (with shim).** `PIXELFLUX_WAYLAND=true` brought up the
+   Rust compositor (GL renderer on `/dev/dri/renderD128`), created a
+   `wayland-N` socket, a host GTK app (gnome-calculator) ran as its client,
+   and frames flowed. Remaining sub-validation: nested `labwc` as WM +
+   Xwayland for X11-only host apps (labwc not installed on the test box).
+3. **Audio: PASS.** pcmflux connected to the default-sink monitor source via
+   PipeWire's pulse shim and streamed Opus chunks over the same websocket
+   after `START_AUDIO`. The agent must resolve `<default-sink>.monitor`
+   dynamically (selkies' default `output.monitor` only matches by luck here).
+
+**Critical compat finding — the libva/libwayland floor.** pixelflux wheels
+≥1.5.x bundle an ffmpeg that requires system `libva ≥ 2.21`
+(`vaMapBuffer2`), and the Wayland backend requires `libwayland-server ≥ 1.23`
+(`wl_client_set_max_buffer_size`). Ubuntu 24.04 LTS ships libva 2.20 /
+libwayland 1.22 — pixelflux 1.6.4 fails to load both backends there.
+Validated fix: a **private lib shim** — ship `libva.so.2` (2.22),
+`libva-drm.so.2`, and `libwayland-server.so.0` (1.23) in the agent's lib dir
+and set `LD_LIBRARY_PATH` for the selkies process only (~1 MB total; both
+backends then load and stream). Alternative validated fallback: pixelflux
+1.4.7 works on stock libva 2.20 but has no Wayland backend (mirror-only).
+Decision: ship the shim, pin pixelflux 1.6.4 everywhere — uniform engine,
+no per-distro version forks. Portal serves shim libs as artifacts.
+
+**Other implementation facts learned:**
+- `setuptools` must be installed alongside selkies (GPUtil imports
+  `distutils`, removed in py3.12).
+- pip dep `xkbcommon` is source-only — needs `libxkbcommon-dev` + gcc at
+  install (preflight), or we serve a prebuilt wheel from the portal (the
+  portal-wheel route is preferred; zero compiler requirement on hosts).
+- Client protocol (for dashboard/web vendoring + tests): ws path
+  `/websocket`, client sends `SETTINGS,{json with displayId:"primary",
+  initialClientWidth/Height}`, then `START_VIDEO` / `START_AUDIO`; binary
+  stripe frames downstream; full config via `SELKIES_*` env vars.
+- Web dist lives at `/usr/share/selkies/web` in linuxserver images; nginx
+  proxies `/websocket` → `127.0.0.1:8082` (we mirror this in agent + Traefik).
+- Seat mode wants `wl-clipboard` (clipboard) — preflight auto-install.
+- Resolution management: selkies resizes the display to the client viewport
+  by default (`is_manual_resolution_mode=False`). Fine for second-seat;
+  mirror mode must lock to the physical display's current resolution.
+
 ## Known risks
 
 | Risk | Mitigation |
