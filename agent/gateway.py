@@ -71,6 +71,39 @@ def create_app(web_dir: str, user: str, password: str,
     async def index(_request):
         return web.FileResponse(os.path.join(web_dir, "index.html"))
 
+    async def files(request):
+        # Hand-rolled index: aiohttp's show_index emits ABSOLUTE hrefs
+        # (/files/x), which escape the portal's /w/{sub} prefix and land on
+        # the SPA (X-Frame-Options: DENY -> blocked iframe). Relative links
+        # survive any prefix.
+        import html as _html
+        from pathlib import Path
+        from urllib.parse import quote
+        base = Path(files_dir).resolve()
+        rel = request.match_info.get("path", "")
+        target = (base / rel).resolve() if rel else base
+        if not (target == base or target.is_relative_to(base)):
+            raise web.HTTPForbidden()
+        if target.is_file():
+            return web.FileResponse(target)
+        if not target.is_dir():
+            raise web.HTTPNotFound()
+        if not request.path.endswith("/"):
+            # relative redirect keeps the reverse-proxy prefix intact
+            raise web.HTTPMovedPermanently(quote(target.name) + "/")
+        items = sorted(target.iterdir(),
+                       key=lambda p: (not p.is_dir(), p.name.lower()))
+        rows = "".join(
+            f'<li><a href="{quote(p.name)}{"/" if p.is_dir() else ""}">'
+            f'{_html.escape(p.name)}{"/" if p.is_dir() else ""}</a></li>'
+            for p in items) or "<li><em>empty</em></li>"
+        up = '<li><a href="../">../</a></li>' if target != base else ""
+        body = (f"<!doctype html><meta charset='utf-8'><title>Files</title>"
+                f"<style>body{{font:14px sans-serif;background:#fff;"
+                f"color:#222;padding:1.5em}}li{{margin:.25em 0}}</style>"
+                f"<h2>{_html.escape(str(target))}</h2><ul>{up}{rows}</ul>")
+        return web.Response(text=body, content_type="text/html")
+
     app = web.Application(middlewares=[auth_mw])
     # The dashboard appends "websockets" to its base path (selkies-core.js);
     # upstream nginx also exposes /websocket. Route both.
@@ -78,9 +111,9 @@ def create_app(web_dir: str, user: str, password: str,
     app.router.add_get("/websockets", ws_proxy)
     app.router.add_get("/", index)
     if files_dir and os.path.isdir(files_dir):
-        # Dashboard's Files download popup opens <base>/files/ — upstream
-        # nginx serves an autoindex of the upload dir; mirror that.
-        app.router.add_static("/files", files_dir, show_index=True)
+        # Dashboard's Files download popup opens <base>/files/.
+        app.router.add_get("/files", files)
+        app.router.add_get("/files/{path:.*}", files)
     app.router.add_static("/", web_dir)
     return app
 
