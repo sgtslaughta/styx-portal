@@ -112,7 +112,7 @@ Enrollment runs 8 preflight checks. If any fail, the script prints an error code
 
 1. **In the Styx Portal dashboard,** the **Workstations** section shows cards for each machine you have access to.
 2. **When online:** The card shows a green "Online" badge and a **Connect** button. Click to open the stream in a new browser tab.
-3. **Stream quality:** The agent sends the desktop at the configured framerate (default 60 fps) and bitrate (default 16 Mbps). Adjust in the admin Workstations panel.
+3. **Stream quality:** The agent sends the desktop at the configured framerate (default 60 fps). Adjust framerate in the admin Workstations panel; bitrate_kbps is accepted but not yet applied by the v2 engine.
 
 ### Checking Workstation Status
 
@@ -122,7 +122,7 @@ Enrollment runs 8 preflight checks. If any fail, the script prints an error code
 # Show last heartbeat result (age, success/failure)
 python3 ~/.local/share/styx-agent/styx_agent.py status
 
-# Run diagnostics (checks service, port, cert, connectivity, encoder)
+# Run diagnostics (checks service, port, cert, connectivity, GPU render node)
 python3 ~/.local/share/styx-agent/styx_agent.py doctor
 
 # View logs (Selkies output)
@@ -139,14 +139,12 @@ tail -f ~/.local/share/styx-agent/logs/selkies.log
 
 **Admin panel:**
 1. Click a workstation card.
-2. Edit **framerate**, **bitrate_kbps**, or **encoder** in the JSON config.
-3. The agent picks up the change on the next heartbeat (~30 seconds) and restarts Selkies.
+2. Edit **framerate** in the JSON config. The agent applies this on the next heartbeat (~30 seconds) and restarts Selkies.
 
-**Encoder options:**
-- `auto` (default): Selkies auto-detects (NVIDIA → nvh264enc, VAAPI → vah264enc, else x264enc).
-- `nvh264enc` (NVIDIA)
-- `vah264enc` (VAAPI/AMD/Intel)
-- `x264enc` (software, CPU intensive)
+**Current v2 engine capabilities:**
+- **framerate** (e.g., 30, 60): Takes effect immediately on heartbeat. Adjust for network conditions.
+- **bitrate_kbps** and **encoder** fields are accepted but not yet applied by the v2 agent. These are reserved for future enhancements.
+- **Hardware acceleration:** Automatic. Pixelflux uses NVENC (NVIDIA) or VA-API (AMD/Intel) when a GPU render node (`/dev/dri/renderD*`) is present; falls back to CPU x264 otherwise. No manual encoder selection is available.
 
 ---
 
@@ -167,7 +165,7 @@ tail -f ~/.local/share/styx-agent/logs/selkies.log
    ```bash
    ~/.local/share/styx-agent/venv/bin/python ~/.local/share/styx-agent/styx_agent.py doctor
    ```
-   This checks service, port, cert, connectivity, and encoder. Common issues: network unreachable, cert mismatch, engine crash.
+   This checks service, port, cert, connectivity, and GPU render node availability. Common issues: network unreachable, cert mismatch, engine crash.
 
 3. **Network unreachable:**
    ```bash
@@ -179,10 +177,12 @@ tail -f ~/.local/share/styx-agent/logs/selkies.log
 **Symptoms:** Window opens but shows black screen, or video is choppy/delayed.
 
 **Causes & fixes:**
-1. **No GPU encoder:** If `doctor` reports `encoder: x264enc` and you have a GPU:
-   - **NVIDIA:** `sudo apt install nvidia-driver-*` + reboot.
-   - **AMD/Intel:** `sudo apt install mesa-va-drivers` then check `vainfo`.
-   - Restart: `systemctl --user restart styx-agent`.
+1. **No GPU encoder (CPU fallback active):** If `doctor` reports `GPU render node — CPU encode` and you have a GPU:
+   - Ensure `/dev/dri/renderD128` (or a similar GPU render device) exists: `ls -la /dev/dri/renderD*`.
+   - Verify you are in the `render` group: `id -nG | grep -w render`. If missing: `sudo usermod -aG render $USER && logout && login`.
+   - **NVIDIA:** Install NVIDIA driver: `sudo apt install nvidia-driver-*` + reboot.
+   - **AMD/Intel:** Install VAAPI drivers: `sudo apt install mesa-va-drivers` then verify: `vainfo`.
+   - Restart the agent: `systemctl --user restart styx-agent`.
 
 2. **Mirror mode X display issue:** For mirror mode, check the X display is accessible:
    ```bash
@@ -268,7 +268,12 @@ For X11 workstations where you prefer a private session, use `--mode seat`. The 
 
 ### Hardware Encoder Selection
 
-The agent auto-probes in order: NVENC (NVIDIA) → VA-API (AMD/Intel) → x264 (CPU). To force a specific encoder, edit the workstation config in the admin panel under `stream_settings.encoder`. Options: `nvh264enc`, `vah264enc`, `x264enc`, or `auto` (default).
+Encoding uses H.264. Pixelflux automatically engages hardware acceleration when a GPU render node (`/dev/dri/renderD*`) is available:
+- **NVIDIA:** Uses NVENC.
+- **AMD/Intel:** Uses VA-API.
+- **No GPU:** Falls back to CPU x264.
+
+There is no manual encoder selection in v2. Hardware acceleration is automatic and requires only that the GPU render device exists and your user is in the `render` group.
 
 ### TLS
 
