@@ -115,6 +115,49 @@ def wait_for_wayland_socket(runtime_dir: str, before: set[str],
     return None
 
 
+TERMINALS = ("foot", "alacritty", "kitty", "kgx", "gnome-terminal",
+             "konsole", "xterm")
+
+_SEAT_MENU = """<?xml version="1.0" encoding="UTF-8"?>
+<openbox_menu>
+<menu id="root-menu" label="Styx">
+  <item label="Terminal"><action name="Execute" command="{term}"/></item>
+  <item label="Reconfigure"><action name="Reconfigure"/></item>
+  <item label="Exit session"><action name="Exit"/></item>
+</menu>
+</openbox_menu>
+"""
+
+
+def pick_terminal() -> str:
+    import shutil
+    for term in TERMINALS:
+        if shutil.which(term):
+            return term
+    return ""
+
+
+def write_seat_config(config_dir: Path) -> None:
+    """labwc config for the seat: wallpaper + panel + terminal autostart and
+    a root menu. Regenerated each shell start so newly installed tools
+    (waybar, swaybg) get picked up on restart."""
+    import shutil
+    config_dir.mkdir(parents=True, exist_ok=True)
+    lines = []
+    if shutil.which("swaybg"):
+        lines.append("swaybg -c '#1d2433' &")
+    if shutil.which("waybar"):
+        lines.append("waybar &")
+    term = pick_terminal()
+    if term:
+        lines.append(f"{term} &")
+    auto = config_dir / "autostart"
+    auto.write_text("\n".join(lines) + "\n")
+    auto.chmod(0o755)
+    (config_dir / "menu.xml").write_text(
+        _SEAT_MENU.format(term=term or "true"))
+
+
 def build_selkies_cmd(cfg: dict, internal_port: int, control_port: int) -> tuple[list[str], dict]:
     """argv + env for the selkies process (run through selkies_launcher.py,
     which forces a loopback bind). Secrets travel via env, never argv.

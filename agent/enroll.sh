@@ -99,7 +99,8 @@ install_pkgs() {
   esac
 }
 # Per-manager package names (VAAPI pkg names differ across distros).
-declare -A SEAT_PKG=( [apt]="labwc wl-clipboard" [dnf]="labwc wl-clipboard" [pacman]="labwc wl-clipboard" [zypper]="labwc wl-clipboard" )
+# Seat desktop: WM + Xwayland (X11 apps incl. Chrome) + panel + wallpaper + terminal.
+declare -A SEAT_PKG=( [apt]="labwc xwayland waybar swaybg foot wl-clipboard" [dnf]="labwc xorg-x11-server-Xwayland waybar swaybg foot wl-clipboard" [pacman]="labwc xorg-xwayland waybar swaybg foot wl-clipboard" [zypper]="labwc xwayland waybar swaybg foot wl-clipboard" )
 declare -A VAAPI_PKG=( [apt]="mesa-va-drivers" [dnf]="mesa-va-drivers" [pacman]="libva-mesa-driver" [zypper]="libva" )
 MGR=""
 for m in apt dnf pacman zypper; do

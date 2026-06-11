@@ -126,21 +126,14 @@ def run(cfg: dict) -> int:
     def start_shell():
         if not (seat_socket and shutil.which("labwc")):
             return None
+        engine.write_seat_config(INSTALL_DIR / "labwc")
         shell_env = {**os.environ, "WAYLAND_DISPLAY": seat_socket,
                      "XDG_RUNTIME_DIR": runtime_dir}
-        proc = subprocess.Popen(["labwc"], env=shell_env,
-                                stdout=seat_log, stderr=seat_log)
-        # A terminal gives an immediately-usable session; from it the user
-        # launches the machine's installed apps. Untracked on purpose —
-        # closing it intentionally shouldn't respawn it.
-        for term in ("foot", "alacritty", "kitty", "kgx", "gnome-terminal",
-                     "konsole", "xterm"):
-            if shutil.which(term):
-                time.sleep(1)  # let labwc claim the compositor first
-                subprocess.Popen([term], env=shell_env,
-                                 stdout=seat_log, stderr=seat_log)
-                break
-        return proc
+        # labwc runs the config dir's autostart (wallpaper, panel, terminal)
+        # AFTER Xwayland is up, so those children inherit DISPLAY and can
+        # launch the machine's X11 apps (Chrome etc.).
+        return subprocess.Popen(["labwc", "-C", str(INSTALL_DIR / "labwc")],
+                                env=shell_env, stdout=seat_log, stderr=seat_log)
 
     def start_selkies():
         nonlocal last_error, seat_socket
