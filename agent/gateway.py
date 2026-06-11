@@ -31,7 +31,7 @@ def check_auth(header: str, user: str, password: str) -> bool:
 
 
 def create_app(web_dir: str, user: str, password: str,
-               upstream_port: int) -> web.Application:
+               upstream_port: int, files_dir: str = "") -> web.Application:
     @web.middleware
     async def auth_mw(request, handler):
         if not check_auth(request.headers.get("Authorization", ""), user, password):
@@ -77,6 +77,10 @@ def create_app(web_dir: str, user: str, password: str,
     app.router.add_get("/websocket", ws_proxy)
     app.router.add_get("/websockets", ws_proxy)
     app.router.add_get("/", index)
+    if files_dir and os.path.isdir(files_dir):
+        # Dashboard's Files download popup opens <base>/files/ — upstream
+        # nginx serves an autoindex of the upload dir; mirror that.
+        app.router.add_static("/files", files_dir, show_index=True)
     app.router.add_static("/", web_dir)
     return app
 
@@ -86,7 +90,9 @@ def main() -> None:
         sys.argv[1], int(sys.argv[2]), int(sys.argv[3]))
     user = os.environ["STYX_GW_USER"]
     password = os.environ["STYX_GW_PASSWORD"]
-    web.run_app(create_app(web_dir, user, password, upstream_port),
+    files_dir = os.path.expanduser(
+        os.environ.get("STYX_FILES_DIR", "~/Desktop"))
+    web.run_app(create_app(web_dir, user, password, upstream_port, files_dir),
                 host="0.0.0.0", port=listen_port)
 
 
