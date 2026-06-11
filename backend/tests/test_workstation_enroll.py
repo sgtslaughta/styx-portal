@@ -207,10 +207,6 @@ async def test_artifact_endpoint_missing_prebuilt_503(client, tmp_path, monkeypa
 @pytest.mark.asyncio
 async def test_agent_file_endpoints_routed(client):
     # files that exist in ./agent today
-    for name in ("agent.py", "uninstall"):
+    for name in ("agent.py", "uninstall", "engine.py", "gateway.py", "selkies_launcher.py"):
         r = await client.get(f"/api/enroll/{name}")
         assert r.status_code == 200, name
-    # routes exist for files created by later tasks: 503 (missing file), NOT 404
-    for name in ("engine.py", "gateway.py", "selkies_launcher.py"):
-        r = await client.get(f"/api/enroll/{name}")
-        assert r.status_code == 503, name
