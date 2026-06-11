@@ -40,12 +40,16 @@ def create_app(web_dir: str, user: str, password: str,
         return await handler(request)
 
     async def ws_proxy(request):
-        ws_server = web.WebSocketResponse(max_msg_size=0)
-        await ws_server.prepare(request)
         async with aiohttp.ClientSession() as session:
-            async with session.ws_connect(
+            try:
+                ws_client = await session.ws_connect(
                     f"ws://127.0.0.1:{upstream_port}{request.path}",
-                    max_msg_size=0) as ws_client:
+                    max_msg_size=0)
+            except aiohttp.ClientError:
+                return web.Response(status=502, text="stream backend unavailable")
+            try:
+                ws_server = web.WebSocketResponse(max_msg_size=0)
+                await ws_server.prepare(request)
 
                 async def pump(src, dst):
                     async for msg in src:
@@ -60,6 +64,8 @@ def create_app(web_dir: str, user: str, password: str,
                 await asyncio.gather(pump(ws_server, ws_client),
                                      pump(ws_client, ws_server),
                                      return_exceptions=True)
+            finally:
+                await ws_client.close()
         return ws_server
 
     async def index(_request):

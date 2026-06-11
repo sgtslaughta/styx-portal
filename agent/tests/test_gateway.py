@@ -40,3 +40,18 @@ async def test_app_serves_static_with_auth(tmp_path):
         assert r.headers["WWW-Authenticate"].startswith("Basic")
     finally:
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_ws_proxy_upstream_down_returns_502(tmp_path):
+    from aiohttp.test_utils import TestClient, TestServer
+    (tmp_path / "index.html").write_text("x")
+    app = gateway.create_app(str(tmp_path), "styx", "pw", upstream_port=1)
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        r = await client.get("/websocket",
+                             headers={"Authorization": _basic("styx", "pw")})
+        assert r.status == 502
+    finally:
+        await client.close()
