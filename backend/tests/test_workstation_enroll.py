@@ -177,3 +177,40 @@ async def test_register_accepts_valid_ipv4_and_ipv6(client, admin_client, sessio
     r = await client.post("/api/enroll/register", json={
         "token": raw, "hostname": "desk-ipv6", "lan_ip": "::1"})
     assert r.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_artifact_endpoint_serves_prebuilt(client, tmp_path, monkeypatch):
+    from app.services import artifacts
+    monkeypatch.setattr(artifacts._settings, "ARTIFACT_CACHE_DIR", str(tmp_path))
+    (tmp_path / "selkies-web.tar.gz").write_bytes(b"web-dist")
+    r = await client.get("/api/enroll/artifacts/selkies-web.tar.gz")
+    assert r.status_code == 200
+    assert r.content == b"web-dist"
+
+
+@pytest.mark.asyncio
+async def test_artifact_endpoint_unknown_name_404(client):
+    r = await client.get("/api/enroll/artifacts/evil.tar.gz")
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_artifact_endpoint_missing_prebuilt_503(client, tmp_path, monkeypatch):
+    from app.services import artifacts
+    monkeypatch.setattr(artifacts._settings, "ARTIFACT_CACHE_DIR", str(tmp_path))
+    r = await client.get("/api/enroll/artifacts/wheelhouse-x86_64.tar.gz")
+    assert r.status_code == 503
+    assert "build_agent_artifacts" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_agent_file_endpoints_routed(client):
+    # files that exist in ./agent today
+    for name in ("agent.py", "uninstall"):
+        r = await client.get(f"/api/enroll/{name}")
+        assert r.status_code == 200, name
+    # routes exist for files created by later tasks: 503 (missing file), NOT 404
+    for name in ("engine.py", "gateway.py", "selkies_launcher.py"):
+        r = await client.get(f"/api/enroll/{name}")
+        assert r.status_code == 503, name
