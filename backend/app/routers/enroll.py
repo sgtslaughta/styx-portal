@@ -52,25 +52,41 @@ async def agent_py():
     return _serve("styx_agent.py")
 
 
+@router.get("/engine.py")
+async def engine_py():
+    return _serve("engine.py")
+
+
+@router.get("/gateway.py")
+async def gateway_py():
+    return _serve("gateway.py")
+
+
+@router.get("/selkies_launcher.py")
+async def selkies_launcher_py():
+    return _serve("selkies_launcher.py")
+
+
 @router.get("/uninstall")
 async def uninstall_script():
     return _serve("uninstall.sh")
 
 
-@router.get("/artifacts/selkies.tar.gz")
-async def selkies_tarball():
-    from app.services.artifacts import ensure_selkies_tarball
+@router.get("/artifacts/{name}")
+async def artifact(name: str):
+    from app.services.artifacts import ARTIFACTS, ArtifactMissing, ensure_artifact
+    if name not in ARTIFACTS:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"No such artifact: {name}")
     try:
-        path = await ensure_selkies_tarball()
+        path = await ensure_artifact(name)
+    except ArtifactMissing as e:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e))
     except Exception as e:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
-            "Selkies tarball unavailable: could not download from "
-            f"{_settings.SELKIES_TARBALL_URL} ({e.__class__.__name__}). "
-            "Fix the URL (SELKIES_TARBALL_URL) or pre-place the file at "
-            f"{_settings.ARTIFACT_CACHE_DIR}/selkies.tar.gz")
-    return FileResponse(path, media_type="application/gzip",
-                        filename="selkies.tar.gz")
+            f"Artifact {name} unavailable ({e.__class__.__name__}). "
+            "Check network or pre-place it in the artifact cache.")
+    return FileResponse(path, media_type="application/gzip", filename=name)
 
 
 @router.post("/register", response_model=WorkstationRegisterResponse,

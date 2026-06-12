@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Styx workstation agent — supervises Selkies and heartbeats to the portal.
+"""Styx workstation agent — supervises selkies/pixelflux engine + gateway.
 
-Stdlib only. Installed by enroll.sh to ~/.local/share/styx-agent/.
+Installed by enroll.sh to ~/.local/share/styx-agent/; runs on the agent venv.
 Subcommands: run | status | doctor | uninstall
 """
 import json
@@ -18,7 +18,7 @@ import urllib.request
 from hashlib import sha256
 from pathlib import Path
 
-AGENT_VERSION = "0.3.0"
+AGENT_VERSION = "0.4.0"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -28,6 +28,10 @@ STATE_PATH = INSTALL_DIR / "state.json"   # last heartbeat result, for status/do
 
 def load_config(path: Path = CONFIG_PATH) -> dict:
     return json.loads(Path(path).read_text())
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import engine  # noqa: E402  (installed next to this file by enroll.sh)
 
 
 # --- TLS pinning -----------------------------------------------------------
@@ -68,116 +72,28 @@ def api(cfg: dict, path: str, payload: dict | None = None) -> dict:
         return json.loads(resp.read().decode() or "{}")
 
 
-# --- Selkies process -------------------------------------------------------
-def _gst_has_element(selkies_dir: str, element: str) -> bool:
-    """True if the BUNDLED GStreamer actually provides this element. Probing
-    gst-inspect is the only reliable check — `vainfo`/`nvidia-smi` being present
-    says nothing about whether the portable GStreamer was built with that
-    encoder plugin (the v1.6.2 tarball ships CPU encoders only)."""
-    gi = Path(selkies_dir) / "bin" / "gst-inspect-1.0"
-    if not gi.is_file():
-        return False
-    env = {**os.environ, "PYTHONNOUSERSITE": "1"}
-    for v in ("PYTHONPATH", "PYTHONHOME"):
-        env.pop(v, None)
-    try:
-        return subprocess.run([str(gi), element], capture_output=True,
-                              env=env, timeout=30).returncode == 0
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-
-
-def detect_encoder(selkies_dir: str) -> str:
-    """Pick the best H.264 encoder the bundled GStreamer can actually create,
-    HW first. Falls back to CPU x264enc, which the portable build always has."""
-    for enc in ("nvh264enc", "vah264enc", "x264enc"):
-        if _gst_has_element(selkies_dir, enc):
-            return enc
-    return "x264enc"
-
-
-XVFB_DISPLAY = ":100"
-
-
-def _find_xauthority(cfg: dict) -> str | None:
-    """Best-effort XAUTHORITY for capturing an existing X display. Checks the
-    config override, the env, then the common per-distro locations. Returns the
-    first existing file, or None (Selkies falls back to no-auth local connect)."""
-    uid = os.getuid()
-    candidates = [
-        cfg.get("xauthority"),
-        os.environ.get("XAUTHORITY"),
-        str(HOME / ".Xauthority"),
-        f"/run/user/{uid}/.mutter-Xwaylandauth",      # GNOME Xwayland
-        f"/run/user/{uid}/gdm/Xauthority",            # GDM
-    ]
-    # VNC servers drop a per-display cookie under ~/.Xauthority already, but
-    # some write ~/.vnc/...; glob those too.
-    candidates += [str(p) for p in sorted(HOME.glob(".vnc/*Xauthority"))]
-    for c in candidates:
-        if c and Path(c).is_file():
-            return c
-    return None
-
-
-def display_plan(cfg: dict) -> tuple[bool, str]:
-    """Return (start_xvfb, display).
-
-    Default: the agent runs its OWN virtual desktop (private Xvfb). This is
-    uniform across headless / X11 / Wayland machines — selkies-gstreamer is
-    X11-only, and modern desktops are Wayland, so mirroring the physical
-    screen is not portable. An explicit `display` override (enroll --display)
-    opts into mirroring an existing X display (e.g. an Xorg :0 or KasmVNC :1).
-    """
-    forced = cfg.get("display")
-    if forced:
-        return False, forced
-    return True, cfg.get("xvfb_display", XVFB_DISPLAY)
-
-
-def build_selkies_cmd(cfg: dict, display: str,
-                      use_xauth: bool = True) -> tuple[list[str], dict]:
-    """selkies-gstreamer v1.6.x is configured by CLI flags (addr/port/encoder/
-    basic auth are flags, NOT env vars). It serves HTTP + WebSocket + WebRTC on
-    a single port, so Traefik proxies straight to it.
-    """
-    s = cfg["stream_settings"]
-    encoder = s.get("encoder", "auto")
-    if encoder == "auto":
-        encoder = detect_encoder(cfg["selkies_dir"])
-    env = os.environ.copy()
-    env["DISPLAY"] = display
-    # Capturing an existing X display (e.g. KasmVNC :1) needs its auth cookie;
-    # the systemd --user service starts with an empty env, so resolve
-    # XAUTHORITY explicitly. Its location varies by distro/display manager.
-    if use_xauth:
-        xauth = _find_xauthority(cfg)
-        if xauth:
-            env["XAUTHORITY"] = xauth
-    env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
-    env.setdefault("PULSE_SERVER", f"unix:{env['XDG_RUNTIME_DIR']}/pulse/native")
-    # Isolate the bundled portable interpreter from the user's site-packages.
-    # ~/.local/lib/python3.12 can hold a newer `websockets` (and editable .pth
-    # hooks) that shadow Selkies' pinned deps, causing create_server(loop=...)
-    # / extra_headers TypeErrors and ABI 'undefined symbol' import crashes.
-    env["PYTHONNOUSERSITE"] = "1"
-    for var in ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP"):
-        env.pop(var, None)
-    env["SELKIES_ENCODER"] = encoder  # belt-and-suspenders; the flag is authoritative
-    # Credentials go through the environment, NOT argv — argv is world-readable
-    # via /proc/<pid>/cmdline. These SELKIES_BASIC_AUTH_* names are the same
-    # ones the upstream container entrypoints use.
-    env["SELKIES_ENABLE_BASIC_AUTH"] = "true"
-    env["SELKIES_BASIC_AUTH_USER"] = cfg["selkies_user"]
-    env["SELKIES_BASIC_AUTH_PASSWORD"] = cfg["selkies_password"]
-    launcher = Path(cfg["selkies_dir"]) / "selkies-gstreamer-run"
-    cmd = [
-        str(launcher),
-        "--addr=0.0.0.0",
-        f"--port={cfg['port']}",
-        f"--encoder={encoder}",
-    ]
+def build_gateway_cmd(cfg: dict, upstream_port: int) -> tuple[list[str], dict]:
+    install = Path(cfg["install_dir"])
+    env = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "STYX_GW_USER": cfg["selkies_user"],
+        "STYX_GW_PASSWORD": cfg["selkies_password"],
+    }
+    cmd = [str(install / "venv/bin/python"), str(install / "gateway.py"),
+           str(install / "web"), str(cfg["port"]),
+           str(upstream_port)]
     return cmd, env
+
+
+def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool) -> dict:
+    return {
+        "mode": cfg.get("mode", "mirror"),
+        "engine": "pixelflux",
+        "agent_version": AGENT_VERSION,
+        "dri_node": engine.pick_dri_node(),
+        "selkies_alive": selkies_alive,
+        "gateway_alive": gateway_alive,
+    }
 
 
 def _write_state(d: dict) -> None:
@@ -185,38 +101,21 @@ def _write_state(d: dict) -> None:
     STATE_PATH.write_text(json.dumps(d))
 
 
-def _start_xvfb(display: str, log) -> subprocess.Popen | None:
-    """Start a private X server for Wayland/headless machines. Returns the
-    Xvfb process, or None if Xvfb is missing (caller reports the error)."""
-    if not shutil.which("Xvfb"):
-        return None
-    proc = subprocess.Popen(
-        ["Xvfb", display, "-screen", "0", "1920x1080x24", "-nolisten", "tcp"],
-        stdout=log, stderr=log)
-    time.sleep(1.5)  # let the X socket appear before Selkies connects
-    denv = {**os.environ, "DISPLAY": display}
-    if shutil.which("openbox"):  # window manager so apps are usable
-        subprocess.Popen(["openbox"], env=denv, stdout=log, stderr=log)
-    # A terminal gives an immediately-usable session; from it (or the openbox
-    # right-click menu) the user launches the machine's installed apps.
-    for term in ("xterm", "x-terminal-emulator"):
-        if shutil.which(term):
-            subprocess.Popen([term], env=denv, stdout=log, stderr=log)
-            break
-    return proc
-
-
 def run(cfg: dict) -> int:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     selkies_log = open(LOG_DIR / "selkies.log", "ab", buffering=0)
-    xvfb_log = open(LOG_DIR / "xvfb.log", "ab", buffering=0)
-    start_xvfb, display = display_plan(cfg)
-    cmd, env = build_selkies_cmd(cfg, display, use_xauth=not start_xvfb)
-    proc: subprocess.Popen | None = None
-    xvfb: subprocess.Popen | None = None
-    interval = 30
-    backoff = 2
-    stopping = False
+    gateway_log = open(LOG_DIR / "gateway.log", "ab", buffering=0)
+    seat_log = open(LOG_DIR / "seat.log", "ab", buffering=0)
+
+    seat_mode = cfg.get("mode") == "seat"
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    procs: dict[str, subprocess.Popen | None] = {
+        "selkies": None, "gateway": None, "shell": None}
+    seat_socket: str | None = None
+    interval, backoff, stopping = 30, 2, False
+    last_error: str | None = None
+    internal_port = engine.pick_free_port()
+    control_port = engine.pick_free_port()
 
     def _stop(*_):
         nonlocal stopping
@@ -224,27 +123,97 @@ def run(cfg: dict) -> int:
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
 
+    def start_shell():
+        if not (seat_socket and shutil.which("labwc")):
+            return None
+        engine.write_seat_config(INSTALL_DIR / "labwc")
+        shell_env = {**os.environ, "WAYLAND_DISPLAY": seat_socket,
+                     "XDG_RUNTIME_DIR": runtime_dir}
+        # labwc runs the config dir's autostart (wallpaper, panel, terminal)
+        # AFTER Xwayland is up, so those children inherit DISPLAY and can
+        # launch the machine's X11 apps (Chrome etc.).
+        return subprocess.Popen(["labwc", "-C", str(INSTALL_DIR / "labwc")],
+                                env=shell_env, stdout=seat_log, stderr=seat_log)
+
+    def start_selkies():
+        nonlocal last_error, seat_socket
+        seat_socket = None
+        try:
+            cmd, env = engine.build_selkies_cmd(cfg, internal_port, control_port)
+        except Exception as e:
+            last_error = f"engine setup failed: {e}"
+            return None
+        if seat_mode:
+            try:
+                monitor = engine.ensure_seat_sink()
+                cmd = [a for a in cmd if not a.startswith("--audio-device-name=")]
+                cmd.append(f"--audio-device-name={monitor}")
+            except Exception:
+                pass  # default-sink monitor still works; just leaks to speakers
+        before = {p.name for p in Path(runtime_dir).glob("wayland-*")
+                  if not p.name.endswith(".lock")}
+        since_ts = time.time() - 1  # 1s slack for coarse fs timestamps
+        proc = subprocess.Popen(cmd, env=env, stdout=selkies_log,
+                                stderr=selkies_log)
+        if seat_mode:
+            sock = engine.wait_for_wayland_socket(runtime_dir, before, since_ts)
+            if sock:
+                seat_socket = sock
+                # Clipboard/DPI helpers inside selkies address the seat as
+                # wayland-{seat_socket_index}; if the compositor bound a
+                # different index, persist it and restart selkies once.
+                idx = int(sock.rsplit("-", 1)[1])
+                if idx != cfg.get("seat_socket_index", 1):
+                    cfg["seat_socket_index"] = idx
+                    CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
+                    print(f"seat socket is {sock}; restarting selkies with "
+                          f"matching index", flush=True)
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                    return None
+                procs["shell"] = start_shell()
+                if procs["shell"] is None and not shutil.which("labwc"):
+                    last_error = ("labwc not installed — seat has no window "
+                                  "manager. Install: sudo apt install labwc")
+            else:
+                last_error = ("compositor socket not found — seat has no "
+                              "window manager. See logs/selkies.log")
+        return proc
+
     while not stopping:
-        if start_xvfb and (xvfb is None or xvfb.poll() is not None):
-            xvfb = _start_xvfb(display, xvfb_log)
-        if proc is None or proc.poll() is not None:
-            if proc is not None:
-                print(f"selkies exited rc={proc.returncode}; restarting in {backoff}s",
-                      flush=True)
+        if procs["selkies"] is None or procs["selkies"].poll() is not None:
+            if procs["selkies"] is not None:
+                print(f"selkies exited rc={procs['selkies'].returncode}; "
+                      f"restart in {backoff}s", flush=True)
                 time.sleep(min(backoff, 60))
                 backoff *= 2
-            proc = subprocess.Popen(cmd, env=env, stdout=selkies_log,
-                                    stderr=selkies_log)
-        if start_xvfb and xvfb is None:
-            last_error = ("Xvfb not installed — Wayland/headless needs a virtual "
-                          "X display. Run: sudo apt install xvfb openbox")
-        elif proc.poll() is not None:
-            last_error = f"selkies exited rc={proc.returncode} — see logs/selkies.log"
-        else:
-            last_error = None
+            procs["selkies"] = start_selkies()
+        if procs["gateway"] is None or procs["gateway"].poll() is not None:
+            cmd, env = build_gateway_cmd(cfg, internal_port)
+            procs["gateway"] = subprocess.Popen(cmd, env=env,
+                                                stdout=gateway_log,
+                                                stderr=gateway_log)
+        if (seat_mode and seat_socket
+                and procs["selkies"] is not None
+                and procs["selkies"].poll() is None
+                and (procs["shell"] is None or procs["shell"].poll() is not None)):
+            procs["shell"] = start_shell()
+        selkies_ok = procs["selkies"] is not None and procs["selkies"].poll() is None
+        gateway_ok = procs["gateway"] is not None and procs["gateway"].poll() is None
+        if selkies_ok and gateway_ok:
+            if last_error and not last_error.startswith("labwc"):
+                last_error = None
+        elif not selkies_ok and last_error is None:
+            last_error = "selkies not running — see logs/selkies.log"
+
         try:
             hb = api(cfg, "/api/agent/heartbeat", {
-                "status": "online", "last_error": last_error,
+                "status": "online" if selkies_ok and gateway_ok else "error",
+                "last_error": last_error,
+                "health": health_payload(cfg, selkies_ok, gateway_ok),
             })
             _write_state({"ts": time.time(), "ok": True, "state": hb["state"]})
             if hb["state"] == "revoked":
@@ -255,20 +224,21 @@ def run(cfg: dict) -> int:
             if hb["stream_settings"] != cfg["stream_settings"]:
                 cfg["stream_settings"] = hb["stream_settings"]
                 CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
-                cmd, env = build_selkies_cmd(cfg, display, use_xauth=not start_xvfb)
-                proc.terminate()
-                proc.wait(timeout=10)
-                proc = None
+                for key in ("selkies", "shell"):
+                    p = procs[key]
+                    if p is not None and p.poll() is None:
+                        p.terminate()
+                        p.wait(timeout=10)
+                    procs[key] = None
                 continue
             interval = hb.get("heartbeat_interval_s", 30)
             backoff = 2
         except (urllib.error.URLError, OSError, TimeoutError) as e:
-            err = str(e)
-            _write_state({"ts": time.time(), "ok": False, "error": err})
-            print(f"heartbeat failed: {err}", flush=True)
+            _write_state({"ts": time.time(), "ok": False, "error": str(e)})
+            print(f"heartbeat failed: {e}", flush=True)
         time.sleep(interval)
 
-    for p in (proc, xvfb):
+    for p in procs.values():
         if p is not None and p.poll() is None:
             p.terminate()
             try:
@@ -288,15 +258,26 @@ def doctor(cfg: dict) -> int:
     print("styx-agent doctor:")
     ok = True
     ok &= _check("config readable", True, str(CONFIG_PATH))
-    launcher = Path(cfg["selkies_dir"]) / "selkies-gstreamer-run"
-    ok &= _check("selkies installed", launcher.exists(), str(launcher))
+    install = Path(cfg["install_dir"])
+    ok &= _check("venv present", (install / "venv/bin/python").exists())
+    ok &= _check("web dist present", (install / "web/index.html").exists())
+    ok &= _check("lib shim present", (install / "lib").is_dir(),
+                 str(install / "lib"))
+    ok &= _check(f"mode: {cfg.get('mode', 'mirror')}", True)
+    if cfg.get("mode") == "mirror":
+        xa = engine._find_xauthority(cfg)
+        ok &= _check("XAUTHORITY found", xa is not None, xa or "none")
+    dri = engine.pick_dri_node()
+    _check("GPU render node", bool(dri), dri or "CPU encode")
+    mon = engine.resolve_monitor_source()
+    ok &= _check("audio monitor source", bool(mon), mon or "no pulse/pipewire")
     svc = subprocess.run(["systemctl", "--user", "is-active", "styx-agent"],
                          capture_output=True, text=True)
     ok &= _check("service active", svc.stdout.strip() == "active",
                  svc.stdout.strip())
     port_busy = socket.socket().connect_ex(("127.0.0.1", cfg["port"])) == 0
-    ok &= _check(f"selkies listening :{cfg['port']}", port_busy,
-                 "" if port_busy else "nothing listening — see logs/selkies.log")
+    ok &= _check(f"gateway listening :{cfg['port']}", port_busy,
+                 "" if port_busy else "nothing listening — see logs/gateway.log")
     if cfg.get("ca_pin"):
         ok &= _check("TLS pin matches",
                      check_pin(cfg.get("server_cert", ""), cfg["ca_pin"]))
@@ -305,11 +286,7 @@ def doctor(cfg: dict) -> int:
         ok &= _check("server reachable + token valid", True)
     except Exception as e:
         ok &= _check("server reachable + token valid", False, str(e))
-    enc = cfg["stream_settings"].get("encoder", "auto")
-    ok &= _check("encoder", True,
-                 detect_encoder(cfg["selkies_dir"]) if enc == "auto" else enc)
-    print("All checks passed." if ok else
-          f"Some checks failed. Logs: {LOG_DIR}")
+    print("All checks passed." if ok else f"Some checks failed. Logs: {LOG_DIR}")
     return 0 if ok else 1
 
 

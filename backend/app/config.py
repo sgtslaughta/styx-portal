@@ -40,9 +40,10 @@ class Settings(BaseSettings):
     # --- Workstation streaming (physical machines) ---
     SERVER_LAN_URL: str = ""        # e.g. https://192.168.1.10 — used in enrollment one-liner
     SERVER_CA_PIN: str = ""         # optional sha256:<hex fp> for self-signed LAN TLS
-    SELKIES_TARBALL_URL: str = (
-        "https://github.com/selkies-project/selkies-gstreamer/releases/download/"
-        "v1.6.2/selkies-gstreamer-portable-v1.6.2_amd64.tar.gz"
+    # selkies 2.x has no PyPI release; pin the exact commit linuxserver builds.
+    SELKIES_APP_URL: str = (
+        "https://github.com/selkies-project/selkies/archive/"
+        "0d134b6e1ffe42a579bc66363b0e7159ab22aacc.tar.gz"
     )
     ARTIFACT_CACHE_DIR: str = "/app/data/artifacts"
     AGENT_DIR: str = "/app/agent"   # mounted from repo ./agent; dev fallback in enroll router
