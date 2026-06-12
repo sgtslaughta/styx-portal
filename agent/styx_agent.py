@@ -132,7 +132,9 @@ def run(cfg: dict) -> int:
                      # Route seat apps' audio to the captured null sink —
                      # they'd otherwise play to the host's default sink
                      # (physical speakers) and the stream would be silent.
-                     "PULSE_SINK": engine.SEAT_SINK}
+                     "PULSE_SINK": engine.SEAT_SINK,
+                     # Seat apps record from the browser-fed virtual mic.
+                     "PULSE_SOURCE": engine.MIC_SOURCE}
         # labwc runs the config dir's autostart (wallpaper, panel, terminal)
         # AFTER Xwayland is up, so those children inherit DISPLAY and can
         # launch the machine's X11 apps (Chrome etc.).
@@ -154,6 +156,10 @@ def run(cfg: dict) -> int:
                 cmd.append(f"--audio-device-name={monitor}")
             except Exception:
                 pass  # default-sink monitor still works; just leaks to speakers
+            try:
+                engine.ensure_mic_source()
+            except Exception:
+                pass  # mic optional; selkies logs the gap if it matters
         before = {p.name for p in Path(runtime_dir).glob("wayland-*")
                   if not p.name.endswith(".lock")}
         since_ts = time.time() - 1  # 1s slack for coarse fs timestamps

@@ -93,6 +93,31 @@ def ensure_seat_sink() -> str:
     return f"{SEAT_SINK}.monitor"
 
 
+MIC_SOURCE = "SelkiesVirtualMic"   # name selkies expects to find
+
+
+def ensure_mic_source() -> str:
+    """Pre-create the virtual microphone plumbing selkies expects.
+
+    selkies plays browser mic audio into a sink literally named 'input' and
+    needs a source 'SelkiesVirtualMic' on its monitor. It tries to create
+    the source via module-virtual-source, which PipeWire's pulse shim
+    accepts but never materializes — so build the equivalent here with
+    modules PipeWire does implement (null-sink + remap-source). selkies
+    then finds the existing source and proceeds."""
+    import pulsectl
+    with pulsectl.Pulse("styx-agent") as p:
+        if not any(s.name == "input" for s in p.sink_list()):
+            p.module_load("module-null-sink",
+                          "sink_name=input "
+                          "sink_properties=device.description=styx-mic-in")
+        if not any(s.name == MIC_SOURCE for s in p.source_list()):
+            p.module_load("module-remap-source",
+                          f"master=input.monitor source_name={MIC_SOURCE} "
+                          f"source_properties=device.description={MIC_SOURCE}")
+    return MIC_SOURCE
+
+
 def wait_for_wayland_socket(runtime_dir: str, before: set[str],
                             since_ts: float, timeout: float = 15) -> str | None:
     """The compositor picks the first free wayland-N. A socket counts if its
