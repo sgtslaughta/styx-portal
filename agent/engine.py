@@ -118,6 +118,31 @@ def ensure_mic_source() -> str:
     return MIC_SOURCE
 
 
+def guard_default_socket(runtime_dir: str):
+    """Hold the wayland-0 slot so neither seat compositor can bind it.
+
+    wl_display_connect(NULL) falls back to literally "wayland-0" when
+    WAYLAND_DISPLAY is unset — true for every GTK/Qt app in an X11 login
+    session. If the seat compositor or labwc grabs wayland-0, those host
+    apps silently render INTO the seat (live-seen: Ubuntu's DING desktop
+    icons floating over the seat desktop). Mirror libwayland's locking
+    (flock on wayland-0.lock) so wl_display_add_socket_auto skips slot 0.
+
+    Returns the held lock file (keep referenced for the agent's lifetime),
+    or None when a real Wayland session already owns the slot."""
+    import fcntl
+    lock_path = Path(runtime_dir) / "wayland-0.lock"
+    try:
+        f = open(lock_path, "a+")
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return None
+    # We own the slot: drop any stale socket file so fallback connects
+    # fail fast and clients move on to X11.
+    (Path(runtime_dir) / "wayland-0").unlink(missing_ok=True)
+    return f
+
+
 def wait_for_wayland_socket(runtime_dir: str, before: set[str],
                             since_ts: float, timeout: float = 15) -> str | None:
     """The compositor picks the first free wayland-N. A socket counts if its

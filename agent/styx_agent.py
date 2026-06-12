@@ -109,6 +109,13 @@ def run(cfg: dict) -> int:
 
     seat_mode = cfg.get("mode") == "seat"
     runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    if seat_mode:
+        # Held (not used) for the agent's lifetime: keeps the compositors off
+        # wayland-0, the slot WAYLAND_DISPLAY-less host apps fall back to.
+        wayland0_guard = engine.guard_default_socket(runtime_dir)
+        if wayland0_guard is None:
+            print("wayland-0 owned by another session; seat will use a "
+                  "higher slot", flush=True)
     procs: dict[str, subprocess.Popen | None] = {
         "selkies": None, "gateway": None, "shell": None}
     seat_socket: str | None = None

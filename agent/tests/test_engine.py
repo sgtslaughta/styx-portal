@@ -110,6 +110,40 @@ def test_wait_for_wayland_socket_stale_file_rebound(tmp_path):
     assert name == "wayland-1"
 
 
+def test_guard_default_socket_holds_slot0_and_clears_stale(tmp_path):
+    """Guard flocks wayland-0.lock (libwayland's own convention) so neither
+    seat compositor can bind the slot that WAYLAND_DISPLAY-less host apps
+    fall back to, and removes a stale wayland-0 socket file."""
+    import fcntl
+    (tmp_path / "wayland-0").touch()        # stale socket from a prior run
+    guard = engine.guard_default_socket(str(tmp_path))
+    assert guard is not None
+    assert not (tmp_path / "wayland-0").exists()
+    # Slot now contended: a second taker (compositor) must be refused
+    f = open(tmp_path / "wayland-0.lock", "a+")
+    try:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            raised = False
+        except OSError:
+            raised = True
+        assert raised
+    finally:
+        f.close()
+    guard.close()
+
+
+def test_guard_default_socket_yields_to_live_owner(tmp_path):
+    """If a real Wayland session already holds the slot-0 lock, back off."""
+    import fcntl
+    owner = open(tmp_path / "wayland-0.lock", "a+")
+    fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    try:
+        assert engine.guard_default_socket(str(tmp_path)) is None
+    finally:
+        owner.close()
+
+
 def test_pick_dri_node(tmp_path, monkeypatch):
     dri = tmp_path / "dri"
     dri.mkdir()
