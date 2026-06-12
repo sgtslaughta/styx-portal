@@ -54,7 +54,25 @@ export function LoginPage() {
     try {
       await api.login({ username, password });
       await refresh();
-      nav("/");
+      // Forward-auth redirects land here with ?next=/w/{sub}/ — return the
+      // user to the stream they asked for. Only follow same-origin /w/ paths
+      // (URL() catches tricks like /\evil.com, which browsers treat as //).
+      const next = new URLSearchParams(window.location.search).get("next");
+      let target = "";
+      if (next) {
+        try {
+          const parsed = new URL(next, window.location.origin);
+          if (parsed.origin === window.location.origin &&
+              /^\/w\/[a-z0-9-]+\//.test(parsed.pathname)) {
+            target = parsed.pathname;
+          }
+        } catch { /* malformed next — ignore */ }
+      }
+      if (target) {
+        window.location.href = target; // /w/ paths are Traefik routes, not SPA
+      } else {
+        nav("/");
+      }
     } catch (e) {
       setErr(friendlyLoginError((e as Error).message));
     } finally {

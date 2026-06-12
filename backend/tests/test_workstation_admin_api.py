@@ -105,6 +105,55 @@ async def test_auth_check_no_cookie_unauthorized(session):
 
 
 @pytest.mark.asyncio
+async def test_auth_check_browser_navigation_redirects_to_login(session):
+    """Unauthenticated browser hit on /w/{sub}/ gets a login redirect with a
+    next param, not raw 401 JSON (Traefik relays forwardAuth errors as-is)."""
+    ws, _ = await _seed(session)
+    from httpx import ASGITransport, AsyncClient
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as fresh_client:
+        # Location must be ABSOLUTE on the original host — Traefik resolves a
+        # relative Location against the auth-server URL (http://backend:8000).
+        # Test settings: DOMAIN=localhost.
+        r = await fresh_client.get("/api/workstations/auth-check", headers={
+            "X-Forwarded-Uri": f"/w/{ws.subdomain}/",
+            "X-Forwarded-Proto": "https", "X-Forwarded-Host": "localhost",
+            "Sec-Fetch-Mode": "navigate"})
+        assert r.status_code == 302
+        assert r.headers["location"] == \
+            f"https://localhost/login?next=/w/{ws.subdomain}/"
+        # Accept: text/html also counts as a navigation (older browsers)
+        r = await fresh_client.get("/api/workstations/auth-check", headers={
+            "X-Forwarded-Uri": f"/w/{ws.subdomain}/",
+            "Accept": "text/html,application/xhtml+xml"})
+        assert r.status_code == 302
+        # Forged X-Forwarded-Host falls back to DOMAIN (no host-header redirect)
+        r = await fresh_client.get("/api/workstations/auth-check", headers={
+            "X-Forwarded-Uri": f"/w/{ws.subdomain}/",
+            "X-Forwarded-Proto": "https", "X-Forwarded-Host": "evil.example",
+            "Sec-Fetch-Mode": "navigate"})
+        assert r.status_code == 302
+        assert r.headers["location"].startswith("https://localhost/login")
+        # Private LAN IP hosts are honored (host-agnostic LAN routers)
+        r = await fresh_client.get("/api/workstations/auth-check", headers={
+            "X-Forwarded-Uri": f"/w/{ws.subdomain}/",
+            "X-Forwarded-Proto": "https", "X-Forwarded-Host": "192.168.1.10:443",
+            "Sec-Fetch-Mode": "navigate"})
+        assert r.status_code == 302
+        assert r.headers["location"].startswith("https://192.168.1.10:443/login")
+        # Unrecognized URI shape: redirect to login WITHOUT next (no open redirect)
+        r = await fresh_client.get("/api/workstations/auth-check", headers={
+            "X-Forwarded-Uri": "https://evil.example/phish",
+            "X-Forwarded-Proto": "https", "X-Forwarded-Host": "localhost",
+            "Sec-Fetch-Mode": "navigate"})
+        assert r.status_code == 302
+        assert r.headers["location"] == "https://localhost/login"
+        # Non-navigation (websocket/XHR) keeps the 401
+        r = await fresh_client.get("/api/workstations/auth-check", headers={
+            "X-Forwarded-Uri": f"/w/{ws.subdomain}/websockets"})
+        assert r.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_auth_check_with_access_allowed(admin_client, client, session):
     ws, user = await _seed(session)
     # Login as carol
