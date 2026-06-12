@@ -156,7 +156,11 @@ export function WorkstationsPanel() {
               No workstations enrolled. Click "Enroll workstation" and run the command
               on a physical Linux machine on the same network.
             </p>
-          ) : rows.map((ws) => (
+          ) : rows.map((ws) => {
+            const os = ws.os_info as Record<string, string | number | undefined>;
+            const gpu = ws.gpu_info as Record<string, string | undefined>;
+            const ramGb = os.memory_mb ? Math.round(Number(os.memory_mb) / 1024) : null;
+            return (
             <div key={ws.id} className="rounded-lg border border-border bg-surface p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
@@ -186,10 +190,27 @@ export function WorkstationsPanel() {
               </div>
               <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-muted-foreground sm:grid-cols-4">
                 <div><dt className="inline">IP: </dt><dd className="inline">{ws.lan_ip}:{ws.port}</dd></div>
-                <div><dt className="inline">Display: </dt><dd className="inline">{ws.display_server}</dd></div>
-                <div><dt className="inline">GPU: </dt><dd className="inline">{String(ws.gpu_info?.vendor ?? "none")}</dd></div>
+                <div><dt className="inline">Display: </dt>
+                  <dd className="inline">{ws.display_server}{os.mode ? ` (${os.mode})` : ""}</dd></div>
+                <div><dt className="inline">GPU: </dt>
+                  <dd className="inline">{gpu.model || gpu.vendor || "none"}</dd></div>
                 <div><dt className="inline">Last seen: </dt>
                   <dd className="inline">{ws.last_heartbeat ? new Date(ws.last_heartbeat).toLocaleTimeString() : "never"}</dd></div>
+                {os.pretty_name && (
+                  <div><dt className="inline">OS: </dt>
+                    <dd className="inline">{os.pretty_name} ({os.kernel})</dd></div>
+                )}
+                {os.cpu_model && (
+                  <div><dt className="inline">CPU: </dt>
+                    <dd className="inline">{os.cpu_model}{os.cpu_cores ? ` · ${os.cpu_cores}c` : ""}</dd></div>
+                )}
+                {ramGb !== null && (
+                  <div><dt className="inline">RAM: </dt><dd className="inline">{ramGb} GB</dd></div>
+                )}
+                {os.disk_total_gb && (
+                  <div><dt className="inline">Disk: </dt>
+                    <dd className="inline">{os.disk_free_gb} / {os.disk_total_gb} GB free</dd></div>
+                )}
               </dl>
               {ws.last_error && <p className="text-xs text-rose-400">Agent error: {ws.last_error}</p>}
               <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -214,7 +235,8 @@ export function WorkstationsPanel() {
                 </p>
               )}
             </div>
-          ))}
+            );
+          })}
         </CardContent>
       </Card>
 

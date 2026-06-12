@@ -117,6 +117,30 @@ async def test_register_happy_path(admin_client, client, session):
 
 
 @pytest.mark.asyncio
+async def test_register_stores_full_system_report(client, admin_client, session):
+    """One-time hardware/OS report from enroll.sh round-trips to the admin API."""
+    raw = await _mint(session, await _admin_id(session))
+    os_info = {
+        "distro": "ubuntu", "pretty_name": "Ubuntu 24.04.4 LTS",
+        "version": "24.04", "kernel": "6.17.0-29-generic", "arch": "x86_64",
+        "cpu_model": "AMD Ryzen 9 8945HS", "cpu_cores": 16,
+        "memory_mb": 62074, "disk_total_gb": 982, "disk_free_gb": 625,
+        "mode": "seat",
+    }
+    gpu_info = {"vendor": "vaapi", "model": "AMD Radeon Graphics"}
+    r = await client.post("/api/enroll/register", json={
+        "token": raw, "hostname": "rig", "lan_ip": "192.168.1.50",
+        "display_server": "wayland", "gpu_info": gpu_info,
+        "os_info": os_info, "agent_version": "0.4.1"})
+    assert r.status_code == 201
+    rows = (await admin_client.get("/api/workstations")).json()
+    ws = next(w for w in rows if w["hostname"] == "rig")
+    assert ws["os_info"] == os_info
+    assert ws["gpu_info"] == gpu_info
+    assert ws["agent_version"] == "0.4.1"
+
+
+@pytest.mark.asyncio
 async def test_register_rejects_expired_and_bogus(client, admin_client, session):
     raw = await _mint(session, await _admin_id(session), expired=True)
     r = await client.post("/api/enroll/register", json={

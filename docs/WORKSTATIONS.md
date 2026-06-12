@@ -11,7 +11,7 @@ Styx Portal can stream physical Linux workstations to browsers alongside contain
 - **Second-seat mode:** A private GPU-accelerated desktop runs on the machine (via pixelflux's Smithay compositor + labwc window manager) alongside your login session. The physical screen is untouched. Your desktop, apps, and files are available to the remote user; no interference with local work. Used when the host is Wayland, headless, or when mirror mode is explicitly disabled.
 
 **Architecture:**
-- Enrollment script (`enroll.sh`) performs 8-step preflight, downloads agent daemon and prebuilt wheels from the portal, and registers the workstation.
+- Enrollment script (`enroll.sh`) performs 8-step preflight (server reachability verified **before** any sudo package install), downloads agent daemon and prebuilt wheels from the portal, and registers the workstation with a one-time hardware/OS report (distro, kernel, CPU model/cores, RAM, disk, GPU model) shown in the admin Workstations panel.
 - Agent daemon (`styx_agent.py`) runs as a systemd `--user` service, supervises the Selkies streaming engine (pixelflux + pcmflux), and sends heartbeats every 30 seconds.
 - Traefik routes `/w/{subdomain}` traffic to the workstation's LAN IP on port 8443, where Selkies listens over WebSocket.
 - Admin Workstations panel in **System → Workstations** controls access, stream settings, and enrollment status.
@@ -95,11 +95,11 @@ Enrollment runs 8 preflight checks. If any fail, the script prints an error code
 | Code | Message | Remediation |
 |---|---|---|
 | E00 | `--token and --server are required.` | Run the one-liner from the admin Workstations panel. If copying manually, ensure both `--token <TOKEN>` and `--server <URL>` are present. |
-| E01 | `Distro too old / python3 not found / glibc < 2.34` | Install Python 3.10+: `sudo apt install python3 python3-venv`. Update OS if glibc < 2.34 (need Ubuntu 22.04+, Debian 12+, RHEL 9+). |
+| E01 | `python3/curl/tar/openssl missing, glibc < 2.34, or < 2 GB free in $HOME` | Install the missing tool: `sudo apt install python3 python3-venv curl tar openssl`. Update OS if glibc < 2.34 (need Ubuntu 22.04+, Debian 12+, RHEL 9+). Free disk space if under 2 GB. |
 | E02 | `Mirror mode requested but no X display found.` | Mirror mode requires an active X11 display. Either log into an X11 session, or use `--mode seat` for a private virtual desktop. Check X displays: `ls /tmp/.X11-unix/`. |
 | E03 | `Dependency install failed (labwc, GPU drivers, etc).` | For seat mode, install manually: `sudo apt install labwc wl-clipboard` (Debian/Ubuntu). For GPU: `sudo apt install mesa-va-drivers` (AMD/Intel) or NVIDIA driver package. Restart agent afterward: `systemctl --user restart styx-agent`. |
-| E04 | `Audio stack not found (PipeWire/PulseAudio).` | Install one: `sudo apt install pipewire` (Debian/Ubuntu) or `sudo dnf install pipewire` (Fedora). Verify: `pactl info` should succeed. |
-| E05 | `Cannot reach server. Artifact download failed.` | Check: 1) Is `SERVER_LAN_URL` the **local LAN address**, not a tunnel? 2) Can the workstation reach it: `curl -kv https://<SERVER_LAN_URL>/api/health`? 3) On the server, did you run `scripts/build_agent_artifacts.sh ./data/artifacts`? |
+| E04 | `Audio stack not found (PipeWire/PulseAudio).` | Install one: `sudo apt install pipewire` (Debian/Ubuntu) or `sudo dnf install pipewire` (Fedora). Verify: `pactl info` should succeed. A warning (not failure) about `libpulse.so.0` means `sudo apt install libpulse0` / `sudo dnf install pulseaudio-libs`. |
+| E05 | `Cannot reach server / download failed / registration rejected (HTTP code + reason shown).` | Check: 1) Is `SERVER_LAN_URL` the **local LAN address**, not a tunnel? 2) Can the workstation reach it: `curl -kv https://<SERVER_LAN_URL>/api/health`? 3) On the server, did you run `scripts/build_agent_artifacts.sh ./data/artifacts`? 4) HTTP 401 = token expired/used — mint a new one. |
 | E06 | `TLS certificate fingerprint mismatch.` | The server's cert doesn't match the pinned `--ca-pin`. Causes: cert rotated (mint a new token), MITM (unlikely on LAN), or wrong host. Verify: `openssl s_client -connect <HOST>:443 2>/dev/null \| openssl x509 -fingerprint -sha256 -noout`. |
 | E07 | `Port 8443 already in use.` | Find and kill the occupant: `sudo lsof -i :8443` or `sudo ss -ltnp \| grep :8443`. Or on the server, change `WORKSTATION_DEFAULT_PORT` to an unused port and re-enroll. |
 | E08 | `systemd --user session unavailable.` | You are in a `su` or `sudo` shell. Log in as the user normally (SSH or `su - <user>`), then re-run enrollment. |

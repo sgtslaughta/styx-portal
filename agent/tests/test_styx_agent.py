@@ -28,7 +28,7 @@ def test_load_config(tmp_path):
 
 
 def test_agent_version_bumped():
-    assert styx_agent.AGENT_VERSION == "0.4.0"
+    assert styx_agent.AGENT_VERSION == "0.4.1"
 
 
 def test_gateway_cmd_secrets_via_env(tmp_path):
@@ -49,5 +49,5 @@ def test_health_payload_reports_mode_and_engine(tmp_path):
     h = styx_agent.health_payload(cfg, selkies_alive=True, gateway_alive=False)
     assert h["mode"] == "seat"
     assert h["engine"] == "pixelflux"
-    assert h["agent_version"] == "0.4.0"
+    assert h["agent_version"] == "0.4.1"
     assert h["selkies_alive"] is True and h["gateway_alive"] is False
