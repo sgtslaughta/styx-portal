@@ -128,7 +128,11 @@ def run(cfg: dict) -> int:
             return None
         engine.write_seat_config(INSTALL_DIR / "labwc")
         shell_env = {**os.environ, "WAYLAND_DISPLAY": seat_socket,
-                     "XDG_RUNTIME_DIR": runtime_dir}
+                     "XDG_RUNTIME_DIR": runtime_dir,
+                     # Route seat apps' audio to the captured null sink —
+                     # they'd otherwise play to the host's default sink
+                     # (physical speakers) and the stream would be silent.
+                     "PULSE_SINK": engine.SEAT_SINK}
         # labwc runs the config dir's autostart (wallpaper, panel, terminal)
         # AFTER Xwayland is up, so those children inherit DISPLAY and can
         # launch the machine's X11 apps (Chrome etc.).
