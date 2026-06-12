@@ -56,7 +56,10 @@ async def mint_enroll_token(request: Request,
         lan_url_source=lan_source)
 
 
-def _out(ws: Workstation, allowed: list[str]) -> WorkstationOut:
+def _out(ws: Workstation, allowed: list[str],
+         occupant: User | None = None,
+         viewer_id: str | None = None) -> WorkstationOut:
+    in_use = ws.active_connections > 0 and ws.occupied_by is not None
     return WorkstationOut(
         id=ws.id, name=ws.name, subdomain=ws.subdomain, hostname=ws.hostname,
         lan_ip=ws.lan_ip, port=ws.port, status=ws.status,
@@ -65,7 +68,16 @@ def _out(ws: Workstation, allowed: list[str]) -> WorkstationOut:
         stream_settings=ws.stream_settings, all_users=ws.all_users,
         last_heartbeat=ws.last_heartbeat.isoformat() if ws.last_heartbeat else None,
         last_error=ws.last_error, created_at=ws.created_at.isoformat(),
-        allowed_user_ids=allowed)
+        allowed_user_ids=allowed,
+        in_use=in_use,
+        in_use_by=occupant.username if (in_use and occupant) else None,
+        in_use_self=bool(in_use and viewer_id and ws.occupied_by == viewer_id))
+
+
+async def _occupant(session, ws: Workstation) -> User | None:
+    if ws.occupied_by is None:
+        return None
+    return await session.get(User, ws.occupied_by)
 
 
 async def _allowed_ids(session, ws_id: str) -> list[str]:
@@ -85,7 +97,9 @@ async def _get_or_404(session, ws_id: str) -> Workstation:
 async def list_workstations(admin: User = Depends(require_admin),
                             session: AsyncSession = Depends(get_session)):
     rows = (await session.exec(select(Workstation))).all()
-    return [_out(ws, await _allowed_ids(session, ws.id)) for ws in rows]
+    return [_out(ws, await _allowed_ids(session, ws.id),
+                 occupant=await _occupant(session, ws), viewer_id=admin.id)
+            for ws in rows]
 
 
 def _redirect_host(request: Request) -> str:
@@ -159,6 +173,13 @@ async def auth_check(request: Request,
     allowed = await _allowed_ids(session, ws.id)
     if not (user.role == "admin" or ws.all_users or user.id in allowed):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "No access")
+    # A websocket upgrade passing auth = someone is (re)taking the desktop.
+    # Record who; the agent's connection count decides whether it's live.
+    if "/websocket" in uri:
+        ws.occupied_by = user.id
+        ws.occupied_at = datetime.now(timezone.utc)
+        session.add(ws)
+        await session.commit()
     return {"ok": True}
 
 
@@ -171,12 +192,14 @@ async def my_workstations(user: User = Depends(get_current_user),
     for ws in rows:
         allowed = await _allowed_ids(session, ws.id)
         if user.role == "admin" or ws.all_users or user.id in allowed:
-            out.append(_out(ws, []))
+            out.append(_out(ws, [], occupant=await _occupant(session, ws),
+                            viewer_id=user.id))
     return out
 
 
 @router.get("/{ws_id}/connect", response_model=WorkstationConnectOut)
-async def connect_url(ws_id: str, user: User = Depends(get_current_user),
+async def connect_url(ws_id: str, force: bool = False,
+                      user: User = Depends(get_current_user),
                       session: AsyncSession = Depends(get_session)):
     ws = await _get_or_404(session, ws_id)
     allowed = await _allowed_ids(session, ws.id)
@@ -185,6 +208,15 @@ async def connect_url(ws_id: str, user: User = Depends(get_current_user),
     if ws.status != "online":
         raise HTTPException(status.HTTP_409_CONFLICT,
                             f"Workstation is {ws.status}, not online")
+    # Single-user desktop: a second user joining shares (and fights over)
+    # the same screen/input. Block unless it's the occupant reconnecting
+    # or an explicit force-takeover.
+    if (ws.active_connections > 0 and ws.occupied_by
+            and ws.occupied_by != user.id and not force):
+        occ = await _occupant(session, ws)
+        raise HTTPException(
+            status.HTTP_423_LOCKED,
+            f"In use by {occ.username if occ else 'another user'}")
     url = f"https://{_settings.DOMAIN}/w/{ws.subdomain}/"
     return WorkstationConnectOut(url=url)
 

@@ -15,6 +15,7 @@ export type Workstation = {
   agent_version: string; stream_settings: { encoder: string; framerate: number; bitrate_kbps: number };
   all_users: boolean; last_heartbeat: string | null; last_error: string | null;
   created_at: string; allowed_user_ids: string[];
+  in_use: boolean; in_use_by: string | null; in_use_self: boolean;
 };
 export type EnrollToken = {
   token: string; expires_at: string;
@@ -58,6 +59,14 @@ export type SetupPreflight = {
 
 const BASE = "/api";
 
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 function getCookie(name: string): string | null {
   const m = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
   return m && m[1] ? decodeURIComponent(m[1]) : null;
@@ -84,7 +93,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!res.ok) {
     const detail = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(detail.detail || res.statusText);
+    throw new ApiError(detail.detail || res.statusText, res.status);
   }
   if (res.status === 204) return undefined as T;
   return res.json();
@@ -210,8 +219,8 @@ export const api = {
     request<Workstation>(`/workstations/${id}/access`, { method: "PUT", body: JSON.stringify({ user_ids }) }),
   revokeWorkstation: (id: string, purge = false) =>
     request<{ ok: boolean }>(`/workstations/${id}?purge=${purge}`, { method: "DELETE" }),
-  workstationConnectUrl: (id: string) =>
-    request<{ url: string }>(`/workstations/${id}/connect`),
+  workstationConnectUrl: (id: string, force = false) =>
+    request<{ url: string }>(`/workstations/${id}/connect${force ? "?force=true" : ""}`),
 
   oauthProviders: () => request<{ name: string; display_label: string; icon_url: string | null }[]>("/auth/oauth/providers"),
   oauthStartUrl: (name: string) => `/api/auth/oauth/${name}/start`,

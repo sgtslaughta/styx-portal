@@ -239,6 +239,9 @@ class WorkstationOut(BaseModel):
     last_error: str | None
     created_at: str
     allowed_user_ids: list[str] = []
+    in_use: bool = False
+    in_use_by: str | None = None     # username, never id
+    in_use_self: bool = False
 
 
 class EnrollTokenOut(BaseModel):

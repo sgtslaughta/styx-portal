@@ -55,3 +55,46 @@ async def test_ws_proxy_upstream_down_returns_502(tmp_path):
         assert r.status == 502
     finally:
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_ws_proxy_counts_connections_in_state_file(tmp_path):
+    """Occupancy source of truth: state file is 0 at start, 1 while a stream
+    websocket is connected, 0 again after it closes. 502s never count."""
+    import asyncio
+    import json
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+
+    async def upstream_ws(request):
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        async for _ in ws:
+            pass
+        return ws
+
+    upstream = web.Application()
+    upstream.router.add_get("/websocket", upstream_ws)
+    upstream_client = TestClient(TestServer(upstream))
+    await upstream_client.start_server()
+    upstream_port = upstream_client.server.port
+
+    (tmp_path / "index.html").write_text("x")
+    state = tmp_path / "gw_state.json"
+    app = gateway.create_app(str(tmp_path), "styx", "pw",
+                             upstream_port=upstream_port,
+                             state_file=str(state))
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        assert json.loads(state.read_text())["active_connections"] == 0
+        ws = await client.ws_connect(
+            "/websocket", headers={"Authorization": _basic("styx", "pw")})
+        await asyncio.sleep(0.1)
+        assert json.loads(state.read_text())["active_connections"] == 1
+        await ws.close()
+        await asyncio.sleep(0.2)
+        assert json.loads(state.read_text())["active_connections"] == 0
+    finally:
+        await client.close()
+        await upstream_client.close()

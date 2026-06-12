@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { InstanceGrid } from "./instance-grid";
 import { InstanceDetailPane } from "./instance-detail-pane";
-import { WorkstationGrid } from "./workstation-grid";
+import { WorkstationList } from "./workstation-list";
 import { cn } from "@/lib/utils";
 
 interface InstanceWorkspaceProps {
@@ -15,7 +15,7 @@ export function InstanceWorkspace({ onLaunch }: InstanceWorkspaceProps) {
     <div className="relative flex h-[calc(100vh-8.5rem)] gap-3">
       {/* List pane: 40% on md+, full-width on narrow */}
       <div className="w-full overflow-y-auto md:w-2/5 md:min-w-[320px]">
-        <WorkstationGrid />
+        <WorkstationList />
         <InstanceGrid
           dense
           selectedId={selectedId ?? undefined}

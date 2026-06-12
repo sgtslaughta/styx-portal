@@ -154,6 +154,65 @@ async def test_auth_check_browser_navigation_redirects_to_login(session):
 
 
 @pytest.mark.asyncio
+async def test_occupancy_records_and_gates_connect(admin_client, client, session):
+    """ws-upgrade auth records the occupant; agent-reported connections make
+    it live; a second user's connect is 423 unless force=true; the occupant
+    reconnects freely; zero connections clears occupancy."""
+    ws, user = await _seed(session)
+    session.add(WorkstationAccess(workstation_id=ws.id, user_id=user.id))
+    ws.status = "online"
+    session.add(ws)
+    await session.commit()
+    # carol logs in (admin_client and client share the cookie jar) and her
+    # websocket upgrade passes auth-check -> she becomes the occupant
+    await client.get("/api/auth/csrf")
+    assert (await client.post("/api/auth/login",
+            json={"username": "carol", "password": "x"})).status_code == 200
+    client.headers["X-CSRF-Token"] = client.cookies.get("csrf_token") or ""
+    r = await client.get("/api/workstations/auth-check", headers={
+        "X-Forwarded-Uri": f"/w/{ws.subdomain}/websockets"})
+    assert r.status_code == 200
+    await session.refresh(ws)
+    assert ws.occupied_by == user.id
+    # agent reports a live connection
+    ws.active_connections = 1
+    session.add(ws)
+    await session.commit()
+    # carol sees herself as the occupant and reconnects without force
+    mine = (await client.get("/api/workstations/mine")).json()
+    assert next(w for w in mine if w["id"] == ws.id)["in_use_self"] is True
+    assert (await client.get(
+        f"/api/workstations/{ws.id}/connect")).status_code == 200
+    # switch back to admin (different user): blocked without force
+    assert (await client.post("/api/auth/login", json={
+        "username": "admin",
+        "password": "correct horse battery staple"})).status_code == 200
+    client.headers["X-CSRF-Token"] = client.cookies.get("csrf_token") or ""
+    r = await client.get(f"/api/workstations/{ws.id}/connect")
+    assert r.status_code == 423
+    assert "carol" in r.json()["detail"]
+    assert (await client.get(
+        f"/api/workstations/{ws.id}/connect?force=true")).status_code == 200
+    rows = (await client.get("/api/workstations")).json()
+    row = next(w for w in rows if w["id"] == ws.id)
+    assert row["in_use"] is True and row["in_use_by"] == "carol"
+    # heartbeat with zero connections clears occupancy
+    from app.services.workstations import sha256_hex as _sha
+    import secrets as _secrets
+    raw_agent = _secrets.token_urlsafe(16)
+    ws.agent_token_hash = _sha(raw_agent)
+    session.add(ws)
+    await session.commit()
+    r = await client.post("/api/agent/heartbeat",
+                          headers={"Authorization": f"Bearer {raw_agent}"},
+                          json={"status": "online",
+                                "health": {"active_connections": 0}})
+    assert r.status_code == 200
+    await session.refresh(ws)
+    assert ws.active_connections == 0 and ws.occupied_by is None
+
+
+@pytest.mark.asyncio
 async def test_auth_check_with_access_allowed(admin_client, client, session):
     ws, user = await _seed(session)
     # Login as carol

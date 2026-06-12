@@ -58,6 +58,9 @@ async def _run_migrations(conn):
         ("oauth_providers", "allow_signup", "BOOLEAN"),
         ("oauth_providers", "auto_promote_admins", "BOOLEAN"),
         ("refresh_tokens", "family_id", "TEXT"),
+        ("workstations", "active_connections", "INTEGER"),
+        ("workstations", "occupied_by", "TEXT"),
+        ("workstations", "occupied_at", "TIMESTAMP"),
     ]
     for table, column, col_type in migrations:
         try:
@@ -79,6 +82,7 @@ async def _run_migrations(conn):
         ("oauth_providers", "auto_promote_admins", "1"),
         ("service_templates", "tls_skip_verify", "0"),
         ("refresh_tokens", "family_id", "jti"),  # legacy rows: own family
+        ("workstations", "active_connections", "0"),
     ]
     for table, column, default in backfills:
         try:

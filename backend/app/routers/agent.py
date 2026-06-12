@@ -49,6 +49,14 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
         ws.lan_ip = body.lan_ip
     ws.last_heartbeat = datetime.now(timezone.utc)
     ws.last_error = body.last_error
+    # Occupancy: the agent's gateway counts live stream websockets; the
+    # occupant's identity comes from forward-auth. Zero connections clears it.
+    conns = body.health.get("active_connections")
+    if isinstance(conns, int) and conns >= 0:
+        ws.active_connections = conns
+        if conns == 0:
+            ws.occupied_by = None
+            ws.occupied_at = None
     session.add(ws)
     await session.commit()
     if routes_dirty:

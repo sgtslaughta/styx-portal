@@ -12,8 +12,10 @@ Credentials via env: STYX_GW_USER / STYX_GW_PASSWORD (argv is world-readable).
 import asyncio
 import base64
 import hmac
+import json
 import os
 import sys
+import time
 
 import aiohttp
 from aiohttp import web
@@ -31,7 +33,24 @@ def check_auth(header: str, user: str, password: str) -> bool:
 
 
 def create_app(web_dir: str, user: str, password: str,
-               upstream_port: int, files_dir: str = "") -> web.Application:
+               upstream_port: int, files_dir: str = "",
+               state_file: str = "") -> web.Application:
+    # Live stream-websocket count, mirrored to a state file the supervisor
+    # reads each heartbeat — the portal uses it for occupancy ("in use by").
+    conns = {"n": 0}
+
+    def _write_state():
+        if not state_file:
+            return
+        try:
+            tmp = state_file + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump({"active_connections": conns["n"],
+                           "ts": time.time()}, f)
+            os.replace(tmp, state_file)
+        except OSError:
+            pass  # occupancy is advisory; never break the stream over it
+
     @web.middleware
     async def auth_mw(request, handler):
         if not check_auth(request.headers.get("Authorization", ""), user, password):
@@ -47,6 +66,8 @@ def create_app(web_dir: str, user: str, password: str,
                     max_msg_size=0)
             except aiohttp.ClientError:
                 return web.Response(status=502, text="stream backend unavailable")
+            conns["n"] += 1
+            _write_state()
             try:
                 ws_server = web.WebSocketResponse(max_msg_size=0)
                 await ws_server.prepare(request)
@@ -65,6 +86,8 @@ def create_app(web_dir: str, user: str, password: str,
                                      pump(ws_client, ws_server),
                                      return_exceptions=True)
             finally:
+                conns["n"] -= 1
+                _write_state()
                 await ws_client.close()
         return ws_server
 
@@ -104,6 +127,8 @@ def create_app(web_dir: str, user: str, password: str,
                 f"<h2>{_html.escape(str(target))}</h2><ul>{up}{rows}</ul>")
         return web.Response(text=body, content_type="text/html")
 
+    _write_state()   # reset any stale count from a previous gateway run
+
     app = web.Application(middlewares=[auth_mw])
     # The dashboard appends "websockets" to its base path (selkies-core.js);
     # upstream nginx also exposes /websocket. Route both.
@@ -125,7 +150,9 @@ def main() -> None:
     password = os.environ["STYX_GW_PASSWORD"]
     files_dir = os.path.expanduser(
         os.environ.get("STYX_FILES_DIR", "~/Downloads"))
-    web.run_app(create_app(web_dir, user, password, upstream_port, files_dir),
+    state_file = os.environ.get("STYX_GW_STATE", "")
+    web.run_app(create_app(web_dir, user, password, upstream_port, files_dir,
+                           state_file=state_file),
                 host="0.0.0.0", port=listen_port)
 
 

@@ -72,17 +72,34 @@ def api(cfg: dict, path: str, payload: dict | None = None) -> dict:
         return json.loads(resp.read().decode() or "{}")
 
 
+def gw_state_path(cfg: dict) -> Path:
+    return Path(cfg["install_dir"]) / "gw_state.json"
+
+
 def build_gateway_cmd(cfg: dict, upstream_port: int) -> tuple[list[str], dict]:
     install = Path(cfg["install_dir"])
     env = {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         "STYX_GW_USER": cfg["selkies_user"],
         "STYX_GW_PASSWORD": cfg["selkies_password"],
+        "STYX_GW_STATE": str(gw_state_path(cfg)),
     }
     cmd = [str(install / "venv/bin/python"), str(install / "gateway.py"),
            str(install / "web"), str(cfg["port"]),
            str(upstream_port)]
     return cmd, env
+
+
+def active_connections(cfg: dict, gateway_alive: bool) -> int:
+    """Live stream-websocket count from the gateway's state file. A dead
+    gateway means no viewers regardless of what the file says."""
+    if not gateway_alive:
+        return 0
+    try:
+        n = json.loads(gw_state_path(cfg).read_text()).get("active_connections")
+        return n if isinstance(n, int) and n >= 0 else 0
+    except (OSError, ValueError):
+        return 0
 
 
 def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool) -> dict:
@@ -93,6 +110,7 @@ def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool) -> dict:
         "dri_node": engine.pick_dri_node(),
         "selkies_alive": selkies_alive,
         "gateway_alive": gateway_alive,
+        "active_connections": active_connections(cfg, gateway_alive),
     }
 
 

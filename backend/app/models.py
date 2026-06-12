@@ -203,6 +203,12 @@ class Workstation(SQLModel, table=True):
     all_users: bool = False
     last_heartbeat: datetime | None = None
     last_error: str | None = None
+    # Occupancy: live stream-connection count reported by the agent's
+    # gateway each heartbeat; occupant identity recorded by forward-auth
+    # when a websocket upgrade passes (single-user desktops).
+    active_connections: int = 0
+    occupied_by: str | None = Field(default=None, foreign_key="users.id")
+    occupied_at: datetime | None = None
     created_by: str = Field(foreign_key="users.id")
     created_at: datetime = Field(default_factory=_now)
 

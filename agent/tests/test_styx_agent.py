@@ -51,3 +51,24 @@ def test_health_payload_reports_mode_and_engine(tmp_path):
     assert h["engine"] == "pixelflux"
     assert h["agent_version"] == "0.4.1"
     assert h["selkies_alive"] is True and h["gateway_alive"] is False
+    assert h["active_connections"] == 0
+
+
+def test_active_connections_from_gateway_state(tmp_path):
+    _, cfg = _cfg(tmp_path)
+    state = styx_agent.gw_state_path(cfg)
+    state.parent.mkdir(parents=True, exist_ok=True)
+    # missing file -> 0
+    assert styx_agent.active_connections(cfg, gateway_alive=True) == 0
+    state.write_text(json.dumps({"active_connections": 2, "ts": 1}))
+    assert styx_agent.active_connections(cfg, gateway_alive=True) == 2
+    # a dead gateway has no viewers, whatever the stale file says
+    assert styx_agent.active_connections(cfg, gateway_alive=False) == 0
+    # garbage -> 0
+    state.write_text("not json")
+    assert styx_agent.active_connections(cfg, gateway_alive=True) == 0
+    state.write_text(json.dumps({"active_connections": -3}))
+    assert styx_agent.active_connections(cfg, gateway_alive=True) == 0
+    # gateway cmd exposes the state path to the child
+    _, env = styx_agent.build_gateway_cmd(cfg, 18444)
+    assert env["STYX_GW_STATE"] == str(state)
