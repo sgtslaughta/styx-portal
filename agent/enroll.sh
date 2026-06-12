@@ -125,10 +125,13 @@ else
   fail E04 "Neither PipeWire nor PulseAudio found. Install one (apt install pipewire) for audio streaming."
 fi
 # pulsectl (agent audio plumbing) binds libpulse via ctypes; PipeWire-only
-# minimal installs can lack it.
-if ! ldconfig -p 2>/dev/null | grep -q 'libpulse\.so\.0'; then
-  note "WARNING (E04): libpulse.so.0 not found — audio may fail. Install it (apt install libpulse0 / dnf install pulseaudio-libs)."
-fi
+# minimal installs can lack it. Capture first — grep -q quits at the first
+# match and SIGPIPEs ldconfig, which pipefail turns into a false warning.
+LDCACHE=$(ldconfig -p 2>/dev/null || true)
+case "$LDCACHE" in
+  *libpulse.so.0*) : ;;
+  *) note "WARNING (E04): libpulse.so.0 not found — audio may fail. Install it (apt install libpulse0 / dnf install pulseaudio-libs)." ;;
+esac
 
 step 5/8 "Installing desktop + GPU dependencies (E03)"
 # Detect the package manager and install what each mode needs. Seat mode
