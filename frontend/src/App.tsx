@@ -86,7 +86,6 @@ export default function App() {
           <div className={resolvedSubTab === "my-templates" ? "" : "hidden"}>
             <TemplateGrid
               onLaunch={handleLaunchTemplate}
-              onImportRegistry={() => setTemplateSubTab("registry")}
             />
           </div>
         </div>

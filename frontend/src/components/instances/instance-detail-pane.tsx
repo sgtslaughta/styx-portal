@@ -5,7 +5,7 @@ import { RegistryInfo } from "./registry-info";
 import { InstanceThumbnail } from "./instance-thumbnail";
 import { StatusBadge } from "./status-badge";
 import { ActionBar } from "@/components/common/action-bar";
-import { LaunchConfigFields } from "@/components/templates/launch-config-fields";
+import { TemplateBuilder } from "@/components/templates/builder/template-builder";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { formatDuration, linuxserverImageName } from "@/lib/utils";
@@ -22,9 +22,9 @@ import {
   useKeepalive,
 } from "@/hooks/use-instances";
 import { useTemplates, useUpdateTemplate } from "@/hooks/use-templates";
-import { useGpuInfo } from "@/hooks/use-gpu";
 import { useRegistryImage } from "@/hooks/use-registry";
 import { useLaunchConfig } from "@/hooks/use-launch-config";
+import { useAuth } from "@/hooks/use-auth";
 
 interface InstanceDetailPaneProps {
   instanceId: string | null;
@@ -33,7 +33,8 @@ interface InstanceDetailPaneProps {
 export function InstanceDetailPane({ instanceId }: InstanceDetailPaneProps) {
   const { data: instances } = useInstances();
   const { data: templates } = useTemplates();
-  const { data: gpuInfo } = useGpuInfo();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const start = useStartInstance();
   const stop = useStopInstance();
   const update = useUpdateInstance();
@@ -297,7 +298,7 @@ export function InstanceDetailPane({ instanceId }: InstanceDetailPaneProps) {
         {/* Config editor (full width) */}
         <div>
           <h3 className="text-xs font-semibold text-muted-foreground uppercase mb-3">Configuration</h3>
-          <LaunchConfigFields cfg={cfg} gpuInfo={gpuInfo} />
+          <TemplateBuilder cfg={cfg} isAdmin={isAdmin} />
         </div>
       </div>
 

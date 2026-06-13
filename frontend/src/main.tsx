@@ -10,7 +10,6 @@ import { ThemeProvider } from "@/theme/ThemeProvider";
 import { LoginPage } from "@/pages/LoginPage";
 import { SetupWizard } from "@/pages/SetupWizard";
 import { AcceptInvitePage } from "@/pages/AcceptInvitePage";
-import { TemplateBuilderPage } from "@/pages/TemplateBuilderPage";
 import "./styles/globals.css";
 
 /** Toaster that follows the app theme by mirroring the `.dark` class on <html>
@@ -47,8 +46,6 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/login" element={<LoginPage />} />
             <Route path="/setup" element={<SetupWizard />} />
             <Route path="/accept-invite/:token" element={<AcceptInvitePage />} />
-            <Route path="/templates/new" element={<ProtectedRoute><TemplateBuilderPage mode="new" /></ProtectedRoute>} />
-            <Route path="/templates/:id/edit" element={<ProtectedRoute><TemplateBuilderPage mode="edit" /></ProtectedRoute>} />
             <Route path="/*" element={<ProtectedRoute><App /></ProtectedRoute>} />
           </Routes>
         </AuthProvider>
