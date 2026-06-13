@@ -14,12 +14,13 @@ from app.database import get_session
 from app.models import User, WorkstationEnrollmentToken, Workstation, WorkstationAccess
 from app.schemas import (
     EnrollTokenOut, WorkstationAccessUpdate, WorkstationConnectOut, WorkstationOut,
-    WorkstationUpdate,
+    WorkstationUpdate, WorkstationUpdateCommandOut,
 )
 from app.security.deps import require_admin, get_current_user
 from app.services.audit import audit_request
 from app.services.workstations import (
-    build_enroll_command, lan_ca_pin, lan_enroll_url, sha256_hex,
+    build_enroll_command, build_update_command, get_latest_agent_version, lan_ca_pin,
+    lan_enroll_url, sha256_hex,
 )
 
 router = APIRouter()
@@ -56,15 +57,35 @@ async def mint_enroll_token(request: Request,
         lan_url_source=lan_source)
 
 
+@router.get("/{ws_id}/update-command", response_model=WorkstationUpdateCommandOut)
+async def update_command(ws_id: str,
+                         admin: User = Depends(require_admin),
+                         session: AsyncSession = Depends(get_session)):
+    ws = await _get_or_404(session, ws_id)
+    lan_base, lan_source = lan_enroll_url()
+    lan_command = None
+    if lan_base:
+        lan_command = build_update_command(lan_base, insecure=True)
+    return WorkstationUpdateCommandOut(
+        latest_version=get_latest_agent_version(),
+        current_version=ws.agent_version,
+        lan_command=lan_command,
+        public_command=build_update_command(f"https://{_settings.DOMAIN}"),
+        lan_url_source=lan_source)
+
+
 def _out(ws: Workstation, allowed: list[str],
          occupant: User | None = None,
-         viewer_id: str | None = None) -> WorkstationOut:
+         viewer_id: str | None = None,
+         latest_version: str = "") -> WorkstationOut:
     in_use = ws.active_connections > 0 and ws.occupied_by is not None
     return WorkstationOut(
         id=ws.id, name=ws.name, subdomain=ws.subdomain, hostname=ws.hostname,
         lan_ip=ws.lan_ip, port=ws.port, status=ws.status,
         display_server=ws.display_server, gpu_info=ws.gpu_info,
         os_info=ws.os_info, agent_version=ws.agent_version,
+        agent_outdated=bool(latest_version)
+        and ws.agent_version not in ("", latest_version),
         stream_settings=ws.stream_settings, all_users=ws.all_users,
         last_heartbeat=ws.last_heartbeat.isoformat() if ws.last_heartbeat else None,
         last_error=ws.last_error, created_at=ws.created_at.isoformat(),
@@ -97,8 +118,10 @@ async def _get_or_404(session, ws_id: str) -> Workstation:
 async def list_workstations(admin: User = Depends(require_admin),
                             session: AsyncSession = Depends(get_session)):
     rows = (await session.exec(select(Workstation))).all()
+    latest = get_latest_agent_version()
     return [_out(ws, await _allowed_ids(session, ws.id),
-                 occupant=await _occupant(session, ws), viewer_id=admin.id)
+                 occupant=await _occupant(session, ws), viewer_id=admin.id,
+                 latest_version=latest)
             for ws in rows]
 
 

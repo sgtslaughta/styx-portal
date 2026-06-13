@@ -51,6 +51,29 @@ async def test_heartbeat_marks_online_and_returns_settings(client, session):
 
 
 @pytest.mark.asyncio
+async def test_heartbeat_returns_disconnect_and_clears_flag(client, session):
+    """When logout flags disconnect_pending, the next heartbeat tells the agent
+    to drop clients and the flag is consumed (one-shot)."""
+    ws = await _make_ws(session, status="online")
+    ws.disconnect_pending = True
+    session.add(ws)
+    await session.commit()
+
+    r = await client.post("/api/agent/heartbeat",
+                          json={"status": "online"}, headers=_auth())
+    assert r.status_code == 200
+    assert r.json()["disconnect_clients"] is True
+
+    await session.refresh(ws)
+    assert ws.disconnect_pending is False
+
+    # second heartbeat no longer asks to disconnect
+    r2 = await client.post("/api/agent/heartbeat",
+                           json={"status": "online"}, headers=_auth())
+    assert r2.json()["disconnect_clients"] is False
+
+
+@pytest.mark.asyncio
 async def test_heartbeat_revoked_workstation(client, session):
     await _make_ws(session, status="revoked")
     r = await client.post("/api/agent/heartbeat", json={}, headers=_auth())

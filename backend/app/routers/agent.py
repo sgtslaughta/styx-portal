@@ -57,6 +57,10 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
         if conns == 0:
             ws.occupied_by = None
             ws.occupied_at = None
+    # One-shot disconnect: consume the flag set by logout teardown.
+    disconnect = ws.disconnect_pending
+    if disconnect:
+        ws.disconnect_pending = False
     session.add(ws)
     await session.commit()
     if routes_dirty:
@@ -64,7 +68,8 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
         await refresh_routes_from_db(session)
     return WorkstationHeartbeatResponse(
         state="ok", stream_settings=ws.stream_settings,
-        heartbeat_interval_s=_settings.WORKSTATION_HEARTBEAT_S)
+        heartbeat_interval_s=_settings.WORKSTATION_HEARTBEAT_S,
+        disconnect_clients=disconnect)
 
 
 @router.post("/deregister")

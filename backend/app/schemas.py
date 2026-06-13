@@ -233,6 +233,7 @@ class WorkstationOut(BaseModel):
     gpu_info: dict[str, Any]
     os_info: dict[str, Any]
     agent_version: str
+    agent_outdated: bool = False
     stream_settings: dict[str, Any]
     all_users: bool
     last_heartbeat: str | None
@@ -312,6 +313,9 @@ class WorkstationHeartbeatResponse(BaseModel):
     state: str                            # ok | revoked
     stream_settings: dict[str, Any]
     heartbeat_interval_s: int
+    # One-shot: when True the agent restarts its gateway, dropping live stream
+    # clients (set by logout-with-active-session teardown).
+    disconnect_clients: bool = False
 
 
 class WorkstationUpdate(BaseModel):
@@ -326,3 +330,11 @@ class WorkstationAccessUpdate(BaseModel):
 
 class WorkstationConnectOut(BaseModel):
     url: str
+
+
+class WorkstationUpdateCommandOut(BaseModel):
+    latest_version: str
+    current_version: str
+    lan_command: str | None
+    public_command: str
+    lan_url_source: str            # env | detected | none

@@ -270,3 +270,83 @@ async def test_auth_check_unknown_workstation_forbidden(admin_client, session):
     r = await admin_client.get("/api/workstations/auth-check",
                                headers={"X-Forwarded-Uri": "/w/unknown/"})
     assert r.status_code == 403
+
+
+def test_get_latest_agent_version_parses_served_file(tmp_path):
+    from app.services.workstations import get_latest_agent_version, _version_cache
+    _version_cache.clear()
+    (tmp_path / "styx_agent.py").write_text('X = 1\nAGENT_VERSION = "0.9.3"\nY = 2\n')
+    assert get_latest_agent_version(str(tmp_path)) == "0.9.3"
+
+
+def test_get_latest_agent_version_missing_file_returns_empty(tmp_path):
+    from app.services.workstations import get_latest_agent_version, _version_cache
+    _version_cache.clear()
+    assert get_latest_agent_version(str(tmp_path / "nope")) == ""
+
+
+@pytest.mark.asyncio
+async def test_list_marks_outdated_agents(admin_client, session, monkeypatch):
+    import app.routers.workstations as wr
+    from app.models import User, Workstation
+    from sqlmodel import select
+    monkeypatch.setattr(wr, "get_latest_agent_version", lambda: "0.4.2")
+    admin = (await session.exec(select(User).where(User.role == "admin"))).first()
+    for sub, ver in [("a", "0.4.1"), ("b", "0.4.2"), ("c", "")]:
+        session.add(Workstation(name=sub, subdomain=sub, hostname=sub,
+                                status="online", agent_version=ver,
+                                created_by=admin.id))
+    await session.commit()
+
+    r = await admin_client.get("/api/workstations")
+    assert r.status_code == 200
+    by_sub = {w["subdomain"]: w["agent_outdated"] for w in r.json()}
+    assert by_sub["a"] is True
+    assert by_sub["b"] is False
+    assert by_sub["c"] is False
+
+
+def test_build_update_command_pulls_files_and_restarts():
+    from app.services.workstations import build_update_command
+    cmd = build_update_command("https://styx.example.com")
+    assert "https://styx.example.com/api/enroll/${f%%:*}" in cmd
+    assert "agent.py:styx_agent.py" in cmd
+    assert "gateway.py:gateway.py" in cmd
+    assert "systemctl --user restart styx-agent" in cmd
+    assert "curl -fsSL " in cmd
+    assert " -k " not in cmd
+
+
+def test_build_update_command_insecure_for_lan():
+    from app.services.workstations import build_update_command
+    cmd = build_update_command("https://192.168.1.10", insecure=True)
+    assert "curl -fsSLk " in cmd
+
+
+@pytest.mark.asyncio
+async def test_update_command_endpoint(admin_client, session, monkeypatch):
+    import app.routers.workstations as wr
+    from app.models import User, Workstation
+    from sqlmodel import select
+    monkeypatch.setattr(wr, "get_latest_agent_version", lambda: "0.4.2")
+    admin = (await session.exec(select(User).where(User.role == "admin"))).first()
+    ws = Workstation(name="u", subdomain="u", hostname="u", status="online",
+                     agent_version="0.4.1", created_by=admin.id)
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    r = await admin_client.get(f"/api/workstations/{ws.id}/update-command")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["latest_version"] == "0.4.2"
+    assert body["current_version"] == "0.4.1"
+    assert "agent.py:styx_agent.py" in body["public_command"]
+    assert "/api/enroll/${f%%:*}" in body["public_command"]
+    assert "systemctl --user restart styx-agent" in body["public_command"]
+
+
+@pytest.mark.asyncio
+async def test_update_command_unknown_id_404(admin_client):
+    r = await admin_client.get("/api/workstations/does-not-exist/update-command")
+    assert r.status_code == 404

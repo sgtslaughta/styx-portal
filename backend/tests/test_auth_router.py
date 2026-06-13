@@ -38,6 +38,47 @@ async def test_unauthenticated_instances_401(client):
     assert r.status_code == 401
 
 
+async def _occupy_workstation(session, conns=1):
+    """Create a workstation occupied by the admin user with a live connection."""
+    from sqlmodel import select
+    from app.models import User, Workstation
+
+    admin = (await session.exec(select(User).where(User.role == "admin"))).first()
+    ws = Workstation(name="d", subdomain="d", hostname="d", status="online",
+                     active_connections=conns, occupied_by=admin.id,
+                     created_by=admin.id)
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+    return ws
+
+
+@pytest.mark.asyncio
+async def test_logout_blocked_by_active_session(admin_client, session):
+    """Active workstation session blocks a plain logout (409); user stays in."""
+    await _occupy_workstation(session)
+    r = await admin_client.post("/api/auth/logout")
+    assert r.status_code == 409
+    assert r.json()["detail"]["code"] == "active_session"
+    r2 = await admin_client.post("/api/auth/refresh")
+    assert r2.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_logout_end_session_frees_and_flags(admin_client, session):
+    """logout?end_session=true frees occupancy + flags the agent to disconnect."""
+    ws = await _occupy_workstation(session)
+    r = await admin_client.post("/api/auth/logout?end_session=true")
+    assert r.status_code == 200
+    await session.refresh(ws)
+    assert ws.disconnect_pending is True
+    assert ws.occupied_by is None
+    assert ws.active_connections == 0
+    # refresh token revoked too — user is genuinely logged out
+    r2 = await admin_client.post("/api/auth/refresh")
+    assert r2.status_code != 200
+
+
 @pytest.mark.asyncio
 async def test_logout_revokes_refresh(admin_client):
     r = await admin_client.post("/api/auth/logout")

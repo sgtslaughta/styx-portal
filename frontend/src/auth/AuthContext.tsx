@@ -1,6 +1,7 @@
 import { createContext, useEffect, useState, useRef, useCallback, type ReactNode } from "react";
-import { api } from "@/api/client";
+import { api, ApiError } from "@/api/client";
 import { SessionExpiryDialog } from "@/components/auth/SessionExpiryDialog";
+import { ActiveSessionDialog } from "@/components/auth/ActiveSessionDialog";
 
 export type AuthUser = { id: string; username: string; email: string | null; role: string };
 
@@ -19,6 +20,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [setupRequired, setSetupRequired] = useState(false);
   const [showExpiry, setShowExpiry] = useState(false);
+  const [showActiveSession, setShowActiveSession] = useState(false);
+  const [endingSession, setEndingSession] = useState(false);
   const warnTimer = useRef<number | undefined>(undefined);
 
   const WARN_AFTER_MS = 13 * 60 * 1000; // warn 2 min before the 15-min access TTL
@@ -44,10 +47,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  async function logout() {
-    await api.logout().catch(() => {});
+  function finishLogout() {
     setUser(null);
     window.location.href = "/login";
+  }
+
+  async function logout() {
+    try {
+      await api.logout();
+    } catch (e) {
+      // Active workstation session blocks logout — confirm teardown first.
+      if (e instanceof ApiError && e.status === 409) {
+        setShowActiveSession(true);
+        return;
+      }
+      // Any other failure: clear locally and leave anyway.
+    }
+    finishLogout();
+  }
+
+  async function endSessionAndLogout() {
+    setEndingSession(true);
+    await api.logout(true).catch(() => {});
+    finishLogout();
   }
 
   useEffect(() => { refresh(); }, []);
@@ -74,6 +96,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     <AuthContext.Provider value={{ user, loading, setupRequired, refresh, logout }}>
       {children}
       <SessionExpiryDialog open={showExpiry} onStay={staySignedIn} onSignOut={logout} />
+      <ActiveSessionDialog
+        open={showActiveSession}
+        busy={endingSession}
+        onCancel={() => setShowActiveSession(false)}
+        onEndAndSignOut={endSessionAndLogout}
+      />
     </AuthContext.Provider>
   );
 }

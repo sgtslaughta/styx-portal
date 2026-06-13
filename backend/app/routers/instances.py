@@ -333,6 +333,11 @@ async def start_instance(
         container_exists = status["status"] != "not_found"
 
     if container_exists:
+        # Reattach Traefik to the per-user network before starting. The network
+        # membership is only established on the create/build path, so a Traefik
+        # restart leaves it off the net and routing 502s until reattached.
+        if instance.owner_id:
+            await asyncio.to_thread(docker.ensure_user_network, instance.owner_id)
         await asyncio.to_thread(docker.start_container, instance.container_id)
     else:
         template = await session.get(ServiceTemplate, instance.template_id)
@@ -402,6 +407,10 @@ async def restart_instance(
     if not instance.container_id:
         raise HTTPException(400, "No container to restart")
 
+    # Reattach Traefik to the per-user network (see start_instance) — a Traefik
+    # restart drops its membership and routing 502s until reattached.
+    if instance.owner_id:
+        await asyncio.to_thread(docker.ensure_user_network, instance.owner_id)
     await asyncio.to_thread(docker.restart_container, instance.container_id)
 
     now = datetime.now(timezone.utc)

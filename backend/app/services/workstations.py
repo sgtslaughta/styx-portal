@@ -4,6 +4,7 @@ import logging
 import re
 import socket
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from sqlmodel import select
 
@@ -14,6 +15,26 @@ _settings = Settings()
 
 ENROLL_SCRIPT_PATH = "/api/enroll/script"
 SELKIES_USER = "styx"
+
+_version_cache: dict[str, tuple[float, str]] = {}
+
+
+def get_latest_agent_version(agent_dir: str | None = None) -> str:
+    """The AGENT_VERSION of the styx_agent.py this server serves — the build a
+    fresh enrollment would install. Cached per path+mtime. Empty when the file
+    is missing/unparseable (callers then flag nothing as outdated)."""
+    path = Path(agent_dir or _settings.AGENT_DIR) / "styx_agent.py"
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return ""
+    cached = _version_cache.get(str(path))
+    if cached and cached[0] == mtime:
+        return cached[1]
+    m = re.search(r'AGENT_VERSION\s*=\s*"([^"]+)"', path.read_text())
+    version = m.group(1) if m else ""
+    _version_cache[str(path)] = (mtime, version)
+    return version
 
 
 def sha256_hex(raw: str) -> str:
@@ -109,6 +130,30 @@ def build_enroll_command(raw_token: str, base: str,
     if ca_pin:
         cmd += f" --ca-pin {ca_pin}"
     return cmd
+
+
+# (remote endpoint name, local filename in the install dir)
+AGENT_UPDATE_FILES = [
+    ("agent.py", "styx_agent.py"),
+    ("engine.py", "engine.py"),
+    ("gateway.py", "gateway.py"),
+    ("selkies_launcher.py", "selkies_launcher.py"),
+]
+
+
+def build_update_command(base: str, *, insecure: bool = False) -> str:
+    """Copy-paste one-liner that re-pulls the agent python files from the public
+    /api/enroll/* endpoints and restarts the user service. No enrollment token
+    needed; the venv/wheels/artifacts are left untouched (code-only update)."""
+    flag = "-fsSLk" if insecure else "-fsSL"
+    pairs = " ".join(f"{remote}:{local}" for remote, local in AGENT_UPDATE_FILES)
+    return (
+        'INSTALL="$HOME/.local/share/styx-agent"; '
+        f'for f in {pairs}; do '
+        f'curl {flag} "{base}/api/enroll/${{f%%:*}}" -o "$INSTALL/${{f##*:}}"; '
+        'done; '
+        'systemctl --user restart styx-agent'
+    )
 
 
 def slugify_hostname(hostname: str) -> str:

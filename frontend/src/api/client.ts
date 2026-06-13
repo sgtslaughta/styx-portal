@@ -12,7 +12,8 @@ export type Workstation = {
   id: string; name: string; subdomain: string; hostname: string;
   lan_ip: string; port: number; status: string; display_server: string;
   gpu_info: Record<string, unknown>; os_info: Record<string, unknown>;
-  agent_version: string; stream_settings: { encoder: string; framerate: number; bitrate_kbps: number };
+  agent_version: string; agent_outdated: boolean;
+  stream_settings: { encoder: string; framerate: number; bitrate_kbps: number };
   all_users: boolean; last_heartbeat: string | null; last_error: string | null;
   created_at: string; allowed_user_ids: string[];
   in_use: boolean; in_use_by: string | null; in_use_self: boolean;
@@ -20,6 +21,14 @@ export type Workstation = {
 export type EnrollToken = {
   token: string; expires_at: string;
   lan_command: string | null; public_command: string;
+  lan_url_source: "env" | "detected" | "none";
+};
+
+export type WorkstationUpdateCommand = {
+  latest_version: string;
+  current_version: string;
+  lan_command: string | null;
+  public_command: string;
   lan_url_source: "env" | "detected" | "none";
 };
 
@@ -193,7 +202,11 @@ export const api = {
   login: (data: { username: string; password: string }) =>
     request<{ id: string; username: string; role: string }>("/auth/login", {
       method: "POST", body: JSON.stringify(data) }),
-  logout: () => request<{ ok: boolean }>("/auth/logout", { method: "POST" }),
+  logout: (endSession = false) =>
+    request<{ ok: boolean }>(
+      `/auth/logout${endSession ? "?end_session=true" : ""}`,
+      { method: "POST" },
+    ),
   refreshSession: () => request<{ ok: boolean }>("/auth/refresh", { method: "POST" }),
   me: () => request<{ id: string; username: string; email: string | null; role: string }>("/auth/me"),
   acceptInvite: (data: { token: string; username: string; password: string }) =>
@@ -221,6 +234,8 @@ export const api = {
     request<{ ok: boolean }>(`/workstations/${id}?purge=${purge}`, { method: "DELETE" }),
   workstationConnectUrl: (id: string, force = false) =>
     request<{ url: string }>(`/workstations/${id}/connect${force ? "?force=true" : ""}`),
+  workstationUpdateCommand: (id: string) =>
+    request<WorkstationUpdateCommand>(`/workstations/${id}/update-command`),
 
   oauthProviders: () => request<{ name: string; display_label: string; icon_url: string | null }[]>("/auth/oauth/providers"),
   oauthStartUrl: (name: string) => `/api/auth/oauth/${name}/start`,

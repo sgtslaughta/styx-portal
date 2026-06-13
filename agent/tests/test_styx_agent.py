@@ -28,7 +28,7 @@ def test_load_config(tmp_path):
 
 
 def test_agent_version_bumped():
-    assert styx_agent.AGENT_VERSION == "0.4.1"
+    assert styx_agent.AGENT_VERSION == "0.4.2"
 
 
 def test_gateway_cmd_secrets_via_env(tmp_path):
@@ -49,7 +49,7 @@ def test_health_payload_reports_mode_and_engine(tmp_path):
     h = styx_agent.health_payload(cfg, selkies_alive=True, gateway_alive=False)
     assert h["mode"] == "seat"
     assert h["engine"] == "pixelflux"
-    assert h["agent_version"] == "0.4.1"
+    assert h["agent_version"] == "0.4.2"
     assert h["selkies_alive"] is True and h["gateway_alive"] is False
     assert h["active_connections"] == 0
 
@@ -72,3 +72,29 @@ def test_active_connections_from_gateway_state(tmp_path):
     # gateway cmd exposes the state path to the child
     _, env = styx_agent.build_gateway_cmd(cfg, 18444)
     assert env["STYX_GW_STATE"] == str(state)
+
+
+def test_drop_clients_restarts_gateway():
+    from unittest.mock import MagicMock
+    gw = MagicMock()
+    gw.poll.return_value = None  # alive
+    procs = {"selkies": MagicMock(), "gateway": gw, "shell": None}
+
+    styx_agent.drop_clients(procs)
+
+    gw.terminate.assert_called_once()
+    gw.wait.assert_called_once()  # graceful shutdown attempted before respawn
+    # cleared so the supervisor loop respawns it (dropping all stream clients)
+    assert procs["gateway"] is None
+
+
+def test_drop_clients_noop_when_gateway_dead():
+    from unittest.mock import MagicMock
+    gw = MagicMock()
+    gw.poll.return_value = 0  # already exited
+    procs = {"gateway": gw}
+
+    styx_agent.drop_clients(procs)
+
+    gw.terminate.assert_not_called()
+    assert procs["gateway"] is None

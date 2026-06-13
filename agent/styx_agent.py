@@ -18,7 +18,7 @@ import urllib.request
 from hashlib import sha256
 from pathlib import Path
 
-AGENT_VERSION = "0.4.1"
+AGENT_VERSION = "0.4.2"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -117,6 +117,23 @@ def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool) -> dict:
 def _write_state(d: dict) -> None:
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     STATE_PATH.write_text(json.dumps(d))
+
+
+def drop_clients(procs: dict) -> None:
+    """Force live stream clients to disconnect by restarting the gateway.
+
+    Set None so the supervisor loop respawns it next pass. Browsers reconnect
+    through the portal's forward-auth, which fails once the user has logged out
+    — so the session genuinely ends rather than silently resuming.
+    """
+    p = procs.get("gateway")
+    if p is not None and p.poll() is None:
+        p.terminate()
+        try:
+            p.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            p.kill()
+    procs["gateway"] = None
 
 
 def run(cfg: dict) -> int:
@@ -262,6 +279,10 @@ def run(cfg: dict) -> int:
                       f"  python3 {INSTALL_DIR / 'styx_agent.py'} uninstall",
                       flush=True)
                 break
+            if hb.get("disconnect_clients"):
+                print("server requested client disconnect (logout); "
+                      "restarting gateway", flush=True)
+                drop_clients(procs)
             if hb["stream_settings"] != cfg["stream_settings"]:
                 cfg["stream_settings"] = hb["stream_settings"]
                 CONFIG_PATH.write_text(json.dumps(cfg, indent=2))

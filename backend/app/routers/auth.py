@@ -10,7 +10,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Settings
 from app.database import get_session
-from app.models import User, Invite, RefreshToken, Instance, ServiceTemplate, OAuthProvider, FederatedIdentity
+from app.models import User, Invite, RefreshToken, Instance, ServiceTemplate, OAuthProvider, FederatedIdentity, Workstation
 from app.schemas import SetupRequest, LoginRequest, AcceptInviteRequest, UserOut, ConnectedIdentity
 from app.security import tokens, oauth
 from app.security.passwords import hash_password, verify_password
@@ -187,20 +187,43 @@ async def refresh(request: Request, response: Response,
 
 @router.post("/logout")
 async def logout(request: Request, response: Response,
+                 end_session: bool = False,
                  session: AsyncSession = Depends(get_session)):
     user_id = None
+    stored = None
     raw = request.cookies.get("refresh_token")
     if raw:
         try:
             claims = tokens.decode_token(raw)
             user_id = claims.get("sub")
             stored = await session.get(RefreshToken, claims.get("jti"))
-            if stored:
-                stored.revoked = True
-                session.add(stored)
-                await session.commit()
         except tokens.TokenError:
             pass
+
+    # An active workstation session blocks a plain logout — the user must
+    # explicitly end it (end_session=true) so we don't orphan a live desktop.
+    active: list[Workstation] = []
+    if user_id:
+        result = await session.exec(select(Workstation).where(
+            Workstation.occupied_by == user_id,
+            Workstation.active_connections > 0))
+        active = result.all()
+    if active and not end_session:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={"code": "active_session", "count": len(active)})
+
+    # Teardown: flag agents to drop clients and free occupancy immediately.
+    for ws in active:
+        ws.disconnect_pending = True
+        ws.occupied_by = None
+        ws.occupied_at = None
+        ws.active_connections = 0
+        session.add(ws)
+
+    if stored:
+        stored.revoked = True
+        session.add(stored)
     await audit_request(session, request, "auth.logout", user_id=user_id)
     await session.commit()
     _clear_auth_cookies(response)
