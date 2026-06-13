@@ -148,15 +148,21 @@ def guard_default_socket(runtime_dir: str):
 
 
 def wait_for_wayland_socket(runtime_dir: str, before: set[str],
-                            since_ts: float, timeout: float = 15) -> str | None:
+                            since_ts: float, timeout: float = 15,
+                            exclude: set[str] | None = None) -> str | None:
     """The compositor picks the first free wayland-N. A socket counts if its
     name is new OR its file was (re)created after `since_ts` — stale socket
     files survive process death, so a pure before/after name diff misses a
-    compositor that rebinds the same wayland-N (seen on agent restart)."""
+    compositor that rebinds the same wayland-N (seen on agent restart).
+
+    `exclude` skips known sockets (e.g. the seat compositor's own socket when
+    hunting for the nested shell's socket) — without it, the just-created seat
+    socket matches the `since_ts` mtime slack and is returned by mistake."""
+    exclude = exclude or set()
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         for p in sorted(Path(runtime_dir).glob("wayland-*")):
-            if p.name.endswith(".lock"):
+            if p.name.endswith(".lock") or p.name in exclude:
                 continue
             if p.name not in before:
                 return p.name

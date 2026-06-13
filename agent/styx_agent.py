@@ -18,7 +18,7 @@ import urllib.request
 from hashlib import sha256
 from pathlib import Path
 
-AGENT_VERSION = "0.4.3"
+AGENT_VERSION = "0.4.4"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -286,9 +286,12 @@ def run(cfg: dict) -> int:
                 app_socket_ts = time.time() - 1
                 procs["shell"] = start_shell()
                 if procs["shell"] is not None:
-                    # labwc creates a new socket for its clients; wait for it
+                    # labwc creates a new socket for its clients; wait for it.
+                    # Exclude seat_socket: it was just created and matches the
+                    # mtime slack, so it'd be returned instead of labwc's.
                     app_sock = engine.wait_for_wayland_socket(
-                        runtime_dir, before, app_socket_ts, timeout=10)
+                        runtime_dir, before, app_socket_ts, timeout=10,
+                        exclude={seat_socket})
                     if app_sock:
                         app_socket = app_sock
                         print(f"app socket is {app_socket}; starting clipboard bridge",
@@ -326,7 +329,8 @@ def run(cfg: dict) -> int:
             procs["shell"] = start_shell()
             if procs["shell"] is not None:
                 app_sock = engine.wait_for_wayland_socket(
-                    runtime_dir, before, app_socket_ts, timeout=10)
+                    runtime_dir, before, app_socket_ts, timeout=10,
+                    exclude={seat_socket})
                 if app_sock:
                     app_socket = app_sock
                     # Kill the old clipboard bridge before starting a new one

@@ -100,6 +100,22 @@ def test_wait_for_wayland_socket(tmp_path):
                                           timeout=0.2) is None
 
 
+def test_wait_for_wayland_socket_excludes_seat_socket(tmp_path):
+    # Both sockets are fresh (within the mtime slack). Without exclude, the
+    # lexically-first (the seat's own wayland-1) is wrongly returned; with
+    # exclude we must get labwc's wayland-2.
+    import time
+    (tmp_path / "wayland-1").touch()
+    (tmp_path / "wayland-2").touch()
+    since = time.time() - 60
+    assert engine.wait_for_wayland_socket(
+        str(tmp_path), {"wayland-1", "wayland-2"}, since_ts=since,
+        timeout=1) == "wayland-1"  # default: first match
+    assert engine.wait_for_wayland_socket(
+        str(tmp_path), {"wayland-1", "wayland-2"}, since_ts=since,
+        timeout=1, exclude={"wayland-1"}) == "wayland-2"  # seat excluded
+
+
 def test_wait_for_wayland_socket_stale_file_rebound(tmp_path):
     # Socket file survived a previous run (name in `before`) but the
     # compositor recreated it after since_ts -> must be detected.
