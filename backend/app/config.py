@@ -54,7 +54,15 @@ class Settings(BaseSettings):
     LAN_CERT_DIR: str = "/app/data/lan-certs"      # backend-side path (lan-certs volume)
     TRAEFIK_LAN_CERT_DIR: str = "/lan-certs"       # same volume as seen by Traefik
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    # extra="ignore": the repo-root .env is shared with docker-compose,
+    # cloudflared, and authentik, so it carries keys the backend does not
+    # declare (CF_TUNNEL_TOKEN, AUTHENTIK_HOST, COMPOSE_PROFILES, ...).
+    # Ignore them instead of failing to start.
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+    }
 
     def jwt_secret_or_raise(self) -> str:
         if self.JWT_SECRET:
