@@ -290,16 +290,21 @@ def write_seat_config(config_dir: Path) -> None:
     term = pick_terminal()
     launcher = pick_launcher()
     file_mgr = pick_file_manager()
+    browser = pick_browser()
     entries = scan_desktop_entries()
 
     cfg_json, style = build_waybar_config(launcher)
     (waybar_dir / "config").write_text(cfg_json)
     (waybar_dir / "style.css").write_text(style)
+    dock_json, dock_style = build_waybar_dock(launcher, term, file_mgr, browser)
+    (waybar_dir / "dock-config").write_text(dock_json)
+    (waybar_dir / "dock-style.css").write_text(dock_style)
 
     auto = config_dir / "autostart"
-    auto.write_text(build_autostart(launcher,
-                                    str(waybar_dir / "config"),
-                                    str(waybar_dir / "style.css")))
+    auto.write_text(build_autostart(str(waybar_dir / "config"),
+                                    str(waybar_dir / "style.css"),
+                                    str(waybar_dir / "dock-config"),
+                                    str(waybar_dir / "dock-style.css")))
     auto.chmod(0o755)
     (config_dir / "menu.xml").write_text(
         build_root_menu(entries, term, file_mgr, str(HOME)))
@@ -384,13 +389,14 @@ def build_waybar_config(launcher: str) -> tuple:
     """(config_json, style_css) for the top panel. `tray` is waybar's built-in
     StatusNotifier host — JetBrains Toolbox and other SNI apps dock there."""
     menu_cmd = launcher or "true"
+    # Open windows live on the bottom dock's wlr/taskbar, so the top bar is just
+    # launcher + clock + indicators/tray (GNOME-like).
     config = {
         "layer": "top", "position": "top", "height": 32,
-        "modules-left": ["custom/menu", "wlr/taskbar"],
+        "modules-left": ["custom/menu"],
         "modules-center": ["clock"],
         "modules-right": ["tray", "pulseaudio", "network", "custom/power"],
         "custom/menu": {"format": "  Apps", "on-click": menu_cmd, "tooltip": False},
-        "wlr/taskbar": {"on-click": "activate", "all-outputs": True},
         "clock": {"format": "{:%a %d %b  %H:%M}"},
         "tray": {"spacing": 8, "icon-size": 18},
         "pulseaudio": {"format": "{icon} {volume}%",
@@ -407,7 +413,56 @@ def build_waybar_config(launcher: str) -> tuple:
         "window#waybar { background: #1d2433; color: #e6e9ef; }\n"
         "#custom-menu { padding: 0 14px; background: #2b3650; color: #ffffff; }\n"
         "#clock, #pulseaudio, #network, #tray, #custom-power { padding: 0 10px; }\n"
-        "#taskbar button.active { background: #2b3650; }\n"
+    )
+    return json.dumps(config, indent=2), style
+
+
+BROWSERS = ("google-chrome", "chromium", "chromium-browser", "firefox")
+
+
+def pick_browser() -> str:
+    """First GUI browser present on the host. Empty if none."""
+    import shutil
+    for name in BROWSERS:
+        if shutil.which(name):
+            return name
+    return ""
+
+
+def build_waybar_dock(launcher: str, term: str, file_mgr: str,
+                      browser: str) -> tuple:
+    """(config_json, style_css) for a second waybar at the BOTTOM, used as a
+    dock: pinned launch buttons + wlr/taskbar icons of open windows. Pure
+    wlroots (no sway IPC), so — unlike nwg-dock — it runs under labwc."""
+    mods: dict = {}
+    pins: list = []
+
+    def pin(key: str, label: str, cmd: str) -> None:
+        if cmd:
+            name = f"custom/{key}"
+            pins.append(name)
+            mods[name] = {"format": label, "on-click": cmd, "tooltip": False}
+
+    pin("apps", "Apps", launcher)
+    pin("files", "Files", f"{file_mgr} {HOME}" if file_mgr else "")
+    pin("web", "Web", browser)
+    pin("term", "Term", term)
+    config = {
+        "layer": "top", "position": "bottom", "height": 48, "margin-bottom": 6,
+        "modules-left": [], "modules-center": pins + ["wlr/taskbar"],
+        "modules-right": [],
+        "wlr/taskbar": {"format": "{icon}", "icon-size": 32,
+                        "on-click": "activate", "tooltip-format": "{title}"},
+        **mods,
+    }
+    style = (
+        '* { font-family: "Noto Sans", sans-serif; font-size: 13px; }\n'
+        "window#waybar { background: transparent; }\n"
+        "#taskbar, #custom-apps, #custom-files, #custom-web, #custom-term {\n"
+        "  background: #1d2433; color: #e6e9ef; border-radius: 12px;\n"
+        "  padding: 2px 12px; margin: 4px 4px; }\n"
+        "#taskbar button { padding: 0 6px; }\n"
+        "#taskbar button.active { background: #2b3650; border-radius: 8px; }\n"
     )
     return json.dumps(config, indent=2), style
 
@@ -442,13 +497,13 @@ def build_labwc_environment() -> str:
             "XDG_CURRENT_DESKTOP=labwc:wlroots\n")
 
 
-def build_autostart(launcher: str, waybar_config: str, waybar_style: str) -> str:
-    """labwc autostart: wallpaper, dark-mode push, portal, panel, dock — each
-    guarded by `command -v` so a missing tool is silently skipped. waybar gets
-    explicit -c/-s paths (NOT XDG_CONFIG_HOME) so host apps keep their own
-    ~/.config."""
-    dock = (f'nwg-dock -d -i 36 -l "{launcher}" &' if launcher
-            else "nwg-dock -d -i 36 &")
+def build_autostart(waybar_config: str, waybar_style: str,
+                    dock_config: str, dock_style: str) -> str:
+    """labwc autostart: wallpaper, dark-mode push, portal, top panel, bottom
+    dock — each guarded by `command -v` so a missing tool is silently skipped.
+    The dock is a second waybar (bottom), not nwg-dock (which is sway-only and
+    fatals under labwc). waybar instances get explicit -c/-s paths (NOT
+    XDG_CONFIG_HOME) so host apps keep their own ~/.config."""
     return "\n".join([
         "#!/bin/sh",
         "# generated by styx agent — regenerated each seat start; do not edit",
@@ -462,6 +517,7 @@ def build_autostart(launcher: str, waybar_config: str, waybar_style: str) -> str
         "command -v xdg-desktop-portal >/dev/null && xdg-desktop-portal &",
         f'command -v waybar >/dev/null && waybar -c "{waybar_config}" '
         f'-s "{waybar_style}" &',
-        f"command -v nwg-dock >/dev/null && {dock}",
+        f'command -v waybar >/dev/null && waybar -c "{dock_config}" '
+        f'-s "{dock_style}" &',
         "",
     ])

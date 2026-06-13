@@ -80,24 +80,26 @@ for deb_path in "${DEB_PATHS[@]}"; do
 done
 tar -C "$WORK/shim" -czf "$OUT/libshim-x86_64.tar.gz" lib
 
-echo "==> [4/4] nwg-shell-x86_64.tar.gz (nwg-drawer + nwg-dock, Go+GTK build)"
-# Built in a golang container (no Go/GTK toolchain on the server host). The
-# binaries dynamically link GTK3 + gtk-layer-shell, which the target desktop
-# already has (enroll apt-installs libgtk-layer-shell0 for the latter).
-NWG_DRAWER_TAG="v0.7.5"
-NWG_DOCK_TAG="v0.4.3"
+echo "==> [4/4] nwg-shell-x86_64.tar.gz (nwg-drawer app grid, Go+GTK build)"
+# Built in a golang container (no Go/GTK toolchain on the server host). Only
+# nwg-drawer is shipped: it's the app-grid launcher and works on any wlroots
+# compositor. nwg-dock is deliberately NOT built — it is sway-only (needs
+# SWAYSOCK) and fatals under labwc; the seat uses a bottom waybar as its dock.
+# Pinned to the last GTK3 release (v0.6+ moved to gotk4 + gtk4-layer-shell,
+# whose runtime libs are absent from Ubuntu 24.04). GTK3 + gtk-layer-shell
+# runtime IS present (enroll apt-installs libgtk-layer-shell0).
+NWG_DRAWER_TAG="v0.5.2"   # last GTK3 (gotk3) release; v0.6+ is GTK4
 mkdir -p "$WORK/bin"
-docker run --rm -v "$WORK/bin:/out" golang:1.23-bookworm bash -ec '
+docker run --rm -v "$WORK/bin:/out" golang:1.25-bookworm bash -ec '
   export DEBIAN_FRONTEND=noninteractive
   apt-get update -qq
   apt-get install -y -qq --no-install-recommends \
-    libgtk-3-dev libgtk-layer-shell-dev libcairo2-dev \
+    libgtk-3-dev libgtk-layer-shell-dev libgirepository1.0-dev libcairo2-dev \
     libgdk-pixbuf-2.0-dev libglib2.0-dev pkg-config gcc git
   export CGO_ENABLED=1 GOBIN=/out GOFLAGS=-trimpath
   go install github.com/nwg-piotr/nwg-drawer@'"$NWG_DRAWER_TAG"'
-  go install github.com/nwg-piotr/nwg-dock@'"$NWG_DOCK_TAG"'
 '
-chmod +x "$WORK/bin/"*
+chmod 0755 "$WORK/bin/"*
 tar -C "$WORK" -czf "$OUT/nwg-shell-x86_64.tar.gz" bin
 echo "    $(ls "$WORK/bin" | tr '\n' ' ')"
 

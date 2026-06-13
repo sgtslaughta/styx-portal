@@ -156,9 +156,10 @@ install_pkgs() {
 }
 # Per-manager package names (VAAPI pkg names differ across distros).
 # Seat desktop: WM + Xwayland (X11 apps incl. Chrome) + panel + wallpaper + terminal.
-# nwg-drawer/nwg-dock are NOT apt/distro packages here — they arrive as the
-# server-built nwg-shell artifact (below). We install their runtime lib
-# (gtk-layer-shell) + fuzzel as the launcher fallback.
+# nwg-drawer (app grid) is NOT an apt/distro package here — it arrives as the
+# server-built nwg-shell artifact (below). We install its runtime lib
+# (gtk-layer-shell) + fuzzel as the launcher fallback. The dock is a bottom
+# waybar (not nwg-dock, which is sway-only).
 declare -A SEAT_PKG=( \
   [apt]="labwc xwayland waybar swaybg foot wl-clipboard fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme libgtk-layer-shell0" \
   [dnf]="labwc xorg-x11-server-Xwayland waybar swaybg foot wl-clipboard fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme gtk-layer-shell" \
