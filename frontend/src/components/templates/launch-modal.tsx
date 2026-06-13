@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -5,10 +6,12 @@ import { useCreateTemplate, useUpdateTemplate } from "@/hooks/use-templates";
 import { useCreateInstance } from "@/hooks/use-instances";
 import { useGpuInfo } from "@/hooks/use-gpu";
 import { useLaunchConfig } from "@/hooks/use-launch-config";
-import { LaunchConfigFields } from "./launch-config-fields";
+import { useAuth } from "@/hooks/use-auth";
+import { EasyLaunch } from "./easy-launch";
+import { TemplateBuilder } from "./builder/template-builder";
 import { api } from "@/api/client";
 import { toast } from "sonner";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, ChevronLeft } from "lucide-react";
 import type { RegistryImage, ServiceTemplate } from "@/lib/types";
 
 interface LaunchModalProps {
@@ -19,11 +22,28 @@ interface LaunchModalProps {
 }
 
 export function LaunchModal({ open, onClose, registryImage, template }: LaunchModalProps) {
+  const [mode, setMode] = useState<"easy" | "advanced">("easy");
   const createTemplate = useCreateTemplate();
   const updateTemplate = useUpdateTemplate();
   const createInstance = useCreateInstance();
   const { data: gpuInfo } = useGpuInfo();
+  const { user } = useAuth();
   const cfg = useLaunchConfig({ registryImage, template });
+
+  // Derive domain from window.location.hostname (e.g., "portal.example.com" → "example.com")
+  // For localhost or single-label domains, fall back to empty string
+  const domain = (() => {
+    try {
+      const hostname = window.location.hostname;
+      if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]") return "";
+      const parts = hostname.split(".");
+      return parts.length > 2 ? parts.slice(1).join(".") : hostname;
+    } catch {
+      return "";
+    }
+  })();
+
+  const isAdmin = user?.role === "admin";
 
   async function upsertTemplate() {
     const templateData = cfg.buildTemplateData();
@@ -64,51 +84,80 @@ export function LaunchModal({ open, onClose, registryImage, template }: LaunchMo
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-h-[90vh] w-[90vw] max-w-4xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-3">
-            {cfg.icon && <img src={cfg.icon} alt="" className="h-8 w-8 rounded object-contain" />}
-            {registryImage ? `Import: ${registryImage.name}` : template ? `Launch: ${template.display_name}` : "Custom Template"}
-          </DialogTitle>
-          {registryImage?.description && (
-            <p className="text-xs text-muted-foreground line-clamp-2">{registryImage.description}</p>
-          )}
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-3">
+              {cfg.icon && <img src={cfg.icon} alt="" className="h-8 w-8 rounded object-contain" />}
+              <div>
+                <DialogTitle>
+                  {registryImage ? `Import: ${registryImage.name}` : template ? `Launch: ${template.display_name}` : "Custom Template"}
+                </DialogTitle>
+                {registryImage?.description && (
+                  <p className="text-xs text-muted-foreground line-clamp-2">{registryImage.description}</p>
+                )}
+              </div>
+            </div>
+            {mode === "advanced" && (
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 whitespace-nowrap"
+                onClick={() => setMode("easy")}
+              >
+                <ChevronLeft className="h-3 w-3" /> Easy mode
+              </button>
+            )}
+          </div>
         </DialogHeader>
 
-        <LaunchConfigFields cfg={cfg} gpuInfo={gpuInfo} />
+        {mode === "easy" ? (
+          <EasyLaunch
+            cfg={cfg}
+            domain={domain}
+            onLaunch={handleSaveAndLaunch}
+            onAdvanced={() => setMode("advanced")}
+            launching={createInstance.isPending}
+          />
+        ) : (
+          <TemplateBuilder cfg={cfg} isAdmin={isAdmin} />
+        )}
 
-        {/* Changelog preview */}
-        {registryImage?.changelog && registryImage.changelog.length > 0 && (
+        {mode === "advanced" && (
           <>
-            <Separator />
-            <details className="text-xs">
-              <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Changelog ({registryImage.changelog.length} entries)</summary>
-              <div className="mt-2 space-y-1 max-h-24 overflow-y-auto">
-                {registryImage.changelog.map((entry, i) => (
-                  <div key={i} className="flex gap-2">
-                    <span className="text-muted-foreground shrink-0">{entry.date}</span>
-                    <span>{entry.desc}</span>
+            {/* Changelog preview */}
+            {registryImage?.changelog && registryImage.changelog.length > 0 && (
+              <>
+                <Separator />
+                <details className="text-xs">
+                  <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Changelog ({registryImage.changelog.length} entries)</summary>
+                  <div className="mt-2 space-y-1 max-h-24 overflow-y-auto">
+                    {registryImage.changelog.map((entry, i) => (
+                      <div key={i} className="flex gap-2">
+                        <span className="text-muted-foreground shrink-0">{entry.date}</span>
+                        <span>{entry.desc}</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-            </details>
+                </details>
+              </>
+            )}
+
+            {/* Setup link */}
+            {registryImage?.config?.application_setup && (
+              <a href={registryImage.config.application_setup} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-primary hover:underline">
+                <ExternalLink className="h-3 w-3" /> Application Setup Guide
+              </a>
+            )}
+
+            <Separator />
+            <div className="flex gap-2">
+              <Button onClick={handleSaveAndLaunch} className="flex-1" disabled={createTemplate.isPending || createInstance.isPending}>
+                {createInstance.isPending ? "Launching..." : "Save & Launch"}
+              </Button>
+              <Button variant="secondary" onClick={handleSaveTemplate} disabled={createTemplate.isPending}>
+                Save as Template
+              </Button>
+            </div>
           </>
         )}
-
-        {/* Setup link */}
-        {registryImage?.config?.application_setup && (
-          <a href={registryImage.config.application_setup} target="_blank" rel="noreferrer" className="flex items-center gap-1 text-xs text-primary hover:underline">
-            <ExternalLink className="h-3 w-3" /> Application Setup Guide
-          </a>
-        )}
-
-        <Separator />
-        <div className="flex gap-2">
-          <Button onClick={handleSaveAndLaunch} className="flex-1" disabled={createTemplate.isPending || createInstance.isPending}>
-            {createInstance.isPending ? "Launching..." : "Save & Launch"}
-          </Button>
-          <Button variant="secondary" onClick={handleSaveTemplate} disabled={createTemplate.isPending}>
-            Save as Template
-          </Button>
-        </div>
       </DialogContent>
     </Dialog>
   );
