@@ -233,6 +233,7 @@ class WorkstationOut(BaseModel):
     gpu_info: dict[str, Any]
     os_info: dict[str, Any]
     agent_version: str
+    agent_outdated: bool = False
     stream_settings: dict[str, Any]
     all_users: bool
     last_heartbeat: str | None

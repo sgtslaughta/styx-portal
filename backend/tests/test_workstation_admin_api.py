@@ -283,3 +283,24 @@ def test_get_latest_agent_version_missing_file_returns_empty(tmp_path):
     from app.services.workstations import get_latest_agent_version, _version_cache
     _version_cache.clear()
     assert get_latest_agent_version(str(tmp_path / "nope")) == ""
+
+
+@pytest.mark.asyncio
+async def test_list_marks_outdated_agents(admin_client, session, monkeypatch):
+    import app.routers.workstations as wr
+    from app.models import User, Workstation
+    from sqlmodel import select
+    monkeypatch.setattr(wr, "get_latest_agent_version", lambda: "0.4.2")
+    admin = (await session.exec(select(User).where(User.role == "admin"))).first()
+    for sub, ver in [("a", "0.4.1"), ("b", "0.4.2"), ("c", "")]:
+        session.add(Workstation(name=sub, subdomain=sub, hostname=sub,
+                                status="online", agent_version=ver,
+                                created_by=admin.id))
+    await session.commit()
+
+    r = await admin_client.get("/api/workstations")
+    assert r.status_code == 200
+    by_sub = {w["subdomain"]: w["agent_outdated"] for w in r.json()}
+    assert by_sub["a"] is True
+    assert by_sub["b"] is False
+    assert by_sub["c"] is False
