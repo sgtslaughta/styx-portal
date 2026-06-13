@@ -49,6 +49,11 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
         ws.lan_ip = body.lan_ip
     ws.last_heartbeat = datetime.now(timezone.utc)
     ws.last_error = body.last_error
+    # Persist the running agent's version — a lightweight update (pull + restart,
+    # no re-enroll) only surfaces here, so without this 'outdated' never clears.
+    ver = body.health.get("agent_version")
+    if isinstance(ver, str) and ver:
+        ws.agent_version = ver
     # Occupancy: the agent's gateway counts live stream websockets; the
     # occupant's identity comes from forward-auth. Zero connections clears it.
     conns = body.health.get("active_connections")

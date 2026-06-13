@@ -51,6 +51,25 @@ async def test_heartbeat_marks_online_and_returns_settings(client, session):
 
 
 @pytest.mark.asyncio
+async def test_heartbeat_updates_agent_version(client, session):
+    """A lightweight agent update (pull + restart, no re-enroll) only changes the
+    version the agent reports in its heartbeat — the backend must persist it so
+    'outdated' clears."""
+    ws = await _make_ws(session, status="online")
+    ws.agent_version = "0.4.1"
+    session.add(ws)
+    await session.commit()
+
+    r = await client.post("/api/agent/heartbeat",
+                          json={"status": "online",
+                                "health": {"agent_version": "0.4.2"}},
+                          headers=_auth())
+    assert r.status_code == 200
+    await session.refresh(ws)
+    assert ws.agent_version == "0.4.2"
+
+
+@pytest.mark.asyncio
 async def test_heartbeat_returns_disconnect_and_clears_flag(client, session):
     """When logout flags disconnect_pending, the next heartbeat tells the agent
     to drop clients and the flag is consumed (one-shot)."""
