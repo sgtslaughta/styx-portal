@@ -50,15 +50,17 @@ Chosen layout (approved):
 ### Config isolation
 
 The seat runs as the **user's own host account**, so it must not clobber the user's real
-`~/.config`. styx_agent launches `labwc -C $INSTALL_DIR/labwc` (`styx_agent.py:166`). We set
-`XDG_CONFIG_HOME=$INSTALL_DIR` on the **labwc process env** only; every client spawned by labwc's
-autostart inherits it and reads configs from `$INSTALL_DIR/{labwc,waybar,nwg-dock,nwg-drawer}`.
-The user's real `~/.config` is never read or written.
+`~/.config`. styx_agent launches `labwc -C $INSTALL_DIR/labwc` (`styx_agent.py:166`). labwc reads
+its own config from that `-C` path; waybar is launched from autostart with **explicit
+`-c $INSTALL_DIR/waybar/config -s $INSTALL_DIR/waybar/style.css`** paths, and nwg-drawer/nwg-dock
+take CLI flags (no config files). We deliberately do **not** set `XDG_CONFIG_HOME` — doing so would
+redirect the user's own host apps (browser profiles, etc.) away from `~/.config` and break them.
+The user's real `~/.config` is never read or written; `styx_agent.py` is unchanged.
 
 ### Component map
 
 ```
-$INSTALL_DIR/                       (XDG_CONFIG_HOME for the seat process tree)
+$INSTALL_DIR/                       (explicit config root — no XDG_CONFIG_HOME export)
   labwc/
     rc.xml          dark border theme; Super → nwg-drawer keybind
     environment     GTK_THEME=Adwaita-dark, XCURSOR_THEME, QT_QPA_PLATFORM=wayland, …
@@ -141,5 +143,6 @@ Satisfied without wlroots desktop icons:
 - `agent/enroll.sh` — extend `SEAT_PKG` (+ per-distro maps) with the new deps.
 - `agent/engine.py` — rewrite `write_seat_config()`; add `.desktop`-scan menu builder, waybar/dock
   config generators, dark-mode autostart lines, file-manager detection.
-- `agent/styx_agent.py` — set `XDG_CONFIG_HOME=$INSTALL_DIR` on the labwc launch env.
 - `agent/tests/test_engine.py` — coverage above.
+
+(`agent/styx_agent.py` is unchanged — see Config isolation.)
