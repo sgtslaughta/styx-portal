@@ -247,3 +247,23 @@ def test_build_labwc_environment_forces_dark():
     env = engine.build_labwc_environment()
     assert "GTK_THEME=Adwaita-dark" in env
     assert "XCURSOR_THEME=Adwaita" in env
+
+
+def test_build_autostart_emits_guarded_lines():
+    sh = engine.build_autostart(
+        launcher="nwg-drawer",
+        waybar_config="/i/waybar/config", waybar_style="/i/waybar/style.css")
+    assert sh.startswith("#!/bin/sh")
+    assert 'command -v swaybg >/dev/null && swaybg -c "#1d2433" &' in sh
+    assert "color-scheme 'prefer-dark'" in sh
+    assert 'waybar -c "/i/waybar/config" -s "/i/waybar/style.css" &' in sh
+    assert 'nwg-dock -d -i 36 -l "nwg-drawer" &' in sh
+    assert "xdg-desktop-portal" in sh
+
+
+def test_build_autostart_dock_without_launcher_has_no_l_flag():
+    sh = engine.build_autostart(launcher="",
+                                waybar_config="/i/waybar/config",
+                                waybar_style="/i/waybar/style.css")
+    assert "nwg-dock -d -i 36 &" in sh
+    assert " -l " not in sh
