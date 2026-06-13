@@ -98,6 +98,16 @@ async def _build_and_start_container(instance, template, docker):
         cap_add=template.cap_add,
         security_opt=template.security_opt,
         network=net,
+        restart_policy=template.restart_policy,
+        read_only_rootfs=template.read_only_rootfs,
+        tmpfs=template.tmpfs,
+        extra_hosts=template.extra_hosts,
+        ulimits=template.ulimits,
+        devices=template.devices,
+        entrypoint=template.entrypoint,
+        command=template.command,
+        privileged=template.privileged,
+        extra_docker_args=template.extra_docker_args,
     )
     instance.container_id = container_id
     await asyncio.to_thread(docker.start_container, container_id)
@@ -192,6 +202,16 @@ async def _launch_instance_background(instance_id: str, template_id: str):
                 cap_add=template.cap_add,
                 security_opt=template.security_opt,
                 network=net,
+                restart_policy=template.restart_policy,
+                read_only_rootfs=template.read_only_rootfs,
+                tmpfs=template.tmpfs,
+                extra_hosts=template.extra_hosts,
+                ulimits=template.ulimits,
+                devices=template.devices,
+                entrypoint=template.entrypoint,
+                command=template.command,
+                privileged=template.privileged,
+                extra_docker_args=template.extra_docker_args,
             )
 
             # Track pulled image
