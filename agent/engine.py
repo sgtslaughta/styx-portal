@@ -171,10 +171,37 @@ def wait_for_wayland_socket(runtime_dir: str, before: set[str],
 TERMINALS = ("foot", "alacritty", "kitty", "kgx", "gnome-terminal",
              "konsole", "xterm")
 
-_SEAT_MENU = """<?xml version="1.0" encoding="UTF-8"?>
+
+def _xml_escape(s: str) -> str:
+    return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+             .replace('"', "&quot;"))
+
+
+def _menu_item(label: str, command: str) -> str:
+    return (f'  <item label="{_xml_escape(label)}">'
+            f'<action name="Execute" command="{command}"/></item>')
+
+
+def build_root_menu(entries, term: str, file_mgr: str, home: str) -> str:
+    """labwc/openbox root menu: Files + Terminal at top, an Applications
+    submenu built from `entries`, then Reconfigure/Exit."""
+    apps = "\n".join(_menu_item(n, e) for n, e in entries) or \
+        '  <item label="(no apps found)"><action name="Reconfigure"/></item>'
+    top = []
+    if file_mgr:
+        top.append(_menu_item("Files", f"{file_mgr} {home}"))
+    if term:
+        top.append(_menu_item("Terminal", term))
+    top_xml = "\n".join(top)
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
 <openbox_menu>
+<menu id="apps-menu" label="Applications">
+{apps}
+</menu>
 <menu id="root-menu" label="Styx">
-  <item label="Terminal"><action name="Execute" command="{term}"/></item>
+{top_xml}
+  <menu id="apps-menu"/>
+  <separator/>
   <item label="Reconfigure"><action name="Reconfigure"/></item>
   <item label="Exit session"><action name="Exit"/></item>
 </menu>
@@ -267,7 +294,7 @@ def write_seat_config(config_dir: Path) -> None:
     auto.write_text("\n".join(lines) + "\n")
     auto.chmod(0o755)
     (config_dir / "menu.xml").write_text(
-        _SEAT_MENU.format(term=term or "true"))
+        build_root_menu(scan_desktop_entries(), term, pick_file_manager(), str(HOME)))
 
 
 def build_selkies_cmd(cfg: dict, internal_port: int, control_port: int) -> tuple[list[str], dict]:

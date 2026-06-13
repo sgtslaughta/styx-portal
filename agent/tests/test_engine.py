@@ -196,3 +196,20 @@ def test_scan_desktop_entries_parses_and_filters(tmp_path):
 
 def test_scan_desktop_entries_skips_missing_dirs():
     assert engine.scan_desktop_entries(["/no/such/dir"]) == []
+
+
+def test_build_root_menu_includes_files_apps_and_escapes(tmp_path):
+    xml = engine.build_root_menu(
+        [("Rofi & Co", "rofi"), ("Term", "xterm")],
+        term="foot", file_mgr="thunar", home="/home/u")
+    assert "<action name=\"Execute\" command=\"thunar /home/u\"/>" in xml
+    assert "Files" in xml
+    assert "Rofi &amp; Co" in xml          # XML-escaped label
+    assert "<action name=\"Exit\"/>" in xml
+    assert "Applications" in xml
+
+
+def test_build_root_menu_without_file_manager():
+    xml = engine.build_root_menu([], term="foot", file_mgr="", home="/home/u")
+    assert "Files" not in xml
+    assert "foot" in xml                    # Terminal entry still present
