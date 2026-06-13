@@ -20,6 +20,37 @@ engine = create_async_engine(
 )
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
+_TEMPLATE_COLUMN_DDL = {
+    "shared": "BOOLEAN DEFAULT 0",
+    "restart_policy": "TEXT DEFAULT 'no'",
+    "read_only_rootfs": "BOOLEAN DEFAULT 0",
+    "tmpfs": "JSON DEFAULT '[]'",
+    "extra_hosts": "JSON DEFAULT '{}'",
+    "ulimits": "JSON DEFAULT '[]'",
+    "extra_ports": "JSON DEFAULT '[]'",
+    "entrypoint": "JSON",
+    "command": "JSON",
+    "devices": "JSON DEFAULT '[]'",
+    "privileged": "BOOLEAN DEFAULT 0",
+    "extra_docker_args": "JSON DEFAULT '{}'",
+}
+
+
+def _ensure_template_columns(conn) -> None:
+    """Add missing columns to service_templates table. Works with both sqlite3 and SQLAlchemy connections."""
+    # Handle both raw sqlite3 and SQLAlchemy connections
+    # Check if this is an async SQLAlchemy connection (has run_sync method)
+    if hasattr(conn, 'run_sync'):
+        # This is an async SQLAlchemy connection - this case is handled in async wrapper
+        raise TypeError("Use _ensure_template_columns_async for SQLAlchemy async connections")
+
+    # Raw sqlite3 connection
+    existing = {r[1] for r in conn.execute("PRAGMA table_info(service_templates)")}
+    for col, ddl in _TEMPLATE_COLUMN_DDL.items():
+        if col not in existing:
+            conn.execute(f"ALTER TABLE service_templates ADD COLUMN {col} {ddl}")
+    conn.commit()
+
 
 def _restrict_db_perms():
     """Restrict SQLite database file permissions to 0600 (owner read/write only)."""
@@ -53,6 +84,18 @@ async def _run_migrations(conn):
         ("service_templates", "cap_add", "TEXT"),
         ("service_templates", "security_opt", "TEXT"),
         ("service_templates", "tls_skip_verify", "BOOLEAN"),
+        ("service_templates", "shared", "BOOLEAN DEFAULT 0"),
+        ("service_templates", "restart_policy", "TEXT DEFAULT 'no'"),
+        ("service_templates", "read_only_rootfs", "BOOLEAN DEFAULT 0"),
+        ("service_templates", "tmpfs", "JSON DEFAULT '[]'"),
+        ("service_templates", "extra_hosts", "JSON DEFAULT '{}'"),
+        ("service_templates", "ulimits", "JSON DEFAULT '[]'"),
+        ("service_templates", "extra_ports", "JSON DEFAULT '[]'"),
+        ("service_templates", "entrypoint", "JSON"),
+        ("service_templates", "command", "JSON"),
+        ("service_templates", "devices", "JSON DEFAULT '[]'"),
+        ("service_templates", "privileged", "BOOLEAN DEFAULT 0"),
+        ("service_templates", "extra_docker_args", "JSON DEFAULT '{}'"),
         ("oauth_providers", "icon_url", "TEXT"),
         ("oauth_providers", "trust_email", "BOOLEAN"),
         ("oauth_providers", "allow_signup", "BOOLEAN"),
