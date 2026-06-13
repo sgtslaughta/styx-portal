@@ -51,6 +51,7 @@ class Settings(BaseSettings):
     WORKSTATION_OFFLINE_AFTER_S: int = 90
     WORKSTATION_DEFAULT_PORT: int = 8443
     WORKSTATION_HEARTBEAT_S: int = 30
+    WORKSTATION_IDLE_TIMEOUT_S: int = 900
     LAN_CERT_DIR: str = "/app/data/lan-certs"      # backend-side path (lan-certs volume)
     TRAEFIK_LAN_CERT_DIR: str = "/lan-certs"       # same volume as seen by Traefik
 

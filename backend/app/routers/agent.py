@@ -62,6 +62,16 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
         if conns == 0:
             ws.occupied_by = None
             ws.occupied_at = None
+    # Idle disconnect: the agent reports seconds since the last client->server
+    # input. If an occupied seat has been idle past the timeout, drop it (the
+    # existing disconnect flow releases occupancy when the client count hits 0).
+    idle_s = body.health.get("idle_seconds")
+    idle_timeout = (ws.stream_settings or {}).get(
+        "idle_timeout_s", _settings.WORKSTATION_IDLE_TIMEOUT_S)
+    if (isinstance(conns, int) and conns > 0
+            and isinstance(idle_timeout, (int, float)) and idle_timeout > 0
+            and isinstance(idle_s, (int, float)) and idle_s >= idle_timeout):
+        ws.disconnect_pending = True
     # One-shot disconnect: consume the flag set by logout teardown.
     disconnect = ws.disconnect_pending
     if disconnect:
