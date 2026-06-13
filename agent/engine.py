@@ -278,24 +278,33 @@ def scan_desktop_entries(dirs=None) -> list:
 
 
 def write_seat_config(config_dir: Path) -> None:
-    """labwc config for the seat: wallpaper + panel + terminal autostart and
-    a root menu. Regenerated each shell start so newly installed tools
-    (waybar, swaybg) get picked up on restart."""
-    import shutil
+    """Generate the full seat desktop shell. `config_dir` is the labwc config
+    dir ($INSTALL_DIR/labwc); the waybar config is written to its sibling
+    $INSTALL_DIR/waybar. Regenerated each shell start so newly installed tools
+    are picked up on restart. Every launch line is command-v-guarded, so a host
+    missing waybar/nwg-*/swaybg still gets a working (if barer) session."""
     config_dir.mkdir(parents=True, exist_ok=True)
-    lines = []
-    if shutil.which("swaybg"):
-        lines.append("swaybg -c '#1d2433' &")
-    if shutil.which("waybar"):
-        lines.append("waybar &")
+    waybar_dir = config_dir.parent / "waybar"
+    waybar_dir.mkdir(parents=True, exist_ok=True)
+
     term = pick_terminal()
-    if term:
-        lines.append(f"{term} &")
+    launcher = pick_launcher()
+    file_mgr = pick_file_manager()
+    entries = scan_desktop_entries()
+
+    cfg_json, style = build_waybar_config(launcher)
+    (waybar_dir / "config").write_text(cfg_json)
+    (waybar_dir / "style.css").write_text(style)
+
     auto = config_dir / "autostart"
-    auto.write_text("\n".join(lines) + "\n")
+    auto.write_text(build_autostart(launcher,
+                                    str(waybar_dir / "config"),
+                                    str(waybar_dir / "style.css")))
     auto.chmod(0o755)
     (config_dir / "menu.xml").write_text(
-        build_root_menu(scan_desktop_entries(), term, pick_file_manager(), str(HOME)))
+        build_root_menu(entries, term, file_mgr, str(HOME)))
+    (config_dir / "rc.xml").write_text(build_labwc_rc(launcher, term))
+    (config_dir / "environment").write_text(build_labwc_environment())
 
 
 def build_selkies_cmd(cfg: dict, internal_port: int, control_port: int) -> tuple[list[str], dict]:

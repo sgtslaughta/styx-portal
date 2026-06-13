@@ -267,3 +267,37 @@ def test_build_autostart_dock_without_launcher_has_no_l_flag():
                                 waybar_style="/i/waybar/style.css")
     assert "nwg-dock -d -i 36 &" in sh
     assert " -l " not in sh
+
+
+def test_write_seat_config_emits_all_files(tmp_path, monkeypatch):
+    import shutil
+    monkeypatch.setattr(shutil, "which",
+                        lambda n: "/usr/bin/" + n if n in
+                        ("nwg-drawer", "foot", "thunar", "waybar", "nwg-dock",
+                         "swaybg") else None)
+    monkeypatch.setattr(engine, "scan_desktop_entries",
+                        lambda *a: [("Firefox", "firefox")])
+    labwc = tmp_path / "install" / "labwc"
+    engine.write_seat_config(labwc)
+    # labwc dir
+    assert (labwc / "autostart").read_text().startswith("#!/bin/sh")
+    assert (labwc / "autostart").stat().st_mode & 0o111      # executable
+    assert "Firefox" in (labwc / "menu.xml").read_text()
+    assert "nwg-drawer" in (labwc / "rc.xml").read_text()
+    assert "Adwaita-dark" in (labwc / "environment").read_text()
+    # waybar dir is a sibling of labwc, NOT under ~/.config
+    wb = tmp_path / "install" / "waybar"
+    assert "tray" in (wb / "config").read_text()
+    assert "#waybar" in (wb / "style.css").read_text()
+
+
+def test_write_seat_config_degrades_without_optional_tools(tmp_path, monkeypatch):
+    import shutil
+    monkeypatch.setattr(shutil, "which", lambda n: None)     # nothing installed
+    monkeypatch.setattr(engine, "scan_desktop_entries", lambda *a: [])
+    labwc = tmp_path / "install" / "labwc"
+    engine.write_seat_config(labwc)                          # must not raise
+    # launcher empty -> menu on-click is the no-op
+    import json as _json
+    cfg = _json.loads((tmp_path / "install" / "waybar" / "config").read_text())
+    assert cfg["custom/menu"]["on-click"] == "true"
