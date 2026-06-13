@@ -47,6 +47,7 @@ export interface ServiceTemplate {
   privileged?: boolean;
   extra_docker_args?: Record<string, unknown>;
   shared?: boolean;
+  owner_id?: string;
 }
 
 export interface Instance {

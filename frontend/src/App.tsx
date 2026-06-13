@@ -84,7 +84,10 @@ export default function App() {
             <RegistryBrowser onImport={handleImportRegistry} />
           </div>
           <div className={resolvedSubTab === "my-templates" ? "" : "hidden"}>
-            <TemplateGrid onLaunch={handleLaunchTemplate} />
+            <TemplateGrid
+              onLaunch={handleLaunchTemplate}
+              onImportRegistry={() => setTemplateSubTab("registry")}
+            />
           </div>
         </div>
         <div className={activeTab === "system" ? "" : "hidden"}>
