@@ -179,3 +179,20 @@ def test_pick_file_manager_detection_order(monkeypatch):
     assert engine.pick_file_manager() == "nemo"
     monkeypatch.setattr(shutil, "which", lambda n: None)
     assert engine.pick_file_manager() == ""
+
+
+def test_scan_desktop_entries_parses_and_filters(tmp_path):
+    apps = tmp_path / "applications"
+    apps.mkdir()
+    (apps / "firefox.desktop").write_text(
+        "[Desktop Entry]\nName=Firefox\nExec=firefox %u\nType=Application\n")
+    (apps / "hidden.desktop").write_text(
+        "[Desktop Entry]\nName=Secret\nExec=secret\nNoDisplay=true\n")
+    (apps / "noexec.desktop").write_text(
+        "[Desktop Entry]\nName=Broken\nType=Application\n")
+    entries = engine.scan_desktop_entries([str(apps)])
+    assert entries == [("Firefox", "firefox")]   # field code stripped, others filtered
+
+
+def test_scan_desktop_entries_skips_missing_dirs():
+    assert engine.scan_desktop_entries(["/no/such/dir"]) == []

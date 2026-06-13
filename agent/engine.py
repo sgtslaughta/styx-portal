@@ -13,6 +13,9 @@ from pathlib import Path
 HOME = Path.home()
 DRI_DIR = "/dev/dri"
 SEAT_SINK = "styx-seat"    # null sink so seat audio never hits the speakers
+APPLICATIONS_DIRS = ["/usr/share/applications",
+                     "/usr/local/share/applications",
+                     str(HOME / ".local/share/applications")]
 
 
 def _find_xauthority(cfg: dict) -> str | None:
@@ -210,6 +213,40 @@ def pick_file_manager() -> str:
         if shutil.which(name):
             return name
     return ""
+
+
+def scan_desktop_entries(dirs=None) -> list:
+    """(Name, Exec) pairs from .desktop files. Skips NoDisplay/Hidden and
+    entries missing Name or Exec. Strips Exec field codes (%u %F etc.).
+    De-duplicated by name, sorted. First [Desktop Entry] values win."""
+    dirs = dirs if dirs is not None else APPLICATIONS_DIRS
+    seen = {}
+    for d in dirs:
+        p = Path(d)
+        if not p.is_dir():
+            continue
+        for f in sorted(p.glob("*.desktop")):
+            name = exec_ = ""
+            skip = False
+            try:
+                text = f.read_text(errors="ignore")
+            except OSError:
+                continue
+            for line in text.splitlines():
+                if line.startswith("[") and name:
+                    break                       # past first [Desktop Entry]
+                if line.startswith("Name=") and not name:
+                    name = line[5:].strip()
+                elif line.startswith("Exec=") and not exec_:
+                    exec_ = line[5:].strip()
+                elif line.startswith(("NoDisplay=true", "Hidden=true")):
+                    skip = True
+            if skip or not name or not exec_:
+                continue
+            exec_ = " ".join(t for t in exec_.split()
+                             if not (len(t) == 2 and t.startswith("%")))
+            seen.setdefault(name, exec_)
+    return sorted(seen.items())
 
 
 def write_seat_config(config_dir: Path) -> None:
