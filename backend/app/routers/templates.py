@@ -16,6 +16,9 @@ _TEMPLATE_UPDATE_FIELDS = {
     "dind", "volumes", "internal_port", "internal_protocol",
     "category", "tags", "session_config",
     "cap_add", "security_opt", "tls_skip_verify",
+    "shared", "restart_policy", "read_only_rootfs", "tmpfs", "extra_hosts",
+    "ulimits", "extra_ports", "entrypoint", "command", "devices",
+    "privileged", "extra_docker_args",
 }
 
 
