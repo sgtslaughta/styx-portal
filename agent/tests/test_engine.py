@@ -157,3 +157,15 @@ def test_pick_dri_node(tmp_path, monkeypatch):
 def test_pick_free_port():
     p = engine.pick_free_port()
     assert 1024 < p < 65536
+
+
+def test_pick_launcher_prefers_grid_then_fuzzel(monkeypatch):
+    import shutil
+    monkeypatch.setattr(shutil, "which",
+                        lambda n: "/usr/bin/" + n if n == "nwg-drawer" else None)
+    assert engine.pick_launcher() == "nwg-drawer"
+    monkeypatch.setattr(shutil, "which",
+                        lambda n: "/usr/bin/fuzzel" if n == "fuzzel" else None)
+    assert engine.pick_launcher() == "fuzzel"
+    monkeypatch.setattr(shutil, "which", lambda n: None)
+    assert engine.pick_launcher() == ""

@@ -187,6 +187,19 @@ def pick_terminal() -> str:
     return ""
 
 
+LAUNCHERS = ("nwg-drawer", "fuzzel")
+
+
+def pick_launcher() -> str:
+    """Full-screen app grid (nwg-drawer) preferred, then a compact search
+    launcher (fuzzel). Empty string -> caller falls back to labwc root menu."""
+    import shutil
+    for name in LAUNCHERS:
+        if shutil.which(name):
+            return name
+    return ""
+
+
 def write_seat_config(config_dir: Path) -> None:
     """labwc config for the seat: wallpaper + panel + terminal autostart and
     a root menu. Regenerated each shell start so newly installed tools
