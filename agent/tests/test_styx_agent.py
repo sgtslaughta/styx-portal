@@ -83,6 +83,7 @@ def test_drop_clients_restarts_gateway():
     styx_agent.drop_clients(procs)
 
     gw.terminate.assert_called_once()
+    gw.wait.assert_called_once()  # graceful shutdown attempted before respawn
     # cleared so the supervisor loop respawns it (dropping all stream clients)
     assert procs["gateway"] is None
 

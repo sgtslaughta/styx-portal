@@ -74,6 +74,9 @@ async def test_logout_end_session_frees_and_flags(admin_client, session):
     assert ws.disconnect_pending is True
     assert ws.occupied_by is None
     assert ws.active_connections == 0
+    # refresh token revoked too — user is genuinely logged out
+    r2 = await admin_client.post("/api/auth/refresh")
+    assert r2.status_code != 200
 
 
 @pytest.mark.asyncio
