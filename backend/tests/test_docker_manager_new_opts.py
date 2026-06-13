@@ -164,3 +164,23 @@ def test_extra_docker_args_cannot_set_network_mode(mock_docker):
             volumes={},
             port=3001,
             extra_docker_args={"network_mode": "host"})
+
+
+def test_extra_docker_args_cannot_set_sysctls(mock_docker):
+    """Defense-in-depth: extra_docker_args cannot set sysctls."""
+    manager, client = mock_docker
+    mock_container = MagicMock()
+    mock_container.id = "cid"
+    client.images.get.return_value = True
+    client.containers.get.side_effect = docker.errors.NotFound("x")
+    client.containers.create.return_value = mock_container
+
+    with pytest.raises(ValueError):
+        manager.create_container(
+            name="selkies-x",
+            image="img",
+            labels={},
+            environment={},
+            volumes={},
+            port=3001,
+            extra_docker_args={"sysctls": {"net.x": "1"}})

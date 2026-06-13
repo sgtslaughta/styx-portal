@@ -22,14 +22,12 @@ def test_rejects_host_bind_mount():
         validate_extra_args({"binds": ["/etc:/etc"]}, is_admin=True)
 
 
-def test_admin_only_kwarg_blocked_for_non_admin():
+def test_sysctls_rejected_for_everyone():
+    """sysctls is blocked by denylist at launch; rejected for everyone."""
     with pytest.raises(DockerArgError):
         validate_extra_args({"sysctls": {"net.x": "1"}}, is_admin=False)
-
-
-def test_admin_only_kwarg_allowed_for_admin():
-    out = validate_extra_args({"sysctls": {"net.x": "1"}}, is_admin=True)
-    assert out == {"sysctls": {"net.x": "1"}}
+    with pytest.raises(DockerArgError):
+        validate_extra_args({"sysctls": {"net.x": "1"}}, is_admin=True)
 
 
 def test_unknown_kwarg_rejected():

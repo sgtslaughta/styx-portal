@@ -34,7 +34,7 @@ async def test_admin_can_set_risk_fields(admin_client):
     r = await admin_client.post("/api/templates", json={
         "name": "ok", "display_name": "OK", "image": "img",
         "privileged": True, "devices": ["/dev/dri:/dev/dri"],
-        "extra_docker_args": {"sysctls": {"net.x": "1"}}})
+        "extra_docker_args": {"hostname": "box"}})
     assert r.status_code == 201
 
 
