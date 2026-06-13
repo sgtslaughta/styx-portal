@@ -108,12 +108,17 @@ def build_routes_config(instances: list[dict], domain: str,
         strip_mw = f"strip-{subdomain}"
         middlewares[strip_mw] = {"stripPrefix": {"prefixes": [f"/i/{subdomain}"]}}
 
+        # Capture primary router transport config for reuse by extra ports
+        primary_transport = _router_transport(deploy_mode, domain)
+        primary_entrypoints = primary_transport["entryPoints"]
+        primary_tls = primary_transport.get("tls")
+
         config["http"]["routers"][inst_id] = {
             "rule": f"Host(`{domain}`) && PathPrefix(`/i/{subdomain}`)",
             "middlewares": ["instance-unavailable-errors", strip_mw],
             "service": inst_id,
             "priority": 50,
-            **_router_transport(deploy_mode, domain),
+            **primary_transport,
         }
         svc_config: dict = {
             "servers": [{"url": f"{protocol}://{container_name}:{port}"}],
@@ -122,6 +127,52 @@ def build_routes_config(instances: list[dict], domain: str,
             svc_config["serversTransport"] = "selkies-transport"
             has_https = True
         config["http"]["services"][inst_id] = {"loadBalancer": svc_config}
+
+        # Extra-port routers and services
+        for ep in inst.get("extra_ports", []) or []:
+            slug = ep["slug"]
+            cport = ep["container_port"]
+            rid = f"{inst_id}-p-{slug}"
+
+            # Build rule based on deploy mode
+            if deploy_mode == "direct":
+                rule = f"Host(`{subdomain}.{domain}`) && PathPrefix(`/p/{slug}`)"
+            else:
+                # LAN/tunnel: nests under the instance's path
+                rule = f"PathPrefix(`/i/{subdomain}/p/{slug}`)"
+
+            # Prepare middlewares: error handling + strip-prefix if needed
+            ep_middlewares = ["instance-unavailable-errors"]
+
+            if ep.get("strip_prefix", True):
+                if deploy_mode == "direct":
+                    prefix = f"/p/{slug}"
+                else:
+                    prefix = f"/i/{subdomain}/p/{slug}"
+                ep_strip_mw = f"{rid}-strip"
+                middlewares[ep_strip_mw] = {"stripPrefix": {"prefixes": [prefix]}}
+                ep_middlewares.append(ep_strip_mw)
+
+            # Add the extra-port router
+            router_dict = {
+                "rule": rule,
+                "service": rid,
+                "middlewares": ep_middlewares,
+                "priority": 50,
+                "entryPoints": primary_entrypoints,
+            }
+            if primary_tls:
+                router_dict["tls"] = primary_tls
+            config["http"]["routers"][rid] = router_dict
+
+            # Add the extra-port service (same upstream logic as primary)
+            ep_svc_config: dict = {
+                "servers": [{"url": f"{protocol}://{container_name}:{cport}"}],
+            }
+            if protocol == "https" and inst.get("tls_skip_verify"):
+                ep_svc_config["serversTransport"] = "selkies-transport"
+                has_https = True
+            config["http"]["services"][rid] = {"loadBalancer": ep_svc_config}
 
     has_workstations = bool(workstations)
     for ws in workstations or []:
@@ -235,6 +286,7 @@ async def refresh_routes_from_db(session):
             "port": tmpl.internal_port if tmpl else 3001,
             "protocol": tmpl.internal_protocol if tmpl else "https",
             "tls_skip_verify": bool(tmpl.tls_skip_verify) if tmpl else False,
+            "extra_ports": tmpl.extra_ports if tmpl else [],
         })
     ws_result = await session.exec(
         select(Workstation).where(Workstation.status == "online"))
