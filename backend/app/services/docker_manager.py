@@ -3,7 +3,7 @@ from pathlib import Path
 
 import docker
 import docker.errors
-from docker.types import DeviceRequest
+from docker.types import DeviceRequest, Ulimit
 
 from app.config import Settings
 
@@ -59,6 +59,15 @@ class DockerManager:
         cap_add: list[str] | None = None,
         security_opt: list[str] | None = None,
         network: str | None = None,
+        restart_policy: str = "no",
+        read_only_rootfs: bool = False,
+        tmpfs: list[str] | None = None,
+        extra_hosts: dict[str, str] | None = None,
+        ulimits: list[dict] | None = None,
+        devices: list[str] | None = None,
+        entrypoint: list[str] | None = None,
+        command: list[str] | None = None,
+        extra_docker_args: dict | None = None,
     ) -> str:
         if dind:
             privileged = True
@@ -108,6 +117,32 @@ class DockerManager:
             kwargs["shm_size"] = shm_size
         if cpu_limit:
             kwargs["nano_cpus"] = int(float(cpu_limit) * 1e9)
+
+        if restart_policy and restart_policy != "no":
+            kwargs["restart_policy"] = {"Name": restart_policy, "MaximumRetryCount": 0}
+        if read_only_rootfs:
+            kwargs["read_only"] = True
+        if tmpfs:
+            kwargs["tmpfs"] = {path: "" for path in tmpfs}
+        if extra_hosts:
+            kwargs["extra_hosts"] = dict(extra_hosts)
+        if ulimits:
+            kwargs["ulimits"] = [
+                Ulimit(name=u["name"], soft=u.get("soft"), hard=u.get("hard"))
+                for u in ulimits
+            ]
+        if devices:
+            kwargs["devices"] = list(kwargs.get("devices", [])) + list(devices)
+        if entrypoint is not None:
+            kwargs["entrypoint"] = entrypoint
+        if command is not None:
+            kwargs["command"] = command
+        if extra_docker_args:
+            for k, v in extra_docker_args.items():
+                if k == "labels":
+                    kwargs.setdefault("labels", {}).update(v)
+                else:
+                    kwargs[k] = v
 
         try:
             self._client.images.get(image)
