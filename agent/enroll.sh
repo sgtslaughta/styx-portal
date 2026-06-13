@@ -212,7 +212,7 @@ step 7/8 "Installing agent (venv + wheels from portal cache)"
 mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$UNIT_DIR" "$INSTALL_DIR/logs"
 for pair in "agent.py styx_agent.py" "engine.py engine.py" \
             "gateway.py gateway.py" "selkies_launcher.py selkies_launcher.py" \
-            "uninstall uninstall.sh"; do
+            "clipboard_bridge.py clipboard_bridge.py" "uninstall uninstall.sh"; do
   read -r remote local_name <<<"$pair"
   fetch "$SERVER/api/enroll/$remote" -o "$INSTALL_DIR/$local_name" \
     || fail E05 "Could not download $remote from $SERVER/api/enroll/. Server may be mid-restart or missing its ./agent mount (AGENT_DIR) — retry, then check server logs."
