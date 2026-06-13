@@ -301,18 +301,48 @@ def _os_pretty() -> str:
     return ""
 
 
+def wave_polylines(width: int, height: int, amp: int = 90,
+                   wavelength: int = 900, step: int = 16) -> list:
+    """Stacked sine polylines spanning the full width, tiled top-to-bottom, each
+    phase-shifted — a flowing 'river/ripple' wave field that fills the canvas
+    (echoes the login RippleCanvas brand). Returns ImageMagick 'polyline' ops."""
+    import math
+    lines = []
+    spacing = max(int(amp * 1.6), 1)
+    band = 0
+    y = -amp
+    while y < height + amp:
+        phase = band * 0.9
+        pts = []
+        x = 0
+        while x <= width:
+            yy = y + amp * math.sin(x / wavelength * 2 * math.pi + phase)
+            pts.append(f"{x},{yy:.1f}")
+            x += step
+        lines.append("polyline " + " ".join(pts))
+        y += spacing
+        band += 1
+    return lines
+
+
 def wallpaper_convert_cmd(tool: str, out: str, title: str, subtitle: str,
                           color: str = "#1d2433",
-                          size: str = "1920x1080") -> list:
-    """ImageMagick argv to render a dark wallpaper with a bginfo-style label
-    (hostname large, details small) in the bottom-right corner."""
-    return [
-        tool, "-size", size, f"xc:{color}",
-        "-gravity", "SouthEast",
+                          size: str = "1920x1080",
+                          wave_color: str = "#2b303a") -> list:
+    """ImageMagick argv: dark base, a full-canvas subtle wave field (dark grey),
+    then a bginfo-style label (hostname large, details small) bottom-right."""
+    w, h = (int(v) for v in size.lower().split("x"))
+    cmd = [tool, "-size", size, f"xc:{color}",
+           "-stroke", wave_color, "-strokewidth", "5", "-fill", "none"]
+    for poly in wave_polylines(w, h):
+        cmd += ["-draw", poly]
+    cmd += [
+        "-stroke", "none", "-gravity", "SouthEast",
         "-fill", "#9aa4b8", "-pointsize", "24", "-annotate", "+60+55", subtitle,
         "-fill", "#e6e9ef", "-pointsize", "52", "-annotate", "+60+110", title,
         out,
     ]
+    return cmd
 
 
 def build_wallpaper(dest: Path, title: str, subtitle: str) -> bool:

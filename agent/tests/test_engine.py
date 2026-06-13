@@ -302,6 +302,20 @@ def test_wallpaper_convert_cmd_has_text_and_output():
     assert "-annotate" in cmd
 
 
+def test_wave_polylines_fill_canvas():
+    lines = engine.wave_polylines(1920, 1080)
+    assert len(lines) > 3                       # multiple bands tiled vertically
+    assert all(p.startswith("polyline ") for p in lines)
+    assert "1920," in lines[0]                  # spans the full width
+
+
+def test_wallpaper_convert_cmd_draws_wave_field():
+    cmd = engine.wallpaper_convert_cmd("convert", "/o/wp.png", "h", "s")
+    assert "-draw" in cmd                        # wave polylines drawn
+    assert "#2b303a" in cmd                      # subtle dark-grey wave colour
+    assert cmd.index("-stroke") < cmd.index("-draw")   # stroke set before drawing
+
+
 def test_build_wallpaper_falls_back_without_tool(tmp_path, monkeypatch):
     import shutil
     monkeypatch.setattr(shutil, "which", lambda n: None)   # no magick/convert
