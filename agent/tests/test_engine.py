@@ -230,3 +230,20 @@ def test_build_waybar_config_menu_falls_back_when_no_launcher():
     cfg_str, _ = engine.build_waybar_config("")
     import json as _json
     assert _json.loads(cfg_str)["custom/menu"]["on-click"] == "true"
+
+
+def test_build_labwc_rc_binds_super_to_launcher():
+    rc = engine.build_labwc_rc("nwg-drawer", "foot")
+    assert 'key="W-d"' in rc and "nwg-drawer" in rc
+    assert 'key="W-Return"' in rc and "foot" in rc
+
+
+def test_build_labwc_rc_no_launcher_is_noop_command():
+    rc = engine.build_labwc_rc("", "foot")
+    assert 'command="true"' in rc            # Super bound to a harmless no-op
+
+
+def test_build_labwc_environment_forces_dark():
+    env = engine.build_labwc_environment()
+    assert "GTK_THEME=Adwaita-dark" in env
+    assert "XCURSOR_THEME=Adwaita" in env

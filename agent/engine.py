@@ -401,3 +401,33 @@ def build_waybar_config(launcher: str) -> tuple:
         "#taskbar button.active { background: #2b3650; }\n"
     )
     return json.dumps(config, indent=2), style
+
+
+def build_labwc_rc(launcher: str, term: str) -> str:
+    """labwc keybinds: Super+D / Super opens the launcher, Super+Enter a
+    terminal. `launcher` empty -> bound to `true` (no-op)."""
+    launch = launcher or "true"
+    term = term or "true"
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<labwc_config>
+  <theme><cornerRadius>4</cornerRadius></theme>
+  <keyboard>
+    <keybind key="W-d"><action name="Execute" command="{launch}"/></keybind>
+    <keybind key="Super_L"><action name="Execute" command="{launch}"/></keybind>
+    <keybind key="W-Return"><action name="Execute" command="{term}"/></keybind>
+    <keybind key="A-Tab"><action name="NextWindow"/></keybind>
+  </keyboard>
+</labwc_config>
+"""
+
+
+def build_labwc_environment() -> str:
+    """labwc `environment` file — exported for the whole seat session so GTK/Qt
+    apps render dark. Affects theming only, not config paths."""
+    return ("GTK_THEME=Adwaita-dark\n"
+            "XCURSOR_THEME=Adwaita\n"
+            "XCURSOR_SIZE=24\n"
+            "QT_QPA_PLATFORM=wayland;xcb\n"
+            "QT_STYLE_OVERRIDE=Adwaita-Dark\n"
+            "MOZ_ENABLE_WAYLAND=1\n"
+            "XDG_CURRENT_DESKTOP=labwc:wlroots\n")
