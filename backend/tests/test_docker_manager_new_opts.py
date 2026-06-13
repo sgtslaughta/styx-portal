@@ -124,3 +124,43 @@ def test_devices_merged_with_gpu(mock_docker):
     assert "/dev/dri:/dev/dri" in created["devices"]
     assert "/dev/ttyUSB0:/dev/ttyUSB0" in created["devices"]
     assert len(created["devices"]) == 2
+
+
+def test_extra_docker_args_cannot_set_privileged(mock_docker):
+    """Defense-in-depth: extra_docker_args cannot override privileged."""
+    manager, client = mock_docker
+    mock_container = MagicMock()
+    mock_container.id = "cid"
+    client.images.get.return_value = True
+    client.containers.get.side_effect = docker.errors.NotFound("x")
+    client.containers.create.return_value = mock_container
+
+    with pytest.raises(ValueError):
+        manager.create_container(
+            name="selkies-x",
+            image="img",
+            labels={},
+            environment={},
+            volumes={},
+            port=3001,
+            extra_docker_args={"privileged": True})
+
+
+def test_extra_docker_args_cannot_set_network_mode(mock_docker):
+    """Defense-in-depth: extra_docker_args cannot set network_mode."""
+    manager, client = mock_docker
+    mock_container = MagicMock()
+    mock_container.id = "cid"
+    client.images.get.return_value = True
+    client.containers.get.side_effect = docker.errors.NotFound("x")
+    client.containers.create.return_value = mock_container
+
+    with pytest.raises(ValueError):
+        manager.create_container(
+            name="selkies-x",
+            image="img",
+            labels={},
+            environment={},
+            volumes={},
+            port=3001,
+            extra_docker_args={"network_mode": "host"})

@@ -9,6 +9,16 @@ from app.config import Settings
 
 TRAEFIK_CONTAINER = "styx-traefik"
 
+# Defense-in-depth: denylist of security-critical keys that extra_docker_args
+# must never set, even if validation bypasses. These are enforced at the sink.
+_EXTRA_DOCKER_ARGS_DENYLIST = {
+    "privileged", "cap_add", "cap_drop", "security_opt", "devices",
+    "device_requests", "network_mode", "network", "pid_mode",
+    "ipc_mode", "userns_mode", "uts_mode", "binds", "volumes",
+    "mounts", "volumes_from", "cgroup_parent", "sysctls",
+    "restart_policy", "runtime", "device_cgroup_rules",
+}
+
 
 def detect_gpu() -> dict:
     """Detect available GPU on host."""
@@ -138,7 +148,10 @@ class DockerManager:
         if command is not None:
             kwargs["command"] = command
         if extra_docker_args:
+            # Defense-in-depth: deny security-critical keys via extra_docker_args
             for k, v in extra_docker_args.items():
+                if k in _EXTRA_DOCKER_ARGS_DENYLIST:
+                    raise ValueError(f"extra_docker_args may not set '{k}'")
                 if k == "labels":
                     kwargs.setdefault("labels", {}).update(v)
                 else:
