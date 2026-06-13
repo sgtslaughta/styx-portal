@@ -321,3 +321,31 @@ def test_build_update_command_insecure_for_lan():
     from app.services.workstations import build_update_command
     cmd = build_update_command("https://192.168.1.10", insecure=True)
     assert "curl -fsSLk " in cmd
+
+
+@pytest.mark.asyncio
+async def test_update_command_endpoint(admin_client, session, monkeypatch):
+    import app.routers.workstations as wr
+    from app.models import User, Workstation
+    from sqlmodel import select
+    monkeypatch.setattr(wr, "get_latest_agent_version", lambda: "0.4.2")
+    admin = (await session.exec(select(User).where(User.role == "admin"))).first()
+    ws = Workstation(name="u", subdomain="u", hostname="u", status="online",
+                     agent_version="0.4.1", created_by=admin.id)
+    session.add(ws)
+    await session.commit()
+    await session.refresh(ws)
+
+    r = await admin_client.get(f"/api/workstations/{ws.id}/update-command")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["latest_version"] == "0.4.2"
+    assert body["current_version"] == "0.4.1"
+    assert "/api/enroll/agent.py" in body["public_command"]
+    assert "systemctl --user restart styx-agent" in body["public_command"]
+
+
+@pytest.mark.asyncio
+async def test_update_command_unknown_id_404(admin_client):
+    r = await admin_client.get("/api/workstations/does-not-exist/update-command")
+    assert r.status_code == 404

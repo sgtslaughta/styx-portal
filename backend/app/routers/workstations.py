@@ -14,13 +14,13 @@ from app.database import get_session
 from app.models import User, WorkstationEnrollmentToken, Workstation, WorkstationAccess
 from app.schemas import (
     EnrollTokenOut, WorkstationAccessUpdate, WorkstationConnectOut, WorkstationOut,
-    WorkstationUpdate,
+    WorkstationUpdate, WorkstationUpdateCommandOut,
 )
 from app.security.deps import require_admin, get_current_user
 from app.services.audit import audit_request
 from app.services.workstations import (
-    build_enroll_command, get_latest_agent_version, lan_ca_pin, lan_enroll_url,
-    sha256_hex,
+    build_enroll_command, build_update_command, get_latest_agent_version, lan_ca_pin,
+    lan_enroll_url, sha256_hex,
 )
 
 router = APIRouter()
@@ -54,6 +54,23 @@ async def mint_enroll_token(request: Request,
         token=raw, expires_at=expires.isoformat(),
         lan_command=lan_command,
         public_command=build_enroll_command(raw, public_base),
+        lan_url_source=lan_source)
+
+
+@router.get("/{ws_id}/update-command", response_model=WorkstationUpdateCommandOut)
+async def update_command(ws_id: str,
+                         admin: User = Depends(require_admin),
+                         session: AsyncSession = Depends(get_session)):
+    ws = await _get_or_404(session, ws_id)
+    lan_base, lan_source = lan_enroll_url()
+    lan_command = None
+    if lan_base:
+        lan_command = build_update_command(lan_base, insecure=True)
+    return WorkstationUpdateCommandOut(
+        latest_version=get_latest_agent_version(),
+        current_version=ws.agent_version,
+        lan_command=lan_command,
+        public_command=build_update_command(f"https://{_settings.DOMAIN}"),
         lan_url_source=lan_source)
 
 

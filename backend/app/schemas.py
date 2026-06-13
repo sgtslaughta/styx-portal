@@ -330,3 +330,11 @@ class WorkstationAccessUpdate(BaseModel):
 
 class WorkstationConnectOut(BaseModel):
     url: str
+
+
+class WorkstationUpdateCommandOut(BaseModel):
+    latest_version: str
+    current_version: str
+    lan_command: str | None
+    public_command: str
+    lan_url_source: str            # env | detected | none
