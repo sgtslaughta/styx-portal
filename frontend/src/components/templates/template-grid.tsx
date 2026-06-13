@@ -8,7 +8,6 @@ import type { ServiceTemplate } from "@/lib/types";
 
 interface TemplateGridProps {
   onLaunch: (template: ServiceTemplate) => void;
-  onImportRegistry?: () => void;
 }
 
 interface BuilderState {
@@ -16,7 +15,7 @@ interface BuilderState {
   template?: ServiceTemplate | null;
 }
 
-export function TemplateGrid({ onLaunch, onImportRegistry }: TemplateGridProps) {
+export function TemplateGrid({ onLaunch }: TemplateGridProps) {
   const { data: templates, isLoading } = useTemplates();
   const [builder, setBuilder] = useState<BuilderState | null>(null);
 
@@ -35,11 +34,6 @@ export function TemplateGrid({ onLaunch, onImportRegistry }: TemplateGridProps) 
           <Plus className="mr-1.5 h-3.5 w-3.5" />
           New Template
         </Button>
-        {onImportRegistry && (
-          <Button onClick={onImportRegistry} variant="secondary" size="sm">
-            From Registry
-          </Button>
-        )}
       </div>
 
       {!templates?.length ? (
