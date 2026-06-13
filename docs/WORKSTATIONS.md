@@ -8,7 +8,7 @@ Styx Portal can stream physical Linux workstations to browsers alongside contain
 
 **Desktop modes (auto-detected at enrollment):**
 - **Mirror mode:** Your existing X11 desktop is live-streamed. The remote user and you share control of the same session — input from the browser moves your local cursor. Requires a running X11 graphical session (`:0`, `:1`, etc.).
-- **Second-seat mode:** A private GPU-accelerated desktop runs on the machine (via pixelflux's Smithay compositor + labwc window manager) alongside your login session. The physical screen is untouched. Your desktop, apps, and files are available to the remote user; no interference with local work. Used when the host is Wayland, headless, or when mirror mode is explicitly disabled.
+- **Second-seat mode:** A private GPU-accelerated desktop runs on the machine (via pixelflux's Smithay compositor + a nested labwc window manager) alongside your login session. The physical screen is untouched. Your desktop, apps, and files are available to the remote user; no interference with local work. Used when the host is Wayland, headless, or when mirror mode is explicitly disabled. The seat presents a GNOME-like shell — top panel with system tray, full-screen app grid, bottom dock, dark theme, and a hostname/IP/OS wallpaper. How it's built and **why each choice was made** is documented in [Agent & Workstation Desktop Build](AGENT_BUILD.md).
 
 **Architecture:**
 - Enrollment script (`enroll.sh`) performs 8-step preflight (server reachability verified **before** any sudo package install), downloads agent daemon and prebuilt wheels from the portal, and registers the workstation with a one-time hardware/OS report (distro, kernel, CPU model/cores, RAM, disk, GPU model) shown in the admin Workstations panel.

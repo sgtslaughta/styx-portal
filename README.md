@@ -50,6 +50,8 @@ In brief: `cp .env.example .env`, set `DOMAIN` and `CF_TUNNEL_TOKEN`, then `dock
 - [Production Deployment](docs/PRODUCTION.md) — TLS, backups, hardening, monitoring
 - [GPU Setup](docs/GPU.md) — drivers, runtime, troubleshooting
 - [Admin Guide](docs/ADMIN.md) — users, SSO, templates, audit, quotas
+- [Workstation Streaming](docs/WORKSTATIONS.md) — enroll physical machines, capture modes, troubleshooting
+- [Agent & Workstation Desktop Build](docs/AGENT_BUILD.md) — agent/artifact build, seat desktop architecture, decision rationale
 
 ## Deployment Modes
 
