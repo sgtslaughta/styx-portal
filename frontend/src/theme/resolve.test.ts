@@ -1,30 +1,33 @@
-import { test } from "node:test";
-import assert from "node:assert/strict";
+import { describe, it, expect } from "vitest";
 import { isPublicPath, resolveDark } from "./resolve.ts";
 
-test("isPublicPath matches public routes and their children", () => {
-  assert.equal(isPublicPath("/login"), true);
-  assert.equal(isPublicPath("/setup"), true);
-  assert.equal(isPublicPath("/accept-invite/abc123"), true);
-  assert.equal(isPublicPath("/"), false);
-  assert.equal(isPublicPath("/instances"), false);
-  // must not match a path that merely starts with the same letters
-  assert.equal(isPublicPath("/loginsomething"), false);
+describe("isPublicPath", () => {
+  it("matches public routes and their children", () => {
+    expect(isPublicPath("/login")).toBe(true);
+    expect(isPublicPath("/setup")).toBe(true);
+    expect(isPublicPath("/accept-invite/abc123")).toBe(true);
+    expect(isPublicPath("/")).toBe(false);
+    expect(isPublicPath("/instances")).toBe(false);
+    // must not match a path that merely starts with the same letters
+    expect(isPublicPath("/loginsomething")).toBe(false);
+  });
 });
 
-test("THE BUG: public page with stored 'dark' follows a LIGHT OS, not the stored pref", () => {
-  assert.equal(resolveDark("/login", "dark", false), false);
-});
+describe("resolveDark", () => {
+  it("THE BUG: public page with stored 'dark' follows a LIGHT OS, not the stored pref", () => {
+    expect(resolveDark("/login", "dark", false)).toBe(false);
+  });
 
-test("public page follows the OS in both directions, ignoring stored pref", () => {
-  assert.equal(resolveDark("/login", "dark", true), true); // OS dark -> dark
-  assert.equal(resolveDark("/login", "light", true), true); // stored light ignored, OS dark
-  assert.equal(resolveDark("/setup", "light", false), false);
-});
+  it("public page follows the OS in both directions, ignoring stored pref", () => {
+    expect(resolveDark("/login", "dark", true)).toBe(true); // OS dark -> dark
+    expect(resolveDark("/login", "light", true)).toBe(true); // stored light ignored, OS dark
+    expect(resolveDark("/setup", "light", false)).toBe(false);
+  });
 
-test("authenticated pages honour the stored preference", () => {
-  assert.equal(resolveDark("/", "dark", false), true); // stored dark wins on light OS
-  assert.equal(resolveDark("/instances", "light", true), false); // stored light wins on dark OS
-  assert.equal(resolveDark("/", "system", true), true); // system -> follows OS
-  assert.equal(resolveDark("/", null, false), false); // no pref -> system -> light OS
+  it("authenticated pages honour the stored preference", () => {
+    expect(resolveDark("/", "dark", false)).toBe(true); // stored dark wins on light OS
+    expect(resolveDark("/instances", "light", true)).toBe(false); // stored light wins on dark OS
+    expect(resolveDark("/", "system", true)).toBe(true); // system -> follows OS
+    expect(resolveDark("/", null, false)).toBe(false); // no pref -> system -> light OS
+  });
 });
