@@ -38,6 +38,9 @@ def create_app(web_dir: str, user: str, password: str,
     # Live stream-websocket count, mirrored to a state file the supervisor
     # reads each heartbeat — the portal uses it for occupancy ("in use by").
     conns = {"n": 0}
+    # Track last client->server input timestamp (seconds since epoch).
+    # Reset on each connection; throttle disk writes.
+    last_input = {"ts": time.time(), "flushed": 0.0}
 
     def _write_state():
         if not state_file:
@@ -46,10 +49,19 @@ def create_app(web_dir: str, user: str, password: str,
             tmp = state_file + ".tmp"
             with open(tmp, "w") as f:
                 json.dump({"active_connections": conns["n"],
+                           "last_input_ts": last_input["ts"],
                            "ts": time.time()}, f)
             os.replace(tmp, state_file)
         except OSError:
             pass  # occupancy is advisory; never break the stream over it
+
+    def mark_input():
+        """Mark client input activity; throttle state-file writes."""
+        now = time.time()
+        last_input["ts"] = now
+        if now - last_input["flushed"] >= 5:   # throttle disk writes
+            last_input["flushed"] = now
+            _write_state()
 
     @web.middleware
     async def auth_mw(request, handler):
@@ -67,22 +79,28 @@ def create_app(web_dir: str, user: str, password: str,
             except aiohttp.ClientError:
                 return web.Response(status=502, text="stream backend unavailable")
             conns["n"] += 1
+            last_input["ts"] = time.time()  # fresh session: reset idle counter
             _write_state()
             try:
                 ws_server = web.WebSocketResponse(max_msg_size=0)
                 await ws_server.prepare(request)
 
-                async def pump(src, dst):
+                async def pump(src, dst, on_activity=None):
                     async for msg in src:
                         if msg.type == aiohttp.WSMsgType.TEXT:
+                            if on_activity:
+                                on_activity()
                             await dst.send_str(msg.data)
                         elif msg.type == aiohttp.WSMsgType.BINARY:
+                            if on_activity:
+                                on_activity()
                             await dst.send_bytes(msg.data)
                         else:
                             break
                     await dst.close()
 
-                await asyncio.gather(pump(ws_server, ws_client),
+                # Only track activity on client->upstream (input); not video (output)
+                await asyncio.gather(pump(ws_server, ws_client, on_activity=mark_input),
                                      pump(ws_client, ws_server),
                                      return_exceptions=True)
             finally:

@@ -102,6 +102,22 @@ def active_connections(cfg: dict, gateway_alive: bool) -> int:
         return 0
 
 
+def idle_seconds(cfg: dict, gateway_alive: bool) -> float | None:
+    """Seconds since the last client->server input frame (per the gateway
+    state file). None when the gateway is down or the state is unreadable.
+    Backend only acts on this when active_connections > 0."""
+    if not gateway_alive:
+        return None
+    try:
+        data = json.loads(gw_state_path(cfg).read_text())
+        ts = data.get("last_input_ts")
+        if not isinstance(ts, (int, float)):
+            return None
+        return max(0.0, time.time() - ts)
+    except (OSError, ValueError):
+        return None
+
+
 def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool) -> dict:
     return {
         "mode": cfg.get("mode", "mirror"),
@@ -111,6 +127,7 @@ def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool) -> dict:
         "selkies_alive": selkies_alive,
         "gateway_alive": gateway_alive,
         "active_connections": active_connections(cfg, gateway_alive),
+        "idle_seconds": idle_seconds(cfg, gateway_alive),
     }
 
 
@@ -158,8 +175,9 @@ def run(cfg: dict) -> int:
             print("wayland-0 owned by another session; seat will use a "
                   "higher slot", flush=True)
     procs: dict[str, subprocess.Popen | None] = {
-        "selkies": None, "gateway": None, "shell": None}
+        "selkies": None, "gateway": None, "shell": None, "clipboard": None}
     seat_socket: str | None = None
+    app_socket: str | None = None
     interval, backoff, stopping = 30, 2, False
     last_error: str | None = None
     internal_port = engine.pick_free_port()
@@ -189,9 +207,39 @@ def run(cfg: dict) -> int:
         return subprocess.Popen(["labwc", "-C", str(INSTALL_DIR / "labwc")],
                                 env=shell_env, stdout=seat_log, stderr=seat_log)
 
+    def start_clipboard_bridge():
+        """Start the bidirectional clipboard bridge between pixelflux and labwc.
+
+        Only runs in seat mode when both sockets are known and different.
+        The bridge needs to restart if either socket changes (e.g. selkies restart).
+        """
+        nonlocal app_socket
+        if not seat_socket or not app_socket or seat_socket == app_socket:
+            return None
+        # Sockets are genuinely different; start the bridge
+        clipboard_log = open(LOG_DIR / "clipboard.log", "ab", buffering=0)
+        cmd = [
+            str(INSTALL_DIR / "venv/bin/python"),
+            str(INSTALL_DIR / "clipboard_bridge.py"),
+            seat_socket,
+            app_socket,
+            runtime_dir,
+        ]
+        return subprocess.Popen(cmd, stdout=clipboard_log, stderr=clipboard_log)
+
     def start_selkies():
-        nonlocal last_error, seat_socket
+        nonlocal last_error, seat_socket, app_socket
         seat_socket = None
+        app_socket = None
+        # Kill the clipboard bridge since sockets are about to change
+        p = procs.get("clipboard")
+        if p is not None and p.poll() is None:
+            p.terminate()
+            try:
+                p.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                p.kill()
+        procs["clipboard"] = None
         try:
             cmd, env = engine.build_selkies_cmd(cfg, internal_port, control_port)
         except Exception as e:
@@ -232,8 +280,21 @@ def run(cfg: dict) -> int:
                     except subprocess.TimeoutExpired:
                         proc.kill()
                     return None
+                # Detect app socket BEFORE starting shell (snapshot sockets)
+                before = {p.name for p in Path(runtime_dir).glob("wayland-*")
+                          if not p.name.endswith(".lock")}
+                app_socket_ts = time.time() - 1
                 procs["shell"] = start_shell()
-                if procs["shell"] is None and not shutil.which("labwc"):
+                if procs["shell"] is not None:
+                    # labwc creates a new socket for its clients; wait for it
+                    app_sock = engine.wait_for_wayland_socket(
+                        runtime_dir, before, app_socket_ts, timeout=10)
+                    if app_sock:
+                        app_socket = app_sock
+                        print(f"app socket is {app_socket}; starting clipboard bridge",
+                              flush=True)
+                        procs["clipboard"] = start_clipboard_bridge()
+                elif not shutil.which("labwc"):
                     last_error = ("labwc not installed — seat has no window "
                                   "manager. Install: sudo apt install labwc")
             else:
@@ -258,7 +319,30 @@ def run(cfg: dict) -> int:
                 and procs["selkies"] is not None
                 and procs["selkies"].poll() is None
                 and (procs["shell"] is None or procs["shell"].poll() is not None)):
+            # When shell restarts, detect its new socket and start clipboard bridge
+            before = {p.name for p in Path(runtime_dir).glob("wayland-*")
+                      if not p.name.endswith(".lock")}
+            app_socket_ts = time.time() - 1
             procs["shell"] = start_shell()
+            if procs["shell"] is not None:
+                app_sock = engine.wait_for_wayland_socket(
+                    runtime_dir, before, app_socket_ts, timeout=10)
+                if app_sock:
+                    app_socket = app_sock
+                    # Kill the old clipboard bridge before starting a new one
+                    old = procs.get("clipboard")
+                    if old is not None and old.poll() is None:
+                        old.terminate()
+                        try:
+                            old.wait(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            old.kill()
+                    procs["clipboard"] = start_clipboard_bridge()
+        if (seat_mode and app_socket and procs["selkies"] is not None
+                and procs["selkies"].poll() is None
+                and (procs["clipboard"] is None or procs["clipboard"].poll() is not None)):
+            # Clipboard bridge respawn (if socket didn't change)
+            procs["clipboard"] = start_clipboard_bridge()
         selkies_ok = procs["selkies"] is not None and procs["selkies"].poll() is None
         gateway_ok = procs["gateway"] is not None and procs["gateway"].poll() is None
         if selkies_ok and gateway_ok:
@@ -286,7 +370,7 @@ def run(cfg: dict) -> int:
             if hb["stream_settings"] != cfg["stream_settings"]:
                 cfg["stream_settings"] = hb["stream_settings"]
                 CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
-                for key in ("selkies", "shell"):
+                for key in ("selkies", "shell", "clipboard"):
                     p = procs[key]
                     if p is not None and p.poll() is None:
                         p.terminate()
