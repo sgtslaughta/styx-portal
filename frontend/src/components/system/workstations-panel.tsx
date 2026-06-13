@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { WorkstationSpecs } from "@/components/system/workstation-specs";
 
 const STATUS_STYLES: Record<string, string> = {
   online: "bg-emerald-500/15 text-emerald-400",
@@ -168,9 +169,6 @@ export function WorkstationsPanel() {
               on a physical Linux machine on the same network.
             </p>
           ) : rows.map((ws) => {
-            const os = ws.os_info as Record<string, string | number | undefined>;
-            const gpu = ws.gpu_info as Record<string, string | undefined>;
-            const ramGb = os.memory_mb ? Math.round(Number(os.memory_mb) / 1024) : null;
             return (
             <div key={ws.id} className="rounded-lg border border-border bg-surface p-4 space-y-3">
               <div className="flex items-center justify-between">
@@ -204,38 +202,7 @@ export function WorkstationsPanel() {
                   </Button>
                 </div>
               </div>
-              <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs text-muted-foreground sm:grid-cols-4">
-                <div><dt className="inline">IP: </dt><dd className="inline">{ws.lan_ip}:{ws.port}</dd></div>
-                <div><dt className="inline">Display: </dt>
-                  <dd className="inline">{ws.display_server}{os.mode ? ` (${os.mode})` : ""}</dd></div>
-                <div><dt className="inline">GPU: </dt>
-                  <dd className="inline">{gpu.model || gpu.vendor || "none"}</dd></div>
-                <div><dt className="inline">Last seen: </dt>
-                  <dd className="inline">{ws.last_heartbeat ? new Date(ws.last_heartbeat).toLocaleTimeString() : "never"}</dd></div>
-                <div><dt className="inline">Agent: </dt>
-                  <dd className="inline">{ws.agent_version || "—"}
-                    {ws.agent_outdated && (
-                      <span className="ml-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-400">
-                        outdated
-                      </span>
-                    )}
-                  </dd></div>
-                {os.pretty_name && (
-                  <div><dt className="inline">OS: </dt>
-                    <dd className="inline">{os.pretty_name} ({os.kernel})</dd></div>
-                )}
-                {os.cpu_model && (
-                  <div><dt className="inline">CPU: </dt>
-                    <dd className="inline">{os.cpu_model}{os.cpu_cores ? ` · ${os.cpu_cores}c` : ""}</dd></div>
-                )}
-                {ramGb !== null && (
-                  <div><dt className="inline">RAM: </dt><dd className="inline">{ramGb} GB</dd></div>
-                )}
-                {os.disk_total_gb && (
-                  <div><dt className="inline">Disk: </dt>
-                    <dd className="inline">{os.disk_free_gb} / {os.disk_total_gb} GB free</dd></div>
-                )}
-              </dl>
+              <WorkstationSpecs ws={ws} />
               {ws.last_error && <p className="text-xs text-rose-400">Agent error: {ws.last_error}</p>}
               <div className="flex flex-wrap items-center gap-3 text-sm">
                 <label className="flex items-center gap-1.5">

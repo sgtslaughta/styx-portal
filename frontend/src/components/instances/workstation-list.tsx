@@ -3,6 +3,7 @@ import { ChevronDown, Search } from "lucide-react";
 import { api, ApiError, type Workstation } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { WorkstationSpecs } from "@/components/system/workstation-specs";
 import { cn } from "@/lib/utils";
 
 /* ---------- OS badge: brand-colored glyph keyed off os_info.distro ------- */
@@ -191,7 +192,6 @@ export function WorkstationList() {
         {visible.map((ws) => {
           const led = ledFor(ws);
           const os = ws.os_info as Record<string, string | number | undefined>;
-          const gpu = ws.gpu_info as Record<string, string | undefined>;
           const isOpen = expanded === ws.id;
           return (
             <li key={ws.id} className="px-3 py-2">
@@ -223,39 +223,7 @@ export function WorkstationList() {
                   {ws.in_use_self ? "Reconnect" : "Connect"}
                 </Button>
               </div>
-              {isOpen && (
-                <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 pl-8 text-xs text-muted-foreground sm:grid-cols-3">
-                  {os.cpu_model != null && (
-                    <div><dt className="inline">CPU: </dt>
-                      <dd className="inline">{os.cpu_model}{os.cpu_cores ? ` · ${os.cpu_cores}c` : ""}</dd></div>
-                  )}
-                  {os.memory_mb != null && (
-                    <div><dt className="inline">RAM: </dt>
-                      <dd className="inline">{Math.round(Number(os.memory_mb) / 1024)} GB</dd></div>
-                  )}
-                  {os.disk_total_gb != null && (
-                    <div><dt className="inline">Disk: </dt>
-                      <dd className="inline">{os.disk_free_gb} / {os.disk_total_gb} GB free</dd></div>
-                  )}
-                  {(gpu.model || gpu.vendor) && (
-                    <div><dt className="inline">GPU: </dt>
-                      <dd className="inline">{gpu.model || gpu.vendor}</dd></div>
-                  )}
-                  {os.kernel != null && (
-                    <div><dt className="inline">Kernel: </dt><dd className="inline">{os.kernel}</dd></div>
-                  )}
-                  <div><dt className="inline">Session: </dt>
-                    <dd className="inline">{ws.display_server}{os.mode ? ` (${os.mode})` : ""}</dd></div>
-                  <div><dt className="inline">Address: </dt>
-                    <dd className="inline">{ws.lan_ip}:{ws.port}</dd></div>
-                  <div><dt className="inline">Agent: </dt>
-                    <dd className="inline">v{ws.agent_version}</dd></div>
-                  {ws.in_use && (
-                    <div><dt className="inline">In use by: </dt>
-                      <dd className="inline">{ws.in_use_self ? "you" : ws.in_use_by}</dd></div>
-                  )}
-                </dl>
-              )}
+              {isOpen && <WorkstationSpecs ws={ws} className="mt-2 pl-8" />}
             </li>
           );
         })}
