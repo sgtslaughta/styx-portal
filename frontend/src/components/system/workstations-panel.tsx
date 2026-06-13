@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Copy, Monitor, RefreshCw, Trash2 } from "lucide-react";
-import { api, type EnrollToken, type Workstation } from "@/api/client";
+import { api, type EnrollToken, type Workstation, type WorkstationUpdateCommand } from "@/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -20,6 +21,8 @@ export function WorkstationsPanel() {
   const [copied, setCopied] = useState<"lan" | "public" | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<Workstation | null>(null);
   const [purgeTarget, setPurgeTarget] = useState<Workstation | null>(null);
+  const [updateCmd, setUpdateCmd] = useState<WorkstationUpdateCommand | null>(null);
+  const [updCopied, setUpdCopied] = useState<"lan" | "public" | null>(null);
 
   const refresh = useCallback(() => {
     api.listWorkstations().then(setRows).catch((e) => setError(String(e)));
@@ -41,6 +44,14 @@ export function WorkstationsPanel() {
     await navigator.clipboard.writeText(text);
     setCopied(which);
     setTimeout(() => setCopied(null), 1500);
+  };
+  const openUpdate = async (ws: Workstation) => {
+    setUpdateCmd(await api.workstationUpdateCommand(ws.id));
+  };
+  const copyUpd = async (text: string, which: "lan" | "public") => {
+    await navigator.clipboard.writeText(text);
+    setUpdCopied(which);
+    setTimeout(() => setUpdCopied(null), 1500);
   };
   const toggleAllUsers = (ws: Workstation) =>
     api.updateWorkstation(ws.id, { all_users: !ws.all_users }).then(refresh);
@@ -170,6 +181,11 @@ export function WorkstationsPanel() {
                   </span>
                 </div>
                 <div className="flex gap-2">
+                  {ws.agent_outdated && (
+                    <Button onClick={() => openUpdate(ws)} variant="secondary" size="sm">
+                      Update
+                    </Button>
+                  )}
                   <Button
                     onClick={() => setRevokeTarget(ws)}
                     variant="secondary"
@@ -196,6 +212,14 @@ export function WorkstationsPanel() {
                   <dd className="inline">{gpu.model || gpu.vendor || "none"}</dd></div>
                 <div><dt className="inline">Last seen: </dt>
                   <dd className="inline">{ws.last_heartbeat ? new Date(ws.last_heartbeat).toLocaleTimeString() : "never"}</dd></div>
+                <div><dt className="inline">Agent: </dt>
+                  <dd className="inline">{ws.agent_version || "—"}
+                    {ws.agent_outdated && (
+                      <span className="ml-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-400">
+                        outdated
+                      </span>
+                    )}
+                  </dd></div>
                 {os.pretty_name && (
                   <div><dt className="inline">OS: </dt>
                     <dd className="inline">{os.pretty_name} ({os.kernel})</dd></div>
@@ -260,6 +284,45 @@ export function WorkstationsPanel() {
         confirmLabel="Purge"
         onConfirm={handlePurge}
       />
+
+      {/* Update agent dialog */}
+      <Dialog open={updateCmd !== null} onOpenChange={(o) => { if (!o) setUpdateCmd(null); }}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Update agent</DialogTitle>
+          </DialogHeader>
+          {updateCmd && (
+            <div className="space-y-3 text-sm">
+              <p className="text-muted-foreground">
+                Run on the workstation to update {updateCmd.current_version || "—"} →{" "}
+                {updateCmd.latest_version}. Restarts the agent; the desktop stays up.
+              </p>
+              {updateCmd.lan_command && (
+                <div>
+                  <p className="mb-1 text-xs text-muted-foreground">LAN</p>
+                  <code className="block overflow-x-auto rounded bg-muted p-2 text-xs">
+                    {updateCmd.lan_command}
+                  </code>
+                  <Button size="sm" variant="secondary" className="mt-1"
+                          onClick={() => copyUpd(updateCmd.lan_command!, "lan")}>
+                    <Copy className="h-4 w-4" /> {updCopied === "lan" ? "Copied" : "Copy"}
+                  </Button>
+                </div>
+              )}
+              <div>
+                <p className="mb-1 text-xs text-muted-foreground">Public</p>
+                <code className="block overflow-x-auto rounded bg-muted p-2 text-xs">
+                  {updateCmd.public_command}
+                </code>
+                <Button size="sm" variant="secondary" className="mt-1"
+                        onClick={() => copyUpd(updateCmd.public_command, "public")}>
+                  <Copy className="h-4 w-4" /> {updCopied === "public" ? "Copied" : "Copy"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
