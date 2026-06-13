@@ -270,3 +270,16 @@ async def test_auth_check_unknown_workstation_forbidden(admin_client, session):
     r = await admin_client.get("/api/workstations/auth-check",
                                headers={"X-Forwarded-Uri": "/w/unknown/"})
     assert r.status_code == 403
+
+
+def test_get_latest_agent_version_parses_served_file(tmp_path):
+    from app.services.workstations import get_latest_agent_version, _version_cache
+    _version_cache.clear()
+    (tmp_path / "styx_agent.py").write_text('X = 1\nAGENT_VERSION = "0.9.3"\nY = 2\n')
+    assert get_latest_agent_version(str(tmp_path)) == "0.9.3"
+
+
+def test_get_latest_agent_version_missing_file_returns_empty(tmp_path):
+    from app.services.workstations import get_latest_agent_version, _version_cache
+    _version_cache.clear()
+    assert get_latest_agent_version(str(tmp_path / "nope")) == ""

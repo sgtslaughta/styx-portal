@@ -53,9 +53,9 @@ services:
     # physical workstations can enroll and stream. The backend auto-generates
     # a self-signed cert for the LAN address (served on :443) and pins it in
     # the enrollment command — no manual TLS setup needed.
-    # ports:
-    #   - "80:80"
-    #   - "443:443"
+    ports:
+      - "80:80"
+      - "443:443"
     volumes:
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - traefik-dynamic:/etc/traefik/dynamic:ro
