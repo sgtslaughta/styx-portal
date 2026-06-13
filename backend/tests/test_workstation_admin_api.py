@@ -341,7 +341,8 @@ async def test_update_command_endpoint(admin_client, session, monkeypatch):
     body = r.json()
     assert body["latest_version"] == "0.4.2"
     assert body["current_version"] == "0.4.1"
-    assert "/api/enroll/agent.py" in body["public_command"]
+    assert "agent.py:styx_agent.py" in body["public_command"]
+    assert "/api/enroll/${f%%:*}" in body["public_command"]
     assert "systemctl --user restart styx-agent" in body["public_command"]
 
 
