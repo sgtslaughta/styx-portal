@@ -102,6 +102,22 @@ def active_connections(cfg: dict, gateway_alive: bool) -> int:
         return 0
 
 
+def idle_seconds(cfg: dict, gateway_alive: bool) -> float | None:
+    """Seconds since the last client->server input frame (per the gateway
+    state file). None when the gateway is down or the state is unreadable.
+    Backend only acts on this when active_connections > 0."""
+    if not gateway_alive:
+        return None
+    try:
+        data = json.loads(gw_state_path(cfg).read_text())
+        ts = data.get("last_input_ts")
+        if not isinstance(ts, (int, float)):
+            return None
+        return max(0.0, time.time() - ts)
+    except (OSError, ValueError):
+        return None
+
+
 def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool) -> dict:
     return {
         "mode": cfg.get("mode", "mirror"),
@@ -111,6 +127,7 @@ def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool) -> dict:
         "selkies_alive": selkies_alive,
         "gateway_alive": gateway_alive,
         "active_connections": active_connections(cfg, gateway_alive),
+        "idle_seconds": idle_seconds(cfg, gateway_alive),
     }
 
 
