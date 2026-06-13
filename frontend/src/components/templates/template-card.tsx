@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Trash2, Play, Copy } from "lucide-react";
+import { Trash2, Play, Copy, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
@@ -12,9 +12,10 @@ interface TemplateCardProps {
   template: ServiceTemplate;
   onLaunch: (template: ServiceTemplate) => void;
   onClone?: () => void;
+  onEdit?: () => void;
 }
 
-export function TemplateCard({ template, onLaunch, onClone }: TemplateCardProps) {
+export function TemplateCard({ template, onLaunch, onClone, onEdit }: TemplateCardProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const deleteTemplate = useDeleteTemplate();
   const { user } = useAuth();
@@ -61,6 +62,11 @@ export function TemplateCard({ template, onLaunch, onClone }: TemplateCardProps)
         </Button>
         {canEdit && (
           <>
+            {onEdit && (
+              <Button size="sm" variant="ghost" onClick={onEdit} title="Edit template">
+                <Pencil className="h-3 w-3" />
+              </Button>
+            )}
             {onClone && (
               <Button size="sm" variant="ghost" onClick={onClone} title="Clone template">
                 <Copy className="h-3 w-3" />

@@ -45,6 +45,7 @@ export function TemplateGrid({ onLaunch, onImportRegistry }: TemplateGridProps) 
               key={t.id}
               template={t}
               onLaunch={onLaunch}
+              onEdit={() => navigate(`/templates/${t.id}/edit`)}
               onClone={() => navigate(`/templates/new?clone=${t.id}`)}
             />
           ))}
