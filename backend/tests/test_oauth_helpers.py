@@ -32,6 +32,36 @@ def test_select_github_email_none_when_unverified():
     assert oauth.select_github_email(emails) is None
 
 
+def test_select_github_email_handles_error_object():
+    # GitHub returns an error OBJECT (dict) — not a list — when the token lacks
+    # the user:email scope. Iterating it used to yield string keys and crash
+    # with "'str' object has no attribute 'get'". Must degrade to None instead.
+    err = {"message": "Requires authentication",
+           "documentation_url": "https://docs.github.com/..."}
+    assert oauth.select_github_email(err) is None
+
+
+def test_scopes_for_github_overrides_oidc_default():
+    from app.models import OAuthProvider
+    from app.security.crypto import encrypt_secret
+    # A github provider seeded with the OIDC-style default scopes. GitHub does
+    # not understand "openid email profile" and grants no email access, so we
+    # must substitute GitHub's own scopes.
+    p = OAuthProvider(name="github", display_label="GH", kind="oauth2",
+                      client_id="cid", client_secret_enc=encrypt_secret("s"),
+                      scopes="openid email profile")
+    assert oauth.scopes_for(p) == "read:user user:email"
+
+
+def test_scopes_for_non_github_uses_stored():
+    from app.models import OAuthProvider
+    from app.security.crypto import encrypt_secret
+    p = OAuthProvider(name="authentik", display_label="A", kind="oidc",
+                      client_id="cid", client_secret_enc=encrypt_secret("s"),
+                      issuer_url="https://idp.test", scopes="openid email profile")
+    assert oauth.scopes_for(p) == "openid email profile"
+
+
 def test_pack_unpack_tx_roundtrip():
     tok = oauth.pack_tx(provider="google", state="st", verifier="vf", mode="login", uid=None)
     data = oauth.unpack_tx(tok)
