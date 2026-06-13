@@ -30,6 +30,18 @@ class TemplateCreate(BaseModel):
     category: str | None = None
     tags: list[str] = []
     session_config: dict[str, Any] | None = None
+    shared: bool = False
+    restart_policy: str = "no"
+    read_only_rootfs: bool = False
+    tmpfs: list[str] = []
+    extra_hosts: dict[str, str] = {}
+    ulimits: list[dict] = []
+    extra_ports: list[dict] = []
+    entrypoint: list[str] | None = None
+    command: list[str] | None = None
+    devices: list[str] = []
+    privileged: bool = False
+    extra_docker_args: dict = {}
 
 
 class TemplateUpdate(BaseModel):
@@ -53,6 +65,18 @@ class TemplateUpdate(BaseModel):
     category: str | None = None
     tags: list[str] | None = None
     session_config: dict[str, Any] | None = None
+    shared: bool | None = None
+    restart_policy: str | None = None
+    read_only_rootfs: bool | None = None
+    tmpfs: list[str] | None = None
+    extra_hosts: dict[str, str] | None = None
+    ulimits: list[dict] | None = None
+    extra_ports: list[dict] | None = None
+    entrypoint: list[str] | None = None
+    command: list[str] | None = None
+    devices: list[str] | None = None
+    privileged: bool | None = None
+    extra_docker_args: dict | None = None
 
 
 class InstanceCreate(BaseModel):

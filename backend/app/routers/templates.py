@@ -6,8 +6,30 @@ from app.database import get_session
 from app.models import ServiceTemplate, User
 from app.schemas import TemplateCreate, TemplateUpdate
 from app.security.deps import get_current_user, require_owner_or_admin
+from app.services.docker_args import validate_extra_args, DockerArgError
 
 router = APIRouter()
+
+# Risk fields that non-admins must NOT be able to set.
+_RISK_FIELDS = (
+    "devices", "entrypoint", "command", "privileged",
+    "extra_docker_args", "dind", "cap_add", "security_opt"
+)
+
+
+def _enforce_risk_gate(body, user) -> None:
+    """Raise 403 if non-admin tries to set a risk field."""
+    if user.role == "admin":
+        return
+    # Special handling for cap_add/security_opt to maintain backward compatibility
+    if (body.cap_add or body.security_opt) and user.role != "admin":
+        raise HTTPException(403, "cap_add/security_opt overrides require admin")
+    # General risk field gate for other fields
+    for f in _RISK_FIELDS:
+        if f in ("cap_add", "security_opt"):
+            continue  # Already handled above
+        if getattr(body, f, None):  # truthy: non-empty list/dict/str or True
+            raise HTTPException(403, f"'{f}' requires admin")
 
 # Field allowlist for template updates. Only these fields can be modified via PUT.
 _TEMPLATE_UPDATE_FIELDS = {
@@ -16,6 +38,9 @@ _TEMPLATE_UPDATE_FIELDS = {
     "dind", "volumes", "internal_port", "internal_protocol",
     "category", "tags", "session_config",
     "cap_add", "security_opt", "tls_skip_verify",
+    "shared", "restart_policy", "read_only_rootfs", "tmpfs", "extra_hosts",
+    "ulimits", "extra_ports", "entrypoint", "command", "devices",
+    "privileged", "extra_docker_args",
 }
 
 
@@ -27,7 +52,7 @@ async def list_templates(
     stmt = select(ServiceTemplate)
     if user.role != "admin":
         stmt = stmt.where(
-            (ServiceTemplate.owner_id == user.id) | (ServiceTemplate.owner_id == None)  # noqa: E711
+            (ServiceTemplate.owner_id == user.id) | (ServiceTemplate.owner_id == None) | (ServiceTemplate.shared == True)  # noqa: E711, E712
         )
     result = await session.exec(stmt)
     return result.all()
@@ -42,11 +67,14 @@ async def create_template(
     if not body.image or not body.image.strip():
         raise HTTPException(422, "Docker image is required")
 
-    if body.dind and user.role != "admin":
-        raise HTTPException(403, "DinD templates require admin")
+    # Enforce risk field gate
+    _enforce_risk_gate(body, user)
 
-    if (body.cap_add or body.security_opt) and user.role != "admin":
-        raise HTTPException(403, "cap_add/security_opt overrides require admin")
+    # Validate extra_docker_args
+    try:
+        validate_extra_args(body.extra_docker_args or {}, is_admin=(user.role == "admin"))
+    except DockerArgError as e:
+        raise HTTPException(400, str(e))
 
     result = await session.exec(
         select(ServiceTemplate).where(ServiceTemplate.name == body.name)
@@ -94,11 +122,15 @@ async def update_template(
     else:
         require_owner_or_admin(template.owner_id, user)
 
-    if body.dind and user.role != "admin":
-        raise HTTPException(403, "DinD templates require admin")
+    # Enforce risk field gate on patch — only for fields present in the patch
+    _enforce_risk_gate(body, user)
 
-    if (body.cap_add or body.security_opt) and user.role != "admin":
-        raise HTTPException(403, "cap_add/security_opt overrides require admin")
+    # Validate extra_docker_args if present in patch
+    if body.extra_docker_args is not None:
+        try:
+            validate_extra_args(body.extra_docker_args, is_admin=(user.role == "admin"))
+        except DockerArgError as e:
+            raise HTTPException(400, str(e))
 
     # Apply only allowlisted fields
     for field, value in body.model_dump(exclude_unset=True).items():
