@@ -148,7 +148,11 @@ install_pkgs() {
 }
 # Per-manager package names (VAAPI pkg names differ across distros).
 # Seat desktop: WM + Xwayland (X11 apps incl. Chrome) + panel + wallpaper + terminal.
-declare -A SEAT_PKG=( [apt]="labwc xwayland waybar swaybg foot wl-clipboard" [dnf]="labwc xorg-x11-server-Xwayland waybar swaybg foot wl-clipboard" [pacman]="labwc xorg-xwayland waybar swaybg foot wl-clipboard" [zypper]="labwc xwayland waybar swaybg foot wl-clipboard" )
+declare -A SEAT_PKG=( \
+  [apt]="labwc xwayland waybar swaybg foot wl-clipboard nwg-drawer nwg-dock fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme" \
+  [dnf]="labwc xorg-x11-server-Xwayland waybar swaybg foot wl-clipboard nwg-drawer nwg-dock fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme" \
+  [pacman]="labwc xorg-xwayland waybar swaybg foot wl-clipboard nwg-drawer nwg-dock fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme" \
+  [zypper]="labwc xwayland waybar swaybg foot wl-clipboard nwg-drawer nwg-dock fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme" )
 declare -A VAAPI_PKG=( [apt]="mesa-va-drivers" [dnf]="mesa-va-drivers" [pacman]="libva-mesa-driver" [zypper]="libva" )
 MGR=""
 for m in apt dnf pacman zypper; do
@@ -164,7 +168,8 @@ else
     note "dependencies installed via $MGR"
   else
     note "WARNING (E03): dependency install failed. For seat mode install"
-    note "  labwc + wl-clipboard manually, then restart styx-agent."
+    note "  labwc waybar swaybg foot wl-clipboard (+ optional nwg-drawer nwg-dock"
+    note "  fuzzel thunar xdg-desktop-portal-gtk) manually, then restart styx-agent."
   fi
 fi
 
