@@ -18,7 +18,7 @@ describe("useLaunchConfig new fields", () => {
     );
     const data = result.current.buildTemplateData();
     expect(data.restart_policy).toBe("unless-stopped");
-    expect(data.extra_ports[0].slug).toBe("code");
+    expect(data.extra_ports[0]!.slug).toBe("code");
     expect(data.read_only_rootfs).toBe(false);
     expect(data.shared).toBe(false);
   });
@@ -41,7 +41,7 @@ describe("useLaunchConfig new fields", () => {
     };
     const { result } = renderHook(() => useLaunchConfig({ template: tmpl }));
     expect(result.current.restartPolicy).toBe("always");
-    expect(result.current.extraPorts[0].slug).toBe("api");
+    expect(result.current.extraPorts[0]!.slug).toBe("api");
     expect(result.current.privileged).toBe(true);
   });
 });

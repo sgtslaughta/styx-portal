@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
-import { Plus, Copy } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useTemplates } from "@/hooks/use-templates";
 import { TemplateCard } from "./template-card";
 import type { ServiceTemplate } from "@/lib/types";

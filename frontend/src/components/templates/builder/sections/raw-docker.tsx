@@ -1,5 +1,4 @@
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { LockedField } from "../controls/locked-field";
 import { RepeatableRows } from "../controls/repeatable-rows";
 import type { LaunchConfig } from "@/hooks/use-launch-config";
@@ -7,11 +6,6 @@ import type { LaunchConfig } from "@/hooks/use-launch-config";
 interface Props {
   cfg: LaunchConfig;
   isAdmin: boolean;
-}
-
-interface KvEntry {
-  k: string;
-  v: string;
 }
 
 export function RawDockerSection({ cfg, isAdmin }: Props) {

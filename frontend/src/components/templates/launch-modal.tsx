@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { useCreateTemplate, useUpdateTemplate } from "@/hooks/use-templates";
 import { useCreateInstance } from "@/hooks/use-instances";
-import { useGpuInfo } from "@/hooks/use-gpu";
 import { useLaunchConfig } from "@/hooks/use-launch-config";
 import { useAuth } from "@/hooks/use-auth";
 import { EasyLaunch } from "./easy-launch";
@@ -26,7 +25,6 @@ export function LaunchModal({ open, onClose, registryImage, template }: LaunchMo
   const createTemplate = useCreateTemplate();
   const updateTemplate = useUpdateTemplate();
   const createInstance = useCreateInstance();
-  const { data: gpuInfo } = useGpuInfo();
   const { user } = useAuth();
   const cfg = useLaunchConfig({ registryImage, template });
 

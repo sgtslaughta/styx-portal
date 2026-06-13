@@ -7,6 +7,8 @@ import type {
   ExtraPortEntry,
 } from "@/lib/types";
 
+export type { ExtraPortEntry };
+
 export interface VolumeEntry {
   name: string;
   mount: string;

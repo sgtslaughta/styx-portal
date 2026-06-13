@@ -8,7 +8,7 @@ interface Props {
   min: number;
   max: number;
   step?: number;
-  value: number;
+  value: number | undefined;
   unit?: string;
   tooltip?: string;
   onChange: (v: number) => void;
@@ -26,11 +26,13 @@ export function SliderInput({
   onChange,
   disabled,
 }: Props) {
+  const displayValue = value ?? min;
+
   return (
     <div className="space-y-2">
       <Label className="text-xs uppercase tracking-wide text-muted-foreground">
         {label}
-        {unit ? ` · ${value} ${unit}` : ""}
+        {unit ? ` · ${displayValue} ${unit}` : ""}
         {tooltip && <FieldTooltip text={tooltip} />}
       </Label>
       <div className="flex items-center gap-3">
@@ -38,9 +40,9 @@ export function SliderInput({
           min={min}
           max={max}
           step={step}
-          value={[value]}
+          value={[displayValue]}
           disabled={disabled}
-          onValueChange={(v) => onChange(v[0])}
+          onValueChange={(v) => onChange(v[0]!)}
           className="flex-1"
         />
         <Input
@@ -48,7 +50,7 @@ export function SliderInput({
           min={min}
           max={max}
           step={step}
-          value={value}
+          value={displayValue}
           disabled={disabled}
           className="w-20"
           onChange={(e) => onChange(Number(e.target.value))}

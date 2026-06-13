@@ -10,11 +10,6 @@ interface Props {
   isAdmin: boolean;
 }
 
-interface HostEntry {
-  host: string;
-  ip: string;
-}
-
 export function PortsNetworkSection({ cfg }: Props) {
   return (
     <div className="space-y-6 p-4">
