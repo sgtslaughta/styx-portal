@@ -89,6 +89,74 @@ async def test_start_stopped_instance(admin_client, template_id):
     assert resp.json()["status"] == "running"
 
 
+@pytest.fixture
+def shared_docker():
+    """A single MagicMock docker manager reused across requests so we can
+    assert calls made by routers (the default fixture returns a fresh mock
+    per request)."""
+    from unittest.mock import MagicMock
+    from app.routers.instances import get_docker_manager
+
+    manager = MagicMock()
+    manager.create_volume.side_effect = lambda name: name
+    manager.create_container.return_value = "container-abc123"
+    manager.get_container_status.return_value = {"status": "running"}
+    manager.ensure_user_network.return_value = "styx-u-test"
+
+    app.dependency_overrides[get_docker_manager] = lambda: manager
+    yield manager
+    # client fixture's teardown clears overrides
+
+
+async def _make_owned_instance(session, *, status, container_id="container-abc123"):
+    """Insert an Instance owned by the admin user directly (no create endpoint,
+    so no racing background launch task)."""
+    from sqlmodel import select
+    from app.models import User
+
+    admin = (await session.exec(select(User).where(User.username == "admin"))).first()
+    inst = Instance(
+        template_id="tmpl-x",
+        owner_id=admin.id,
+        name="own",
+        subdomain="own",
+        container_id=container_id,
+        status=status,
+    )
+    session.add(inst)
+    await session.commit()
+    await session.refresh(inst)
+    return inst
+
+
+@pytest.mark.asyncio
+async def test_start_existing_container_reattaches_user_network(
+    admin_client, session, shared_docker
+):
+    """Regression: starting an existing (already-built) owned container must
+    reattach Traefik to the per-user network. Without this, a Traefik restart
+    leaves it off the per-user net and every instance 502s."""
+    inst = await _make_owned_instance(session, status="stopped")
+
+    resp = await admin_client.post(f"/api/instances/{inst.id}/start")
+    assert resp.status_code == 200
+    shared_docker.start_container.assert_called_once()
+    assert shared_docker.ensure_user_network.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_restart_reattaches_user_network(
+    admin_client, session, shared_docker
+):
+    """Regression: restart must also reattach Traefik to the per-user net."""
+    inst = await _make_owned_instance(session, status="running")
+
+    resp = await admin_client.post(f"/api/instances/{inst.id}/restart")
+    assert resp.status_code == 200
+    shared_docker.restart_container.assert_called_once()
+    assert shared_docker.ensure_user_network.call_count == 1
+
+
 @pytest.mark.asyncio
 async def test_delete_instance(admin_client, template_id):
     create_resp = await admin_client.post(

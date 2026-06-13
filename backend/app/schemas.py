@@ -312,6 +312,9 @@ class WorkstationHeartbeatResponse(BaseModel):
     state: str                            # ok | revoked
     stream_settings: dict[str, Any]
     heartbeat_interval_s: int
+    # One-shot: when True the agent restarts its gateway, dropping live stream
+    # clients (set by logout-with-active-session teardown).
+    disconnect_clients: bool = False
 
 
 class WorkstationUpdate(BaseModel):

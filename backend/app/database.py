@@ -61,6 +61,7 @@ async def _run_migrations(conn):
         ("workstations", "active_connections", "INTEGER"),
         ("workstations", "occupied_by", "TEXT"),
         ("workstations", "occupied_at", "TIMESTAMP"),
+        ("workstations", "disconnect_pending", "BOOLEAN"),
     ]
     for table, column, col_type in migrations:
         try:
@@ -83,6 +84,7 @@ async def _run_migrations(conn):
         ("service_templates", "tls_skip_verify", "0"),
         ("refresh_tokens", "family_id", "jti"),  # legacy rows: own family
         ("workstations", "active_connections", "0"),
+        ("workstations", "disconnect_pending", "0"),
     ]
     for table, column, default in backfills:
         try:

@@ -209,6 +209,9 @@ class Workstation(SQLModel, table=True):
     active_connections: int = 0
     occupied_by: str | None = Field(default=None, foreign_key="users.id")
     occupied_at: datetime | None = None
+    # One-shot flag: set when a user logs out with an active session; the next
+    # agent heartbeat returns disconnect_clients=True and consumes the flag.
+    disconnect_pending: bool = False
     created_by: str = Field(foreign_key="users.id")
     created_at: datetime = Field(default_factory=_now)
 

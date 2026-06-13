@@ -72,3 +72,28 @@ def test_active_connections_from_gateway_state(tmp_path):
     # gateway cmd exposes the state path to the child
     _, env = styx_agent.build_gateway_cmd(cfg, 18444)
     assert env["STYX_GW_STATE"] == str(state)
+
+
+def test_drop_clients_restarts_gateway():
+    from unittest.mock import MagicMock
+    gw = MagicMock()
+    gw.poll.return_value = None  # alive
+    procs = {"selkies": MagicMock(), "gateway": gw, "shell": None}
+
+    styx_agent.drop_clients(procs)
+
+    gw.terminate.assert_called_once()
+    # cleared so the supervisor loop respawns it (dropping all stream clients)
+    assert procs["gateway"] is None
+
+
+def test_drop_clients_noop_when_gateway_dead():
+    from unittest.mock import MagicMock
+    gw = MagicMock()
+    gw.poll.return_value = 0  # already exited
+    procs = {"gateway": gw}
+
+    styx_agent.drop_clients(procs)
+
+    gw.terminate.assert_not_called()
+    assert procs["gateway"] is None
