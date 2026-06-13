@@ -1,8 +1,9 @@
-import { useNavigate } from "react-router";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { useTemplates } from "@/hooks/use-templates";
 import { TemplateCard } from "./template-card";
+import { TemplateBuilderModal } from "./template-builder-modal";
 import type { ServiceTemplate } from "@/lib/types";
 
 interface TemplateGridProps {
@@ -10,9 +11,14 @@ interface TemplateGridProps {
   onImportRegistry?: () => void;
 }
 
+interface BuilderState {
+  mode: "new" | "edit" | "clone";
+  template?: ServiceTemplate | null;
+}
+
 export function TemplateGrid({ onLaunch, onImportRegistry }: TemplateGridProps) {
-  const navigate = useNavigate();
   const { data: templates, isLoading } = useTemplates();
+  const [builder, setBuilder] = useState<BuilderState | null>(null);
 
   if (isLoading) {
     return (
@@ -25,7 +31,7 @@ export function TemplateGrid({ onLaunch, onImportRegistry }: TemplateGridProps) 
   return (
     <div className="space-y-4">
       <div className="flex gap-2">
-        <Button onClick={() => navigate("/templates/new")} size="sm">
+        <Button onClick={() => setBuilder({ mode: "new" })} size="sm">
           <Plus className="mr-1.5 h-3.5 w-3.5" />
           New Template
         </Button>
@@ -45,11 +51,20 @@ export function TemplateGrid({ onLaunch, onImportRegistry }: TemplateGridProps) 
               key={t.id}
               template={t}
               onLaunch={onLaunch}
-              onEdit={() => navigate(`/templates/${t.id}/edit`)}
-              onClone={() => navigate(`/templates/new?clone=${t.id}`)}
+              onEdit={() => setBuilder({ mode: "edit", template: t })}
+              onClone={() => setBuilder({ mode: "clone", template: t })}
             />
           ))}
         </div>
+      )}
+
+      {builder && (
+        <TemplateBuilderModal
+          open
+          mode={builder.mode}
+          template={builder.template}
+          onClose={() => setBuilder(null)}
+        />
       )}
     </div>
   );
