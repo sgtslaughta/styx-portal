@@ -395,7 +395,7 @@ def build_waybar_config(launcher: str) -> tuple:
         "layer": "top", "position": "top", "height": 32,
         "modules-left": ["custom/menu"],
         "modules-center": ["clock"],
-        "modules-right": ["tray", "pulseaudio", "network", "custom/power"],
+        "modules-right": ["tray", "pulseaudio", "network"],
         "custom/menu": {"format": "  Apps", "on-click": menu_cmd, "tooltip": False},
         "clock": {"format": "{:%a %d %b  %H:%M}"},
         "tray": {"spacing": 8, "icon-size": 18},
@@ -405,14 +405,12 @@ def build_waybar_config(launcher: str) -> tuple:
                        "on-click": "pavucontrol"},
         "network": {"format-wifi": "{essid}", "format-ethernet": "wired",
                     "format-disconnected": "offline"},
-        "custom/power": {"format": "Exit", "on-click": "labwc --exit",
-                         "tooltip": False},
     }
     style = (
         '* { font-family: "Noto Sans", sans-serif; font-size: 13px; }\n'
         "window#waybar { background: #1d2433; color: #e6e9ef; }\n"
         "#custom-menu { padding: 0 14px; background: #2b3650; color: #ffffff; }\n"
-        "#clock, #pulseaudio, #network, #tray, #custom-power { padding: 0 10px; }\n"
+        "#clock, #pulseaudio, #network, #tray { padding: 0 10px; }\n"
     )
     return json.dumps(config, indent=2), style
 
@@ -514,7 +512,17 @@ def build_autostart(waybar_config: str, waybar_style: str,
         "  gsettings set org.gnome.desktop.interface icon-theme 'Adwaita' 2>/dev/null",
         "  gsettings set org.gnome.desktop.interface cursor-theme 'Adwaita' 2>/dev/null",
         "fi",
-        "command -v xdg-desktop-portal >/dev/null && xdg-desktop-portal &",
+        "# xdg portals (frontend + gtk backend) live in libexec, not on PATH;",
+        "# they provide org.freedesktop.portal.Settings so GTK4/browsers go dark.",
+        "for d in /usr/libexec /usr/lib/x86_64-linux-gnu/xdg-desktop-portal"
+        " /usr/lib/xdg-desktop-portal /usr/lib; do",
+        '  if [ -x "$d/xdg-desktop-portal" ]; then "$d/xdg-desktop-portal" & break; fi',
+        "done",
+        "for d in /usr/libexec /usr/lib/x86_64-linux-gnu/xdg-desktop-portal"
+        " /usr/lib/xdg-desktop-portal /usr/lib; do",
+        '  if [ -x "$d/xdg-desktop-portal-gtk" ]; then "$d/xdg-desktop-portal-gtk" &'
+        " break; fi",
+        "done",
         f'command -v waybar >/dev/null && waybar -c "{waybar_config}" '
         f'-s "{waybar_style}" &',
         f'command -v waybar >/dev/null && waybar -c "{dock_config}" '

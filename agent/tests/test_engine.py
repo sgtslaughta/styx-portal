@@ -230,6 +230,8 @@ def test_build_waybar_config_has_tray_and_menu(monkeypatch):
     assert cfg["position"] == "top"
     assert cfg["modules-left"] == ["custom/menu"]
     assert "wlr/taskbar" not in cfg["modules-left"]        # tasks live on the dock
+    assert "custom/power" not in cfg["modules-right"]      # no Exit (kills UI unrecoverably)
+    assert "labwc --exit" not in cfg_str
     assert "#waybar" in style and "background" in style    # dark css
 
 
@@ -266,7 +268,8 @@ def test_build_autostart_emits_guarded_lines():
     assert 'waybar -c "/i/waybar/config" -s "/i/waybar/style.css" &' in sh
     assert 'waybar -c "/i/waybar/dock-config" -s "/i/waybar/dock-style.css" &' in sh
     assert "nwg-dock" not in sh              # sway-only; never launched on labwc
-    assert "xdg-desktop-portal" in sh
+    assert "xdg-desktop-portal-gtk" in sh   # Settings backend → dark in browsers
+    assert "$d/xdg-desktop-portal" in sh    # frontend launched from libexec
 
 
 def test_build_waybar_dock_has_taskbar_and_pins():
