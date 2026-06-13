@@ -138,21 +138,33 @@ step 5/8 "Installing desktop + GPU dependencies (E03)"
 # needs labwc (Wayland WM) + wl-clipboard; both modes benefit from VAAPI (AMD/Intel HW
 # encode). This is the one place we touch the system with sudo.
 install_pkgs() {
+  # Install one package at a time so a single name that this distro lacks
+  # (e.g. an unavailable package) can't abort the whole set. Returns nonzero
+  # if any package failed, but every installable one still gets installed.
   local mgr="$1"; shift
-  case "$mgr" in
-    apt)    sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends "$@" ;;
-    dnf)    sudo dnf install -y "$@" ;;
-    pacman) sudo pacman -Sy --needed --noconfirm "$@" ;;
-    zypper) sudo zypper --non-interactive install "$@" ;;
-  esac
+  local pkg rc=0
+  [[ "$mgr" == apt ]] && { sudo apt-get update -qq || true; }
+  for pkg in "$@"; do
+    case "$mgr" in
+      apt)    sudo apt-get install -y --no-install-recommends "$pkg" || rc=1 ;;
+      dnf)    sudo dnf install -y "$pkg" || rc=1 ;;
+      pacman) sudo pacman -Sy --needed --noconfirm "$pkg" || rc=1 ;;
+      zypper) sudo zypper --non-interactive install "$pkg" || rc=1 ;;
+    esac
+  done
+  return $rc
 }
 # Per-manager package names (VAAPI pkg names differ across distros).
 # Seat desktop: WM + Xwayland (X11 apps incl. Chrome) + panel + wallpaper + terminal.
+# nwg-drawer (app grid) is NOT an apt/distro package here — it arrives as the
+# server-built nwg-shell artifact (below). We install its runtime lib
+# (gtk-layer-shell) + fuzzel as the launcher fallback. The dock is a bottom
+# waybar (not nwg-dock, which is sway-only).
 declare -A SEAT_PKG=( \
-  [apt]="labwc xwayland waybar swaybg foot wl-clipboard nwg-drawer nwg-dock fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme" \
-  [dnf]="labwc xorg-x11-server-Xwayland waybar swaybg foot wl-clipboard nwg-drawer nwg-dock fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme" \
-  [pacman]="labwc xorg-xwayland waybar swaybg foot wl-clipboard nwg-drawer nwg-dock fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme" \
-  [zypper]="labwc xwayland waybar swaybg foot wl-clipboard nwg-drawer nwg-dock fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme" )
+  [apt]="labwc xwayland waybar swaybg foot wl-clipboard fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme libgtk-layer-shell0 imagemagick" \
+  [dnf]="labwc xorg-x11-server-Xwayland waybar swaybg foot wl-clipboard fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme gtk-layer-shell ImageMagick" \
+  [pacman]="labwc xorg-xwayland waybar swaybg foot wl-clipboard fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme gtk-layer-shell imagemagick" \
+  [zypper]="labwc xwayland waybar swaybg foot wl-clipboard fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme gtk-layer-shell ImageMagick" )
 declare -A VAAPI_PKG=( [apt]="mesa-va-drivers" [dnf]="mesa-va-drivers" [pacman]="libva-mesa-driver" [zypper]="libva" )
 MGR=""
 for m in apt dnf pacman zypper; do
@@ -167,9 +179,9 @@ else
   if install_pkgs "$MGR" $WANT; then
     note "dependencies installed via $MGR"
   else
-    note "WARNING (E03): dependency install failed. For seat mode install"
-    note "  labwc waybar swaybg foot wl-clipboard (+ optional nwg-drawer nwg-dock"
-    note "  fuzzel thunar xdg-desktop-portal-gtk) manually, then restart styx-agent."
+    note "WARNING (E03): one or more deps failed (others still installed)."
+    note "  For seat mode ensure: labwc waybar swaybg foot wl-clipboard fuzzel"
+    note "  thunar xdg-desktop-portal-gtk libgtk-layer-shell0; then restart styx-agent."
   fi
 fi
 
@@ -227,6 +239,24 @@ python3 -m venv "$INSTALL_DIR/venv" \
   --find-links "$INSTALL_DIR/wheelhouse" \
   selkies pixelflux==1.6.4 pcmflux setuptools aiohttp pulsectl \
   || fail E03 "Wheel install failed — likely an unsupported python version ($(python3 -V)). The wheelhouse covers python 3.10–3.13."
+
+# Seat-only, OPTIONAL: nwg-drawer (app grid) + nwg-dock binaries, server-built
+# because some distros (e.g. Ubuntu 24.04) don't package them. A missing
+# artifact is not fatal — the launcher falls back to fuzzel and the dock is
+# simply skipped. Extracts to $INSTALL_DIR/bin (already on the agent's PATH).
+if [[ "$MODE" == "seat" ]]; then
+  if fetch "$SERVER/api/enroll/artifacts/nwg-shell-x86_64.tar.gz" \
+        -o "$INSTALL_DIR/nwg-shell-x86_64.tar.gz"; then
+    if tar -xzf "$INSTALL_DIR/nwg-shell-x86_64.tar.gz" -C "$INSTALL_DIR"; then
+      note "nwg-drawer + nwg-dock installed to $INSTALL_DIR/bin"
+    else
+      note "WARNING: nwg-shell extract failed — app grid/dock unavailable."
+    fi
+  else
+    note "WARNING: nwg-shell artifact not on server — app grid/dock unavailable."
+    note "  Build it: scripts/build_agent_artifacts.sh. Launcher uses fuzzel meanwhile."
+  fi
+fi
 rm -rf "$INSTALL_DIR/wheelhouse" "$INSTALL_DIR"/*.tar.gz
 
 step 8/8 "Registering with portal"

@@ -40,6 +40,19 @@ async def test_prebuilt_artifact_served_when_placed(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_nwg_shell_is_prebuilt_and_served(tmp_path, monkeypatch):
+    monkeypatch.setattr(artifacts._settings, "ARTIFACT_CACHE_DIR", str(tmp_path))
+    # Registered as prebuilt (None upstream): missing -> ArtifactMissing.
+    assert artifacts.ARTIFACTS["nwg-shell-x86_64.tar.gz"] is None
+    with pytest.raises(artifacts.ArtifactMissing):
+        await artifacts.ensure_artifact("nwg-shell-x86_64.tar.gz")
+    # Once placed by the build script, it is served as-is.
+    (tmp_path / "nwg-shell-x86_64.tar.gz").write_bytes(b"nwg")
+    path = await artifacts.ensure_artifact("nwg-shell-x86_64.tar.gz")
+    assert path.read_bytes() == b"nwg"
+
+
+@pytest.mark.asyncio
 async def test_unknown_artifact_rejected(tmp_path, monkeypatch):
     monkeypatch.setattr(artifacts._settings, "ARTIFACT_CACHE_DIR", str(tmp_path))
     with pytest.raises(artifacts.ArtifactMissing):

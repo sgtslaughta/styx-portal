@@ -23,6 +23,9 @@ ARTIFACTS: dict[str, str | None] = {
     "wheelhouse-x86_64.tar.gz": None,
     "selkies-web.tar.gz": None,
     "libshim-x86_64.tar.gz": None,
+    # nwg-drawer (app grid) + nwg-dock binaries — built on the server because
+    # they are absent from some distro repos (e.g. Ubuntu 24.04).
+    "nwg-shell-x86_64.tar.gz": None,
 }
 
 

@@ -228,7 +228,10 @@ def test_build_waybar_config_has_tray_and_menu(monkeypatch):
     assert "tray" in cfg["modules-right"]                 # Toolbox docks here
     assert cfg["custom/menu"]["on-click"] == "nwg-drawer"
     assert cfg["position"] == "top"
-    assert "wlr/taskbar" in cfg["modules-left"]
+    assert cfg["modules-left"] == ["custom/menu"]
+    assert "wlr/taskbar" not in cfg["modules-left"]        # tasks live on the dock
+    assert "custom/power" not in cfg["modules-right"]      # no Exit (kills UI unrecoverably)
+    assert "labwc --exit" not in cfg_str
     assert "#waybar" in style and "background" in style    # dark css
 
 
@@ -257,32 +260,84 @@ def test_build_labwc_environment_forces_dark():
 
 def test_build_autostart_emits_guarded_lines():
     sh = engine.build_autostart(
-        launcher="nwg-drawer",
-        waybar_config="/i/waybar/config", waybar_style="/i/waybar/style.css")
+        waybar_config="/i/waybar/config", waybar_style="/i/waybar/style.css",
+        dock_config="/i/waybar/dock-config", dock_style="/i/waybar/dock-style.css")
     assert sh.startswith("#!/bin/sh")
     assert 'command -v swaybg >/dev/null && swaybg -c "#1d2433" &' in sh
     assert "color-scheme 'prefer-dark'" in sh
     assert 'waybar -c "/i/waybar/config" -s "/i/waybar/style.css" &' in sh
-    assert 'nwg-dock -d -i 36 -l "nwg-drawer" &' in sh
-    assert "xdg-desktop-portal" in sh
+    assert 'waybar -c "/i/waybar/dock-config" -s "/i/waybar/dock-style.css" &' in sh
+    assert "nwg-dock" not in sh              # sway-only; never launched on labwc
+    assert "xdg-desktop-portal-gtk" in sh   # Settings backend → dark in browsers
+    assert "$d/xdg-desktop-portal" in sh    # frontend launched from libexec
 
 
-def test_build_autostart_dock_without_launcher_has_no_l_flag():
-    sh = engine.build_autostart(launcher="",
-                                waybar_config="/i/waybar/config",
-                                waybar_style="/i/waybar/style.css")
-    assert "nwg-dock -d -i 36 &" in sh
-    assert " -l " not in sh
+def test_build_waybar_dock_has_taskbar_and_pins():
+    import json as _json
+    cfg_str, style = engine.build_waybar_dock("nwg-drawer", "foot", "thunar",
+                                              "firefox")
+    cfg = _json.loads(cfg_str)
+    assert cfg["position"] == "bottom"
+    assert "wlr/taskbar" in cfg["modules-center"]
+    assert "custom/apps" in cfg["modules-center"]      # pinned launcher button
+    assert cfg["custom/apps"]["on-click"] == "nwg-drawer"
+    assert cfg["custom/web"]["on-click"] == "firefox"
+    assert "#taskbar" in style
+
+
+def test_build_waybar_dock_skips_absent_pins():
+    import json as _json
+    cfg_str, _ = engine.build_waybar_dock("", "", "", "")
+    cfg = _json.loads(cfg_str)
+    assert cfg["modules-center"] == ["wlr/taskbar"]    # no pins when nothing found
+
+
+def test_wallpaper_convert_cmd_has_text_and_output():
+    cmd = engine.wallpaper_convert_cmd("convert", "/o/wp.png", "myhost",
+                                       "10.0.0.5\nUbuntu")
+    assert cmd[0] == "convert"
+    assert cmd[-1] == "/o/wp.png"
+    assert "myhost" in cmd and "10.0.0.5\nUbuntu" in cmd
+    assert "xc:#1d2433" in cmd               # dark background fill
+    assert "-annotate" in cmd
+
+
+def test_wave_polylines_fill_canvas():
+    lines = engine.wave_polylines(1920, 1080)
+    assert len(lines) > 3                       # multiple bands tiled vertically
+    assert all(p.startswith("polyline ") for p in lines)
+    assert "1920," in lines[0]                  # spans the full width
+
+
+def test_wallpaper_convert_cmd_draws_wave_field():
+    cmd = engine.wallpaper_convert_cmd("convert", "/o/wp.png", "h", "s")
+    assert "-draw" in cmd                        # wave polylines drawn
+    assert "#2b303a" in cmd                      # subtle dark-grey wave colour
+    assert cmd.index("-stroke") < cmd.index("-draw")   # stroke set before drawing
+
+
+def test_build_wallpaper_falls_back_without_tool(tmp_path, monkeypatch):
+    import shutil
+    monkeypatch.setattr(shutil, "which", lambda n: None)   # no magick/convert
+    assert engine.build_wallpaper(tmp_path / "wp.png", "h", "s") is False
+
+
+def test_build_autostart_uses_wallpaper_image_when_set():
+    sh = engine.build_autostart("/w/c", "/w/s", "/w/dc", "/w/ds",
+                                wallpaper="/i/wallpaper.png")
+    assert 'swaybg -i "/i/wallpaper.png" -m fill &' in sh
+    assert "-c \"#1d2433\"" not in sh         # image replaces the flat colour
 
 
 def test_write_seat_config_emits_all_files(tmp_path, monkeypatch):
     import shutil
     monkeypatch.setattr(shutil, "which",
                         lambda n: "/usr/bin/" + n if n in
-                        ("nwg-drawer", "foot", "thunar", "waybar", "nwg-dock",
+                        ("nwg-drawer", "foot", "thunar", "firefox", "waybar",
                          "swaybg") else None)
     monkeypatch.setattr(engine, "scan_desktop_entries",
                         lambda *a: [("Firefox", "firefox")])
+    monkeypatch.setattr(engine, "build_wallpaper", lambda *a: False)  # no convert in CI
     labwc = tmp_path / "install" / "labwc"
     engine.write_seat_config(labwc)
     # labwc dir
@@ -295,6 +350,9 @@ def test_write_seat_config_emits_all_files(tmp_path, monkeypatch):
     wb = tmp_path / "install" / "waybar"
     assert "tray" in (wb / "config").read_text()
     assert "#waybar" in (wb / "style.css").read_text()
+    # bottom dock (second waybar) config + style
+    assert "wlr/taskbar" in (wb / "dock-config").read_text()
+    assert "#taskbar" in (wb / "dock-style.css").read_text()
 
 
 def test_write_seat_config_degrades_without_optional_tools(tmp_path, monkeypatch):

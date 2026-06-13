@@ -121,6 +121,12 @@ def _write_state(d: dict) -> None:
 
 def run(cfg: dict) -> int:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
+    # Server-built binaries the distro lacks (nwg-drawer/nwg-dock) are pulled
+    # into INSTALL_DIR/bin at enroll. Put it on PATH so both pick_launcher
+    # (this process) and the seat shell_env (derived from os.environ) find them.
+    bin_dir = str(INSTALL_DIR / "bin")
+    if bin_dir not in os.environ.get("PATH", "").split(os.pathsep):
+        os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
     selkies_log = open(LOG_DIR / "selkies.log", "ab", buffering=0)
     gateway_log = open(LOG_DIR / "gateway.log", "ab", buffering=0)
     seat_log = open(LOG_DIR / "seat.log", "ab", buffering=0)

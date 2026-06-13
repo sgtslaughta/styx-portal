@@ -31,7 +31,7 @@ SETUPTOOLS_VER="82.0.1"
 AIOHTTP_VER="3.14.1"
 PULSECTL_VER="24.12.0"
 
-echo "==> [1/3] wheelhouse-x86_64.tar.gz (wheels for cp310-cp313)"
+echo "==> [1/4] wheelhouse-x86_64.tar.gz (wheels for cp310-cp313)"
 # Build/collect every wheel the agent venv needs, per python minor version.
 # xkbcommon is source-only on PyPI -> built here so workstations never compile.
 docker run --rm -v "$WORK:/out" "$MANYLINUX_IMG" bash -ec '
@@ -46,12 +46,12 @@ docker run --rm -v "$WORK:/out" "$MANYLINUX_IMG" bash -ec '
 tar -C "$WORK" -czf "$OUT/wheelhouse-x86_64.tar.gz" wheelhouse
 echo "    $(ls "$WORK/wheelhouse" | wc -l) wheels"
 
-echo "==> [2/3] selkies-web.tar.gz (dashboard dist from linuxserver image)"
+echo "==> [2/4] selkies-web.tar.gz (dashboard dist from linuxserver image)"
 docker pull -q "$SELKIES_BASEIMAGE"
 docker run --rm -v "$WORK:/out" "$SELKIES_BASEIMAGE" cp -r /usr/share/selkies/web /out/
 tar -C "$WORK" -czf "$OUT/selkies-web.tar.gz" web
 
-echo "==> [3/3] libshim-x86_64.tar.gz (libva 2.22 + libwayland-server 1.23)"
+echo "==> [3/4] libshim-x86_64.tar.gz (libva 2.22 + libwayland-server 1.23)"
 mkdir -p "$WORK/shim/lib"
 # Download and verify debs with pinned SHA256 hashes
 declare -a DEB_PATHS=(
@@ -80,5 +80,29 @@ for deb_path in "${DEB_PATHS[@]}"; do
 done
 tar -C "$WORK/shim" -czf "$OUT/libshim-x86_64.tar.gz" lib
 
+echo "==> [4/4] nwg-shell-x86_64.tar.gz (nwg-drawer app grid, Go+GTK build)"
+# Built in a golang container (no Go/GTK toolchain on the server host). Only
+# nwg-drawer is shipped: it's the app-grid launcher and works on any wlroots
+# compositor. nwg-dock is deliberately NOT built — it is sway-only (needs
+# SWAYSOCK) and fatals under labwc; the seat uses a bottom waybar as its dock.
+# Pinned to the last GTK3 release (v0.6+ moved to gotk4 + gtk4-layer-shell,
+# whose runtime libs are absent from Ubuntu 24.04). GTK3 + gtk-layer-shell
+# runtime IS present (enroll apt-installs libgtk-layer-shell0).
+NWG_DRAWER_TAG="v0.5.2"   # last GTK3 (gotk3) release; v0.6+ is GTK4
+mkdir -p "$WORK/bin"
+docker run --rm -v "$WORK/bin:/out" golang:1.25-bookworm bash -ec '
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y -qq --no-install-recommends \
+    libgtk-3-dev libgtk-layer-shell-dev libgirepository1.0-dev libcairo2-dev \
+    libgdk-pixbuf-2.0-dev libglib2.0-dev pkg-config gcc git
+  export CGO_ENABLED=1 GOBIN=/out GOFLAGS=-trimpath
+  go install github.com/nwg-piotr/nwg-drawer@'"$NWG_DRAWER_TAG"'
+'
+chmod 0755 "$WORK/bin/"*
+tar -C "$WORK" -czf "$OUT/nwg-shell-x86_64.tar.gz" bin
+echo "    $(ls "$WORK/bin" | tr '\n' ' ')"
+
 echo "Done. Artifacts in $OUT:"
-ls -lh "$OUT"/wheelhouse-x86_64.tar.gz "$OUT"/selkies-web.tar.gz "$OUT"/libshim-x86_64.tar.gz
+ls -lh "$OUT"/wheelhouse-x86_64.tar.gz "$OUT"/selkies-web.tar.gz \
+       "$OUT"/libshim-x86_64.tar.gz "$OUT"/nwg-shell-x86_64.tar.gz

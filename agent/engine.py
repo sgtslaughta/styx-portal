@@ -277,6 +277,92 @@ def scan_desktop_entries(dirs=None) -> list:
     return sorted(seen.items())
 
 
+def _primary_ip() -> str:
+    """Best-effort primary LAN IP (no packets sent — TEST-NET dest)."""
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("192.0.2.1", 1))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except OSError:
+        return ""
+
+
+def _os_pretty() -> str:
+    """PRETTY_NAME from /etc/os-release, or empty."""
+    try:
+        for line in Path("/etc/os-release").read_text().splitlines():
+            if line.startswith("PRETTY_NAME="):
+                return line.split("=", 1)[1].strip().strip('"')
+    except OSError:
+        pass
+    return ""
+
+
+def wave_polylines(width: int, height: int, amp: int = 90,
+                   wavelength: int = 900, step: int = 16) -> list:
+    """Stacked sine polylines spanning the full width, tiled top-to-bottom, each
+    phase-shifted — a flowing 'river/ripple' wave field that fills the canvas
+    (echoes the login RippleCanvas brand). Returns ImageMagick 'polyline' ops."""
+    import math
+    lines = []
+    spacing = max(int(amp * 1.6), 1)
+    band = 0
+    y = -amp
+    while y < height + amp:
+        phase = band * 0.9
+        pts = []
+        x = 0
+        while x <= width:
+            yy = y + amp * math.sin(x / wavelength * 2 * math.pi + phase)
+            pts.append(f"{x},{yy:.1f}")
+            x += step
+        lines.append("polyline " + " ".join(pts))
+        y += spacing
+        band += 1
+    return lines
+
+
+def wallpaper_convert_cmd(tool: str, out: str, title: str, subtitle: str,
+                          color: str = "#1d2433",
+                          size: str = "1920x1080",
+                          wave_color: str = "#2b303a") -> list:
+    """ImageMagick argv: dark base, a full-canvas subtle wave field (dark grey),
+    then a bginfo-style label (hostname large, details small) bottom-right."""
+    w, h = (int(v) for v in size.lower().split("x"))
+    cmd = [tool, "-size", size, f"xc:{color}",
+           "-stroke", wave_color, "-strokewidth", "5", "-fill", "none"]
+    for poly in wave_polylines(w, h):
+        cmd += ["-draw", poly]
+    cmd += [
+        "-stroke", "none", "-gravity", "SouthEast",
+        "-fill", "#9aa4b8", "-pointsize", "24", "-annotate", "+60+55", subtitle,
+        "-fill", "#e6e9ef", "-pointsize", "52", "-annotate", "+60+110", title,
+        out,
+    ]
+    return cmd
+
+
+def build_wallpaper(dest: Path, title: str, subtitle: str) -> bool:
+    """Render the bginfo wallpaper via ImageMagick (magick/convert). Returns
+    True on success; False (caller falls back to a solid colour) if the tool is
+    absent or rendering fails."""
+    import shutil
+    import subprocess
+    tool = shutil.which("magick") or shutil.which("convert")
+    if not tool:
+        return False
+    try:
+        r = subprocess.run(
+            wallpaper_convert_cmd(tool, str(dest), title, subtitle),
+            capture_output=True, timeout=20)
+        return r.returncode == 0 and dest.is_file()
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def write_seat_config(config_dir: Path) -> None:
     """Generate the full seat desktop shell. `config_dir` is the labwc config
     dir ($INSTALL_DIR/labwc); the waybar config is written to its sibling
@@ -287,19 +373,31 @@ def write_seat_config(config_dir: Path) -> None:
     waybar_dir = config_dir.parent / "waybar"
     waybar_dir.mkdir(parents=True, exist_ok=True)
 
+    import socket
     term = pick_terminal()
     launcher = pick_launcher()
     file_mgr = pick_file_manager()
+    browser = pick_browser()
     entries = scan_desktop_entries()
 
     cfg_json, style = build_waybar_config(launcher)
     (waybar_dir / "config").write_text(cfg_json)
     (waybar_dir / "style.css").write_text(style)
+    dock_json, dock_style = build_waybar_dock(launcher, term, file_mgr, browser)
+    (waybar_dir / "dock-config").write_text(dock_json)
+    (waybar_dir / "dock-style.css").write_text(dock_style)
+
+    # bginfo-style wallpaper: hostname + IP + OS baked into the background.
+    subtitle = "\n".join(x for x in (_primary_ip(), _os_pretty()) if x)
+    wp = config_dir.parent / "wallpaper.png"
+    wallpaper = str(wp) if build_wallpaper(wp, socket.gethostname(), subtitle) else ""
 
     auto = config_dir / "autostart"
-    auto.write_text(build_autostart(launcher,
-                                    str(waybar_dir / "config"),
-                                    str(waybar_dir / "style.css")))
+    auto.write_text(build_autostart(str(waybar_dir / "config"),
+                                    str(waybar_dir / "style.css"),
+                                    str(waybar_dir / "dock-config"),
+                                    str(waybar_dir / "dock-style.css"),
+                                    wallpaper))
     auto.chmod(0o755)
     (config_dir / "menu.xml").write_text(
         build_root_menu(entries, term, file_mgr, str(HOME)))
@@ -384,13 +482,14 @@ def build_waybar_config(launcher: str) -> tuple:
     """(config_json, style_css) for the top panel. `tray` is waybar's built-in
     StatusNotifier host — JetBrains Toolbox and other SNI apps dock there."""
     menu_cmd = launcher or "true"
+    # Open windows live on the bottom dock's wlr/taskbar, so the top bar is just
+    # launcher + clock + indicators/tray (GNOME-like).
     config = {
         "layer": "top", "position": "top", "height": 32,
-        "modules-left": ["custom/menu", "wlr/taskbar"],
+        "modules-left": ["custom/menu"],
         "modules-center": ["clock"],
-        "modules-right": ["tray", "pulseaudio", "network", "custom/power"],
+        "modules-right": ["tray", "pulseaudio", "network"],
         "custom/menu": {"format": "  Apps", "on-click": menu_cmd, "tooltip": False},
-        "wlr/taskbar": {"on-click": "activate", "all-outputs": True},
         "clock": {"format": "{:%a %d %b  %H:%M}"},
         "tray": {"spacing": 8, "icon-size": 18},
         "pulseaudio": {"format": "{icon} {volume}%",
@@ -399,15 +498,62 @@ def build_waybar_config(launcher: str) -> tuple:
                        "on-click": "pavucontrol"},
         "network": {"format-wifi": "{essid}", "format-ethernet": "wired",
                     "format-disconnected": "offline"},
-        "custom/power": {"format": "Exit", "on-click": "labwc --exit",
-                         "tooltip": False},
     }
     style = (
         '* { font-family: "Noto Sans", sans-serif; font-size: 13px; }\n'
         "window#waybar { background: #1d2433; color: #e6e9ef; }\n"
         "#custom-menu { padding: 0 14px; background: #2b3650; color: #ffffff; }\n"
-        "#clock, #pulseaudio, #network, #tray, #custom-power { padding: 0 10px; }\n"
-        "#taskbar button.active { background: #2b3650; }\n"
+        "#clock, #pulseaudio, #network, #tray { padding: 0 10px; }\n"
+    )
+    return json.dumps(config, indent=2), style
+
+
+BROWSERS = ("google-chrome", "chromium", "chromium-browser", "firefox")
+
+
+def pick_browser() -> str:
+    """First GUI browser present on the host. Empty if none."""
+    import shutil
+    for name in BROWSERS:
+        if shutil.which(name):
+            return name
+    return ""
+
+
+def build_waybar_dock(launcher: str, term: str, file_mgr: str,
+                      browser: str) -> tuple:
+    """(config_json, style_css) for a second waybar at the BOTTOM, used as a
+    dock: pinned launch buttons + wlr/taskbar icons of open windows. Pure
+    wlroots (no sway IPC), so — unlike nwg-dock — it runs under labwc."""
+    mods: dict = {}
+    pins: list = []
+
+    def pin(key: str, label: str, cmd: str) -> None:
+        if cmd:
+            name = f"custom/{key}"
+            pins.append(name)
+            mods[name] = {"format": label, "on-click": cmd, "tooltip": False}
+
+    pin("apps", "Apps", launcher)
+    pin("files", "Files", f"{file_mgr} {HOME}" if file_mgr else "")
+    pin("web", "Web", browser)
+    pin("term", "Term", term)
+    config = {
+        "layer": "top", "position": "bottom", "height": 48, "margin-bottom": 6,
+        "modules-left": [], "modules-center": pins + ["wlr/taskbar"],
+        "modules-right": [],
+        "wlr/taskbar": {"format": "{icon}", "icon-size": 32,
+                        "on-click": "activate", "tooltip-format": "{title}"},
+        **mods,
+    }
+    style = (
+        '* { font-family: "Noto Sans", sans-serif; font-size: 13px; }\n'
+        "window#waybar { background: transparent; }\n"
+        "#taskbar, #custom-apps, #custom-files, #custom-web, #custom-term {\n"
+        "  background: #1d2433; color: #e6e9ef; border-radius: 12px;\n"
+        "  padding: 2px 12px; margin: 4px 4px; }\n"
+        "#taskbar button { padding: 0 6px; }\n"
+        "#taskbar button.active { background: #2b3650; border-radius: 8px; }\n"
     )
     return json.dumps(config, indent=2), style
 
@@ -442,26 +588,41 @@ def build_labwc_environment() -> str:
             "XDG_CURRENT_DESKTOP=labwc:wlroots\n")
 
 
-def build_autostart(launcher: str, waybar_config: str, waybar_style: str) -> str:
-    """labwc autostart: wallpaper, dark-mode push, portal, panel, dock — each
-    guarded by `command -v` so a missing tool is silently skipped. waybar gets
-    explicit -c/-s paths (NOT XDG_CONFIG_HOME) so host apps keep their own
-    ~/.config."""
-    dock = (f'nwg-dock -d -i 36 -l "{launcher}" &' if launcher
-            else "nwg-dock -d -i 36 &")
+def build_autostart(waybar_config: str, waybar_style: str,
+                    dock_config: str, dock_style: str,
+                    wallpaper: str = "") -> str:
+    """labwc autostart: wallpaper, dark-mode push, portal, top panel, bottom
+    dock — each guarded by `command -v` so a missing tool is silently skipped.
+    The dock is a second waybar (bottom), not nwg-dock (which is sway-only and
+    fatals under labwc). waybar instances get explicit -c/-s paths (NOT
+    XDG_CONFIG_HOME) so host apps keep their own ~/.config. `wallpaper` (a PNG
+    with the bginfo label) is shown when set; otherwise a flat colour."""
+    bg = (f'swaybg -i "{wallpaper}" -m fill &' if wallpaper
+          else 'swaybg -c "#1d2433" &')
     return "\n".join([
         "#!/bin/sh",
         "# generated by styx agent — regenerated each seat start; do not edit",
-        'command -v swaybg >/dev/null && swaybg -c "#1d2433" &',
+        f"command -v swaybg >/dev/null && {bg}",
         "if command -v gsettings >/dev/null; then",
         "  gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark' 2>/dev/null",
         "  gsettings set org.gnome.desktop.interface gtk-theme 'Adwaita-dark' 2>/dev/null",
         "  gsettings set org.gnome.desktop.interface icon-theme 'Adwaita' 2>/dev/null",
         "  gsettings set org.gnome.desktop.interface cursor-theme 'Adwaita' 2>/dev/null",
         "fi",
-        "command -v xdg-desktop-portal >/dev/null && xdg-desktop-portal &",
+        "# xdg portals (frontend + gtk backend) live in libexec, not on PATH;",
+        "# they provide org.freedesktop.portal.Settings so GTK4/browsers go dark.",
+        "for d in /usr/libexec /usr/lib/x86_64-linux-gnu/xdg-desktop-portal"
+        " /usr/lib/xdg-desktop-portal /usr/lib; do",
+        '  if [ -x "$d/xdg-desktop-portal" ]; then "$d/xdg-desktop-portal" & break; fi',
+        "done",
+        "for d in /usr/libexec /usr/lib/x86_64-linux-gnu/xdg-desktop-portal"
+        " /usr/lib/xdg-desktop-portal /usr/lib; do",
+        '  if [ -x "$d/xdg-desktop-portal-gtk" ]; then "$d/xdg-desktop-portal-gtk" &'
+        " break; fi",
+        "done",
         f'command -v waybar >/dev/null && waybar -c "{waybar_config}" '
         f'-s "{waybar_style}" &',
-        f"command -v nwg-dock >/dev/null && {dock}",
+        f'command -v waybar >/dev/null && waybar -c "{dock_config}" '
+        f'-s "{dock_style}" &',
         "",
     ])
