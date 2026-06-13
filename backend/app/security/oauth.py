@@ -19,9 +19,18 @@ GITHUB_AUTHORIZE = "https://github.com/login/oauth/authorize"
 GITHUB_TOKEN = "https://github.com/login/oauth/access_token"
 GITHUB_USER = "https://api.github.com/user"
 GITHUB_EMAILS = "https://api.github.com/user/emails"
+# GitHub is OAuth2, not OIDC: it ignores "openid email profile" and needs its
+# own scopes to expose the verified-email list at /user/emails.
+GITHUB_SCOPES = "read:user user:email"
 
 
 # ---- pure helpers ----
+def scopes_for(provider: OAuthProvider) -> str:
+    """GitHub needs its own scopes regardless of what's stored (the create form
+    defaults to the OIDC scope string, which GitHub silently ignores)."""
+    return GITHUB_SCOPES if provider.name == "github" else provider.scopes
+
+
 def normalize_oidc(userinfo: dict) -> OAuthIdentity:
     return OAuthIdentity(
         sub=str(userinfo.get("sub")),
@@ -31,12 +40,16 @@ def normalize_oidc(userinfo: dict) -> OAuthIdentity:
     )
 
 
-def select_github_email(emails: list[dict]) -> str | None:
+def select_github_email(emails: object) -> str | None:
+    # GitHub returns an error dict (not a list) when the token lacks user:email;
+    # tolerate any non-list shape rather than crashing on it.
+    if not isinstance(emails, list):
+        return None
     for e in emails:
-        if e.get("primary") and e.get("verified"):
+        if isinstance(e, dict) and e.get("primary") and e.get("verified"):
             return e["email"]
     for e in emails:
-        if e.get("verified"):
+        if isinstance(e, dict) and e.get("verified"):
             return e["email"]
     return None
 
@@ -102,7 +115,7 @@ async def build_authorize(provider: OAuthProvider, mode: str,
     eps = await _endpoints(provider)
     client = AsyncOAuth2Client(
         provider.client_id, decrypt_secret(provider.client_secret_enc),
-        scope=provider.scopes,
+        scope=scopes_for(provider),
         redirect_uri=redirect_uri or _redirect_uri(provider.name, mode),
         code_challenge_method="S256",
     )
@@ -117,7 +130,7 @@ async def fetch_identity(provider: OAuthProvider, mode: str,
     eps = await _endpoints(provider)
     client = AsyncOAuth2Client(
         provider.client_id, decrypt_secret(provider.client_secret_enc),
-        scope=provider.scopes,
+        scope=scopes_for(provider),
         redirect_uri=redirect_uri or _redirect_uri(provider.name, mode),
         code_challenge_method="S256",
     )
