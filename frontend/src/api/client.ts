@@ -66,6 +66,8 @@ export type SetupPreflight = {
   data_writable: boolean;
 };
 
+import { singleFlight } from "./single-flight";
+
 const BASE = "/api";
 
 export class ApiError extends Error {
@@ -81,7 +83,20 @@ function getCookie(name: string): string | null {
   return m && m[1] ? decodeURIComponent(m[1]) : null;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+// Spend the long-lived refresh token to mint a fresh access token. Coalesced:
+// a burst of polls all hitting 401 at once shares ONE refresh, so we never
+// replay a rotated token and trip the backend's RFC 9700 family revocation.
+const silentRefresh = singleFlight(async (): Promise<boolean> => {
+  const csrf = getCookie("csrf_token");
+  const res = await fetch(`${BASE}/auth/refresh`, {
+    method: "POST",
+    credentials: "include",
+    headers: csrf !== null ? { "X-CSRF-Token": csrf } : {},
+  });
+  return res.ok;
+});
+
+async function request<T>(path: string, init?: RequestInit, retried = false): Promise<T> {
   const method = (init?.method ?? "GET").toUpperCase();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -97,6 +112,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers,
   });
   if (res.status === 401 && !path.startsWith("/auth/")) {
+    // Access token expired (e.g. the user was busy in the streaming window and
+    // this tab sat idle past the 15-min TTL). Try one silent refresh + retry
+    // before giving up — only bounce to /login if the refresh itself fails.
+    if (!retried && (await silentRefresh())) {
+      return request<T>(path, init, true);
+    }
     window.location.href = "/login?expired=1";
     throw new Error("Unauthorized");
   }
