@@ -5,6 +5,7 @@ mirror: attach to a live X display (XShm capture), resolution locked to the
 seat:   pixelflux's own Wayland compositor; host apps join via WAYLAND_DISPLAY.
 """
 import glob
+import json
 import os
 import socket
 import time
@@ -368,3 +369,35 @@ def build_selkies_cmd(cfg: dict, internal_port: int, control_port: int) -> tuple
         env["SELKIES_AUDIO_ENABLED"] = "false"
 
     return cmd, env
+
+
+def build_waybar_config(launcher: str) -> tuple:
+    """(config_json, style_css) for the top panel. `tray` is waybar's built-in
+    StatusNotifier host — JetBrains Toolbox and other SNI apps dock there."""
+    menu_cmd = launcher or "true"
+    config = {
+        "layer": "top", "position": "top", "height": 32,
+        "modules-left": ["custom/menu", "wlr/taskbar"],
+        "modules-center": ["clock"],
+        "modules-right": ["tray", "pulseaudio", "network", "custom/power"],
+        "custom/menu": {"format": "  Apps", "on-click": menu_cmd, "tooltip": False},
+        "wlr/taskbar": {"on-click": "activate", "all-outputs": True},
+        "clock": {"format": "{:%a %d %b  %H:%M}"},
+        "tray": {"spacing": 8, "icon-size": 18},
+        "pulseaudio": {"format": "{icon} {volume}%",
+                       "format-muted": "muted",
+                       "format-icons": ["", "", ""],
+                       "on-click": "pavucontrol"},
+        "network": {"format-wifi": "{essid}", "format-ethernet": "wired",
+                    "format-disconnected": "offline"},
+        "custom/power": {"format": "Exit", "on-click": "labwc --exit",
+                         "tooltip": False},
+    }
+    style = (
+        '* { font-family: "Noto Sans", sans-serif; font-size: 13px; }\n'
+        "window#waybar { background: #1d2433; color: #e6e9ef; }\n"
+        "#custom-menu { padding: 0 14px; background: #2b3650; color: #ffffff; }\n"
+        "#clock, #pulseaudio, #network, #tray, #custom-power { padding: 0 10px; }\n"
+        "#taskbar button.active { background: #2b3650; }\n"
+    )
+    return json.dumps(config, indent=2), style

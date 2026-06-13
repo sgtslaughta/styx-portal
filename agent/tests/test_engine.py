@@ -213,3 +213,20 @@ def test_build_root_menu_without_file_manager():
     xml = engine.build_root_menu([], term="foot", file_mgr="", home="/home/u")
     assert "Files" not in xml
     assert "foot" in xml                    # Terminal entry still present
+
+
+def test_build_waybar_config_has_tray_and_menu(monkeypatch):
+    import json as _json
+    cfg_str, style = engine.build_waybar_config("nwg-drawer")
+    cfg = _json.loads(cfg_str)
+    assert "tray" in cfg["modules-right"]                 # Toolbox docks here
+    assert cfg["custom/menu"]["on-click"] == "nwg-drawer"
+    assert cfg["position"] == "top"
+    assert "wlr/taskbar" in cfg["modules-left"]
+    assert "#waybar" in style and "background" in style    # dark css
+
+
+def test_build_waybar_config_menu_falls_back_when_no_launcher():
+    cfg_str, _ = engine.build_waybar_config("")
+    import json as _json
+    assert _json.loads(cfg_str)["custom/menu"]["on-click"] == "true"
