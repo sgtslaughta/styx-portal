@@ -157,3 +157,153 @@ def test_pick_dri_node(tmp_path, monkeypatch):
 def test_pick_free_port():
     p = engine.pick_free_port()
     assert 1024 < p < 65536
+
+
+def test_pick_launcher_prefers_grid_then_fuzzel(monkeypatch):
+    import shutil
+    monkeypatch.setattr(shutil, "which",
+                        lambda n: "/usr/bin/" + n if n == "nwg-drawer" else None)
+    assert engine.pick_launcher() == "nwg-drawer"
+    monkeypatch.setattr(shutil, "which",
+                        lambda n: "/usr/bin/fuzzel" if n == "fuzzel" else None)
+    assert engine.pick_launcher() == "fuzzel"
+    monkeypatch.setattr(shutil, "which", lambda n: None)
+    assert engine.pick_launcher() == ""
+
+
+def test_pick_file_manager_detection_order(monkeypatch):
+    import shutil
+    monkeypatch.setattr(shutil, "which",
+                        lambda n: "/usr/bin/" + n if n in ("thunar", "nemo") else None)
+    # nemo ranks above thunar in the order
+    assert engine.pick_file_manager() == "nemo"
+    monkeypatch.setattr(shutil, "which", lambda n: None)
+    assert engine.pick_file_manager() == ""
+
+
+def test_scan_desktop_entries_parses_and_filters(tmp_path):
+    apps = tmp_path / "applications"
+    apps.mkdir()
+    (apps / "firefox.desktop").write_text(
+        "[Desktop Entry]\nName=Firefox\nExec=firefox %u\nType=Application\n")
+    (apps / "hidden.desktop").write_text(
+        "[Desktop Entry]\nName=Secret\nExec=secret\nNoDisplay=true\n")
+    (apps / "noexec.desktop").write_text(
+        "[Desktop Entry]\nName=Broken\nType=Application\n")
+    entries = engine.scan_desktop_entries([str(apps)])
+    assert entries == [("Firefox", "firefox")]   # field code stripped, others filtered
+
+
+def test_scan_desktop_entries_skips_missing_dirs():
+    assert engine.scan_desktop_entries(["/no/such/dir"]) == []
+
+
+def test_build_root_menu_includes_files_apps_and_escapes(tmp_path):
+    xml = engine.build_root_menu(
+        [("Rofi & Co", "rofi"), ("Term", "xterm")],
+        term="foot", file_mgr="thunar", home="/home/u")
+    assert "<action name=\"Execute\" command=\"thunar /home/u\"/>" in xml
+    assert "Files" in xml
+    assert "Rofi &amp; Co" in xml          # XML-escaped label
+    assert "<action name=\"Exit\"/>" in xml
+    assert "Applications" in xml
+
+
+def test_build_root_menu_escapes_command_attribute():
+    xml = engine.build_root_menu([("App", "run & thing")],
+                                 term="", file_mgr="", home="/h")
+    assert "run &amp; thing" in xml
+
+
+def test_build_root_menu_without_file_manager():
+    xml = engine.build_root_menu([], term="foot", file_mgr="", home="/home/u")
+    assert "Files" not in xml
+    assert "foot" in xml                    # Terminal entry still present
+
+
+def test_build_waybar_config_has_tray_and_menu(monkeypatch):
+    import json as _json
+    cfg_str, style = engine.build_waybar_config("nwg-drawer")
+    cfg = _json.loads(cfg_str)
+    assert "tray" in cfg["modules-right"]                 # Toolbox docks here
+    assert cfg["custom/menu"]["on-click"] == "nwg-drawer"
+    assert cfg["position"] == "top"
+    assert "wlr/taskbar" in cfg["modules-left"]
+    assert "#waybar" in style and "background" in style    # dark css
+
+
+def test_build_waybar_config_menu_falls_back_when_no_launcher():
+    cfg_str, _ = engine.build_waybar_config("")
+    import json as _json
+    assert _json.loads(cfg_str)["custom/menu"]["on-click"] == "true"
+
+
+def test_build_labwc_rc_binds_super_to_launcher():
+    rc = engine.build_labwc_rc("nwg-drawer", "foot")
+    assert 'key="W-d"' in rc and "nwg-drawer" in rc
+    assert 'key="W-Return"' in rc and "foot" in rc
+
+
+def test_build_labwc_rc_no_launcher_is_noop_command():
+    rc = engine.build_labwc_rc("", "foot")
+    assert 'command="true"' in rc            # Super bound to a harmless no-op
+
+
+def test_build_labwc_environment_forces_dark():
+    env = engine.build_labwc_environment()
+    assert "GTK_THEME=Adwaita-dark" in env
+    assert "XCURSOR_THEME=Adwaita" in env
+
+
+def test_build_autostart_emits_guarded_lines():
+    sh = engine.build_autostart(
+        launcher="nwg-drawer",
+        waybar_config="/i/waybar/config", waybar_style="/i/waybar/style.css")
+    assert sh.startswith("#!/bin/sh")
+    assert 'command -v swaybg >/dev/null && swaybg -c "#1d2433" &' in sh
+    assert "color-scheme 'prefer-dark'" in sh
+    assert 'waybar -c "/i/waybar/config" -s "/i/waybar/style.css" &' in sh
+    assert 'nwg-dock -d -i 36 -l "nwg-drawer" &' in sh
+    assert "xdg-desktop-portal" in sh
+
+
+def test_build_autostart_dock_without_launcher_has_no_l_flag():
+    sh = engine.build_autostart(launcher="",
+                                waybar_config="/i/waybar/config",
+                                waybar_style="/i/waybar/style.css")
+    assert "nwg-dock -d -i 36 &" in sh
+    assert " -l " not in sh
+
+
+def test_write_seat_config_emits_all_files(tmp_path, monkeypatch):
+    import shutil
+    monkeypatch.setattr(shutil, "which",
+                        lambda n: "/usr/bin/" + n if n in
+                        ("nwg-drawer", "foot", "thunar", "waybar", "nwg-dock",
+                         "swaybg") else None)
+    monkeypatch.setattr(engine, "scan_desktop_entries",
+                        lambda *a: [("Firefox", "firefox")])
+    labwc = tmp_path / "install" / "labwc"
+    engine.write_seat_config(labwc)
+    # labwc dir
+    assert (labwc / "autostart").read_text().startswith("#!/bin/sh")
+    assert (labwc / "autostart").stat().st_mode & 0o111      # executable
+    assert "Firefox" in (labwc / "menu.xml").read_text()
+    assert "nwg-drawer" in (labwc / "rc.xml").read_text()
+    assert "Adwaita-dark" in (labwc / "environment").read_text()
+    # waybar dir is a sibling of labwc, NOT under ~/.config
+    wb = tmp_path / "install" / "waybar"
+    assert "tray" in (wb / "config").read_text()
+    assert "#waybar" in (wb / "style.css").read_text()
+
+
+def test_write_seat_config_degrades_without_optional_tools(tmp_path, monkeypatch):
+    import shutil
+    monkeypatch.setattr(shutil, "which", lambda n: None)     # nothing installed
+    monkeypatch.setattr(engine, "scan_desktop_entries", lambda *a: [])
+    labwc = tmp_path / "install" / "labwc"
+    engine.write_seat_config(labwc)                          # must not raise
+    # launcher empty -> menu on-click is the no-op
+    import json as _json
+    cfg = _json.loads((tmp_path / "install" / "waybar" / "config").read_text())
+    assert cfg["custom/menu"]["on-click"] == "true"
