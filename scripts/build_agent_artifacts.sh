@@ -31,7 +31,7 @@ SETUPTOOLS_VER="82.0.1"
 AIOHTTP_VER="3.14.1"
 PULSECTL_VER="24.12.0"
 
-echo "==> [1/3] wheelhouse-x86_64.tar.gz (wheels for cp310-cp313)"
+echo "==> [1/4] wheelhouse-x86_64.tar.gz (wheels for cp310-cp313)"
 # Build/collect every wheel the agent venv needs, per python minor version.
 # xkbcommon is source-only on PyPI -> built here so workstations never compile.
 docker run --rm -v "$WORK:/out" "$MANYLINUX_IMG" bash -ec '
@@ -46,12 +46,12 @@ docker run --rm -v "$WORK:/out" "$MANYLINUX_IMG" bash -ec '
 tar -C "$WORK" -czf "$OUT/wheelhouse-x86_64.tar.gz" wheelhouse
 echo "    $(ls "$WORK/wheelhouse" | wc -l) wheels"
 
-echo "==> [2/3] selkies-web.tar.gz (dashboard dist from linuxserver image)"
+echo "==> [2/4] selkies-web.tar.gz (dashboard dist from linuxserver image)"
 docker pull -q "$SELKIES_BASEIMAGE"
 docker run --rm -v "$WORK:/out" "$SELKIES_BASEIMAGE" cp -r /usr/share/selkies/web /out/
 tar -C "$WORK" -czf "$OUT/selkies-web.tar.gz" web
 
-echo "==> [3/3] libshim-x86_64.tar.gz (libva 2.22 + libwayland-server 1.23)"
+echo "==> [3/4] libshim-x86_64.tar.gz (libva 2.22 + libwayland-server 1.23)"
 mkdir -p "$WORK/shim/lib"
 # Download and verify debs with pinned SHA256 hashes
 declare -a DEB_PATHS=(
@@ -80,5 +80,27 @@ for deb_path in "${DEB_PATHS[@]}"; do
 done
 tar -C "$WORK/shim" -czf "$OUT/libshim-x86_64.tar.gz" lib
 
+echo "==> [4/4] nwg-shell-x86_64.tar.gz (nwg-drawer + nwg-dock, Go+GTK build)"
+# Built in a golang container (no Go/GTK toolchain on the server host). The
+# binaries dynamically link GTK3 + gtk-layer-shell, which the target desktop
+# already has (enroll apt-installs libgtk-layer-shell0 for the latter).
+NWG_DRAWER_TAG="v0.7.5"
+NWG_DOCK_TAG="v0.4.3"
+mkdir -p "$WORK/bin"
+docker run --rm -v "$WORK/bin:/out" golang:1.23-bookworm bash -ec '
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -qq
+  apt-get install -y -qq --no-install-recommends \
+    libgtk-3-dev libgtk-layer-shell-dev libcairo2-dev \
+    libgdk-pixbuf-2.0-dev libglib2.0-dev pkg-config gcc git
+  export CGO_ENABLED=1 GOBIN=/out GOFLAGS=-trimpath
+  go install github.com/nwg-piotr/nwg-drawer@'"$NWG_DRAWER_TAG"'
+  go install github.com/nwg-piotr/nwg-dock@'"$NWG_DOCK_TAG"'
+'
+chmod +x "$WORK/bin/"*
+tar -C "$WORK" -czf "$OUT/nwg-shell-x86_64.tar.gz" bin
+echo "    $(ls "$WORK/bin" | tr '\n' ' ')"
+
 echo "Done. Artifacts in $OUT:"
-ls -lh "$OUT"/wheelhouse-x86_64.tar.gz "$OUT"/selkies-web.tar.gz "$OUT"/libshim-x86_64.tar.gz
+ls -lh "$OUT"/wheelhouse-x86_64.tar.gz "$OUT"/selkies-web.tar.gz \
+       "$OUT"/libshim-x86_64.tar.gz "$OUT"/nwg-shell-x86_64.tar.gz
