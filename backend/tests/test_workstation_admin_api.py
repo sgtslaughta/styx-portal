@@ -304,3 +304,20 @@ async def test_list_marks_outdated_agents(admin_client, session, monkeypatch):
     assert by_sub["a"] is True
     assert by_sub["b"] is False
     assert by_sub["c"] is False
+
+
+def test_build_update_command_pulls_files_and_restarts():
+    from app.services.workstations import build_update_command
+    cmd = build_update_command("https://styx.example.com")
+    assert "https://styx.example.com/api/enroll/${f%%:*}" in cmd
+    assert "agent.py:styx_agent.py" in cmd
+    assert "gateway.py:gateway.py" in cmd
+    assert "systemctl --user restart styx-agent" in cmd
+    assert "curl -fsSL " in cmd
+    assert " -k " not in cmd
+
+
+def test_build_update_command_insecure_for_lan():
+    from app.services.workstations import build_update_command
+    cmd = build_update_command("https://192.168.1.10", insecure=True)
+    assert "curl -fsSLk " in cmd
