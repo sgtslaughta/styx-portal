@@ -200,6 +200,18 @@ def pick_launcher() -> str:
     return ""
 
 
+FILE_MANAGERS = ("nautilus", "nemo", "thunar", "pcmanfm-qt", "pcmanfm", "dolphin")
+
+
+def pick_file_manager() -> str:
+    """First GUI file manager present on the host. Empty if none."""
+    import shutil
+    for name in FILE_MANAGERS:
+        if shutil.which(name):
+            return name
+    return ""
+
+
 def write_seat_config(config_dir: Path) -> None:
     """labwc config for the seat: wallpaper + panel + terminal autostart and
     a root menu. Regenerated each shell start so newly installed tools

@@ -169,3 +169,13 @@ def test_pick_launcher_prefers_grid_then_fuzzel(monkeypatch):
     assert engine.pick_launcher() == "fuzzel"
     monkeypatch.setattr(shutil, "which", lambda n: None)
     assert engine.pick_launcher() == ""
+
+
+def test_pick_file_manager_detection_order(monkeypatch):
+    import shutil
+    monkeypatch.setattr(shutil, "which",
+                        lambda n: "/usr/bin/" + n if n in ("thunar", "nemo") else None)
+    # nemo ranks above thunar in the order
+    assert engine.pick_file_manager() == "nemo"
+    monkeypatch.setattr(shutil, "which", lambda n: None)
+    assert engine.pick_file_manager() == ""
