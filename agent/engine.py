@@ -520,6 +520,34 @@ def pick_browser() -> str:
     return ""
 
 
+def browser_launch_cmd(browser: str) -> str:
+    """Launch command for the seat browser.
+
+    The seat shares $HOME (and therefore the default browser profile) with any
+    other session the user has open — e.g. a VNC desktop on $DISPLAY=:0. Two
+    consequences, both of which made the dock's Web button open in the wrong
+    session:
+
+    1. Single-instance routing: a browser already running in the :0 session
+       owns the profile's singleton lock, so a plain launch here just asks THAT
+       instance to open a window — on :0. A dedicated per-seat profile dir
+       (--user-data-dir / --profile) gives the seat its own instance.
+    2. Display: Chrome defaults to the X11 backend and $DISPLAY is the VNC
+       server, so even a fresh instance lands on :0. --ozone-platform=wayland
+       binds it to the labwc seat instead. (Firefox follows MOZ_ENABLE_WAYLAND
+       from the labwc environment file.)
+    """
+    if not browser:
+        return ""
+    if "chrom" in browser:  # google-chrome, chromium, chromium-browser
+        prof = HOME / ".config" / "styx-seat-browser"
+        return f"{browser} --ozone-platform=wayland --user-data-dir={prof}"
+    if "firefox" in browser:
+        prof = HOME / ".config" / "styx-seat-firefox"
+        return f"firefox --no-remote --profile {prof}"
+    return browser
+
+
 def build_waybar_dock(launcher: str, term: str, file_mgr: str,
                       browser: str) -> tuple:
     """(config_json, style_css) for a second waybar at the BOTTOM, used as a
@@ -536,7 +564,7 @@ def build_waybar_dock(launcher: str, term: str, file_mgr: str,
 
     pin("apps", "Apps", launcher)
     pin("files", "Files", f"{file_mgr} {HOME}" if file_mgr else "")
-    pin("web", "Web", browser)
+    pin("web", "Web", browser_launch_cmd(browser))
     pin("term", "Term", term)
     config = {
         "layer": "top", "position": "bottom", "height": 48, "margin-bottom": 6,

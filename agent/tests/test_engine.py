@@ -281,7 +281,7 @@ def test_build_waybar_dock_has_taskbar_and_pins():
     assert "wlr/taskbar" in cfg["modules-center"]
     assert "custom/apps" in cfg["modules-center"]      # pinned launcher button
     assert cfg["custom/apps"]["on-click"] == "nwg-drawer"
-    assert cfg["custom/web"]["on-click"] == "firefox"
+    assert cfg["custom/web"]["on-click"].startswith("firefox ")
     assert "#taskbar" in style
 
 
@@ -290,6 +290,40 @@ def test_build_waybar_dock_skips_absent_pins():
     cfg_str, _ = engine.build_waybar_dock("", "", "", "")
     cfg = _json.loads(cfg_str)
     assert cfg["modules-center"] == ["wlr/taskbar"]    # no pins when nothing found
+
+
+def test_browser_launch_cmd_chrome_isolates_instance_and_forces_wayland():
+    # A chrome already running in the user's :0/VNC session owns the shared
+    # profile's singleton, so a plain launch just opens a window THERE. A
+    # dedicated --user-data-dir gives the seat its own instance; --ozone forces
+    # it onto the Wayland seat instead of $DISPLAY (=:0, the VNC server).
+    for browser in ("google-chrome", "chromium", "chromium-browser"):
+        cmd = engine.browser_launch_cmd(browser)
+        assert cmd.startswith(f"{browser} ")
+        assert "--ozone-platform=wayland" in cmd
+        assert "--user-data-dir=" in cmd
+        assert "styx-seat" in cmd          # a separate, seat-only profile dir
+
+
+def test_browser_launch_cmd_firefox_isolates_instance():
+    # Same singleton trap for Firefox: --no-remote + a dedicated profile force a
+    # new instance rather than routing to a :0-session Firefox. Wayland comes
+    # from MOZ_ENABLE_WAYLAND in the labwc environment file.
+    cmd = engine.browser_launch_cmd("firefox")
+    assert cmd.startswith("firefox ")
+    assert "--no-remote" in cmd
+    assert "--profile" in cmd
+    assert engine.browser_launch_cmd("") == ""
+
+
+def test_dock_web_button_isolates_chrome_instance():
+    import json as _json
+    cfg_str, _ = engine.build_waybar_dock("nwg-drawer", "foot", "thunar",
+                                          "google-chrome")
+    cfg = _json.loads(cfg_str)
+    click = cfg["custom/web"]["on-click"]
+    assert "--ozone-platform=wayland" in click
+    assert "--user-data-dir=" in click
 
 
 def test_wallpaper_convert_cmd_has_text_and_output():
