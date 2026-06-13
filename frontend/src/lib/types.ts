@@ -6,6 +6,13 @@ export interface SessionConfig {
   max_session_duration: string | null;
 }
 
+export interface ExtraPortEntry {
+  container_port: number;
+  label: string;
+  slug: string;
+  strip_prefix: boolean;
+}
+
 export interface ServiceTemplate {
   id: string;
   name: string;
@@ -28,6 +35,18 @@ export interface ServiceTemplate {
   session_config: SessionConfig;
   created_at: string;
   updated_at: string;
+  restart_policy?: string;
+  read_only_rootfs?: boolean;
+  tmpfs?: string[];
+  extra_hosts?: Record<string, string>;
+  ulimits?: { name: string; soft: number; hard: number }[];
+  extra_ports?: ExtraPortEntry[];
+  entrypoint?: string[] | null;
+  command?: string[] | null;
+  devices?: string[];
+  privileged?: boolean;
+  extra_docker_args?: Record<string, unknown>;
+  shared?: boolean;
 }
 
 export interface Instance {

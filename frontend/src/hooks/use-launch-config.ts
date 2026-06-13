@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { slugify } from "@/lib/utils";
-import type { RegistryImage, ServiceTemplate, Instance } from "@/lib/types";
+import type {
+  RegistryImage,
+  ServiceTemplate,
+  Instance,
+  ExtraPortEntry,
+} from "@/lib/types";
 
 export interface VolumeEntry {
   name: string;
@@ -64,6 +69,30 @@ export interface LaunchConfig {
   setInternalPort: (v: number) => void;
   internalProtocol: string;
   setInternalProtocol: (v: string) => void;
+  restartPolicy: string;
+  setRestartPolicy: (v: string) => void;
+  readOnlyRootfs: boolean;
+  setReadOnlyRootfs: (v: boolean) => void;
+  tmpfs: string[];
+  setTmpfs: (v: string[]) => void;
+  extraHosts: Record<string, string>;
+  setExtraHosts: (v: Record<string, string>) => void;
+  ulimits: { name: string; soft: number; hard: number }[];
+  setUlimits: (v: { name: string; soft: number; hard: number }[]) => void;
+  extraPorts: ExtraPortEntry[];
+  setExtraPorts: (v: ExtraPortEntry[]) => void;
+  entrypoint: string[] | null;
+  setEntrypoint: (v: string[] | null) => void;
+  command: string[] | null;
+  setCommand: (v: string[] | null) => void;
+  devices: string[];
+  setDevices: (v: string[]) => void;
+  privileged: boolean;
+  setPrivileged: (v: boolean) => void;
+  extraDockerArgs: Record<string, unknown>;
+  setExtraDockerArgs: (v: Record<string, unknown>) => void;
+  shared: boolean;
+  setShared: (v: boolean) => void;
   buildTemplateData: () => {
     name: string;
     display_name: string;
@@ -84,6 +113,18 @@ export interface LaunchConfig {
     session_config: { idle_timeout: string; grace_period: string; timeout_action: "stop"; never_timeout: boolean; max_session_duration: null };
     security_opts: string[] | undefined;
     custom_opts: Record<string, string> | undefined;
+    restart_policy: string;
+    read_only_rootfs: boolean;
+    tmpfs: string[];
+    extra_hosts: Record<string, string>;
+    ulimits: { name: string; soft: number; hard: number }[];
+    extra_ports: ExtraPortEntry[];
+    entrypoint: string[] | null;
+    command: string[] | null;
+    devices: string[];
+    privileged: boolean;
+    extra_docker_args: Record<string, unknown>;
+    shared: boolean;
   };
 }
 
@@ -229,6 +270,35 @@ export function useLaunchConfig(opts: {
   const [internalPort, setInternalPort] = useState(detected.port);
   const [internalProtocol, setInternalProtocol] = useState(detected.protocol);
 
+  const [restartPolicy, setRestartPolicy] = useState(
+    template?.restart_policy ?? "no"
+  );
+  const [readOnlyRootfs, setReadOnlyRootfs] = useState(
+    template?.read_only_rootfs ?? false
+  );
+  const [tmpfs, setTmpfs] = useState<string[]>(template?.tmpfs ?? []);
+  const [extraHosts, setExtraHosts] = useState<Record<string, string>>(
+    template?.extra_hosts ?? {}
+  );
+  const [ulimits, setUlimits] = useState<
+    { name: string; soft: number; hard: number }[]
+  >(template?.ulimits ?? []);
+  const [extraPorts, setExtraPorts] = useState<ExtraPortEntry[]>(
+    template?.extra_ports ?? []
+  );
+  const [entrypoint, setEntrypoint] = useState<string[] | null>(
+    template?.entrypoint ?? null
+  );
+  const [command, setCommand] = useState<string[] | null>(
+    template?.command ?? null
+  );
+  const [devices, setDevices] = useState<string[]>(template?.devices ?? []);
+  const [privileged, setPrivileged] = useState(template?.privileged ?? false);
+  const [extraDockerArgs, setExtraDockerArgs] = useState<
+    Record<string, unknown>
+  >(template?.extra_docker_args ?? {});
+  const [shared, setShared] = useState(template?.shared ?? false);
+
   function buildTemplateData() {
     const secOpts = securityOpts.filter((s) => s.enabled).map((s) => s.value);
     const webPort = internalPort;
@@ -263,6 +333,18 @@ export function useLaunchConfig(opts: {
         customOpts.length > 0
           ? Object.fromEntries(customOpts.map((c) => [c.name, c.value]))
           : undefined,
+      restart_policy: restartPolicy,
+      read_only_rootfs: readOnlyRootfs,
+      tmpfs,
+      extra_hosts: extraHosts,
+      ulimits,
+      extra_ports: extraPorts,
+      entrypoint,
+      command,
+      devices,
+      privileged,
+      extra_docker_args: extraDockerArgs,
+      shared,
     };
   }
 
@@ -304,6 +386,30 @@ export function useLaunchConfig(opts: {
     setInternalPort,
     internalProtocol,
     setInternalProtocol,
+    restartPolicy,
+    setRestartPolicy,
+    readOnlyRootfs,
+    setReadOnlyRootfs,
+    tmpfs,
+    setTmpfs,
+    extraHosts,
+    setExtraHosts,
+    ulimits,
+    setUlimits,
+    extraPorts,
+    setExtraPorts,
+    entrypoint,
+    setEntrypoint,
+    command,
+    setCommand,
+    devices,
+    setDevices,
+    privileged,
+    setPrivileged,
+    extraDockerArgs,
+    setExtraDockerArgs,
+    shared,
+    setShared,
     buildTemplateData,
   };
 }
