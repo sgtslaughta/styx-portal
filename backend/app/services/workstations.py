@@ -138,6 +138,7 @@ AGENT_UPDATE_FILES = [
     ("engine.py", "engine.py"),
     ("gateway.py", "gateway.py"),
     ("selkies_launcher.py", "selkies_launcher.py"),
+    ("clipboard_bridge.py", "clipboard_bridge.py"),
 ]
 
 

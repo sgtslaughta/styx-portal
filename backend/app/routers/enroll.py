@@ -67,6 +67,11 @@ async def selkies_launcher_py():
     return _serve("selkies_launcher.py")
 
 
+@router.get("/clipboard_bridge.py")
+async def clipboard_bridge_py():
+    return _serve("clipboard_bridge.py")
+
+
 @router.get("/uninstall")
 async def uninstall_script():
     return _serve("uninstall.sh")

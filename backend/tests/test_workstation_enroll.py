@@ -176,6 +176,19 @@ async def test_agent_py_served(client):
 
 
 @pytest.mark.asyncio
+async def test_clipboard_bridge_py_served(client):
+    r = await client.get("/api/enroll/clipboard_bridge.py")
+    assert r.status_code == 200
+    assert "bridge_decision" in r.text
+
+
+def test_update_command_includes_clipboard_bridge():
+    from app.services.workstations import build_update_command
+    cmd = build_update_command("https://x")
+    assert "clipboard_bridge.py" in cmd
+
+
+@pytest.mark.asyncio
 async def test_register_rejects_invalid_lan_ip(client, admin_client, session):
     raw = await _mint(session, await _admin_id(session))
     # Test invalid IP with port and path (route injection attempt)
