@@ -23,6 +23,7 @@ import {
   ChevronDown,
   Filter,
   ExternalLink,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { Instance } from "@/lib/types";
@@ -274,7 +275,7 @@ function ActionBtn({
   title,
   onClick,
 }: {
-  icon: React.ElementType;
+  icon: LucideIcon;
   color: "emerald" | "blue" | "warning" | "destructive";
   title: string;
   onClick: () => void;

@@ -93,24 +93,25 @@
 .styx-brand {
   position: relative;
   overflow: hidden;
-  /* Light theme defaults (ethereal sky) */
-  background: radial-gradient(140% 120% at 15% 100%, #f5f9fe 0%, #ede8f7 45%, #e8e4f2 100%);
+  isolation: isolate; /* keeps z:-1 line layers above this panel's background */
+  /* Light theme: smooth off-white (lower-left) -> royal blue (upper-right) */
+  background: linear-gradient(to top right, #faf8f3 0%, #7d92d4 55%, #233e9c 100%);
   color: #1a2847;
   --brand-fg: #1a2847;
-  --brand-fg-muted: #6b7280;
-  --brand-ripple-r: 147;
-  --brand-ripple-g: 165;
-  --brand-ripple-b: 216;
+  --brand-fg-muted: #44506e;
+  --brand-ripple-r: 30;
+  --brand-ripple-g: 58;
+  --brand-ripple-b: 138;
 }
-/* Dark theme overrides */
+/* Dark theme: smooth deep navy (lower-left) -> royal blue (upper-right) */
 .dark .styx-brand {
-  background: radial-gradient(140% 120% at 15% 100%, #0a1426 0%, #070a12 45%, #05070d 100%);
+  background: linear-gradient(to top right, #04081a 0%, #142663 55%, #2440a6 100%);
   color: #fff;
   --brand-fg: #fff;
   --brand-fg-muted: rgba(255, 255, 255, 0.6);
-  --brand-ripple-r: 70;
-  --brand-ripple-g: 140;
-  --brand-ripple-b: 255;
+  --brand-ripple-r: 34;
+  --brand-ripple-g: 211;
+  --brand-ripple-b: 238;
 }
 .styx-brand::before,
 .styx-brand::after {
@@ -118,17 +119,21 @@
   position: absolute;
   inset: -40% -40%;
   pointer-events: none;
+  /* No-WebGL fallback only: the opaque RippleCanvas (z:0) draws its own
+     refracted lines and covers these; they show when the canvas stays
+     transparent (no WebGL / reduced motion / shader failure). */
+  z-index: -1;
   -webkit-mask: radial-gradient(150% 130% at 0% 100%, #000 30%, transparent 72%);
           mask: radial-gradient(150% 130% at 0% 100%, #000 30%, transparent 72%);
 }
 .styx-brand::before {
   background: repeating-linear-gradient(115deg, transparent 0 22px, rgb(var(--brand-ripple-r), var(--brand-ripple-g), var(--brand-ripple-b)) 22px 23px);
-  opacity: 0.09;
+  opacity: 0.15;
   animation: styx-flow 14s linear infinite;
 }
 .styx-brand::after {
   background: repeating-linear-gradient(115deg, transparent 0 40px, rgb(var(--brand-ripple-r), var(--brand-ripple-g), var(--brand-ripple-b)) 40px 41px);
-  opacity: 0.06;
+  opacity: 0.1;
   animation: styx-flow 26s linear infinite;
 }
 @keyframes styx-flow {

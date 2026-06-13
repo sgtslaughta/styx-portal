@@ -3,9 +3,11 @@ import { useEffect, useRef } from "react";
 /**
  * Water-ripple refraction overlay for the login brand panel.
  *
- * A single full-screen WebGL fragment shader reproduces the exact production
- * "river current" line recipe (1px lines @23px/41px, 115deg, drifting, bottom-left
- * masked) and refracts it with faint, randomly-placed "slow drips into a pool".
+ * A single full-screen WebGL fragment shader renders the panel's diagonal
+ * gradient plus the "river current" line recipe (1px lines @23px/41px CSS px,
+ * 115deg, drifting, bottom-left masked) and refracts the lines with faint,
+ * randomly-placed "slow drips into a pool". The CSS ::before/::after line
+ * layers sit at z:-1 as a no-WebGL fallback; this opaque canvas covers them.
  *
  * Theme-aware: reads ripple color from --brand-ripple-r/g/b CSS custom properties,
  * allowing light/dark theme variants with distinct visual character.
@@ -28,7 +30,6 @@ const CFG = {
   strength: 0.004,
   spec: 0.2,
   caustic: 0.05,
-  chroma: 0.02,
   speed: 0.15,
   normScale: 0.05,
 } as const;
@@ -37,12 +38,13 @@ const VERT = `attribute vec2 p;void main(){gl_Position=vec4(p,0.,1.);}`;
 
 const FRAG = `#extension GL_OES_standard_derivatives : enable
 precision highp float;
-uniform vec2 res; uniform float time;
+uniform vec2 res; uniform float time; uniform float uDpr;
 uniform vec4 drips[${MAX_DRIPS}];   // x, y, age, seed
 uniform int nd;
-uniform float uStrength, uSpec, uCaustic, uChroma, uSpeed, uNorm, uLife;
+uniform float uStrength, uSpec, uCaustic, uSpeed, uNorm, uLife;
+uniform float uLineAlpha;
 uniform vec3 uRippleColor;
-uniform vec3 uBgDark, uBgLight;
+uniform vec3 uBgNear, uBgFar;   // near = upper-right corner, far = lower-left
 
 float dripH(vec2 q, vec4 d){
   vec2 c = d.xy; float age = d.z;
@@ -62,8 +64,14 @@ float H(vec2 q){
   for (int i = 0; i < ${MAX_DRIPS}; i++){ if (i >= nd) break; h += dripH(q, drips[i]); }
   return h;
 }
-// signed distance along the 115deg axis, in px
-float axis(vec2 uv){ float a = radians(115.0); return (uv.x * cos(a) - uv.y * sin(a)) * res.x; }
+// signed distance along the CSS 115deg gradient axis, in CSS px.
+// Scales x/y by their own resolution (not res.x for both) so the line angle
+// matches the CSS layers at any panel aspect ratio.
+float axis(vec2 uv){
+  float a = radians(115.0);
+  return (uv.x * res.x * sin(a) + uv.y * res.y * cos(a)) / uDpr;
+}
+#define PERIOD 26.0
 // coverage of a 1px line in the last 1px of each P-px period
 float lineSet(float g, float P){
   float f = mod(g, P);
@@ -79,25 +87,32 @@ void main(){
   vec3 n = normalize(vec3(-grad * uNorm, 1.0));
   vec2 off = grad * uStrength;
 
-  // drift matches the CSS @keyframes flow (set1 ~23px/14s, set2 ~41px/26s)
-  float drift1 = time * (23.0 / 14.0), drift2 = time * (41.0 / 26.0);
+  // diagonal gradient: smooth full-diagonal blend from far (lower-left) to near
+  // (upper-right). smoothstep eases both ends so there's no hard hold or kink —
+  // the transition is stretched across the entire panel. (matches .styx-brand CSS)
+  float t = smoothstep(0.0, 2.0, uv.x + uv.y);
+  vec3 bg = mix(uBgFar, uBgNear, t);
 
-  float gd = distance(uv, vec2(0.15, 0.0));
-  vec3 bg = mix(uBgLight, uBgDark, clamp(gd * 0.95, 0.0, 1.0));
+  // ONE uniform line set, evenly spaced, refracted by the drip gradient.
+  // (A second set at a different period/drift produced overlapping moiré.)
+  float drift1 = time * (PERIOD / 14.0);
+  float g = axis(uv + off) - drift1;
+  float cover = lineSet(g, PERIOD);
 
-  vec3 c1 = uRippleColor * 0.09;
-  vec3 c2 = uRippleColor * 0.06;
-  float g1r = axis(uv + off * (1.0 + uChroma)) - drift1;
-  float g1g = axis(uv + off) - drift1;
-  float g1b = axis(uv + off * (1.0 - uChroma)) - drift1;
-  float g2 = axis(uv + off) - drift2;
-  vec3 set1 = vec3(lineSet(g1r, 23.0), lineSet(g1g, 23.0), lineSet(g1b, 23.0)) * c1;
-  vec3 set2 = lineSet(g2, 41.0) * c2;
+  // bottom-left mask. WebGL origin is bottom-left, so the lower-left corner is
+  // uv=(0,0) — the CSS 'at 0% 100%' anchor flips to y=0 here.
+  float md = distance(uv, vec2(0.0, 0.0));
+  float mask = smoothstep(0.95, 0.18, md);
+  // mix (not add) toward line color so dark lines stay dark on light bg
+  vec3 col = mix(bg, uRippleColor, clamp(cover, 0.0, 1.0) * uLineAlpha * mask);
 
-  // production bottom-left mask: radial(150% 130% at 0% 100%) #000 30% -> transparent 72%
-  float md = distance(uv, vec2(0.0, 1.0));
-  float mask = smoothstep(0.72, 0.30, md / 1.3);
-  vec3 col = bg + (set1 + set2) * mask;
+  // Upper-right band of the SAME line field (same axis/period/phase, so it is
+  // collinear with the bottom set and lines up perfectly), angled '/' toward
+  // the lower-left. Anchored upper-right, dark navy for contrast.
+  float md2 = distance(uv, vec2(1.0, 1.0));
+  float mask2 = smoothstep(0.95, 0.18, md2);
+  vec3 darkBlue = vec3(0.043, 0.078, 0.255); // #0b1441
+  col = mix(col, darkBlue, clamp(cover, 0.0, 1.0) * (uLineAlpha + 0.18) * mask2);
 
   vec3 lightDir = normalize(vec3(-0.4, 0.5, 0.8));
   float spec = pow(max(dot(n, lightDir), 0.0), 24.0) * uSpec;
@@ -162,14 +177,14 @@ export function RippleCanvas() {
 
     const u = (name: string) => gl.getUniformLocation(prog, name);
     const uRes = u("res"), uTime = u("time"), uDrips = u("drips"), uNd = u("nd");
-    const uStr = u("uStrength"), uSp = u("uSpec"), uCa = u("uCaustic"), uCh = u("uChroma");
-    const uSpd = u("uSpeed"), uNo = u("uNorm"), uLi = u("uLife");
-    const uRippleColor = u("uRippleColor");
-    const uBgDark = u("uBgDark"), uBgLight = u("uBgLight");
+    const uStr = u("uStrength"), uSp = u("uSpec"), uCa = u("uCaustic");
+    const uSpd = u("uSpeed"), uNo = u("uNorm"), uLi = u("uLife"), uDprLoc = u("uDpr");
+    const uRippleColor = u("uRippleColor"), uLineAlpha = u("uLineAlpha");
+    const uBgNear = u("uBgNear"), uBgFar = u("uBgFar");
 
-    let w = 0, h = 0;
+    let w = 0, h = 0, dpr = 1;
     const resize = () => {
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      dpr = Math.min(2, window.devicePixelRatio || 1);
       const r = canvas.getBoundingClientRect();
       w = r.width; h = r.height;
       canvas.width = Math.max(1, Math.round(w * dpr));
@@ -183,18 +198,12 @@ export function RippleCanvas() {
     let drips: Drip[] = [];
     const arr = new Float32Array(MAX_DRIPS * 4);
 
-    // Helper: read CSS custom property and parse as RGB
-    const parseRgb = (varName: string): [number, number, number] => {
+    // Helper: read the three --brand-ripple-* custom properties as normalized RGB
+    const parseRgb = (): [number, number, number] => {
       const styles = getComputedStyle(canvas);
-      const val = styles.getPropertyValue(varName).trim();
-      const matches = val.match(/(\d+)/g);
-      if (matches && matches.length >= 3) {
-        const r = parseInt(matches[0]!, 10);
-        const g = parseInt(matches[1]!, 10);
-        const b = parseInt(matches[2]!, 10);
-        return [r / 255, g / 255, b / 255];
-      }
-      return [0, 0, 0];
+      const chan = (name: string) =>
+        (parseInt(styles.getPropertyValue(name).trim(), 10) || 0) / 255;
+      return [chan("--brand-ripple-r"), chan("--brand-ripple-g"), chan("--brand-ripple-b")];
     };
 
     const frame = (now: number) => {
@@ -215,15 +224,19 @@ export function RippleCanvas() {
         arr[i * 4 + 3] = d.seed;
       });
 
-      // Read theme-aware ripple color from CSS custom properties
-      const [ripR, ripG, ripB] = parseRgb("--brand-ripple-r, var(--brand-ripple-g), var(--brand-ripple-b)");
-      // Dark theme: navy to deep navy. Light theme: pale periwinkle to even paler.
-      const bgLight = document.documentElement.classList.contains("dark")
-        ? [0.039, 0.078, 0.149]
-        : [0.965, 0.973, 0.996]; // #f5f9fe -> normalized
-      const bgDark = document.documentElement.classList.contains("dark")
-        ? [0.020, 0.027, 0.051]
-        : [0.929, 0.922, 0.949]; // #ede8f7 -> normalized
+      // Read theme-aware line color from CSS custom properties
+      const [ripR, ripG, ripB] = parseRgb();
+      const isDark = document.documentElement.classList.contains("dark");
+      // Gradient anchored upper-right (must match the .styx-brand CSS gradient):
+      // dark theme: royal blue #2440a6 -> deep navy #04081a
+      // light theme: royal blue #233e9c -> off-white #faf8f3
+      const bgNear = isDark
+        ? [0.141, 0.251, 0.651]
+        : [0.137, 0.243, 0.612];
+      const bgFar = isDark
+        ? [0.016, 0.031, 0.102]
+        : [0.980, 0.973, 0.953];
+      const lineAlpha = isDark ? 0.52 : 0.44;
 
       gl.uniform2f(uRes, canvas.width, canvas.height);
       gl.uniform1f(uTime, t);
@@ -232,13 +245,14 @@ export function RippleCanvas() {
       gl.uniform1f(uStr, CFG.strength);
       gl.uniform1f(uSp, CFG.spec);
       gl.uniform1f(uCa, CFG.caustic);
-      gl.uniform1f(uCh, CFG.chroma);
       gl.uniform1f(uSpd, CFG.speed);
+      gl.uniform1f(uDprLoc, dpr);
       gl.uniform1f(uNo, CFG.normScale);
       gl.uniform1f(uLi, CFG.life);
       gl.uniform3f(uRippleColor, ripR, ripG, ripB);
-      gl.uniform3fv(uBgDark, bgDark);
-      gl.uniform3fv(uBgLight, bgLight);
+      gl.uniform1f(uLineAlpha, lineAlpha);
+      gl.uniform3fv(uBgNear, bgNear);
+      gl.uniform3fv(uBgFar, bgFar);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       raf = requestAnimationFrame(frame);
     };
@@ -257,7 +271,9 @@ export function RippleCanvas() {
       aria-hidden="true"
       className="pointer-events-none inset-0 h-full w-full"
       // inline position/z-index beat the `.styx-brand > *` rule (which would
-      // otherwise force position:relative; z-index:1 onto this canvas)
+      // otherwise force position:relative; z-index:1 onto this canvas).
+      // z:0 paints above the z:-1 CSS line layers (no-WebGL fallback) so only
+      // one line system is ever visible.
       style={{ position: "absolute", zIndex: 0 }}
     />
   );

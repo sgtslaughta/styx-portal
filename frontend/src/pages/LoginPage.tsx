@@ -85,7 +85,7 @@ export function LoginPage() {
   if (!loading && setupRequired) return <Navigate to="/setup" replace />;
 
   return (
-    <div className="grid min-h-screen md:grid-cols-2">
+    <div className="grid min-h-screen md:grid-cols-[3fr_2fr]">
       <LoginBrandPanel />
       <div className="styx-auth-form flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm space-y-6">
