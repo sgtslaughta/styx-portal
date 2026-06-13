@@ -209,6 +209,12 @@ def test_build_root_menu_includes_files_apps_and_escapes(tmp_path):
     assert "Applications" in xml
 
 
+def test_build_root_menu_escapes_command_attribute():
+    xml = engine.build_root_menu([("App", "run & thing")],
+                                 term="", file_mgr="", home="/h")
+    assert "run &amp; thing" in xml
+
+
 def test_build_root_menu_without_file_manager():
     xml = engine.build_root_menu([], term="foot", file_mgr="", home="/home/u")
     assert "Files" not in xml

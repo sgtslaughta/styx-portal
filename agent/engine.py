@@ -180,7 +180,7 @@ def _xml_escape(s: str) -> str:
 
 def _menu_item(label: str, command: str) -> str:
     return (f'  <item label="{_xml_escape(label)}">'
-            f'<action name="Execute" command="{command}"/></item>')
+            f'<action name="Execute" command="{_xml_escape(command)}"/></item>')
 
 
 def build_root_menu(entries, term: str, file_mgr: str, home: str) -> str:
@@ -459,8 +459,7 @@ def build_autostart(launcher: str, waybar_config: str, waybar_style: str) -> str
         "  gsettings set org.gnome.desktop.interface icon-theme 'Adwaita' 2>/dev/null",
         "  gsettings set org.gnome.desktop.interface cursor-theme 'Adwaita' 2>/dev/null",
         "fi",
-        "command -v /usr/libexec/xdg-desktop-portal >/dev/null && "
-        "/usr/libexec/xdg-desktop-portal &",
+        "command -v xdg-desktop-portal >/dev/null && xdg-desktop-portal &",
         f'command -v waybar >/dev/null && waybar -c "{waybar_config}" '
         f'-s "{waybar_style}" &',
         f"command -v nwg-dock >/dev/null && {dock}",
