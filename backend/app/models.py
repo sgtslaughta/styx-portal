@@ -109,6 +109,18 @@ class ServiceTemplate(SQLModel, table=True):
     cap_add: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     security_opt: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     tls_skip_verify: bool = False
+    shared: bool = False
+    restart_policy: str = "no"
+    read_only_rootfs: bool = False
+    tmpfs: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    extra_hosts: dict[str, str] = Field(default_factory=dict, sa_column=Column(JSON))
+    ulimits: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
+    extra_ports: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
+    entrypoint: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    command: list[str] | None = Field(default=None, sa_column=Column(JSON))
+    devices: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    privileged: bool = False
+    extra_docker_args: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     volumes: list[dict[str, str]] = Field(default_factory=list, sa_column=Column(JSON))
     internal_port: int = 3001
     internal_protocol: str = "https"
