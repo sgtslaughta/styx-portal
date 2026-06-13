@@ -161,10 +161,10 @@ install_pkgs() {
 # (gtk-layer-shell) + fuzzel as the launcher fallback. The dock is a bottom
 # waybar (not nwg-dock, which is sway-only).
 declare -A SEAT_PKG=( \
-  [apt]="labwc xwayland waybar swaybg foot wl-clipboard fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme libgtk-layer-shell0" \
-  [dnf]="labwc xorg-x11-server-Xwayland waybar swaybg foot wl-clipboard fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme gtk-layer-shell" \
-  [pacman]="labwc xorg-xwayland waybar swaybg foot wl-clipboard fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme gtk-layer-shell" \
-  [zypper]="labwc xwayland waybar swaybg foot wl-clipboard fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme gtk-layer-shell" )
+  [apt]="labwc xwayland waybar swaybg foot wl-clipboard fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme libgtk-layer-shell0 imagemagick" \
+  [dnf]="labwc xorg-x11-server-Xwayland waybar swaybg foot wl-clipboard fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme gtk-layer-shell ImageMagick" \
+  [pacman]="labwc xorg-xwayland waybar swaybg foot wl-clipboard fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme gtk-layer-shell imagemagick" \
+  [zypper]="labwc xwayland waybar swaybg foot wl-clipboard fuzzel thunar xdg-desktop-portal-gtk gnome-themes-extra adwaita-icon-theme gtk-layer-shell ImageMagick" )
 declare -A VAAPI_PKG=( [apt]="mesa-va-drivers" [dnf]="mesa-va-drivers" [pacman]="libva-mesa-driver" [zypper]="libva" )
 MGR=""
 for m in apt dnf pacman zypper; do

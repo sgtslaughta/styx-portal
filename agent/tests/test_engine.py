@@ -292,6 +292,29 @@ def test_build_waybar_dock_skips_absent_pins():
     assert cfg["modules-center"] == ["wlr/taskbar"]    # no pins when nothing found
 
 
+def test_wallpaper_convert_cmd_has_text_and_output():
+    cmd = engine.wallpaper_convert_cmd("convert", "/o/wp.png", "myhost",
+                                       "10.0.0.5\nUbuntu")
+    assert cmd[0] == "convert"
+    assert cmd[-1] == "/o/wp.png"
+    assert "myhost" in cmd and "10.0.0.5\nUbuntu" in cmd
+    assert "xc:#1d2433" in cmd               # dark background fill
+    assert "-annotate" in cmd
+
+
+def test_build_wallpaper_falls_back_without_tool(tmp_path, monkeypatch):
+    import shutil
+    monkeypatch.setattr(shutil, "which", lambda n: None)   # no magick/convert
+    assert engine.build_wallpaper(tmp_path / "wp.png", "h", "s") is False
+
+
+def test_build_autostart_uses_wallpaper_image_when_set():
+    sh = engine.build_autostart("/w/c", "/w/s", "/w/dc", "/w/ds",
+                                wallpaper="/i/wallpaper.png")
+    assert 'swaybg -i "/i/wallpaper.png" -m fill &' in sh
+    assert "-c \"#1d2433\"" not in sh         # image replaces the flat colour
+
+
 def test_write_seat_config_emits_all_files(tmp_path, monkeypatch):
     import shutil
     monkeypatch.setattr(shutil, "which",
@@ -300,6 +323,7 @@ def test_write_seat_config_emits_all_files(tmp_path, monkeypatch):
                          "swaybg") else None)
     monkeypatch.setattr(engine, "scan_desktop_entries",
                         lambda *a: [("Firefox", "firefox")])
+    monkeypatch.setattr(engine, "build_wallpaper", lambda *a: False)  # no convert in CI
     labwc = tmp_path / "install" / "labwc"
     engine.write_seat_config(labwc)
     # labwc dir
