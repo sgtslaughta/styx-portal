@@ -76,13 +76,13 @@ export function WorkstationSpecs({ ws, className }: { ws: Workstation; className
           return (
             <Tooltip key={s.label}>
               <TooltipTrigger asChild>
-                <span className="inline-flex cursor-default" tabIndex={0} aria-label={`${s.label}: ${s.value}`}>
-                  <Icon className={cn("h-4 w-4", s.color)} />
+                <span className="inline-flex items-center gap-1.5 cursor-default" tabIndex={0}
+                      aria-label={`${s.label}: ${s.value}`}>
+                  <Icon className={cn("h-4 w-4 shrink-0", s.color)} />
+                  <span className="text-xs text-muted-foreground">{s.value}</span>
                 </span>
               </TooltipTrigger>
-              <TooltipContent>
-                <span className="font-medium">{s.label}:</span> {s.value}
-              </TooltipContent>
+              <TooltipContent>{s.label}</TooltipContent>
             </Tooltip>
           );
         })}
