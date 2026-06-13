@@ -89,3 +89,49 @@ async def member_client(client, session):
     assert r.status_code == 200, r.text
     client.headers.update({"X-CSRF-Token": client.cookies.get("csrf_token")})
     return client
+
+
+@pytest.fixture
+async def second_member_client(session):
+    """An AsyncClient for a second non-admin member user with auth cookies + CSRF header."""
+    from app.models import User
+    from app.security.passwords import hash_password
+
+    def get_session_override():
+        yield session
+
+    def get_docker_manager_override():
+        manager = MagicMock()
+        manager.create_volume.side_effect = lambda name: name
+        manager.create_container.return_value = "container-abc123"
+        manager.get_container_status.return_value = {"status": "running"}
+        return manager
+
+    def get_screenshot_service_override():
+        svc = MagicMock()
+        svc.capture = AsyncMock(return_value=True)
+        svc.close = AsyncMock()
+        return svc
+
+    app.dependency_overrides[get_session] = get_session_override
+    app.dependency_overrides[get_docker_manager] = get_docker_manager_override
+    app.dependency_overrides[get_screenshot_service] = get_screenshot_service_override
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        # Create the second member user
+        session.add(User(
+            username="member2",
+            password_hash=hash_password("correct horse battery staple"),
+            role="member",
+            is_active=True,
+        ))
+        await session.commit()
+
+        # Log in
+        r = await client.post("/api/auth/login", json={
+            "username": "member2", "password": "correct horse battery staple"})
+        assert r.status_code == 200, r.text
+        client.headers.update({"X-CSRF-Token": client.cookies.get("csrf_token")})
+        yield client
+
+    app.dependency_overrides.clear()

@@ -52,7 +52,7 @@ async def list_templates(
     stmt = select(ServiceTemplate)
     if user.role != "admin":
         stmt = stmt.where(
-            (ServiceTemplate.owner_id == user.id) | (ServiceTemplate.owner_id == None)  # noqa: E711
+            (ServiceTemplate.owner_id == user.id) | (ServiceTemplate.owner_id == None) | (ServiceTemplate.shared == True)  # noqa: E711, E712
         )
     result = await session.exec(stmt)
     return result.all()
