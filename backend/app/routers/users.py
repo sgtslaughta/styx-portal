@@ -98,8 +98,21 @@ async def unlock_user(user_id: str, request: Request,
 
 
 def _gen_temp_password(policy) -> str:
-    base = secrets.token_urlsafe(max(policy.min_length, 16))
-    return f"A{base}a9!"[: max(policy.min_length + 4, 20)]
+    import string
+    symbols = "!@#$%^&*-_=+"
+    length = max(policy.min_length, 16)
+    rng = secrets.SystemRandom()
+    chars = [
+        secrets.choice(string.ascii_uppercase),
+        secrets.choice(string.ascii_lowercase),
+        secrets.choice(string.digits),
+        secrets.choice(symbols),
+    ]
+    pool = string.ascii_letters + string.digits + symbols
+    while len(chars) < length:
+        chars.append(secrets.choice(pool))
+    rng.shuffle(chars)
+    return "".join(chars)
 
 
 @router.post("/{user_id}/reset-password", response_model=TempPasswordOut)
