@@ -97,6 +97,33 @@ async def unlock_user(user_id: str, request: Request,
     return _user_out(user)
 
 
+def _gen_temp_password(policy) -> str:
+    base = secrets.token_urlsafe(max(policy.min_length, 16))
+    return f"A{base}a9!"[: max(policy.min_length + 4, 20)]
+
+
+@router.post("/{user_id}/reset-password", response_model=TempPasswordOut)
+async def reset_password(user_id: str, request: Request,
+                         admin: User = Depends(require_admin),
+                         session: AsyncSession = Depends(get_session)):
+    user = await session.get(User, user_id)
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    temp = _gen_temp_password(current_policy())
+    user.password_hash = hash_password(temp)
+    user.must_change_pw = True
+    user.failed_count = 0
+    user.locked_until = None
+    session.add(user)
+    await session.exec(update(RefreshToken)
+                       .where(RefreshToken.user_id == user.id)
+                       .values(revoked=True))
+    await audit_request(session, request, "user.reset_password", user_id=admin.id,
+                        resource=user.id)
+    await session.commit()
+    return TempPasswordOut(temp_password=temp)
+
+
 def _user_out(u: User) -> UserOut:
     return UserOut(
         id=u.id, username=u.username, email=u.email, role=u.role,

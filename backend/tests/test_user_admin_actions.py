@@ -26,3 +26,21 @@ async def test_unlock_requires_admin(client, session):
     u = await _mk(session, "t2")
     r = await client.post(f"/api/users/{u.id}/unlock")
     assert r.status_code in (401, 403)
+
+
+async def test_reset_password_returns_temp_and_rotates(admin_client, session):
+    from app.models import RefreshToken
+    from app.security.passwords import verify_password
+    u = await _mk(session, "resetme")
+    session.add(RefreshToken(jti="j1", user_id=u.id, family_id="j1",
+                             expires_at=datetime.now(timezone.utc) + timedelta(days=1)))
+    await session.commit()
+    r = await admin_client.post(f"/api/users/{u.id}/reset-password")
+    assert r.status_code == 200, r.text
+    temp = r.json()["temp_password"]
+    assert len(temp) >= 12
+    await session.refresh(u)
+    assert u.must_change_pw is True
+    assert verify_password(temp, u.password_hash)
+    tok = await session.get(RefreshToken, "j1")
+    assert tok.revoked is True
