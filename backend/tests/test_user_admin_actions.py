@@ -52,3 +52,29 @@ async def test_force_password_change(admin_client, session):
     assert r.status_code == 200, r.text
     await session.refresh(u)
     assert u.must_change_pw is True
+
+
+async def test_delete_blocked_when_owns_instances(admin_client, session):
+    from app.models import Instance, ServiceTemplate
+    u = await _mk(session, "owner")
+    tmpl = ServiceTemplate(name="t-own", display_name="t", image="img", owner_id=u.id)
+    session.add(tmpl)
+    await session.commit()
+    session.add(Instance(template_id=tmpl.id, owner_id=u.id, name="i", subdomain="own-i"))
+    await session.commit()
+    r = await admin_client.delete(f"/api/users/{u.id}")
+    assert r.status_code == 409, r.text
+
+
+async def test_delete_empty_user_ok(admin_client, session):
+    u = await _mk(session, "empty")
+    r = await admin_client.delete(f"/api/users/{u.id}")
+    assert r.status_code == 200, r.text
+    assert await session.get(User, u.id) is None
+
+
+async def test_cannot_delete_self(admin_client, session):
+    from sqlmodel import select
+    me = (await session.exec(select(User).where(User.username == "admin"))).first()
+    r = await admin_client.delete(f"/api/users/{me.id}")
+    assert r.status_code == 400

@@ -139,6 +139,37 @@ async def force_password_change(user_id: str, request: Request,
     return _user_out(user)
 
 
+@router.delete("/{user_id}")
+async def delete_user(user_id: str, request: Request,
+                      admin: User = Depends(require_admin),
+                      session: AsyncSession = Depends(get_session)):
+    user = await session.get(User, user_id)
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if user.id == admin.id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot delete yourself")
+    if user.role == "admin":
+        admins = (await session.exec(select(User).where(
+            User.role == "admin", User.is_active == True))).all()  # noqa: E712
+        if len(admins) <= 1:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot delete the last admin")
+    inst = (await session.exec(select(Instance).where(Instance.owner_id == user.id))).all()
+    tmpls = (await session.exec(select(ServiceTemplate).where(ServiceTemplate.owner_id == user.id))).all()
+    if inst or tmpls:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=f"User owns {len(inst)} instance(s) and {len(tmpls)} template(s); "
+                   "reassign or remove them first.")
+    await session.exec(update(RefreshToken).where(RefreshToken.user_id == user.id).values(revoked=True))
+    fids = (await session.exec(select(FederatedIdentity).where(FederatedIdentity.user_id == user.id))).all()
+    for f in fids:
+        await session.delete(f)
+    await session.delete(user)
+    await audit_request(session, request, "user.delete", user_id=admin.id, resource=user_id)
+    await session.commit()
+    return {"ok": True}
+
+
 def _user_out(u: User) -> UserOut:
     return UserOut(
         id=u.id, username=u.username, email=u.email, role=u.role,
