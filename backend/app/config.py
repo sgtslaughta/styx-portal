@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     BAN_CACHE_TTL: int = 30               # ban-set cache refresh interval seconds
     TRAEFIK_RATELIMIT_AVERAGE: int = 100  # L1 proxy avg req/s per IP
     TRAEFIK_RATELIMIT_BURST: int = 50     # L1 proxy burst per IP
+    # --- Password policy ---
+    PASSWORD_MIN_LENGTH: int = 12
+    PASSWORD_REQUIRE_UPPER: bool = False
+    PASSWORD_REQUIRE_LOWER: bool = False
+    PASSWORD_REQUIRE_DIGIT: bool = False
+    PASSWORD_REQUIRE_SYMBOL: bool = False
     MAX_INSTANCES_PER_USER: int = 3      # 0 = unlimited; admins exempt
     OAUTH_REDIRECT_BASE: str = ""   # e.g. https://s.jmolabs.dev ; defaults to https://{DOMAIN}
     SECRETS_FILE: str = "/app/data/secrets.json"
