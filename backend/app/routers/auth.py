@@ -19,6 +19,8 @@ from app.security.deps import get_current_user
 from app.security.setup_gate import users_exist
 from app.services import federation
 from app.services.audit import audit_request
+from app.middleware.rate_limit import client_ip_from_headers
+from app.services.abuse import fail_tracker, ban_cache, ban_ip
 
 router = APIRouter()
 _settings = Settings()
@@ -26,6 +28,11 @@ _settings = Settings()
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _aware(dt: datetime) -> datetime:
+    """Treat a naive datetime (as SQLite returns) as UTC for comparison."""
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 def _hash_token(raw: str) -> str:
@@ -136,13 +143,41 @@ async def setup(body: SetupRequest, request: Request, response: Response,
 @router.post("/login")
 async def login(body: LoginRequest, request: Request, response: Response,
                 session: AsyncSession = Depends(get_session)):
+    ip = client_ip_from_headers(request)
     result = await session.exec(select(User).where(User.username == body.username))
     user = result.first()
+
+    # Per-username lockout: refuse before checking the password.
+    if user and user.locked_until and _aware(user.locked_until) > _now():
+        await audit_request(session, request, "auth.login_locked", user_id=user.id)
+        await session.commit()
+        retry = int((_aware(user.locked_until) - _now()).total_seconds())
+        raise HTTPException(
+            status.HTTP_423_LOCKED, "Account temporarily locked",
+            headers={"Retry-After": str(max(retry, 1))},
+        )
+
     if not user or not user.is_active or not verify_password(body.password, user.password_hash):
+        if user:
+            user.failed_count += 1
+            if user.failed_count >= _settings.LOCKOUT_THRESHOLD:
+                user.locked_until = _now() + timedelta(seconds=_settings.LOCKOUT_DURATION)
+                user.failed_count = 0
+            session.add(user)
+        # Per-IP abuse detector -> proxy ban (L3).
+        if fail_tracker.record(ip):
+            await ban_ip(session, ip, "brute-force: failed logins",
+                         _settings.BAN_DURATION)
+            ban_cache.invalidate()
         await audit_request(session, request, "auth.login_failed",
                             detail={"username": body.username})
         await session.commit()
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
+
+    # Success: clear lockout state.
+    user.failed_count = 0
+    user.locked_until = None
+    session.add(user)
     await _issue_session(response, session, user, request)
     await audit_request(session, request, "auth.login", user_id=user.id)
     await session.commit()
