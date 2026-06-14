@@ -44,3 +44,11 @@ async def test_reset_password_returns_temp_and_rotates(admin_client, session):
     assert verify_password(temp, u.password_hash)
     tok = await session.get(RefreshToken, "j1")
     assert tok.revoked is True
+
+
+async def test_force_password_change(admin_client, session):
+    u = await _mk(session, "forceme")
+    r = await admin_client.post(f"/api/users/{u.id}/force-password-change")
+    assert r.status_code == 200, r.text
+    await session.refresh(u)
+    assert u.must_change_pw is True

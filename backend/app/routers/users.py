@@ -124,6 +124,21 @@ async def reset_password(user_id: str, request: Request,
     return TempPasswordOut(temp_password=temp)
 
 
+@router.post("/{user_id}/force-password-change", response_model=UserOut)
+async def force_password_change(user_id: str, request: Request,
+                                admin: User = Depends(require_admin),
+                                session: AsyncSession = Depends(get_session)):
+    user = await session.get(User, user_id)
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    user.must_change_pw = True
+    session.add(user)
+    await audit_request(session, request, "user.force_password_change",
+                        user_id=admin.id, resource=user.id)
+    await session.commit()
+    return _user_out(user)
+
+
 def _user_out(u: User) -> UserOut:
     return UserOut(
         id=u.id, username=u.username, email=u.email, role=u.role,
