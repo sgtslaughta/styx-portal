@@ -6,6 +6,7 @@ import { useCreateTemplate, useUpdateTemplate } from "@/hooks/use-templates";
 import { useCreateInstance } from "@/hooks/use-instances";
 import { useLaunchConfig } from "@/hooks/use-launch-config";
 import { useAuth } from "@/hooks/use-auth";
+import { useWaveTransition } from "@/components/effects/transition-provider";
 import { EasyLaunch } from "./easy-launch";
 import { TemplateBuilder } from "./builder/template-builder";
 import { api } from "@/api/client";
@@ -26,6 +27,7 @@ export function LaunchModal({ open, onClose, registryImage, template }: LaunchMo
   const updateTemplate = useUpdateTemplate();
   const createInstance = useCreateInstance();
   const { user } = useAuth();
+  const wave = useWaveTransition();
   const cfg = useLaunchConfig({ registryImage, template });
 
   // Derive domain from window.location.hostname (e.g., "portal.example.com" → "example.com")
@@ -60,8 +62,9 @@ export function LaunchModal({ open, onClose, registryImage, template }: LaunchMo
     try {
       const tmpl = await upsertTemplate();
       await createInstance.mutateAsync({ template_id: tmpl.id, name: cfg.name, subdomain: cfg.subdomain });
-      toast.success(`Instance "${cfg.name}" launched!`);
       onClose();
+      wave.play(`Launching ${cfg.name}…`);
+      toast.success(`Instance "${cfg.name}" launched!`);
     } catch (e) {
       toast.error(`Launch failed: ${(e as Error).message}`);
     }

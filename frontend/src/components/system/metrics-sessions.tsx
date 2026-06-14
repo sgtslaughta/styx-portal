@@ -11,6 +11,7 @@ import {
   useDeleteInstance,
 } from "@/hooks/use-instances";
 import { useSessionEvents } from "@/hooks/use-system";
+import { openConnectWipe } from "@/lib/connect-wipe";
 import { StatusBadge } from "@/components/instances/status-badge";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { formatDuration } from "@/lib/utils";
@@ -203,7 +204,7 @@ function SessionRow({
         <div className="flex gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
           {isRunning && (
             <>
-              <ActionBtn icon={ExternalLink} color="emerald" title="Connect" onClick={() => window.open(`/i/${instance.subdomain}/`, "_blank")} />
+              <ActionBtn icon={ExternalLink} color="emerald" title="Connect" onClick={() => openConnectWipe(`/i/${instance.subdomain}/`, `Launching ${instance.name}…`)} />
               <ActionBtn icon={RotateCcw} color="blue" title="Restart" onClick={() => restart.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />
               <ActionBtn icon={Pause} color="warning" title="Pause" onClick={() => pause.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />
               <ActionBtn icon={Square} color="destructive" title="Stop" onClick={() => stop.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />

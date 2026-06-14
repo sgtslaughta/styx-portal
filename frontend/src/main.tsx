@@ -7,10 +7,12 @@ import App from "./App";
 import { AuthProvider } from "@/auth/AuthContext";
 import { ProtectedRoute } from "@/auth/ProtectedRoute";
 import { ThemeProvider } from "@/theme/ThemeProvider";
+import { WaveTransitionProvider } from "@/components/effects/transition-provider";
 import { LoginPage } from "@/pages/LoginPage";
 import { ChangePasswordPage } from "@/pages/ChangePasswordPage";
 import { SetupWizard } from "@/pages/SetupWizard";
 import { AcceptInvitePage } from "@/pages/AcceptInvitePage";
+import { ConnectingPage } from "@/pages/ConnectingPage";
 import "./styles/globals.css";
 
 /** Toaster that follows the app theme by mirroring the `.dark` class on <html>
@@ -43,13 +45,16 @@ createRoot(document.getElementById("root")!).render(
       <BrowserRouter>
         <ThemeProvider>
         <AuthProvider>
+          <WaveTransitionProvider>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/change-password" element={<ChangePasswordPage />} />
             <Route path="/setup" element={<SetupWizard />} />
             <Route path="/accept-invite/:token" element={<AcceptInvitePage />} />
+            <Route path="/connecting" element={<ConnectingPage />} />
             <Route path="/*" element={<ProtectedRoute><App /></ProtectedRoute>} />
           </Routes>
+          </WaveTransitionProvider>
         </AuthProvider>
         </ThemeProvider>
       </BrowserRouter>
