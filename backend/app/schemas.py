@@ -162,6 +162,10 @@ class InviteOut(BaseModel):
     expires_at: str | None
 
 
+class TempPasswordOut(BaseModel):
+    temp_password: str
+
+
 @dataclass
 class OAuthIdentity:
     sub: str

@@ -3,13 +3,14 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlmodel import select
+from sqlmodel import select, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.database import get_session
-from app.models import User, Invite
-from app.schemas import UserOut, CreateInviteRequest, InviteOut
+from app.models import User, Invite, RefreshToken, Instance, ServiceTemplate, FederatedIdentity
+from app.schemas import UserOut, CreateInviteRequest, InviteOut, TempPasswordOut
 from app.security.deps import require_admin
+from app.security.passwords import hash_password, current_policy
 from app.services.audit import audit_request
 
 router = APIRouter()
@@ -77,6 +78,21 @@ async def change_role(user_id: str, role: str, request: Request,
     session.add(user)
     await audit_request(session, request, "user.role_change", user_id=admin.id,
                         resource=user.id, detail={"new_role": role, "via": "manual"})
+    await session.commit()
+    return _user_out(user)
+
+
+@router.post("/{user_id}/unlock", response_model=UserOut)
+async def unlock_user(user_id: str, request: Request,
+                      admin: User = Depends(require_admin),
+                      session: AsyncSession = Depends(get_session)):
+    user = await session.get(User, user_id)
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    user.failed_count = 0
+    user.locked_until = None
+    session.add(user)
+    await audit_request(session, request, "user.unlock", user_id=admin.id, resource=user.id)
     await session.commit()
     return _user_out(user)
 
