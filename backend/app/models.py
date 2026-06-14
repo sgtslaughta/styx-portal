@@ -39,6 +39,15 @@ class BannedIP(SQLModel, table=True):
     expires_at: datetime
 
 
+class SystemSetting(SQLModel, table=True):
+    __tablename__ = "system_settings"
+
+    key: str = Field(primary_key=True)
+    value: Any = Field(default=None, sa_column=Column(JSON))
+    updated_at: datetime = Field(default_factory=_now)
+    updated_by: str | None = None
+
+
 class Invite(SQLModel, table=True):
     __tablename__ = "invites"
 

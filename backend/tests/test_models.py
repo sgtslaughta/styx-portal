@@ -124,3 +124,12 @@ def test_service_template_dind_defaults_false():
     from app.models import ServiceTemplate
     t = ServiceTemplate(name="x", display_name="X", image="img:latest")
     assert t.dind is False
+
+
+def test_system_setting_roundtrip(db_session):
+    from app.models import SystemSetting
+    db_session.add(SystemSetting(key="LOCKOUT_THRESHOLD", value=7, updated_by="admin-id"))
+    db_session.commit()
+    got = db_session.get(SystemSetting, "LOCKOUT_THRESHOLD")
+    assert got.value == 7
+    assert got.updated_by == "admin-id"
