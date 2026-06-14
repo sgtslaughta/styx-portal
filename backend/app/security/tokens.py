@@ -18,7 +18,8 @@ def _secret() -> str:
 
 
 def create_access_token(user_id: str, role: str, ttl: int | None = None) -> str:
-    ttl = _settings.ACCESS_TTL if ttl is None else ttl
+    from app.services.settings_store import settings
+    ttl = settings.get("ACCESS_TTL") if ttl is None else ttl
     now = datetime.now(timezone.utc)
     payload = {
         "sub": user_id,
@@ -31,7 +32,8 @@ def create_access_token(user_id: str, role: str, ttl: int | None = None) -> str:
 
 
 def create_refresh_token(user_id: str, ttl: int | None = None) -> tuple[str, str]:
-    ttl = _settings.REFRESH_TTL if ttl is None else ttl
+    from app.services.settings_store import settings
+    ttl = settings.get("REFRESH_TTL") if ttl is None else ttl
     now = datetime.now(timezone.utc)
     jti = str(uuid.uuid4())
     payload = {

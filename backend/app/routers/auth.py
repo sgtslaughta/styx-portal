@@ -68,7 +68,7 @@ async def _issue_session(resp: Response, session: AsyncSession, user: User, requ
     session.add(RefreshToken(
         jti=jti, user_id=user.id,
         family_id=family_id or jti,
-        expires_at=_now() + timedelta(seconds=_settings.REFRESH_TTL),
+        expires_at=_now() + timedelta(seconds=sys_settings.get("REFRESH_TTL")),
         user_agent=request.headers.get("user-agent"),
     ))
     user.last_login = _now()
