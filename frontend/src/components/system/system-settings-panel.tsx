@@ -3,7 +3,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "@/api/client";
 import { SlidersHorizontal, HelpCircle, RotateCcw } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -107,12 +107,13 @@ export function SystemSettingsPanel() {
     let hasErrors = false;
 
     group.settings.forEach((s) => {
-      if (localState[s.key] !== s.value) {
-        const err = validate(s, localState[s.key]);
+      const currentValue = localState[s.key] ?? s.value;
+      if (currentValue !== s.value) {
+        const err = validate(s, currentValue);
         if (err) {
           hasErrors = true;
         } else {
-          changes[s.key] = localState[s.key];
+          changes[s.key] = currentValue;
         }
       }
     });
@@ -205,7 +206,7 @@ export function SystemSettingsPanel() {
                       <div>
                         <Input
                           type={setting.type === "int" ? "number" : "text"}
-                          value={localState[setting.key]}
+                          value={String(localState[setting.key] ?? "")}
                           onChange={(e) =>
                             handleChange(setting.key, e.target.value, setting)
                           }

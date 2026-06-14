@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/api/client";
-import { Users, Copy, Trash2, Check, ShieldCheck, ShieldOff, Lock, Unlock, RefreshCw, AlertTriangle, X } from "lucide-react";
+import { Users, Copy, Trash2, Check, ShieldCheck, ShieldOff, Lock, Unlock, RefreshCw, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -14,16 +14,6 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
-type User = {
-  id: string;
-  username: string;
-  email: string | null;
-  role: string;
-  is_active: boolean;
-  last_login: string | null;
-  locked_until: string | null;
-  failed_count: number;
-};
 
 function formatRelativeTime(isoString: string | null): string {
   if (!isoString) return "—";
