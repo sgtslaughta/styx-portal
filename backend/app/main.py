@@ -247,11 +247,7 @@ app = FastAPI(title="Styx Portal", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(CSRFMiddleware)
-app.add_middleware(
-    RateLimitMiddleware,
-    auth_spec=_settings.RATE_LIMIT_AUTH,
-    default_spec=_settings.RATE_LIMIT_DEFAULT,
-)
+app.add_middleware(RateLimitMiddleware)
 _cors_origins = [f"https://{_settings.DOMAIN}"]
 if not _settings.COOKIE_SECURE:
     _cors_origins.append("http://localhost:5173")
