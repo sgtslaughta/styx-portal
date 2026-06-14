@@ -20,8 +20,7 @@ INVITE_TTL_HOURS = 72
 async def list_users(admin: User = Depends(require_admin),
                      session: AsyncSession = Depends(get_session)):
     result = await session.exec(select(User))
-    return [UserOut(id=u.id, username=u.username, email=u.email,
-                    role=u.role, is_active=u.is_active) for u in result.all()]
+    return [_user_out(u) for u in result.all()]
 
 
 @router.post("/invites", response_model=InviteOut, status_code=201)
@@ -56,8 +55,7 @@ async def disable_user(user_id: str, request: Request,
     await audit_request(session, request, "user.disable", user_id=admin.id,
                         resource=user.id)
     await session.commit()
-    return UserOut(id=user.id, username=user.username, email=user.email,
-                   role=user.role, is_active=user.is_active)
+    return _user_out(user)
 
 
 @router.patch("/{user_id}/role", response_model=UserOut)
@@ -80,5 +78,14 @@ async def change_role(user_id: str, role: str, request: Request,
     await audit_request(session, request, "user.role_change", user_id=admin.id,
                         resource=user.id, detail={"new_role": role, "via": "manual"})
     await session.commit()
-    return UserOut(id=user.id, username=user.username, email=user.email,
-                   role=user.role, is_active=user.is_active)
+    return _user_out(user)
+
+
+def _user_out(u: User) -> UserOut:
+    return UserOut(
+        id=u.id, username=u.username, email=u.email, role=u.role,
+        is_active=u.is_active,
+        last_login=u.last_login.isoformat() if u.last_login else None,
+        locked_until=u.locked_until.isoformat() if u.locked_until else None,
+        failed_count=u.failed_count,
+    )

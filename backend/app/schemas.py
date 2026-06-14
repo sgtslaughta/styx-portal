@@ -147,6 +147,9 @@ class UserOut(BaseModel):
     email: str | None
     role: str
     is_active: bool
+    last_login: str | None = None
+    locked_until: str | None = None
+    failed_count: int = 0
 
 
 class CreateInviteRequest(BaseModel):
