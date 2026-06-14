@@ -11,7 +11,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.config import Settings
 from app.database import get_session
 from app.models import User, Invite, RefreshToken, Instance, ServiceTemplate, OAuthProvider, FederatedIdentity, Workstation
-from app.schemas import SetupRequest, LoginRequest, AcceptInviteRequest, UserOut, ConnectedIdentity
+from app.schemas import SetupRequest, LoginRequest, AcceptInviteRequest, UserOut, ConnectedIdentity, ChangePasswordRequest
 from app.security import tokens, oauth
 from app.security.passwords import hash_password, verify_password, validate_password, current_policy
 from app.security.csrf import new_csrf_token, CSRF_COOKIE
@@ -289,6 +289,28 @@ async def logout(request: Request, response: Response,
 async def me(user: User = Depends(get_current_user)):
     return UserOut(id=user.id, username=user.username, email=user.email,
                    role=user.role, is_active=user.is_active)
+
+
+@router.post("/change-password")
+async def change_password(body: ChangePasswordRequest, request: Request, response: Response,
+                          session: AsyncSession = Depends(get_session),
+                          user: User = Depends(get_current_user)):
+    if not verify_password(body.old_password, user.password_hash):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Current password is incorrect")
+    try:
+        validate_password(body.new_password, current_policy())
+    except ValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
+    user.password_hash = hash_password(body.new_password)
+    user.must_change_pw = False
+    session.add(user)
+    await session.exec(update(RefreshToken)
+                       .where(RefreshToken.user_id == user.id)
+                       .values(revoked=True))
+    await _issue_session(response, session, user, request)
+    await audit_request(session, request, "auth.password_change", user_id=user.id)
+    await session.commit()
+    return {"ok": True}
 
 
 @router.post("/accept-invite", status_code=201)
