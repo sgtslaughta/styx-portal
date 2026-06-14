@@ -13,7 +13,7 @@ from app.database import get_session
 from app.models import User, Invite, RefreshToken, Instance, ServiceTemplate, OAuthProvider, FederatedIdentity, Workstation
 from app.schemas import SetupRequest, LoginRequest, AcceptInviteRequest, UserOut, ConnectedIdentity
 from app.security import tokens, oauth
-from app.security.passwords import hash_password, verify_password
+from app.security.passwords import hash_password, verify_password, validate_password, current_policy
 from app.security.csrf import new_csrf_token, CSRF_COOKIE
 from app.security.deps import get_current_user
 from app.security.setup_gate import users_exist
@@ -127,6 +127,10 @@ async def setup(body: SetupRequest, request: Request, response: Response,
                 session: AsyncSession = Depends(get_session)):
     if await users_exist(session):
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    try:
+        validate_password(body.password, current_policy())
+    except ValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
     user = User(username=body.username, email=body.email,
                 password_hash=hash_password(body.password), role="admin")
     session.add(user)
@@ -301,6 +305,10 @@ async def accept_invite(body: AcceptInviteRequest, request: Request, response: R
     exists = await session.exec(select(User).where(User.username == body.username))
     if exists.first():
         raise HTTPException(status.HTTP_409_CONFLICT, "Username taken")
+    try:
+        validate_password(body.password, current_policy())
+    except ValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
     user = User(username=body.username, email=inv.email,
                 password_hash=hash_password(body.password), role=inv.role)
     inv.used_at = _now()
