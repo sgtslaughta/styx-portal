@@ -32,6 +32,15 @@ async def session_fixture():
     await engine.dispose()
 
 
+@pytest.fixture(autouse=True)
+def _reset_abuse_state():
+    from app.services.abuse import fail_tracker, ban_cache
+    fail_tracker.reset()
+    ban_cache._bans.clear()
+    ban_cache._loaded_at = None
+    yield
+
+
 @pytest.fixture(name="client")
 async def client_fixture(session):
     async def get_session_override():
