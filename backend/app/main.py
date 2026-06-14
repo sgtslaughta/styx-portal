@@ -101,6 +101,10 @@ async def lifespan(app: FastAPI):
 
     await init_db()
 
+    from app.services.settings_store import settings as _settings_store
+    async with async_session() as _s:
+        await _settings_store.reload(_s)
+
     # Sync instance states — mark stale instances as stopped
     docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
     async with async_session() as session:

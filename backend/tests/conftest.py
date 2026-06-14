@@ -35,9 +35,11 @@ async def session_fixture():
 @pytest.fixture(autouse=True)
 def _reset_abuse_state():
     from app.services.abuse import fail_tracker, ban_cache
+    from app.services.settings_store import settings as _settings_store
     fail_tracker.reset()
     ban_cache._bans.clear()
     ban_cache._loaded_at = None
+    _settings_store.reset_cache()
     yield
 
 
