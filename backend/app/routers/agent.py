@@ -15,6 +15,7 @@ from app.models import Workstation, WorkstationAccess
 from app.schemas import WorkstationHeartbeatRequest, WorkstationHeartbeatResponse
 from app.services.audit import audit_request
 from app.services.workstations import sha256_hex
+from app.services.settings_store import settings as _sys_settings
 
 router = APIRouter()
 _settings = Settings()
@@ -67,7 +68,7 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
     # existing disconnect flow releases occupancy when the client count hits 0).
     idle_s = body.health.get("idle_seconds")
     idle_timeout = (ws.stream_settings or {}).get(
-        "idle_timeout_s", _settings.WORKSTATION_IDLE_TIMEOUT_S)
+        "idle_timeout_s", _sys_settings.get("WORKSTATION_IDLE_TIMEOUT_S"))
     if (isinstance(conns, int) and conns > 0
             and isinstance(idle_timeout, (int, float)) and idle_timeout > 0
             and isinstance(idle_s, (int, float)) and idle_s >= idle_timeout):

@@ -10,6 +10,7 @@ from sqlmodel import select
 
 from app.config import Settings
 from app.models import Workstation
+from app.services.settings_store import settings as _sys_settings
 
 _settings = Settings()
 
@@ -178,7 +179,7 @@ async def mark_stale_offline(session) -> bool:
     """Flip online workstations with stale heartbeats to offline.
     Returns True if anything changed (caller refreshes routes)."""
     cutoff = datetime.now(timezone.utc) - timedelta(
-        seconds=_settings.WORKSTATION_OFFLINE_AFTER_S)
+        seconds=_sys_settings.get("WORKSTATION_OFFLINE_AFTER_S"))
     result = await session.exec(
         select(Workstation).where(Workstation.status == "online"))
     changed = False
