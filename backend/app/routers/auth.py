@@ -185,6 +185,19 @@ async def login(body: LoginRequest, request: Request, response: Response,
             "must_change_pw": user.must_change_pw}
 
 
+@router.get("/ban-check")
+async def ban_check(request: Request, session: AsyncSession = Depends(get_session)):
+    """Traefik forwardAuth target: 403 if the client IP is banned, else 200.
+
+    Called per-request by the proxy; backed by an in-memory ban cache so the
+    hot path is a dict lookup, not a DB query.
+    """
+    ip = client_ip_from_headers(request)
+    if await ban_cache.is_banned(session, ip):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Access temporarily blocked")
+    return Response(status_code=status.HTTP_200_OK)
+
+
 @router.post("/refresh")
 async def refresh(request: Request, response: Response,
                   session: AsyncSession = Depends(get_session)):

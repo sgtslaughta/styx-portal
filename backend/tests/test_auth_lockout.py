@@ -96,3 +96,36 @@ async def test_locked_user_does_not_feed_ip_tracker(client, session):
     # ban row was written for this IP.
     from app.models import BannedIP
     assert await session.get(BannedIP, "7.7.7.7") is None
+
+
+async def test_ban_check_allows_unbanned(client):
+    r = await client.get("/api/auth/ban-check")
+    assert r.status_code == 200
+
+
+async def test_ban_check_blocks_banned_ip(client, session):
+    from app.services.abuse import ban_ip, ban_cache
+    await ban_ip(session, "1.2.3.4", "test", 3600)
+    await session.commit()
+    ban_cache.invalidate()
+    # client IP arrives via X-Forwarded-For (trusted behind the proxy)
+    r = await client.get("/api/auth/ban-check",
+                         headers={"X-Forwarded-For": "1.2.3.4"})
+    assert r.status_code == 403
+    # a different IP is still allowed
+    r2 = await client.get("/api/auth/ban-check",
+                          headers={"X-Forwarded-For": "5.6.7.8"})
+    assert r2.status_code == 200
+
+
+async def test_brute_force_bans_ip_after_threshold(client, session):
+    from app.models import BannedIP
+    # 20 failed logins from one IP using UNKNOWN usernames -> every attempt takes
+    # the 401 path (unknown users never lock), so all 20 are recorded against the
+    # IP and the abuse detector writes a ban row at the threshold.
+    for i in range(20):
+        await client.post("/api/auth/login",
+                          headers={"X-Forwarded-For": "9.9.9.9"},
+                          json={"username": f"nobody{i}", "password": "nope"})
+    row = await session.get(BannedIP, "9.9.9.9")
+    assert row is not None
