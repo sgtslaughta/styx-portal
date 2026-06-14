@@ -105,6 +105,8 @@ async def _run_migrations(conn):
         ("workstations", "occupied_by", "TEXT"),
         ("workstations", "occupied_at", "TIMESTAMP"),
         ("workstations", "disconnect_pending", "BOOLEAN"),
+        ("users", "failed_count", "INTEGER DEFAULT 0"),
+        ("users", "locked_until", "TIMESTAMP"),
     ]
     for table, column, col_type in migrations:
         try:
@@ -128,6 +130,7 @@ async def _run_migrations(conn):
         ("refresh_tokens", "family_id", "jti"),  # legacy rows: own family
         ("workstations", "active_connections", "0"),
         ("workstations", "disconnect_pending", "0"),
+        ("users", "failed_count", "0"),
     ]
     for table, column, default in backfills:
         try:

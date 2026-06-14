@@ -26,6 +26,17 @@ class User(SQLModel, table=True):
     must_change_pw: bool = False
     created_at: datetime = Field(default_factory=_now)
     last_login: datetime | None = None
+    failed_count: int = 0
+    locked_until: datetime | None = None
+
+
+class BannedIP(SQLModel, table=True):
+    __tablename__ = "banned_ip"
+
+    ip: str = Field(primary_key=True)
+    reason: str = ""
+    banned_at: datetime = Field(default_factory=_now)
+    expires_at: datetime
 
 
 class Invite(SQLModel, table=True):
