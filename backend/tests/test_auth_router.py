@@ -90,3 +90,45 @@ async def test_logout_revokes_refresh(admin_client):
     admin_client.headers.update({"X-CSRF-Token": csrf})
     r2 = await admin_client.post("/api/auth/refresh")
     assert r2.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_setup_enforces_password_policy(client, session):
+    from app.services.settings_store import settings
+    await settings.set(session, "PASSWORD_REQUIRE_DIGIT", True, actor_id=None)
+    await settings.set(session, "PASSWORD_MIN_LENGTH", 12, actor_id=None)
+    await session.commit()
+    r = await client.post("/api/auth/setup",
+                          json={"username": "admin", "password": "no-digits-here!"})
+    assert r.status_code == 422, r.text
+
+
+@pytest.mark.asyncio
+async def test_change_password_success(member_client, session):
+    r = await member_client.post("/api/auth/change-password",
+                                 json={"old_password": "correct horse battery staple",
+                                       "new_password": "NewLongEnough123!"})
+    assert r.status_code == 200, r.text
+    from app.models import User
+    from sqlmodel import select
+    u = (await session.exec(select(User).where(User.username == "member"))).first()
+    assert u.must_change_pw is False
+
+
+@pytest.mark.asyncio
+async def test_change_password_wrong_old(member_client):
+    r = await member_client.post("/api/auth/change-password",
+                                 json={"old_password": "wrong",
+                                       "new_password": "NewLongEnough123!"})
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_change_password_weak_new(member_client, session):
+    from app.services.settings_store import settings
+    await settings.set(session, "PASSWORD_REQUIRE_SYMBOL", True, actor_id=None)
+    await session.commit()
+    r = await member_client.post("/api/auth/change-password",
+                                 json={"old_password": "correct horse battery staple",
+                                       "new_password": "NoSymbolsHere123"})
+    assert r.status_code == 422

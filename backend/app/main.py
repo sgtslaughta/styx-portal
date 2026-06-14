@@ -24,6 +24,7 @@ from app.routers import audit as audit_router
 from app.routers import workstations as workstations_router
 from app.routers import enroll as enroll_router
 from app.routers import agent as agent_router
+from app.routers import system_settings as system_settings_router
 from app.security.deps import get_current_user, require_admin
 from app.services.docker_manager import DockerManager
 from app.services.session_monitor import SessionMonitor
@@ -100,6 +101,10 @@ async def lifespan(app: FastAPI):
         raise
 
     await init_db()
+
+    from app.services.settings_store import settings as _settings_store
+    async with async_session() as _s:
+        await _settings_store.reload(_s)
 
     # Sync instance states — mark stale instances as stopped
     docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
@@ -243,11 +248,7 @@ app = FastAPI(title="Styx Portal", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(CSRFMiddleware)
-app.add_middleware(
-    RateLimitMiddleware,
-    auth_spec=_settings.RATE_LIMIT_AUTH,
-    default_spec=_settings.RATE_LIMIT_DEFAULT,
-)
+app.add_middleware(RateLimitMiddleware)
 _cors_origins = [f"https://{_settings.DOMAIN}"]
 if not _settings.COOKIE_SECURE:
     _cors_origins.append("http://localhost:5173")
@@ -272,6 +273,7 @@ app.include_router(audit_router.router, prefix="/api/audit", tags=["audit"])
 app.include_router(workstations_router.router, prefix="/api/workstations", tags=["workstations"])
 app.include_router(enroll_router.router, prefix="/api/enroll", tags=["enroll"])
 app.include_router(agent_router.router, prefix="/api/agent", tags=["agent"])
+app.include_router(system_settings_router.router, prefix="/api/system-settings", tags=["system-settings"])
 
 
 @app.get("/api/health")

@@ -153,3 +153,13 @@ def test_brute_force_defaults():
     assert s.BAN_CACHE_TTL == 30
     assert s.TRAEFIK_RATELIMIT_AVERAGE == 100
     assert s.TRAEFIK_RATELIMIT_BURST == 50
+
+
+def test_password_policy_defaults():
+    from app.config import Settings
+    s = Settings()
+    assert s.PASSWORD_MIN_LENGTH == 12
+    assert s.PASSWORD_REQUIRE_UPPER is False
+    assert s.PASSWORD_REQUIRE_LOWER is False
+    assert s.PASSWORD_REQUIRE_DIGIT is False
+    assert s.PASSWORD_REQUIRE_SYMBOL is False

@@ -127,7 +127,7 @@ class InstanceStatus(BaseModel):
 class SetupRequest(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     email: str | None = None
-    password: str = Field(min_length=12, max_length=256)
+    password: str = Field(min_length=8, max_length=256)
 
 
 class LoginRequest(BaseModel):
@@ -138,7 +138,7 @@ class LoginRequest(BaseModel):
 class AcceptInviteRequest(BaseModel):
     token: str
     username: str = Field(min_length=3, max_length=64)
-    password: str = Field(min_length=12, max_length=256)
+    password: str = Field(min_length=8, max_length=256)
 
 
 class UserOut(BaseModel):
@@ -147,6 +147,9 @@ class UserOut(BaseModel):
     email: str | None
     role: str
     is_active: bool
+    last_login: str | None = None
+    locked_until: str | None = None
+    failed_count: int = 0
 
 
 class CreateInviteRequest(BaseModel):
@@ -157,6 +160,10 @@ class CreateInviteRequest(BaseModel):
 class InviteOut(BaseModel):
     token: str
     expires_at: str | None
+
+
+class TempPasswordOut(BaseModel):
+    temp_password: str
 
 
 @dataclass
@@ -362,3 +369,8 @@ class WorkstationUpdateCommandOut(BaseModel):
     lan_command: str | None
     public_command: str
     lan_url_source: str            # env | detected | none
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str = Field(min_length=8, max_length=256)

@@ -39,3 +39,15 @@ def test_tampered_token_rejected(mock_settings):
     t = tokens.create_access_token("user-1", "user")
     with pytest.raises(tokens.TokenError):
         tokens.decode_token(t + "x")
+
+
+def test_access_ttl_reads_settings():
+    from app.services.settings_store import settings
+    import app.security.tokens as t
+    import jwt
+    settings.reset_cache()
+    settings._overrides["ACCESS_TTL"] = 123  # simulate a live override
+    tok = t.create_access_token("u1", "user")
+    claims = jwt.decode(tok, t._secret(), algorithms=[t._ALGO])
+    assert claims["exp"] - claims["iat"] == 123
+    settings.reset_cache()

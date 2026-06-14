@@ -11,9 +11,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.config import Settings
 from app.database import get_session
 from app.models import User, Invite, RefreshToken, Instance, ServiceTemplate, OAuthProvider, FederatedIdentity, Workstation
-from app.schemas import SetupRequest, LoginRequest, AcceptInviteRequest, UserOut, ConnectedIdentity
+from app.schemas import SetupRequest, LoginRequest, AcceptInviteRequest, UserOut, ConnectedIdentity, ChangePasswordRequest
 from app.security import tokens, oauth
-from app.security.passwords import hash_password, verify_password
+from app.security.passwords import hash_password, verify_password, validate_password, current_policy
 from app.security.csrf import new_csrf_token, CSRF_COOKIE
 from app.security.deps import get_current_user
 from app.security.setup_gate import users_exist
@@ -21,6 +21,7 @@ from app.services import federation
 from app.services.audit import audit_request
 from app.middleware.rate_limit import client_ip_from_headers
 from app.services.abuse import fail_tracker, ban_cache, ban_ip
+from app.services.settings_store import settings as sys_settings
 
 router = APIRouter()
 _settings = Settings()
@@ -67,7 +68,7 @@ async def _issue_session(resp: Response, session: AsyncSession, user: User, requ
     session.add(RefreshToken(
         jti=jti, user_id=user.id,
         family_id=family_id or jti,
-        expires_at=_now() + timedelta(seconds=_settings.REFRESH_TTL),
+        expires_at=_now() + timedelta(seconds=sys_settings.get("REFRESH_TTL")),
         user_agent=request.headers.get("user-agent"),
     ))
     user.last_login = _now()
@@ -126,6 +127,10 @@ async def setup(body: SetupRequest, request: Request, response: Response,
                 session: AsyncSession = Depends(get_session)):
     if await users_exist(session):
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    try:
+        validate_password(body.password, current_policy())
+    except ValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
     user = User(username=body.username, email=body.email,
                 password_hash=hash_password(body.password), role="admin")
     session.add(user)
@@ -160,14 +165,16 @@ async def login(body: LoginRequest, request: Request, response: Response,
     if not user or not user.is_active or not verify_password(body.password, user.password_hash):
         if user:
             user.failed_count += 1
-            if user.failed_count >= _settings.LOCKOUT_THRESHOLD:
-                user.locked_until = _now() + timedelta(seconds=_settings.LOCKOUT_DURATION)
+            if user.failed_count >= sys_settings.get("LOCKOUT_THRESHOLD"):
+                user.locked_until = _now() + timedelta(seconds=sys_settings.get("LOCKOUT_DURATION"))
                 user.failed_count = 0
             session.add(user)
-        # Per-IP abuse detector -> proxy ban (L3).
+        # Per-IP abuse detector -> proxy ban (L3). Thresholds are live-tunable.
+        fail_tracker.threshold = sys_settings.get("BAN_FAIL_THRESHOLD")
+        fail_tracker.window = sys_settings.get("BAN_FAIL_WINDOW")
         if fail_tracker.record(ip):
             await ban_ip(session, ip, "brute-force: failed logins",
-                         _settings.BAN_DURATION)
+                         sys_settings.get("BAN_DURATION"))
             ban_cache.invalidate()
         await audit_request(session, request, "auth.login_failed",
                             detail={"username": body.username})
@@ -284,6 +291,28 @@ async def me(user: User = Depends(get_current_user)):
                    role=user.role, is_active=user.is_active)
 
 
+@router.post("/change-password")
+async def change_password(body: ChangePasswordRequest, request: Request, response: Response,
+                          session: AsyncSession = Depends(get_session),
+                          user: User = Depends(get_current_user)):
+    if not verify_password(body.old_password, user.password_hash):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Current password is incorrect")
+    try:
+        validate_password(body.new_password, current_policy())
+    except ValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
+    user.password_hash = hash_password(body.new_password)
+    user.must_change_pw = False
+    session.add(user)
+    await session.exec(update(RefreshToken)
+                       .where(RefreshToken.user_id == user.id)
+                       .values(revoked=True))
+    await _issue_session(response, session, user, request)
+    await audit_request(session, request, "auth.password_change", user_id=user.id)
+    await session.commit()
+    return {"ok": True}
+
+
 @router.post("/accept-invite", status_code=201)
 async def accept_invite(body: AcceptInviteRequest, request: Request, response: Response,
                         session: AsyncSession = Depends(get_session)):
@@ -298,6 +327,10 @@ async def accept_invite(body: AcceptInviteRequest, request: Request, response: R
     exists = await session.exec(select(User).where(User.username == body.username))
     if exists.first():
         raise HTTPException(status.HTTP_409_CONFLICT, "Username taken")
+    try:
+        validate_password(body.password, current_policy())
+    except ValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
     user = User(username=body.username, email=inv.email,
                 password_hash=hash_password(body.password), role=inv.role)
     inv.used_at = _now()

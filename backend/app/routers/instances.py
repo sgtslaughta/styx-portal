@@ -16,6 +16,7 @@ from app.services.docker_manager import DockerManager
 from app.services.screenshot import ScreenshotService
 from app.services.traefik_labels import generate_traefik_labels
 from app.services.audit import audit
+from app.services.settings_store import settings as sys_settings
 from app.middleware.rate_limit import SlidingWindow
 
 logger = logging.getLogger(__name__)
@@ -274,7 +275,7 @@ async def create_instance(
             raise HTTPException(429, "Too many instances created recently — try again later")
 
         # Quota check for non-admin users
-        quota = _settings.MAX_INSTANCES_PER_USER
+        quota = sys_settings.get("MAX_INSTANCES_PER_USER")
         if quota > 0:
             owned = await session.exec(
                 select(Instance).where(Instance.owner_id == user.id)

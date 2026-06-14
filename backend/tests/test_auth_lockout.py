@@ -129,3 +129,17 @@ async def test_brute_force_bans_ip_after_threshold(client, session):
                           json={"username": f"nobody{i}", "password": "nope"})
     row = await session.get(BannedIP, "9.9.9.9")
     assert row is not None
+
+
+async def test_lockout_threshold_is_live(client, session):
+    from app.services.settings_store import settings
+    await settings.set(session, "LOCKOUT_THRESHOLD", 3, actor_id=None)
+    await session.commit()
+    await _make_user(session)
+    for _ in range(3):
+        r = await client.post("/api/auth/login",
+                              json={"username": "victim", "password": "nope"})
+        assert r.status_code == 401, r.text
+    r = await client.post("/api/auth/login",
+                          json={"username": "victim", "password": "nope"})
+    assert r.status_code == 423

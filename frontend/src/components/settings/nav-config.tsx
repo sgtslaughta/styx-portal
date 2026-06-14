@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 import {
   Activity, Terminal, Cpu, ScrollText, Users, KeyRound, HardDrive,
-  Link2, BarChart3, Shield, UserCircle, Heart, MonitorSmartphone,
+  Link2, BarChart3, Shield, UserCircle, Heart, MonitorSmartphone, SlidersHorizontal,
 } from "lucide-react";
 import { MetricsOverview } from "@/components/system/metrics-overview";
 import { MetricsSessions } from "@/components/system/metrics-sessions";
@@ -13,6 +13,7 @@ import { WorkstationsPanel } from "@/components/system/workstations-panel";
 import { OAuthProvidersPanel } from "@/components/system/oauth-providers-panel";
 import { ImageManager } from "@/components/system/image-manager";
 import { ConnectedAccounts } from "@/components/system/connected-accounts";
+import { SystemSettingsPanel } from "@/components/system/system-settings-panel";
 
 export type SettingsSection = {
   id: string;
@@ -64,6 +65,9 @@ export const CATEGORIES: SettingsCategory[] = [
       { id: "sso", label: "SSO Providers", icon: KeyRound,
         description: "Configure OIDC / OAuth identity providers.",
         tooltip: "Add and manage single sign-on providers", Component: OAuthProvidersPanel },
+      { id: "settings", label: "Settings", icon: SlidersHorizontal,
+        description: "Tune security, rate limits, timeouts, and password policy.",
+        tooltip: "Server behavioral settings (applied live)", Component: SystemSettingsPanel },
       { id: "images", label: "Images", icon: HardDrive,
         description: "Pulled Docker images and cleanup.",
         tooltip: "List and remove cached images", Component: ImageManager },

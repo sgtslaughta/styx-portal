@@ -122,3 +122,14 @@ def test_api_router_has_ban_gate_and_ratelimit():
     assert "styx-ratelimit" in api_mw
     fe_mw = cfg["http"]["routers"]["frontend"]["middlewares"]
     assert "styx-ratelimit" in fe_mw
+
+
+def test_ratelimit_middleware_uses_live_settings():
+    from app.services.settings_store import settings
+    settings.reset_cache()
+    settings._overrides["TRAEFIK_RATELIMIT_AVERAGE"] = 7
+    settings._overrides["TRAEFIK_RATELIMIT_BURST"] = 3
+    cfg = build_routes_config([], "example.com", "tunnel")
+    rl = cfg["http"]["middlewares"]["styx-ratelimit"]["rateLimit"]
+    assert rl["average"] == 7 and rl["burst"] == 3
+    settings.reset_cache()

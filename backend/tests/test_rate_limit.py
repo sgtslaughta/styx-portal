@@ -67,3 +67,12 @@ def test_ban_check_is_exempt():
     from app.middleware.rate_limit import is_rate_limit_exempt
     assert is_rate_limit_exempt("/api/auth/ban-check") is True
     assert is_rate_limit_exempt("/api/auth/login") is False
+
+
+def test_middleware_reads_live_spec():
+    from app.middleware.rate_limit import RateLimitMiddleware
+    mw = RateLimitMiddleware(app=None)
+    w1 = mw._window_for("3/60")
+    assert w1.limit == 3 and w1.window == 60
+    assert mw._window_for("3/60") is w1
+    assert mw._window_for("9/60").limit == 9

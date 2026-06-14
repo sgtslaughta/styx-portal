@@ -66,17 +66,25 @@ def is_rate_limit_exempt(path: str) -> bool:
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, auth_spec: str, default_spec: str):
+    def __init__(self, app):
         super().__init__(app)
-        self._auth = SlidingWindow(*_parse(auth_spec))
-        self._default = SlidingWindow(*_parse(default_spec))
+        self._windows: dict[str, SlidingWindow] = {}
+
+    def _window_for(self, spec: str) -> SlidingWindow:
+        w = self._windows.get(spec)
+        if w is None:
+            w = SlidingWindow(*_parse(spec))
+            self._windows[spec] = w
+        return w
 
     async def dispatch(self, request: Request, call_next):
         if is_rate_limit_exempt(request.url.path):
             return await call_next(request)
+        from app.services.settings_store import settings
         ip = client_ip_from_headers(request)
         strict = is_strict_auth(request.method, request.url.path)
-        window = self._auth if strict else self._default
+        spec = settings.get("RATE_LIMIT_AUTH") if strict else settings.get("RATE_LIMIT_DEFAULT")
+        window = self._window_for(spec)
         if not window.allow(f"{ip}:{strict}"):
             return JSONResponse(
                 {"detail": "Too many requests"},

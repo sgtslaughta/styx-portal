@@ -4,6 +4,7 @@ import yaml
 from pathlib import Path
 
 from app.config import Settings
+from app.services.settings_store import settings as _sys_settings
 
 logger = logging.getLogger("styx-portal")
 _settings = Settings()
@@ -46,8 +47,8 @@ def build_routes_config(instances: list[dict], domain: str,
         },
         "styx-ratelimit": {
             "rateLimit": {
-                "average": _settings.TRAEFIK_RATELIMIT_AVERAGE,
-                "burst": _settings.TRAEFIK_RATELIMIT_BURST,
+                "average": _sys_settings.get("TRAEFIK_RATELIMIT_AVERAGE"),
+                "burst": _sys_settings.get("TRAEFIK_RATELIMIT_BURST"),
             }
         },
         "ip-ban-gate": {
