@@ -27,7 +27,7 @@ async def test_user_quota_enforced(member_client, session):
     template = resp.json()
 
     # Patch the settings to allow only 2 instances
-    with patch("app.routers.instances._settings.MAX_INSTANCES_PER_USER", 2):
+    with patch("app.routers.instances.sys_settings.get", return_value=2):
         # First create should succeed
         resp1 = await member_client.post("/api/instances", json=_payload(template, 1))
         assert resp1.status_code == 201, resp1.text
@@ -58,7 +58,7 @@ async def test_admin_exempt_from_quota(admin_client, session):
     template = resp.json()
 
     # Patch the settings to allow only 1 instance
-    with patch("app.routers.instances._settings.MAX_INSTANCES_PER_USER", 1):
+    with patch("app.routers.instances.sys_settings.get", return_value=1):
         # First create should succeed
         resp1 = await admin_client.post("/api/instances", json=_payload(template, 1))
         assert resp1.status_code == 201, resp1.text
@@ -83,7 +83,7 @@ async def test_zero_means_unlimited(member_client, session):
     template = resp.json()
 
     # Patch the settings to disable quota (0 = unlimited)
-    with patch("app.routers.instances._settings.MAX_INSTANCES_PER_USER", 0):
+    with patch("app.routers.instances.sys_settings.get", return_value=0):
         # Should be able to create 4 instances without hitting quota
         for i in range(1, 5):
             resp = await member_client.post("/api/instances", json=_payload(template, i))
@@ -211,3 +211,11 @@ async def test_instance_delete_audited(member_client, session):
     assert log.user_id == member_user.id
     assert log.detail is not None
     assert log.detail.get("subdomain") == "quota-test-1"
+
+
+@pytest.mark.asyncio
+async def test_quota_is_live(session):
+    from app.services.settings_store import settings
+    await settings.set(session, "MAX_INSTANCES_PER_USER", 0, actor_id=None)
+    await session.commit()
+    assert settings.get("MAX_INSTANCES_PER_USER") == 0
