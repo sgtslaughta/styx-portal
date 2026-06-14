@@ -5,6 +5,7 @@ import { ExternalLink, Pause, Play, RotateCcw, Square, Trash2 } from "lucide-rea
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { statusMeta } from "@/lib/status";
+import { openConnectWipe } from "@/lib/connect-wipe";
 import { cn } from "@/lib/utils";
 import {
   useDeleteInstance, usePauseInstance, useRestartInstance,
@@ -58,7 +59,7 @@ export function ActionBar({ instance, size = "default", showConnect = true, clas
   }
 
   function connect() {
-    window.open(`/i/${instance.subdomain}/`, "_blank");
+    openConnectWipe(`/i/${instance.subdomain}/`, `Launching ${instance.name}…`);
   }
 
   return (

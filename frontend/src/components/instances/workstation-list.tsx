@@ -4,6 +4,7 @@ import { api, ApiError, type Workstation } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { WorkstationSpecs } from "@/components/system/workstation-specs";
+import { openConnectWipe } from "@/lib/connect-wipe";
 import { cn } from "@/lib/utils";
 
 /* ---------- OS badge: brand-colored glyph keyed off os_info.distro ------- */
@@ -129,13 +130,11 @@ export function WorkstationList() {
 
   if (rows.length === 0) return null;
 
-  const open = (url: string) => window.open(url, "_blank", "noopener");
-
   const connect = async (ws: Workstation, force = false) => {
     setErr(null);
     try {
       const { url } = await api.workstationConnectUrl(ws.id, force);
-      open(url);
+      openConnectWipe(url, `Connecting to ${ws.name}…`);
     } catch (e) {
       if (e instanceof ApiError && e.status === 423) setTakeover(ws);
       else setErr((e as Error).message);
