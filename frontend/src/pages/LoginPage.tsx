@@ -52,7 +52,12 @@ export function LoginPage() {
     setErr("");
     setSubmitting(true);
     try {
-      await api.login({ username, password });
+      const result = await api.login({ username, password });
+      if (result.must_change_pw) {
+        await refresh();
+        nav("/change-password");
+        return;
+      }
       await refresh();
       // Forward-auth redirects land here with ?next=/w/{sub}/ — return the
       // user to the stream they asked for. Only follow same-origin /w/ paths

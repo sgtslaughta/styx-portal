@@ -221,7 +221,7 @@ export const api = {
     request<{ id: string; username: string; role: string }>("/auth/setup", {
       method: "POST", body: JSON.stringify(data) }),
   login: (data: { username: string; password: string }) =>
-    request<{ id: string; username: string; role: string }>("/auth/login", {
+    request<{ id: string; username: string; role: string; must_change_pw?: boolean }>("/auth/login", {
       method: "POST", body: JSON.stringify(data) }),
   logout: (endSession = false) =>
     request<{ ok: boolean }>(
@@ -233,13 +233,22 @@ export const api = {
   acceptInvite: (data: { token: string; username: string; password: string }) =>
     request<{ id: string; username: string; role: string }>("/auth/accept-invite", {
       method: "POST", body: JSON.stringify(data) }),
-  listUsers: () => request<{ id: string; username: string; email: string | null; role: string; is_active: boolean }[]>("/users"),
+  listUsers: () => request<{ id: string; username: string; email: string | null; role: string; is_active: boolean; last_login: string | null; locked_until: string | null; failed_count: number }[]>("/users"),
   createInvite: (data: { email?: string; role: string }) =>
     request<{ token: string; expires_at: string | null }>("/users/invites", {
       method: "POST", body: JSON.stringify(data) }),
   disableUser: (id: string) => request<unknown>(`/users/${id}/disable`, { method: "PATCH" }),
   changeRole: (id: string, role: string) =>
     request<unknown>(`/users/${id}/role?role=${role}`, { method: "PATCH" }),
+  unlockUser: (id: string) => request(`/users/${id}/unlock`, { method: "POST" }),
+  resetUserPassword: (id: string) =>
+    request<{ temp_password: string }>(`/users/${id}/reset-password`, { method: "POST" }),
+  forcePasswordChange: (id: string) =>
+    request(`/users/${id}/force-password-change`, { method: "POST" }),
+  deleteUser: (id: string) => request(`/users/${id}`, { method: "DELETE" }),
+  changePassword: (old_password: string, new_password: string) =>
+    request("/auth/change-password", { method: "POST",
+      body: JSON.stringify({ old_password, new_password }) }),
 
   // Workstations
   listWorkstations: () => request<Workstation[]>("/workstations"),
