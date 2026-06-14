@@ -8,6 +8,7 @@ import { AuthProvider } from "@/auth/AuthContext";
 import { ProtectedRoute } from "@/auth/ProtectedRoute";
 import { ThemeProvider } from "@/theme/ThemeProvider";
 import { LoginPage } from "@/pages/LoginPage";
+import { ChangePasswordPage } from "@/pages/ChangePasswordPage";
 import { SetupWizard } from "@/pages/SetupWizard";
 import { AcceptInvitePage } from "@/pages/AcceptInvitePage";
 import "./styles/globals.css";
@@ -44,6 +45,7 @@ createRoot(document.getElementById("root")!).render(
         <AuthProvider>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/change-password" element={<ChangePasswordPage />} />
             <Route path="/setup" element={<SetupWizard />} />
             <Route path="/accept-invite/:token" element={<AcceptInvitePage />} />
             <Route path="/*" element={<ProtectedRoute><App /></ProtectedRoute>} />
