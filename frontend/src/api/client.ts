@@ -272,4 +272,15 @@ export const api = {
   testOAuthConfig: (id: string) =>
     request<ProviderTestResult>(`/oauth-providers/${id}/test/config`, { method: "POST" }),
   oauthTestStartUrl: (id: string) => `/api/oauth-providers/${id}/test/start`,
+
+  // System settings
+  getSystemSettings: () =>
+    request<{ group: string; label: string; settings: {
+      key: string; label: string; help: string; type: "int" | "bool" | "rate";
+      value: number | boolean | string; default: number | boolean | string;
+      min: number | null; max: number | null }[] }[]>("/system-settings"),
+  updateSystemSettings: (changes: Record<string, number | boolean | string>) =>
+    request("/system-settings", { method: "PATCH", body: JSON.stringify(changes) }),
+  resetSystemSetting: (key: string) =>
+    request(`/system-settings/${key}/reset`, { method: "POST" }),
 };
