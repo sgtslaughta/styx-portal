@@ -228,11 +228,11 @@ export function RippleCanvas() {
       const [ripR, ripG, ripB] = parseRgb();
       const isDark = document.documentElement.classList.contains("dark");
       // Gradient anchored upper-right (must match the .styx-brand CSS gradient):
-      // dark theme: royal blue #2440a6 -> deep navy #04081a
-      // light theme: royal blue #233e9c -> off-white #faf8f3
+      // dark theme: dark slate grey-blue #38425e -> deep navy #04081a
+      // light theme: dark slate grey-blue #2c3650 -> off-white #faf8f3
       const bgNear = isDark
-        ? [0.141, 0.251, 0.651]
-        : [0.137, 0.243, 0.612];
+        ? [0.220, 0.259, 0.369]
+        : [0.173, 0.212, 0.314];
       const bgFar = isDark
         ? [0.016, 0.031, 0.102]
         : [0.980, 0.973, 0.953];

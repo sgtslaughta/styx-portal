@@ -94,8 +94,8 @@
   position: relative;
   overflow: hidden;
   isolation: isolate; /* keeps z:-1 line layers above this panel's background */
-  /* Light theme: smooth off-white (lower-left) -> royal blue (upper-right) */
-  background: linear-gradient(to top right, #faf8f3 0%, #7d92d4 55%, #233e9c 100%);
+  /* Light theme: smooth off-white (lower-left) -> dark slate grey-blue (upper-right) */
+  background: linear-gradient(to top right, #faf8f3 0%, #5a6685 55%, #2c3650 100%);
   color: #1a2847;
   --brand-fg: #1a2847;
   --brand-fg-muted: #44506e;
@@ -103,9 +103,9 @@
   --brand-ripple-g: 58;
   --brand-ripple-b: 138;
 }
-/* Dark theme: smooth deep navy (lower-left) -> royal blue (upper-right) */
+/* Dark theme: smooth deep navy (lower-left) -> dark slate grey-blue (upper-right) */
 .dark .styx-brand {
-  background: linear-gradient(to top right, #04081a 0%, #142663 55%, #2440a6 100%);
+  background: linear-gradient(to top right, #04081a 0%, #1c2238 55%, #38425e 100%);
   color: #fff;
   --brand-fg: #fff;
   --brand-fg-muted: rgba(255, 255, 255, 0.6);
@@ -216,4 +216,26 @@
   --ring: oklch(0.55 0.17 255);
   background: #f7f8fa;
   color: var(--foreground);
+}
+/* Dark theme: form column follows dark mode (light tokens above are light-only) */
+.dark .styx-auth-form {
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.178 0.005 265);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.178 0.005 265);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.61 0.17 255);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.269 0.006 265);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0.006 265);
+  --muted-foreground: oklch(0.708 0.015 265);
+  --accent: oklch(0.269 0.006 265);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.353 0.013 265);
+  --input: oklch(0.353 0.013 265);
+  --ring: oklch(0.61 0.17 255);
+  background: #0e1320;
 }
