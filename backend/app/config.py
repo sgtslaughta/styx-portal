@@ -34,6 +34,15 @@ class Settings(BaseSettings):
     RATE_LIMIT_AUTH: str = "5/60"        # 5 requests per 60s on /auth/*
     RATE_LIMIT_DEFAULT: str = "120/60"   # 120 requests per 60s otherwise
     RATE_LIMIT_INSTANCE_CREATE: str = "10/3600"  # 10 creates per hour per user
+    # --- Brute-force protection ---
+    LOCKOUT_THRESHOLD: int = 10           # failed logins per username before lock
+    LOCKOUT_DURATION: int = 900           # lock duration seconds (15 min)
+    BAN_FAIL_THRESHOLD: int = 20          # failed logins per IP in window before ban
+    BAN_FAIL_WINDOW: int = 600            # abuse-detector window seconds (10 min)
+    BAN_DURATION: int = 3600              # IP ban duration seconds (1 h)
+    BAN_CACHE_TTL: int = 30               # ban-set cache refresh interval seconds
+    TRAEFIK_RATELIMIT_AVERAGE: int = 100  # L1 proxy avg req/s per IP
+    TRAEFIK_RATELIMIT_BURST: int = 50     # L1 proxy burst per IP
     MAX_INSTANCES_PER_USER: int = 3      # 0 = unlimited; admins exempt
     OAUTH_REDIRECT_BASE: str = ""   # e.g. https://s.jmolabs.dev ; defaults to https://{DOMAIN}
     SECRETS_FILE: str = "/app/data/secrets.json"

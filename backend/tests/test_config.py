@@ -140,3 +140,16 @@ def test_server_lan_url_falls_back_to_domain():
     assert s.server_lan_url() == "https://example.com"
     s2 = Settings(SERVER_LAN_URL="https://192.168.1.10/")
     assert s2.server_lan_url() == "https://192.168.1.10"
+
+
+def test_brute_force_defaults():
+    from app.config import Settings
+    s = Settings()
+    assert s.LOCKOUT_THRESHOLD == 10
+    assert s.LOCKOUT_DURATION == 900
+    assert s.BAN_FAIL_THRESHOLD == 20
+    assert s.BAN_FAIL_WINDOW == 600
+    assert s.BAN_DURATION == 3600
+    assert s.BAN_CACHE_TTL == 30
+    assert s.TRAEFIK_RATELIMIT_AVERAGE == 100
+    assert s.TRAEFIK_RATELIMIT_BURST == 50
