@@ -44,6 +44,17 @@ def build_routes_config(instances: list[dict], domain: str,
                 "query": "/api/instance-unavailable",
             }
         },
+        "styx-ratelimit": {
+            "rateLimit": {
+                "average": _settings.TRAEFIK_RATELIMIT_AVERAGE,
+                "burst": _settings.TRAEFIK_RATELIMIT_BURST,
+            }
+        },
+        "ip-ban-gate": {
+            "forwardAuth": {
+                "address": "http://backend:8000/api/auth/ban-check"
+            }
+        },
     }
     config: dict = {
         "http": {
@@ -52,12 +63,14 @@ def build_routes_config(instances: list[dict], domain: str,
                     "rule": f"Host(`{domain}`)",
                     "service": "frontend",
                     "priority": 1,
+                    "middlewares": ["styx-ratelimit"],
                     **_router_transport(deploy_mode, domain),
                 },
                 "api": {
                     "rule": f"Host(`{domain}`) && PathPrefix(`/api`)",
                     "service": "api",
                     "priority": 100,
+                    "middlewares": ["ip-ban-gate", "styx-ratelimit"],
                     **_router_transport(deploy_mode, domain),
                 },
                 "instances_fallback": {
@@ -213,9 +226,9 @@ def build_routes_config(instances: list[dict], domain: str,
     # api beats frontend on /api; ws-*-lan above (prio 50) beats frontend on /w.
     if lan_serving:
         config["http"]["routers"]["api-lan"] = _lan_router(
-            "PathPrefix(`/api`)", "api", 100)
+            "PathPrefix(`/api`)", "api", 100, ["ip-ban-gate", "styx-ratelimit"])
         config["http"]["routers"]["frontend-lan"] = _lan_router(
-            "PathPrefix(`/`)", "frontend", 1)
+            "PathPrefix(`/`)", "frontend", 1, ["styx-ratelimit"])
 
     # Add shared forwardAuth middleware if any workstations exist
     if has_workstations:

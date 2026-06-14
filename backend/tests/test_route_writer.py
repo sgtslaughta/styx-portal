@@ -104,3 +104,21 @@ def test_direct_mode_instance_router_has_tls():
     assert router["entryPoints"] == ["websecure"]
     assert router["tls"]["certResolver"] == "letsencrypt"
     assert {"main": "example.com", "sans": ["*.example.com"]} in router["tls"]["domains"]
+
+
+def test_emits_ratelimit_and_ban_gate_middlewares():
+    cfg = build_routes_config([], "example.com", "tunnel")
+    mw = cfg["http"]["middlewares"]
+    assert mw["styx-ratelimit"]["rateLimit"]["average"] == 100
+    assert mw["styx-ratelimit"]["rateLimit"]["burst"] == 50
+    assert mw["ip-ban-gate"]["forwardAuth"]["address"] == \
+        "http://backend:8000/api/auth/ban-check"
+
+
+def test_api_router_has_ban_gate_and_ratelimit():
+    cfg = build_routes_config([], "example.com", "tunnel")
+    api_mw = cfg["http"]["routers"]["api"]["middlewares"]
+    assert "ip-ban-gate" in api_mw
+    assert "styx-ratelimit" in api_mw
+    fe_mw = cfg["http"]["routers"]["frontend"]["middlewares"]
+    assert "styx-ratelimit" in fe_mw
