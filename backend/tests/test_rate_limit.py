@@ -61,3 +61,9 @@ def test_falls_back_to_first_xff():
 def test_falls_back_to_client_host():
     req = _FakeReq({})
     assert client_ip_from_headers(req) == "10.0.0.1"
+
+
+def test_ban_check_is_exempt():
+    from app.middleware.rate_limit import is_rate_limit_exempt
+    assert is_rate_limit_exempt("/api/auth/ban-check") is True
+    assert is_rate_limit_exempt("/api/auth/login") is False

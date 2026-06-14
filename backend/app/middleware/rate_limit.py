@@ -58,6 +58,13 @@ def is_strict_auth(method: str, path: str) -> bool:
     return method == "POST" and path in _STRICT_AUTH_PATHS
 
 
+_EXEMPT_PATHS = frozenset({"/api/auth/ban-check"})
+
+
+def is_rate_limit_exempt(path: str) -> bool:
+    return path in _EXEMPT_PATHS
+
+
 class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, auth_spec: str, default_spec: str):
         super().__init__(app)
@@ -65,6 +72,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._default = SlidingWindow(*_parse(default_spec))
 
     async def dispatch(self, request: Request, call_next):
+        if is_rate_limit_exempt(request.url.path):
+            return await call_next(request)
         ip = client_ip_from_headers(request)
         strict = is_strict_auth(request.method, request.url.path)
         window = self._auth if strict else self._default
