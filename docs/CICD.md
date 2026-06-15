@@ -50,6 +50,15 @@ the format on PRs/MRs so the version math stays correct.
 each host config carries the complete chain plus its host publish plugin. The base
 `.releaserc.json` is the documented canonical chain.
 
+**Canonical vs mirror — only GitHub commits the changelog.** GitHub is canonical:
+`.releaserc.github.json` runs `@semantic-release/changelog` + `@semantic-release/git`,
+so it commits `CHANGELOG.md` back to `main`. `.releaserc.gitlab.json` deliberately
+omits those — it only computes the version, pushes the **tag**, and creates a
+**GitLab Release**. GitLab's `CHANGELOG.md` arrives via the mirror of GitHub's
+commit. If both hosts committed the changelog, the two remotes would diverge on
+every release; this keeps `main` identical on both. (GitLab needs a `GITLAB_TOKEN`
+Project Access Token, `api` scope, as a CI/CD variable for this.)
+
 ### The tag-recursion gap (important)
 
 The two hosts differ in how the computed version reaches the image build, because
