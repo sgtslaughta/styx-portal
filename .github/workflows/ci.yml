@@ -1,0 +1,61 @@
+name: CI
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-backend
+      - name: ruff (blocking)
+        working-directory: backend
+        run: .venv/bin/python -m ruff check app tests
+      - name: mypy (non-blocking baseline)
+        continue-on-error: true
+        working-directory: backend
+        run: .venv/bin/python -m mypy
+      - uses: ./.github/actions/setup-node
+      - name: frontend typecheck/build (blocking)
+        working-directory: frontend
+        run: npm run build
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-backend
+      - name: pytest
+        working-directory: backend
+        run: .venv/bin/python -m pytest -q
+      - uses: ./.github/actions/setup-node
+      - name: vitest
+        working-directory: frontend
+        run: npm test
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-backend
+      - name: bandit (fail on HIGH/CRITICAL)
+        working-directory: backend
+        run: .venv/bin/python -m bandit -c pyproject.toml -r app -ll -ii
+      - name: Trivy filesystem scan (deps + secrets, fail HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
