@@ -24,6 +24,8 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "ruff>=0.8.0",
     "aiohttp>=3.9",
+    "mypy>=1.13.0",
+    "bandit>=1.8.0",
 ]
 
 [tool.pytest.ini_options]
@@ -37,3 +39,18 @@ exclude = ["data*", "tests*", "templates*"]
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+
+[tool.mypy]
+python_version = "3.12"
+files = ["app"]
+ignore_missing_imports = true
+follow_imports = "silent"
+warn_unused_ignores = false
+# Non-blocking baseline: CI runs mypy with continue-on-error.
+# Ratchet plan: clear errors, then flip CI gate to blocking and tighten below.
+# disallow_untyped_defs = true   # enable when ratcheting
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "data"]
+# B101 assert_used is noise in this codebase's test-adjacent helpers
+skips = ["B101"]
