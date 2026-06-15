@@ -4,7 +4,7 @@
   "private": true,
   "description": "Release automation tooling (semantic-release + commitlint). Not a publishable package.",
   "devDependencies": {
-    "@commitlint/cli": "^19.6.0",
+    "@commitlint/cli": "^21.0.2",
     "@commitlint/config-conventional": "^19.6.0",
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/exec": "^6.0.3",
