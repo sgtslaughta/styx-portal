@@ -47,9 +47,21 @@ def detect_gpu() -> dict:
 
 class DockerManager:
     def __init__(self, network_name: str = "styx-portal", base_url: str | None = None):
-        url = base_url or Settings().DOCKER_SOCKET
-        self._client = docker.DockerClient(base_url=url)
+        # Lazy connect: do NOT open the socket here. Eager construction raises if
+        # the docker socket is absent (CI runners, docker-down hosts), which would
+        # 500 diagnostics + setup-preflight — the very endpoints meant to *report*
+        # docker being down. The client is built on first use; ping()/version()
+        # already degrade gracefully, so the failure surfaces there as a clean
+        # "not reachable", not an exception.
+        self._url = base_url or Settings().DOCKER_SOCKET
+        self._client_obj: docker.DockerClient | None = None
         self._network_name = network_name
+
+    @property
+    def _client(self) -> docker.DockerClient:
+        if self._client_obj is None:
+            self._client_obj = docker.DockerClient(base_url=self._url)
+        return self._client_obj
 
     def create_container(
         self,

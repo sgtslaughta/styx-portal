@@ -20,7 +20,10 @@ def test_default_network_name():
 
 
 def test_manager_uses_configured_socket(monkeypatch):
-    """Verify DockerManager respects base_url parameter from DOCKER_SOCKET setting."""
+    """Verify DockerManager respects base_url parameter from DOCKER_SOCKET setting.
+
+    The client is created lazily (on first use), so realize it before asserting
+    the configured base_url reached DockerClient."""
     captured = {}
 
     class FakeClient:
@@ -28,8 +31,21 @@ def test_manager_uses_configured_socket(monkeypatch):
             captured["url"] = base_url
 
     monkeypatch.setattr("app.services.docker_manager.docker.DockerClient", FakeClient)
-    DockerManager(base_url="tcp://docker-proxy:2375")
+    mgr = DockerManager(base_url="tcp://docker-proxy:2375")
+    _ = mgr._client  # realize lazy client
     assert captured["url"] == "tcp://docker-proxy:2375"
+
+
+def test_construction_does_not_connect_eagerly():
+    """Regression: __init__ must not open the docker socket. CI runners and
+    docker-down hosts have no /var/run/docker.sock; the failure must surface
+    lazily via ping()/version() (which degrade gracefully), not as a
+    constructor exception (which 500s diagnostics + setup-preflight)."""
+    # Real DockerClient pointed at a guaranteed-absent socket. Before the lazy
+    # fix this raised docker.errors.DockerException at construction time.
+    dm = DockerManager(base_url="unix:///nonexistent/styx-test.sock")
+    assert dm.ping() is False
+    assert dm.version() is None
 
 
 def test_create_container(mock_docker):
