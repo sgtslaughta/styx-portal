@@ -85,6 +85,10 @@ jobs:
     needs: release
     if: needs.release.outputs.publish == 'true'
     runs-on: ubuntu-latest
+    # Isolated/non-blocking: the ~4.5GB desktop image always carries CVEs and may
+    # exhaust hosted-runner disk; it must not block backend/frontend release.
+    # Mirrors GitLab's `allow_failure: true` on build-desktop/scan-desktop.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Free disk space (desktop image ~4.5GB)
