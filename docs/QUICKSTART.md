@@ -27,9 +27,16 @@ Get Styx Portal running in 5 minutes using Cloudflare Tunnel (the default).
 
 3. **Start services:**
    ```bash
+   docker compose pull   # fetch prebuilt backend/frontend images from GHCR
    docker compose up -d
    ```
    (COMPOSE_PROFILES=tunnel is the default, so Cloudflare Tunnel mode starts automatically.)
+
+   The `backend` and `frontend` images are published to GHCR on each release, so
+   no local build is needed. To pin a release instead of `latest`, set `STYX_TAG`
+   in `.env` (e.g. `STYX_TAG=1.0.0`). To build from source instead, run
+   `docker compose up -d --build`. If the GHCR packages are private, run
+   `docker login ghcr.io` first (see `.env.example`).
 
 4. **Complete setup:**
    - Open `https://your.domain.com` in your browser

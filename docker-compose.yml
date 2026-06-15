@@ -121,6 +121,9 @@ services:
       - lan-certs:/app/data/lan-certs
 
   backend:
+    # Hosted image (default): `docker compose pull` fetches it from GHCR.
+    # Local build: `docker compose up --build` uses the ./backend context below.
+    image: ${REGISTRY:-ghcr.io/sgtslaughta}/styx-backend:${STYX_TAG:-latest}
     build: ./backend
     restart: unless-stopped
     depends_on:
@@ -162,6 +165,9 @@ services:
       start_period: 15s
 
   frontend:
+    # Hosted image (default): `docker compose pull` fetches it from GHCR.
+    # Local build: `docker compose up --build` uses the ./frontend context below.
+    image: ${REGISTRY:-ghcr.io/sgtslaughta}/styx-frontend:${STYX_TAG:-latest}
     build: ./frontend
     restart: unless-stopped
     depends_on:

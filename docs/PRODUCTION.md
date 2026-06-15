@@ -127,6 +127,20 @@ Set in `.env` before first start. Admins are always exempt from the quota.
 
 Database migrations run automatically on boot. Simply `docker compose down && docker compose up -d` with a new version; the backend will apply any pending migrations.
 
+### Hosted images & pinning
+
+The `backend` and `frontend` images are published to GHCR (`ghcr.io/sgtslaughta/styx-backend`, `…/styx-frontend`) on every release. For production, **pin a tag** rather than tracking `latest` so deploys are reproducible:
+
+```bash
+# .env
+STYX_TAG=1.0.0          # pin the release
+# REGISTRY=ghcr.io/sgtslaughta   # override the namespace if you mirror it
+
+docker compose pull && docker compose up -d
+```
+
+Upgrade by bumping `STYX_TAG` to the new release and re-running `pull && up -d`. To roll back, set `STYX_TAG` to the previous version. If the GHCR packages are private, `docker login ghcr.io` (or set the package visibility to public). The desktop instance image is published as `ghcr.io/sgtslaughta/styx-desktop` for use in templates.
+
 ## Monitoring Checklist
 
 - [ ] Secrets file backed up outside the host
