@@ -23,13 +23,15 @@ const plugins = [
 if (onGitLab) {
   plugins.push('@semantic-release/gitlab');
 } else {
+  // GitHub: tag + GitHub Release only — NO commit to main. The MAIN branch
+  // ruleset (PR-required) blocks the CI bot from pushing a chore(release)
+  // changelog commit, which aborts the release. So we don't use
+  // @semantic-release/git/@semantic-release/changelog here; release notes live
+  // on the GitHub Releases page. @semantic-release/exec still writes
+  // .release-version for the image-build job; core pushes only the tag ref
+  // (not refs/heads/main), which the ruleset doesn't gate.
   plugins.push(
-    ['@semantic-release/changelog', { changelogFile: 'CHANGELOG.md' }],
     ['@semantic-release/exec', { prepareCmd: "printf '%s' \"${nextRelease.version}\" > .release-version" }],
-    ['@semantic-release/git', {
-      assets: ['CHANGELOG.md'],
-      message: 'chore(release): ${nextRelease.version} [skip ci]\n\n${nextRelease.notes}',
-    }],
     '@semantic-release/github',
   );
 }

@@ -53,17 +53,24 @@ We do **not** use `--extends ./.releaserc.<host>.json`: semantic-release auto-lo
 wins over anything passed via `--extends`, so the host overrides never took effect.
 A single auto-loaded JS config that branches on the host is unambiguous.
 
-**Canonical vs mirror — only GitHub commits the changelog.** On GitHub the config
-runs `@semantic-release/changelog` + `@semantic-release/exec` + `@semantic-release/git`
-+ `@semantic-release/github`: it commits `CHANGELOG.md`, writes `.release-version`
-for the build job, and publishes a GitHub Release. On GitLab it runs **only**
-`@semantic-release/gitlab` (plus the analyzers): it creates a **tag at the real
-`main` HEAD — no `[skip ci]` commit — and a GitLab Release**, nothing else. Two
-reasons: (1) a CHANGELOG commit on both hosts would diverge `main`; GitLab's
-`CHANGELOG.md` arrives via the mirror. (2) a `[skip ci]` release commit would make
-the *tag pipeline skip*, so no images would build — tagging the real HEAD keeps the
-tag pipeline live. GitLab needs a `GITLAB_TOKEN` (Project Access Token, `api` scope)
-CI/CD variable to push the tag + create the Release.
+**Neither host commits the changelog — release notes live on the Releases pages.**
+Both hosts create a **tag at the real `main` HEAD plus a host Release**, and push
+nothing to `main`:
+
+- **GitHub** runs `@semantic-release/exec` + `@semantic-release/github`: writes
+  `.release-version` for the build job and publishes a **GitHub Release**. It does
+  **not** run `@semantic-release/git` — the `MAIN` branch ruleset (PR-required)
+  rejects the CI bot's `chore(release)` commit, which would abort the whole release.
+- **GitLab** runs **only** `@semantic-release/gitlab`: pushes the tag and creates a
+  **GitLab Release**. Needs a `GITLAB_TOKEN` (Project Access Token, `api` scope)
+  CI/CD variable.
+
+Why no commit at all: (1) a `CHANGELOG.md` commit on both hosts would diverge
+`main`; (2) a `[skip ci]` release commit makes the *tag pipeline skip*, so no images
+build — tagging the real HEAD keeps it live; (3) GitHub's branch ruleset blocks the
+bot from pushing to `main` anyway. The tag ref (`refs/tags/v*`) is not gated by the
+branch ruleset, so the tag push succeeds. `CHANGELOG.md` in the repo reflects history
+up to the cutover; per-release notes are on each host's Releases page.
 
 ### The tag-recursion gap (important)
 
