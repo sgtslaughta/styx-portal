@@ -65,7 +65,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push ${{ matrix.name }}
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
@@ -108,7 +108,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push desktop
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: images/desktop
           file: images/desktop/Dockerfile
