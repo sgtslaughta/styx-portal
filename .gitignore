@@ -17,4 +17,3 @@ traefik/dynamic.yml
 /node_modules/
 /site/
 /.release-version
-/package-lock.json

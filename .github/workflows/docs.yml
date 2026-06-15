@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true   # auto-create the Pages site on first run (no manual repo setting)
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:

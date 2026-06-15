@@ -74,7 +74,7 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/styx-${{ matrix.name }}:${{ needs.release.outputs.version }}
             ghcr.io/${{ github.repository_owner }}/styx-${{ matrix.name }}:latest
       - name: Trivy image scan
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ghcr.io/${{ github.repository_owner }}/styx-${{ matrix.name }}:${{ needs.release.outputs.version }}
           severity: HIGH,CRITICAL
@@ -113,7 +113,7 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/styx-desktop:${{ needs.release.outputs.version }}
             ghcr.io/${{ github.repository_owner }}/styx-desktop:latest
       - name: Trivy image scan (desktop)
-        uses: aquasecurity/trivy-action@915b19bbe73b92a6cf82a1bc12b087c9a19a5fe2 # v0.28.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ghcr.io/${{ github.repository_owner }}/styx-desktop:${{ needs.release.outputs.version }}
           severity: HIGH,CRITICAL
