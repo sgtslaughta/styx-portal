@@ -62,6 +62,7 @@ See **[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
 Full docs (Zensical site, also published to GitHub/GitLab Pages):
 
 - [Quickstart](docs/QUICKSTART.md)
+- [Instances](docs/INSTANCES.md)
 - [Workstations](docs/WORKSTATIONS.md)
 - [GPU](docs/GPU.md)
 - [Admin](docs/ADMIN.md)
