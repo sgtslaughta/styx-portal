@@ -52,18 +52,19 @@ each host config carries the complete chain plus its host publish plugin. The ba
 
 ### The tag-recursion gap (important)
 
-A tag pushed by the CI token does **not** trigger another pipeline (both GitHub and
-GitLab suppress this to prevent loops). So we do **not** rely on "semantic-release
-pushes a tag → release workflow fires." Instead:
+The two hosts differ in how the computed version reaches the image build, because
+their tokens differ:
 
-- semantic-release writes the version to `.release-version`.
-- **GitHub:** the `release` job exposes it as a job output; `build`/`build-desktop`
-  jobs `needs: release` and gate on `publish == 'true'`.
-- **GitLab:** the `semantic-release` job writes `release.env` (dotenv artifact);
-  downstream `build`/`scan` jobs read `$RELEASE_VERSION`.
-
-Pushing a `v*` tag by hand still works as a **fallback** (uses the tag as the
-version directly) for re-releases or manual cuts.
+- **GitHub:** a tag pushed by the default `GITHUB_TOKEN` does **not** trigger
+  another workflow (loop prevention). So the build runs in the **same** workflow:
+  the `release` job exposes the version as a job output, and `build`/`build-desktop`
+  `needs: release` and gate on `publish == 'true'`. A hand-pushed `v*` tag is a
+  fallback path.
+- **GitLab:** the `semantic-release` job (with a `GITLAB_TOKEN` Project Access
+  Token) **creates the `v*` tag**, which spawns a **tag pipeline** where
+  `$CI_COMMIT_TAG` is set — and the `build`/`scan` jobs run there. Branch pipelines
+  never build (their rule is tag-only), so no release ⇒ no empty-version build.
+  Without the token, semantic-release no-ops and GitLab simply cuts no release.
 
 ## Security gates
 

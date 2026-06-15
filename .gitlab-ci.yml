@@ -83,11 +83,10 @@ semantic-release:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
   script:
     - npm ci --no-audit --no-fund
+    # Needs GITLAB_TOKEN (Project Access Token, api scope) to create the tag/release.
+    # The tag push then triggers the build/scan jobs. Without the token this no-ops
+    # (|| true) and the pipeline stays green — just no GitLab release/images.
     - npx semantic-release --extends ./.releaserc.gitlab.json || true
-    - 'if [ -f .release-version ]; then echo "RELEASE_VERSION=$(cat .release-version)" > release.env; else echo "RELEASE_VERSION=" > release.env; fi'
-  artifacts:
-    reports:
-      dotenv: release.env
 
 # ---- build (one job per image; matrix over IMAGE) ----------------------------
 .build_template: &build_template
@@ -97,10 +96,11 @@ semantic-release:
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
   rules:
+    # Build/scan images ONLY on release tags. semantic-release creates a v* tag,
+    # which spawns a tag pipeline ($CI_COMMIT_TAG set). Branch pipelines never
+    # build — prevents empty-version tags when no release was cut (e.g. no token).
     - if: '$CI_COMMIT_TAG =~ /^v/'
       variables: { VERSION: "$CI_COMMIT_TAG" }
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $RELEASE_VERSION != ""'
-      variables: { VERSION: "$RELEASE_VERSION" }
   before_script:
     - 'V="${VERSION#v}"; echo "Building $IMAGE:$V"'
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
@@ -132,10 +132,11 @@ build-desktop:
     name: aquasec/trivy:0.58.0
     entrypoint: [""]
   rules:
+    # Build/scan images ONLY on release tags. semantic-release creates a v* tag,
+    # which spawns a tag pipeline ($CI_COMMIT_TAG set). Branch pipelines never
+    # build — prevents empty-version tags when no release was cut (e.g. no token).
     - if: '$CI_COMMIT_TAG =~ /^v/'
       variables: { VERSION: "$CI_COMMIT_TAG" }
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $RELEASE_VERSION != ""'
-      variables: { VERSION: "$RELEASE_VERSION" }
   script:
     - V="${VERSION#v}"
     - trivy image --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed "$CI_REGISTRY_IMAGE/$IMAGE:$V"
