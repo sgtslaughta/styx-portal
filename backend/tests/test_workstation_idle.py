@@ -99,6 +99,36 @@ async def test_idle_disabled_when_timeout_zero(client, session):
 
 
 @pytest.mark.asyncio
+async def test_idle_disconnect_fires_once_not_every_heartbeat(client, session):
+    """Regression: an idle session whose browser auto-reconnects (active_connections
+    stays > 0) must be force-disconnected ONCE, not on every heartbeat — otherwise
+    the agent restarts its gateway every cycle (502 loop). The latch re-arms only
+    after connections drop to 0."""
+    ws = await _make_ws(session, status="online")
+    admin_id = (await session.exec(select(User).where(User.role == "admin"))).first().id
+    ws.active_connections = 1
+    ws.occupied_by = admin_id
+    session.add(ws)
+    await session.commit()
+
+    async def hb(conns, idle):
+        return await client.post(
+            "/api/agent/heartbeat",
+            json={"status": "online",
+                  "health": {"active_connections": conns, "idle_seconds": idle}},
+            headers=_auth())
+
+    # 1st idle heartbeat → disconnect fires
+    assert (await hb(1, 10_000)).json()["disconnect_clients"] is True
+    # 2nd: client reconnected, still idle → must NOT re-fire (no loop)
+    assert (await hb(1, 10_000)).json()["disconnect_clients"] is False
+    # connections drop to 0 → latch re-arms
+    assert (await hb(0, 0)).json()["disconnect_clients"] is False
+    # fresh session goes idle again → fires once more
+    assert (await hb(1, 10_000)).json()["disconnect_clients"] is True
+
+
+@pytest.mark.asyncio
 async def test_idle_ignored_when_no_connections(client, session):
     """Idle detection only applies when active_connections > 0."""
     ws = await _make_ws(session, status="online")
