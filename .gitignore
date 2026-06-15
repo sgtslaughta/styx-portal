@@ -13,3 +13,8 @@ traefik/dynamic.yml
 
 # Local Claude Code runtime/settings
 .claude/
+
+/node_modules/
+/site/
+/.release-version
+/package-lock.json
