@@ -112,6 +112,46 @@ def test_secure_endpoint_falls_back_without_3001():
 
 
 @pytest.mark.asyncio
+async def test_capture_joins_then_leaves_isolated_network(monkeypatch):
+    """Instances sit on per-user isolated networks the backend isn't on; capture
+    must attach the backend container for the shot and detach afterwards, without
+    touching networks it already belongs to (e.g. styx-portal)."""
+    docker = MagicMock()
+    inst_c = MagicMock()
+    inst_c.attrs = {"NetworkSettings": {"Networks": {"styx-u-abc": {}}}}
+    self_c = MagicMock()
+    self_c.attrs = {"NetworkSettings": {"Networks": {"styx-portal": {}}}}
+    docker._client.containers.get.side_effect = (
+        lambda cid: inst_c if cid == "cont" else self_c
+    )
+    net = MagicMock()
+    docker._client.networks.get.return_value = net
+
+    page = AsyncMock()
+    context = AsyncMock()
+    context.new_page.return_value = page
+    browser = AsyncMock()
+    browser.new_context.return_value = context
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        svc = ScreenshotService(cache_dir=tmpdir, docker_manager=docker)
+        svc._browser = browser
+        monkeypatch.setattr(svc, "_self_container_id", lambda: "selfid")
+        monkeypatch.setattr(svc, "_ensure_browser", AsyncMock())
+        monkeypatch.setattr(svc, "_resolve_ip", lambda cid: "172.22.0.3")
+        monkeypatch.setattr(svc, "_secure_endpoint", lambda cid, p, proto: (proto, p))
+        monkeypatch.setattr(svc, "_is_streaming", AsyncMock(return_value=True))
+        monkeypatch.setattr(svc, "_shoot", AsyncMock(return_value=b"\x89PNGxx"))
+
+        result = await svc.capture("inst-1", "cont", 3001)
+
+    assert result is True
+    docker._client.networks.get.assert_called_with("styx-u-abc")
+    net.connect.assert_called_once_with("selfid")
+    net.disconnect.assert_called_once_with("selfid")
+
+
+@pytest.mark.asyncio
 async def test_capture_no_ip_returns_false(monkeypatch):
     with tempfile.TemporaryDirectory() as tmpdir:
         svc = _make_service(tmpdir)
