@@ -1,6 +1,27 @@
 # Styx Portal
 ![Styx Portal logo image](./frontend/public/styx_portal_main.jpeg?raw=true "Styx Portal")
 
+<!-- Status -->
+[![CI](https://github.com/sgtslaughta/styx-portal/actions/workflows/ci.yml/badge.svg)](https://github.com/sgtslaughta/styx-portal/actions/workflows/ci.yml)
+[![Release](https://github.com/sgtslaughta/styx-portal/actions/workflows/release.yml/badge.svg)](https://github.com/sgtslaughta/styx-portal/actions/workflows/release.yml)
+[![Docs](https://github.com/sgtslaughta/styx-portal/actions/workflows/docs.yml/badge.svg)](https://sgtslaughta.github.io/styx-portal/)
+[![GitLab pipeline](https://gitlab.com/sgtslaughta/styx-portal/badges/main/pipeline.svg)](https://gitlab.com/sgtslaughta/styx-portal/-/pipelines)
+
+<!-- Project -->
+[![Latest release](https://img.shields.io/github/v/release/sgtslaughta/styx-portal?sort=semver)](https://github.com/sgtslaughta/styx-portal/releases)
+[![License](https://img.shields.io/github/license/sgtslaughta/styx-portal)](LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/sgtslaughta/styx-portal)](https://github.com/sgtslaughta/styx-portal/commits/main)
+[![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://www.conventionalcommits.org)
+[![semantic-release](https://img.shields.io/badge/semantic--release-e10079?logo=semantic-release&logoColor=white)](https://github.com/semantic-release/semantic-release)
+
+<!-- Stack -->
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-20232A?logo=react&logoColor=61DAFB)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
+![Traefik](https://img.shields.io/badge/Traefik-24A1C1?logo=traefikproxy&logoColor=white)
+
 > Self-hosted remote-desktop platform — launch containerized desktops and stream
 > physical/virtual workstations through the browser.
 
