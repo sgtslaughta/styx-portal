@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import socket
 from pathlib import Path
 
 from playwright.async_api import async_playwright
@@ -39,6 +40,44 @@ class ScreenshotService:
         self._pw = None
         self._browser = None
         self._sem = asyncio.Semaphore(2)
+
+    def _self_container_id(self) -> str | None:
+        """Docker sets a container's hostname to its (short) id by default."""
+        try:
+            return socket.gethostname()
+        except Exception:
+            return None
+
+    def _join_instance_nets(self, container_id: str, self_id: str) -> list[str]:
+        """Attach this (backend) container to the instance's networks that we are
+        not already on — instances live on per-user isolated networks the backend
+        deliberately never joins permanently. Returns the names we connected so
+        they can be detached after capture. Best-effort: any failure is skipped."""
+        try:
+            inst = self._docker._client.containers.get(container_id)
+            inst_nets = set(inst.attrs["NetworkSettings"]["Networks"].keys())
+        except Exception:
+            return []
+        try:
+            me = self._docker._client.containers.get(self_id)
+            my_nets = set(me.attrs["NetworkSettings"]["Networks"].keys())
+        except Exception:
+            my_nets = set()
+        joined: list[str] = []
+        for name in inst_nets - my_nets:
+            try:
+                self._docker._client.networks.get(name).connect(self_id)
+                joined.append(name)
+            except Exception:
+                pass  # already connected, racing, or not permitted
+        return joined
+
+    def _leave_nets(self, names: list[str], self_id: str) -> None:
+        for name in names:
+            try:
+                self._docker._client.networks.get(name).disconnect(self_id)
+            except Exception:
+                pass
 
     def _resolve_ip(self, container_id: str) -> str | None:
         container = self._docker._client.containers.get(container_id)
@@ -86,38 +125,52 @@ class ScreenshotService:
         if not ip:
             return False
 
-        protocol, port = await asyncio.to_thread(
-            self._secure_endpoint, container_id, port, protocol
-        )
-
+        # Join the instance's isolated network just for this capture so we can
+        # reach its web port directly (container isolation keeps the backend off
+        # user networks); detach again in the outer finally.
+        self_id = self._self_container_id()
+        joined: list[str] = []
         try:
-            await self._ensure_browser()
-        except Exception:
-            logger.debug("screenshot: browser launch failed", exc_info=True)
-            return False
+            if self_id:
+                joined = await asyncio.to_thread(
+                    self._join_instance_nets, container_id, self_id
+                )
 
-        base = f"{protocol}://{ip}:{port}/"
-        async with self._sem:
-            context = await self._browser.new_context(
-                ignore_https_errors=True, viewport=_VIEWPORT,
+            protocol, port = await asyncio.to_thread(
+                self._secure_endpoint, container_id, port, protocol
             )
+
             try:
-                # ONLY ever use the "#shared" view-only mirror. It connects as a
-                # viewer, never a primary/controller, so it can never steal an
-                # active user's session. If no stream is flowing (nobody is
-                # connected), skip rather than risk a primary connection — the
-                # previous cached thumbnail is kept.
-                page = await self._open(context, base + "#shared")
-                if not await self._is_streaming(page):
-                    return False
-                png = await self._shoot(page)
-                (self._cache_dir / f"{instance_id}.png").write_bytes(png)
-                return True
+                await self._ensure_browser()
             except Exception:
-                logger.debug("screenshot: capture failed for %s", instance_id, exc_info=True)
+                logger.debug("screenshot: browser launch failed", exc_info=True)
                 return False
-            finally:
-                await context.close()
+
+            base = f"{protocol}://{ip}:{port}/"
+            async with self._sem:
+                context = await self._browser.new_context(
+                    ignore_https_errors=True, viewport=_VIEWPORT,
+                )
+                try:
+                    # ONLY ever use the "#shared" view-only mirror. It connects as
+                    # a viewer, never a primary/controller, so it can never steal
+                    # an active user's session. If no stream is flowing (nobody is
+                    # connected), skip rather than risk a primary connection — the
+                    # previous cached thumbnail is kept.
+                    page = await self._open(context, base + "#shared")
+                    if not await self._is_streaming(page):
+                        return False
+                    png = await self._shoot(page)
+                    (self._cache_dir / f"{instance_id}.png").write_bytes(png)
+                    return True
+                except Exception:
+                    logger.debug("screenshot: capture failed for %s", instance_id, exc_info=True)
+                    return False
+                finally:
+                    await context.close()
+        finally:
+            if joined and self_id:
+                await asyncio.to_thread(self._leave_nets, joined, self_id)
 
     async def _open(self, context, url):
         page = await context.new_page()
