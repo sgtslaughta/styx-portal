@@ -78,7 +78,7 @@ trivy-fs:
 # ---- release (semantic-release on default branch) ----------------------------
 semantic-release:
   stage: release
-  image: node:20
+  image: node:22   # semantic-release 25 requires Node >=22.14
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
   script:
