@@ -147,10 +147,10 @@ scan-desktop:  { <<: *scan_template, needs: [build-desktop],  variables: { IMAGE
 # ---- pages (Zensical → GitLab Pages) -----------------------------------------
 pages:
   stage: pages
-  image: python:latest
+  image: python:3.12
   script:
-    - pip install zensical
-    - zensical build --clean
+    # Shared with .github/workflows/docs.yml: pinned zensical + prunes internal specs/plans.
+    - sh scripts/build-docs.sh
   pages:
     publish: site
   rules:

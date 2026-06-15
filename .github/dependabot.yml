@@ -1,0 +1,16 @@
+version: 2
+# Keeps SHA-pinned GitHub Actions and language deps current with deliberate,
+# reviewable bump PRs (the maintained-pin half of the supply-chain hardening).
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
