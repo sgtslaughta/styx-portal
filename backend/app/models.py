@@ -244,6 +244,12 @@ class Workstation(SQLModel, table=True):
     # One-shot flag: set when a user logs out with an active session; the next
     # agent heartbeat returns disconnect_clients=True and consumes the flag.
     disconnect_pending: bool = False
+    # Latch so an idle force-disconnect fires once per session, not every
+    # heartbeat. Without it, an idle browser that auto-reconnects keeps
+    # active_connections > 0 while idle, so the backend re-issues a disconnect
+    # each heartbeat → the agent restarts its gateway every cycle (502 loop).
+    # Re-armed when active_connections returns to 0 (a genuinely new session).
+    idle_disconnect_sent: bool = False
     created_by: str = Field(foreign_key="users.id")
     created_at: datetime = Field(default_factory=_now)
 

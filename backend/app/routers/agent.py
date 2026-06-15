@@ -63,6 +63,8 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
         if conns == 0:
             ws.occupied_by = None
             ws.occupied_at = None
+            # Re-arm the idle latch: a future session starts fresh.
+            ws.idle_disconnect_sent = False
     # Idle disconnect: the agent reports seconds since the last client->server
     # input. If an occupied seat has been idle past the timeout, drop it (the
     # existing disconnect flow releases occupancy when the client count hits 0).
@@ -71,8 +73,13 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
         "idle_timeout_s", _sys_settings.get("WORKSTATION_IDLE_TIMEOUT_S"))
     if (isinstance(conns, int) and conns > 0
             and isinstance(idle_timeout, (int, float)) and idle_timeout > 0
-            and isinstance(idle_s, (int, float)) and idle_s >= idle_timeout):
+            and isinstance(idle_s, (int, float)) and idle_s >= idle_timeout
+            and not ws.idle_disconnect_sent):
         ws.disconnect_pending = True
+        # Latch: don't re-issue until connections drop to 0. An idle browser
+        # that auto-reconnects keeps conns > 0, so without this the gateway
+        # would be told to restart every heartbeat (502 loop).
+        ws.idle_disconnect_sent = True
     # One-shot disconnect: consume the flag set by logout teardown.
     disconnect = ws.disconnect_pending
     if disconnect:

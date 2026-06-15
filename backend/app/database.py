@@ -105,6 +105,7 @@ async def _run_migrations(conn):
         ("workstations", "occupied_by", "TEXT"),
         ("workstations", "occupied_at", "TIMESTAMP"),
         ("workstations", "disconnect_pending", "BOOLEAN"),
+        ("workstations", "idle_disconnect_sent", "BOOLEAN NOT NULL DEFAULT 0"),
         ("users", "failed_count", "INTEGER DEFAULT 0"),
         ("users", "locked_until", "TIMESTAMP"),
     ]
