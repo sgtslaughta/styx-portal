@@ -20,7 +20,7 @@ jobs:
       version: ${{ steps.resolve.outputs.version }}
       publish: ${{ steps.resolve.outputs.publish }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: semantic-release (branch push only)
@@ -56,7 +56,7 @@ jobs:
             context: frontend
             dockerfile: frontend/Dockerfile
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -90,7 +90,7 @@ jobs:
     # Mirrors GitLab's `allow_failure: true` on build-desktop/scan-desktop.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Free disk space (desktop image ~4.5GB)
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
