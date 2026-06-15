@@ -8,7 +8,7 @@
 [![GitLab pipeline](https://gitlab.com/sgtslaughta/styx-portal/badges/main/pipeline.svg)](https://gitlab.com/sgtslaughta/styx-portal/-/pipelines)
 
 <!-- Project -->
-[![Latest release](https://img.shields.io/github/v/release/sgtslaughta/styx-portal?sort=semver)](https://github.com/sgtslaughta/styx-portal/releases)
+[![Latest tag](https://img.shields.io/github/v/tag/sgtslaughta/styx-portal?sort=semver&label=release)](https://github.com/sgtslaughta/styx-portal/tags)
 [![License](https://img.shields.io/github/license/sgtslaughta/styx-portal)](LICENSE)
 [![Last commit](https://img.shields.io/github/last-commit/sgtslaughta/styx-portal)](https://github.com/sgtslaughta/styx-portal/commits/main)
 [![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-yellow.svg)](https://www.conventionalcommits.org)
