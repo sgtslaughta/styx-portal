@@ -10,6 +10,7 @@ site_dir = "site"
 nav = [
   { "Home" = "index.md" },
   { "Quickstart" = "QUICKSTART.md" },
+  { "Instances" = "INSTANCES.md" },
   { "Workstations" = "WORKSTATIONS.md" },
   { "GPU" = "GPU.md" },
   { "Admin" = "ADMIN.md" },
