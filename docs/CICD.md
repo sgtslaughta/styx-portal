@@ -45,19 +45,25 @@ creates the git tag, and publishes a GitHub/GitLab Release. `commitlint` enforce
 the format on PRs/MRs so the version math stays correct.
 
 **Why not release-please?** GitHub-native only — it would break GitLab parity.
-**Why list full plugin arrays in `.releaserc.<host>.json`?** semantic-release
-*replaces* the `plugins` array from an `extends` base rather than concatenating, so
-each host config carries the complete chain plus its host publish plugin. The base
-`.releaserc.json` is the documented canonical chain.
 
-**Canonical vs mirror — only GitHub commits the changelog.** GitHub is canonical:
-`.releaserc.github.json` runs `@semantic-release/changelog` + `@semantic-release/git`,
-so it commits `CHANGELOG.md` back to `main`. `.releaserc.gitlab.json` deliberately
-omits those — it only computes the version, pushes the **tag**, and creates a
-**GitLab Release**. GitLab's `CHANGELOG.md` arrives via the mirror of GitHub's
-commit. If both hosts committed the changelog, the two remotes would diverge on
-every release; this keeps `main` identical on both. (GitLab needs a `GITLAB_TOKEN`
-Project Access Token, `api` scope, as a CI/CD variable for this.)
+**One host-aware config (`release.config.js`).** semantic-release auto-loads
+`release.config.js`, which selects plugins by CI host (`process.env.GITLAB_CI`).
+We do **not** use `--extends ./.releaserc.<host>.json`: semantic-release auto-loads
+`.releaserc.json` as the *primary* config and a primary's `plugins` array silently
+wins over anything passed via `--extends`, so the host overrides never took effect.
+A single auto-loaded JS config that branches on the host is unambiguous.
+
+**Canonical vs mirror — only GitHub commits the changelog.** On GitHub the config
+runs `@semantic-release/changelog` + `@semantic-release/exec` + `@semantic-release/git`
++ `@semantic-release/github`: it commits `CHANGELOG.md`, writes `.release-version`
+for the build job, and publishes a GitHub Release. On GitLab it runs **only**
+`@semantic-release/gitlab` (plus the analyzers): it creates a **tag at the real
+`main` HEAD — no `[skip ci]` commit — and a GitLab Release**, nothing else. Two
+reasons: (1) a CHANGELOG commit on both hosts would diverge `main`; GitLab's
+`CHANGELOG.md` arrives via the mirror. (2) a `[skip ci]` release commit would make
+the *tag pipeline skip*, so no images would build — tagging the real HEAD keeps the
+tag pipeline live. GitLab needs a `GITLAB_TOKEN` (Project Access Token, `api` scope)
+CI/CD variable to push the tag + create the Release.
 
 ### The tag-recursion gap (important)
 

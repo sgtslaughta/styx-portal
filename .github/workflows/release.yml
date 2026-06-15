@@ -32,7 +32,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           npm ci --no-audit --no-fund
-          npx semantic-release --extends ./.releaserc.github.json || true
+          npx semantic-release || true
       - name: Resolve version + publish flag
         id: resolve
         run: |

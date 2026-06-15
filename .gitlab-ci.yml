@@ -86,7 +86,7 @@ semantic-release:
     # Needs GITLAB_TOKEN (Project Access Token, api scope) to create the tag/release.
     # The tag push then triggers the build/scan jobs. Without the token this no-ops
     # (|| true) and the pipeline stays green — just no GitLab release/images.
-    - npx semantic-release --extends ./.releaserc.gitlab.json || true
+    - npx semantic-release || true
 
 # ---- build (one job per image; matrix over IMAGE) ----------------------------
 .build_template: &build_template
