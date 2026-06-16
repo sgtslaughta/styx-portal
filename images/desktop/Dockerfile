@@ -158,6 +158,14 @@ RUN mkdir -p /usr/share/xfce4/backdrops && \
     python3 -c "import struct,zlib;raw=b''.join(b'\x00'+bytes([0x2e,0x34,0x40])*1920 for _ in range(1080));c=lambda t,d:struct.pack('>I',len(d))+t+d+struct.pack('>I',zlib.crc32(t+d)&0xffffffff);open('/usr/share/xfce4/backdrops/xubuntu-wallpaper.png','wb').write(b'\x89PNG\r\n\x1a\n'+c(b'IHDR',struct.pack('>IIBBBBB',1920,1080,8,2,0,0,0))+c(b'IDAT',zlib.compress(raw))+c(b'IEND',b''))" && \
     printf '#!/bin/sh\nexit 1\n' > /usr/bin/pm-is-supported && chmod +x /usr/bin/pm-is-supported
 
+# ─── Security: upgrade OS packages to clear fixable CVEs ─────────────────────
+# Pulls patched versions of apt-installed packages so the image clears the
+# fixable OS-level HIGH/CRITICAL CVEs flagged by Trivy. The remaining findings
+# are vendored inside the browsers/IDEs (bundled JARs, node_modules) and are not
+# fixable here — the desktop image scan is scoped to OS packages accordingly.
+RUN apt-get update && apt-get upgrade -y && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # ─── Environment ─────────────────────────────────────────────────────────────
 ENV TITLE="Desktop"
 ENV SHELL=/bin/zsh

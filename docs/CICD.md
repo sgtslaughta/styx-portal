@@ -146,6 +146,14 @@ backend/frontend still publish if desktop fails (`allow_failure` on GitLab,
 separate job on GH). For reliability, run desktop builds on a **self-hosted runner**
 with ample disk — add the runner label to `build-desktop`.
 
+**Scan scope: OS packages only.** Backend/frontend are scanned with the default
+`os,library` package types — their app dependencies are ours to patch. The desktop
+image is scanned with **`--pkg-types os`** (`vuln-type: os` on GH) because the bulk
+of its HIGH/CRITICAL findings are vendored *inside* the browsers and IDEs (bundled
+JARs, `node_modules`) — not fixable from our Dockerfile. The image still runs
+`apt-get upgrade` at build time to clear fixable OS-package CVEs, and the OS-scoped
+scan gates on those.
+
 ## Required secrets / settings (configure per host, never commit)
 
 - **GitHub:** `GITHUB_TOKEN` is automatic (contents:write, packages:write). Enable
