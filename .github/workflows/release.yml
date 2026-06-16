@@ -129,3 +129,5 @@ jobs:
           # OS packages only — desktop's library findings are vendored inside the
           # browsers/IDEs (bundled JARs, node_modules), not fixable from our image.
           vuln-type: os
+          # vuln only — the lone secret finding is Ubuntu's snakeoil placeholder key.
+          scanners: vuln

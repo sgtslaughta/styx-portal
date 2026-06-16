@@ -142,11 +142,13 @@ build-desktop:
     # PKG_TYPES defaults to os,library (backend/frontend: their app deps are ours).
     # Desktop overrides to os only — its library findings are vendored inside the
     # browsers/IDEs (bundled JARs, node_modules) and aren't fixable from our image.
-    - trivy image --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed --pkg-types "${PKG_TYPES:-os,library}" "$CI_REGISTRY_IMAGE/$IMAGE:$V"
+    # SCANNERS defaults to vuln,secret. Desktop overrides to vuln only — its only
+    # "secret" finding is Ubuntu's standard snakeoil placeholder key, a false positive.
+    - trivy image --scanners "${SCANNERS:-vuln,secret}" --severity HIGH,CRITICAL --exit-code 1 --ignore-unfixed --pkg-types "${PKG_TYPES:-os,library}" "$CI_REGISTRY_IMAGE/$IMAGE:$V"
 
 scan-backend:  { <<: *scan_template, needs: [build-backend],  variables: { IMAGE: backend } }
 scan-frontend: { <<: *scan_template, needs: [build-frontend], variables: { IMAGE: frontend } }
-scan-desktop:  { <<: *scan_template, needs: [build-desktop],  variables: { IMAGE: desktop, PKG_TYPES: os }, allow_failure: true }
+scan-desktop:  { <<: *scan_template, needs: [build-desktop],  variables: { IMAGE: desktop, PKG_TYPES: os, SCANNERS: vuln }, allow_failure: true }
 
 # ---- pages (Zensical → GitLab Pages) -----------------------------------------
 pages:
