@@ -1,0 +1,13 @@
+# Trivy ignore list. Auto-read from the repo root by `trivy image`/`trivy fs` on
+# both CI hosts. Keep this list short and justified — every entry is a suppressed
+# finding. Only add fixable HIGH/CRITICAL that are genuinely false positives or
+# un-actionable; never suppress to silence a real, fixable vulnerability.
+
+# --- Firefox bundled expat (desktop image only) ------------------------------
+# Reported against the Mozilla-PPA firefox .deb because Trivy's "fixed version"
+# points at the *snap* build (which this image deliberately avoids). The image
+# ships current (2026) firefox; these are 2022 expat CVEs long since patched
+# upstream. Not present in backend/frontend (no firefox there), so scoping here
+# is effectively desktop-only.
+CVE-2022-25235
+CVE-2022-25236
