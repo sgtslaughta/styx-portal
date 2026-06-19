@@ -31,12 +31,12 @@ SETUPTOOLS_VER="82.0.1"
 AIOHTTP_VER="3.14.1"
 PULSECTL_VER="24.12.0"
 
-echo "==> [1/4] wheelhouse-x86_64.tar.gz (wheels for cp310-cp313)"
+echo "==> [1/4] wheelhouse-x86_64.tar.gz (wheels for cp310-cp314)"
 # Build/collect every wheel the agent venv needs, per python minor version.
 # xkbcommon is source-only on PyPI -> built here so workstations never compile.
 docker run --rm -v "$WORK:/out" "$MANYLINUX_IMG" bash -ec '
   yum install -y -q libxkbcommon-devel libxkbcommon
-  for PY in cp310-cp310 cp311-cp311 cp312-cp312 cp313-cp313; do
+  for PY in cp310-cp310 cp311-cp311 cp312-cp312 cp313-cp313 cp314-cp314; do
     PIP="/opt/python/$PY/bin/pip"
     "$PIP" -q wheel --wheel-dir /out/wheelhouse \
       "'"$SELKIES_URL"'" pixelflux==1.6.4 pcmflux==1.0.8 \
@@ -106,3 +106,19 @@ echo "    $(ls "$WORK/bin" | tr '\n' ' ')"
 echo "Done. Artifacts in $OUT:"
 ls -lh "$OUT"/wheelhouse-x86_64.tar.gz "$OUT"/selkies-web.tar.gz \
        "$OUT"/libshim-x86_64.tar.gz "$OUT"/nwg-shell-x86_64.tar.gz
+
+# The backend serves artifacts from the `db-data` named volume at
+# /app/data/artifacts, NOT this host dir — so a rebuild is invisible until the
+# files are copied into the running container. Do it automatically if it's up.
+BACKEND_CID=$(docker compose ps -q backend 2>/dev/null || true)
+if [ -n "$BACKEND_CID" ]; then
+  echo "==> copying artifacts into running backend ($BACKEND_CID)"
+  for art in wheelhouse-x86_64 selkies-web libshim-x86_64 nwg-shell-x86_64; do
+    docker cp "$OUT/$art.tar.gz" "$BACKEND_CID:/app/data/artifacts/$art.tar.gz"
+  done
+  docker exec "$BACKEND_CID" chown -R appuser:appuser /app/data/artifacts
+  echo "    backend now serves the rebuilt artifacts"
+else
+  echo "NOTE: backend container not running. When it is, copy these into the"
+  echo "      db-data volume: docker compose cp $OUT/<art>.tar.gz backend:/app/data/artifacts/"
+fi

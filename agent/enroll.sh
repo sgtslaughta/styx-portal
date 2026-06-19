@@ -47,7 +47,12 @@ command -v tar  >/dev/null 2>&1 || fail E01 "tar not found. Install it (apt inst
   || fail E01 "openssl not found (needed for --ca-pin). Install it (apt install openssl)."
 command -v python3 >/dev/null 2>&1 || fail E01 "python3 not found. Install it (apt install python3 / dnf install python3)."
 python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' || fail E01 "python3 >= 3.10 required (found $(python3 -V)). Upgrade python3."
-python3 -c 'import venv' 2>/dev/null || fail E01 "python3-venv not found. Install it (apt install python3-venv / dnf install python3-venv)."
+# `import venv` passes even when ensurepip is missing (Debian/Ubuntu split it
+# into python3.X-venv); the only reliable check is actually creating one.
+_vprobe="$(mktemp -d)"
+python3 -m venv "$_vprobe/p" >/dev/null 2>&1 \
+  || fail E01 "python3 venv creation failed — install the venv package matching your python (apt install python3-venv, or the versioned python3.X-venv on Ubuntu 26.04+ e.g. python3.14-venv; dnf install python3-venv)."
+rm -rf "$_vprobe"
 # Wheels + venv + web dist need ~1.5 GB; require 2 GB headroom.
 FREE_MB=$(df -Pm "$HOME" 2>/dev/null | awk 'NR==2{print $4}')
 if [[ -n "${FREE_MB:-}" ]] && (( FREE_MB < 2048 )); then
@@ -238,7 +243,7 @@ python3 -m venv "$INSTALL_DIR/venv" \
 "$INSTALL_DIR/venv/bin/pip" -q install --no-index \
   --find-links "$INSTALL_DIR/wheelhouse" \
   selkies pixelflux==1.6.4 pcmflux setuptools aiohttp pulsectl \
-  || fail E03 "Wheel install failed — likely an unsupported python version ($(python3 -V)). The wheelhouse covers python 3.10–3.13."
+  || fail E03 "Wheel install failed — likely an unsupported python version ($(python3 -V)). The wheelhouse covers python 3.10–3.14; rebuild it on the server (scripts/build_agent_artifacts.sh) if your python is newer."
 
 # Seat-only, OPTIONAL: nwg-drawer (app grid) + nwg-dock binaries, server-built
 # because some distros (e.g. Ubuntu 24.04) don't package them. A missing
