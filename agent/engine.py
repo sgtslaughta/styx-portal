@@ -459,6 +459,13 @@ def build_selkies_cmd(cfg: dict, internal_port: int, control_port: int) -> tuple
     dri = pick_dri_node()
     if dri:
         cmd.append(f"--dri-node={dri}")
+        # Lock GPU encoding on. The selkies web client pushes use_cpu=true, which
+        # forces pixelflux to software x264 (CPU-starves under load -> black
+        # screen, audio garble) and leaves the GPU idle. "|locked" makes selkies
+        # ignore the client override. pixelflux still auto-falls back to CPU if
+        # the GPU encoder (NVENC/VAAPI) fails to init, so this is safe when a
+        # render node exists but has no usable hardware encoder.
+        env["SELKIES_USE_CPU"] = "false|locked"
 
     if cfg.get("mode") == "seat":
         env["PIXELFLUX_WAYLAND"] = "true"

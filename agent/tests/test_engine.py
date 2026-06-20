@@ -57,6 +57,7 @@ def test_seat_cmd_uses_wayland_backend(tmp_path, monkeypatch):
     cmd, env = engine.build_selkies_cmd(cfg, 18444, 18445)
     assert env["PIXELFLUX_WAYLAND"] == "true"
     assert env["DRINODE"] == "/dev/dri/renderD128"
+    assert env["SELKIES_USE_CPU"] == "false|locked"   # GPU present -> lock NVENC/VAAPI on
     assert "DISPLAY" not in env
     assert "--is-manual-resolution-mode=true" not in cmd
     assert "--wayland-socket-index=1" in cmd      # default until detected
@@ -76,6 +77,7 @@ def test_seat_cmd_without_gpu_falls_back_to_cpu(tmp_path, monkeypatch):
     monkeypatch.setattr(engine, "resolve_monitor_source", lambda: "styx-seat.monitor")
     cmd, env = engine.build_selkies_cmd(cfg, 18444, 18445)
     assert "DRINODE" not in env
+    assert "SELKIES_USE_CPU" not in env   # no GPU -> let client default (CPU) stand
     assert not any(a.startswith("--dri-node") for a in cmd)
 
 
