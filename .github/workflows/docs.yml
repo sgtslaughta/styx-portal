@@ -22,7 +22,7 @@ jobs:
       - uses: actions/configure-pages@v5
         with:
           enablement: true   # auto-create the Pages site on first run (no manual repo setting)
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
