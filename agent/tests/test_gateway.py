@@ -57,6 +57,19 @@ async def test_ws_proxy_upstream_down_returns_502(tmp_path):
         await client.close()
 
 
+def test_inject_title_pins_hostname_in_head():
+    out = gateway.inject_title("<head></head><body>x</body>", "ws-alice")
+    assert '"ws-alice"' in out                      # JS string literal
+    assert "document.title" in out
+    assert out.index("<script>") < out.index("</head>")  # injected inside head
+
+
+def test_inject_title_escapes_and_handles_no_head():
+    out = gateway.inject_title("<body>x</body>", 'ev"il')
+    assert '"ev\\"il"' in out                        # json-escaped, XSS-safe
+    assert out.startswith("<script>")               # no </head> -> prepended
+
+
 @pytest.mark.asyncio
 async def test_ws_proxy_counts_connections_in_state_file(tmp_path):
     """Occupancy source of truth: state file is 0 at start, 1 while a stream

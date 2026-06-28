@@ -14,11 +14,26 @@ import base64
 import hmac
 import json
 import os
+import socket
 import sys
 import time
 
 import aiohttp
 from aiohttp import web
+
+
+def inject_title(html: str, hostname: str) -> str:
+    """Pin the browser tab title to the workstation hostname. The selkies web
+    client hardcodes `document.title="Selkies"` at init (and re-sets it on
+    reconnect), so a one-shot title loses the race. ponytail: a 1s poll
+    re-asserts it; drop the interval if upstream stops clobbering the title.
+    Hostname goes through json.dumps -> safe JS string literal (XSS-safe)."""
+    script = ("<script>(function(){var t=%s;document.title=t;"
+              "setInterval(function(){if(document.title!==t)document.title=t;},1000);"
+              "})();</script>") % json.dumps(hostname)
+    if "</head>" in html:
+        return html.replace("</head>", script + "</head>", 1)
+    return script + html
 
 
 def check_auth(header: str, user: str, password: str) -> bool:
@@ -110,7 +125,13 @@ def create_app(web_dir: str, user: str, password: str,
         return ws_server
 
     async def index(_request):
-        return web.FileResponse(os.path.join(web_dir, "index.html"))
+        path = os.path.join(web_dir, "index.html")
+        try:
+            with open(path, encoding="utf-8") as f:
+                html = inject_title(f.read(), socket.gethostname())
+        except OSError:
+            return web.FileResponse(path)  # let aiohttp 404/handle it
+        return web.Response(text=html, content_type="text/html")
 
     async def files(request):
         # Hand-rolled index: aiohttp's show_index emits ABSOLUTE hrefs
