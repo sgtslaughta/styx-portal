@@ -28,7 +28,7 @@ def test_load_config(tmp_path):
 
 
 def test_agent_version_bumped():
-    assert styx_agent.AGENT_VERSION == "0.4.4"
+    assert styx_agent.AGENT_VERSION == "0.4.5"
 
 
 def test_gateway_cmd_secrets_via_env(tmp_path):
@@ -49,7 +49,7 @@ def test_health_payload_reports_mode_and_engine(tmp_path):
     h = styx_agent.health_payload(cfg, selkies_alive=True, gateway_alive=False)
     assert h["mode"] == "seat"
     assert h["engine"] == "pixelflux"
-    assert h["agent_version"] == "0.4.4"
+    assert h["agent_version"] == "0.4.5"
     assert h["selkies_alive"] is True and h["gateway_alive"] is False
     assert h["active_connections"] == 0
 
@@ -98,3 +98,39 @@ def test_drop_clients_noop_when_gateway_dead():
 
     gw.terminate.assert_not_called()
     assert procs["gateway"] is None
+
+
+def test_read_encoder_progress_returns_last_fps_line(tmp_path):
+    log = tmp_path / "selkies.log"
+    log.write_text(
+        "INFO:main:starting\n"
+        "Res: 2544x1258 Mode: H264 (NVENC) Stripes: 1 EncFPS: 59.96 Mem: 308MB\n"
+        "INFO:data_websocket:client connected\n"
+        "Res: 2544x1258 Mode: H264 (NVENC) Stripes: 1 EncFPS: 60.01 Mem: 309MB\n"
+    )
+    line = styx_agent.read_encoder_progress(log)
+    assert line is not None and "EncFPS: 60.01" in line
+
+
+def test_read_encoder_progress_ignores_settings_dump_and_missing(tmp_path):
+    log = tmp_path / "selkies.log"
+    # the giant settings dict also contains the substring 'EncFPS' in help text
+    log.write_text("INFO:main:Starting with {'_setting_definitions': [{'EncFPS': 1}]}\n")
+    assert styx_agent.read_encoder_progress(log) is None
+    assert styx_agent.read_encoder_progress(tmp_path / "nope.log") is None
+
+
+def test_stream_frozen_only_when_viewer_present_and_stalled():
+    t = styx_agent.FREEZE_TIMEOUT_S
+    # viewer connected, engine alive, no encoder progress past threshold -> frozen
+    assert styx_agent.stream_frozen(1, True, t + 1, t) is True
+    # progress is fresh -> healthy
+    assert styx_agent.stream_frozen(1, True, 2, t) is False
+    # no viewer -> idle, never restart even if stale
+    assert styx_agent.stream_frozen(0, True, t + 100, t) is False
+    # engine already dead -> the exit-based restart handles it, not the watchdog
+    assert styx_agent.stream_frozen(1, False, t + 100, t) is False
+    # NVENC FullFrame emits no EncFPS marker -> never armed -> never fires,
+    # even though viewer+alive+stalled all look "frozen"
+    assert styx_agent.stream_frozen(1, True, t + 1, t, marker_seen=False) is False
+    assert styx_agent.stream_frozen(1, True, t + 1, t, marker_seen=True) is True

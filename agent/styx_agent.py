@@ -18,7 +18,7 @@ import urllib.request
 from hashlib import sha256
 from pathlib import Path
 
-AGENT_VERSION = "0.4.4"
+AGENT_VERSION = "0.4.5"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -151,6 +151,49 @@ def drop_clients(procs: dict) -> None:
         except subprocess.TimeoutExpired:
             p.kill()
     procs["gateway"] = None
+
+
+# --- frozen-engine watchdog ------------------------------------------------
+# The supervisor only restarts selkies when the *process* exits. A
+# CPU-starved or wedged encoder stays alive but stops producing frames
+# (black screen, audio keeps flowing) and is invisible to that check.
+# pixelflux prints a per-second "EncFPS:" stats line only while actively
+# encoding for a client; if that line stops advancing while a viewer is
+# connected, the engine has frozen.
+FREEZE_TIMEOUT_S = 20
+
+
+def read_encoder_progress(log_path: Path) -> str | None:
+    """Latest pixelflux 'EncFPS:' stats line — a liveness marker that advances
+    ~once a second while encoding. None if absent/unreadable. Reads only the
+    file tail; selkies.log grows unbounded."""
+    try:
+        with open(log_path, "rb") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - 8192))
+            tail = f.read().decode("utf-8", "replace")
+    except OSError:
+        return None
+    # The startup settings dump contains 'EncFPS' in help text — the real stats
+    # line starts with "Res:". Match on that to avoid a false liveness signal.
+    lines = [ln for ln in tail.splitlines()
+             if "EncFPS:" in ln and ln.lstrip().startswith("Res:")]
+    return lines[-1] if lines else None
+
+
+def stream_frozen(active_conns: int, selkies_alive: bool,
+                  secs_since_progress: float, threshold: float,
+                  marker_seen: bool = True) -> bool:
+    """True when a viewer is connected and the engine is alive but the encoder
+    has produced no new frames for `threshold`s. Idle (no viewer) and an
+    already-dead process are left to the existing restart paths.
+
+    `marker_seen` arms the check: the NVENC FullFrame path emits no 'EncFPS:'
+    line, so read_encoder_progress never advances there. Without this gate the
+    watchdog would false-fire on every GPU box. Stay dormant until a real
+    heartbeat has been seen at least once (i.e. CPU striped mode is active)."""
+    return (marker_seen and active_conns > 0 and selkies_alive
+            and secs_since_progress >= threshold)
 
 
 def run(cfg: dict) -> int:
@@ -305,6 +348,9 @@ def run(cfg: dict) -> int:
                               "window manager. See logs/selkies.log")
         return proc
 
+    last_enc_line: str | None = None
+    last_enc_change = time.time()
+    enc_marker_seen = False
     while not stopping:
         if procs["selkies"] is None or procs["selkies"].poll() is not None:
             if procs["selkies"] is not None:
@@ -354,6 +400,31 @@ def run(cfg: dict) -> int:
                 last_error = None
         elif not selkies_ok and last_error is None:
             last_error = "selkies not running — see logs/selkies.log"
+
+        # Frozen-engine watchdog: process alive but encoder stalled while a
+        # viewer is connected -> kill selkies so the loop respawns it.
+        enc_line = read_encoder_progress(LOG_DIR / "selkies.log")
+        if enc_line is not None:
+            enc_marker_seen = True
+        if enc_line != last_enc_line:
+            last_enc_line = enc_line
+            last_enc_change = time.time()
+        if stream_frozen(active_connections(cfg, gateway_ok), selkies_ok,
+                         time.time() - last_enc_change, FREEZE_TIMEOUT_S,
+                         marker_seen=enc_marker_seen):
+            print(f"watchdog: encoder stalled "
+                  f"{int(time.time() - last_enc_change)}s with viewers — "
+                  "restarting selkies", flush=True)
+            p = procs["selkies"]
+            if p is not None and p.poll() is None:
+                p.terminate()
+                try:
+                    p.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    p.kill()
+            procs["selkies"] = None
+            last_enc_change = time.time()   # grace before re-evaluating
+            continue
 
         try:
             hb = api(cfg, "/api/agent/heartbeat", {
