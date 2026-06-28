@@ -354,6 +354,37 @@ def test_wallpaper_convert_cmd_has_text_and_output():
     assert "-annotate" in cmd
 
 
+def test_accent_colors_deterministic_unique_and_dark():
+    a = engine.accent_colors("ws-alice")
+    assert a == engine.accent_colors("ws-alice")     # stable across calls
+    assert a != engine.accent_colors("ws-bob")       # unique per hostname
+    base, wave = a
+    assert base.startswith("#") and len(base) == 7
+    assert wave.startswith("#") and len(wave) == 7
+    r, g, b = (int(base[i:i + 2], 16) for i in (1, 3, 5))
+    assert 0.299 * r + 0.587 * g + 0.114 * b < 90    # dark: white text readable
+    wr, wg, wb = (int(wave[i:i + 2], 16) for i in (1, 3, 5))
+    assert wr + wg + wb > r + g + b                  # waves lighter than base
+
+
+def test_build_wallpaper_tints_by_hostname(tmp_path, monkeypatch):
+    import shutil
+    import subprocess
+    captured = {}
+
+    def fake_run(cmd, **kw):
+        captured["cmd"] = cmd
+        (tmp_path / "wp.png").write_bytes(b"x")
+        return type("R", (), {"returncode": 0})()
+
+    monkeypatch.setattr(shutil, "which", lambda _t: "convert")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    assert engine.build_wallpaper(tmp_path / "wp.png", "ws-alice", "sub") is True
+    base, wave = engine.accent_colors("ws-alice")
+    assert f"xc:{base}" in captured["cmd"]            # base field tinted by host
+    assert wave in captured["cmd"]                    # wave colour matches
+
+
 def test_wave_polylines_fill_canvas():
     lines = engine.wave_polylines(1920, 1080)
     assert len(lines) > 3                       # multiple bands tiled vertically

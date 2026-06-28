@@ -331,6 +331,22 @@ def wave_polylines(width: int, height: int, amp: int = 90,
     return lines
 
 
+def accent_colors(seed: str) -> tuple[str, str]:
+    """Per-workstation wallpaper tint. A stable hue derived from `seed` (the
+    hostname) so multiple open seats are visually distinguishable, kept dark
+    enough that the white bginfo text stays readable. Returns (base, wave) hex.
+    Deterministic: crc32 (not hash(), which is PYTHONHASHSEED-salted) -> hue."""
+    import colorsys
+    import zlib
+    hue = (zlib.crc32(seed.encode()) % 360) / 360.0
+
+    def hexc(light: float, sat: float) -> str:
+        r, g, b = colorsys.hls_to_rgb(hue, light, sat)
+        return "#%02x%02x%02x" % (round(r * 255), round(g * 255), round(b * 255))
+
+    return hexc(0.16, 0.35), hexc(0.24, 0.30)
+
+
 def wallpaper_convert_cmd(tool: str, out: str, title: str, subtitle: str,
                           color: str = "#1d2433",
                           size: str = "1920x1080",
@@ -351,18 +367,22 @@ def wallpaper_convert_cmd(tool: str, out: str, title: str, subtitle: str,
     return cmd
 
 
-def build_wallpaper(dest: Path, title: str, subtitle: str) -> bool:
+def build_wallpaper(dest: Path, title: str, subtitle: str,
+                    seed: str | None = None) -> bool:
     """Render the bginfo wallpaper via ImageMagick (magick/convert). Returns
     True on success; False (caller falls back to a solid colour) if the tool is
-    absent or rendering fails."""
+    absent or rendering fails. The base/wave colours are tinted by `seed`
+    (defaults to `title`, i.e. the hostname) so each workstation looks distinct."""
     import shutil
     import subprocess
     tool = shutil.which("magick") or shutil.which("convert")
     if not tool:
         return False
+    base, wave = accent_colors(title if seed is None else seed)
     try:
         r = subprocess.run(
-            wallpaper_convert_cmd(tool, str(dest), title, subtitle),
+            wallpaper_convert_cmd(tool, str(dest), title, subtitle,
+                                  color=base, wave_color=wave),
             capture_output=True, timeout=20)
         return r.returncode == 0 and dest.is_file()
     except (OSError, subprocess.SubprocessError):
