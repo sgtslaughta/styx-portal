@@ -18,7 +18,7 @@ import urllib.request
 from hashlib import sha256
 from pathlib import Path
 
-AGENT_VERSION = "0.4.6"
+AGENT_VERSION = "0.4.7"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -78,11 +78,18 @@ def gw_state_path(cfg: dict) -> Path:
 
 def build_gateway_cmd(cfg: dict, upstream_port: int) -> tuple[list[str], dict]:
     install = Path(cfg["install_dir"])
+    # Idle timeout rides in stream_settings (resolved by the backend each
+    # heartbeat: per-workstation override else system default). The gateway is
+    # the idle authority; these env vars configure it.
+    ss = cfg.get("stream_settings") or {}
     env = {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         "STYX_GW_USER": cfg["selkies_user"],
         "STYX_GW_PASSWORD": cfg["selkies_password"],
         "STYX_GW_STATE": str(gw_state_path(cfg)),
+        "STYX_GW_IDLE_TIMEOUT_S": str(ss.get("idle_timeout_s", 0)),
+        "STYX_GW_IDLE_WARN_S": str(ss.get("idle_warn_lead_s", 60)),
+        "STYX_GW_IDLE_ENABLED": "1" if ss.get("idle_timeout_enabled") else "",
     }
     cmd = [str(install / "venv/bin/python"), str(install / "gateway.py"),
            str(install / "web"), str(cfg["port"]),

@@ -24,6 +24,120 @@ def test_check_auth_rejects_bad_password_and_garbage():
     assert gateway.check_auth("Basic !!notb64!!", "styx", "pw") is False
 
 
+def test_inject_idle_watchdog_present_when_enabled():
+    out = gateway.inject_idle_watchdog(
+        "<head></head><body>x</body>", timeout_s=900, lead_s=60, enabled=True)
+    assert "900" in out and "60" in out          # timeout + lead reach the script
+    assert "<script>" in out
+    assert out.index("<script>") < out.index("</head>")   # in <head>, pre-bundle
+
+
+def test_inject_idle_watchdog_disabled_or_nonpositive_is_noop():
+    html = "<head></head><body>x</body>"
+    assert gateway.inject_idle_watchdog(html, 900, 60, enabled=False) == html
+    assert gateway.inject_idle_watchdog(html, 0, 60, enabled=True) == html
+    assert gateway.inject_idle_watchdog(html, -5, 60, enabled=True) == html
+
+
+def test_inject_idle_watchdog_clamps_lead_below_half_timeout():
+    # lead must never exceed timeout/2, else the warning outlives the timeout
+    out = gateway.inject_idle_watchdog("<head></head>", timeout_s=100, lead_s=90,
+                                       enabled=True)
+    assert "LEAD=50" in out.replace(" ", "")       # 90 -> clamped to 100/2
+
+
+def test_is_activity_excludes_pong_keepalive():
+    # Selkies answers the server's ~5s ping with 'pong,<ts>'. Counting it as
+    # activity resets the idle clock forever -> seat never times out.
+    assert gateway.is_activity("pong,1783193480.9") is False
+    assert gateway.is_activity("m,100,200") is True      # mouse move = activity
+    assert gateway.is_activity("kd,65") is True           # key = activity
+    assert gateway.is_activity(b"\x01\x02") is True        # binary input
+
+
+@pytest.mark.asyncio
+async def test_ws_proxy_idle_close_ignores_pong_keepalive(tmp_path):
+    """A steady pong keepalive must NOT keep an otherwise-idle session alive."""
+    import asyncio
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+
+    async def upstream_ws(request):
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        async for _ in ws:
+            pass
+        return ws
+
+    upstream = web.Application()
+    upstream.router.add_get("/websocket", upstream_ws)
+    up = TestClient(TestServer(upstream))
+    await up.start_server()
+    (tmp_path / "index.html").write_text("x")
+    app = gateway.create_app(str(tmp_path), "styx", "pw",
+                             upstream_port=up.server.port,
+                             state_file=str(tmp_path / "s.json"),
+                             idle_timeout_s=1, idle_enabled=True)
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/websocket", headers={"Authorization": _basic("styx", "pw")})
+
+        async def spam_pong():
+            for _ in range(20):
+                await ws.send_str("pong,123")
+                await asyncio.sleep(0.25)
+
+        task = asyncio.ensure_future(spam_pong())
+        msg = await asyncio.wait_for(ws.receive(), timeout=4)
+        assert msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSING,
+                            aiohttp.WSMsgType.CLOSED)
+        task.cancel()
+    finally:
+        await client.close()
+        await up.close()
+
+
+@pytest.mark.asyncio
+async def test_ws_proxy_closes_idle_connection(tmp_path):
+    """Gateway is the idle authority: it closes the proxied stream socket once
+    no client->server input has arrived for the timeout, no client JS needed."""
+    import asyncio
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+
+    async def upstream_ws(request):
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        async for _ in ws:
+            pass
+        return ws
+
+    upstream = web.Application()
+    upstream.router.add_get("/websocket", upstream_ws)
+    up = TestClient(TestServer(upstream))
+    await up.start_server()
+
+    (tmp_path / "index.html").write_text("x")
+    app = gateway.create_app(str(tmp_path), "styx", "pw",
+                             upstream_port=up.server.port,
+                             state_file=str(tmp_path / "s.json"),
+                             idle_timeout_s=1, idle_enabled=True)
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/websocket", headers={"Authorization": _basic("styx", "pw")})
+        # no input sent -> gateway closes us for idleness within ~timeout+tick
+        msg = await asyncio.wait_for(ws.receive(), timeout=4)
+        assert msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSING,
+                            aiohttp.WSMsgType.CLOSED)
+    finally:
+        await client.close()
+        await up.close()
+
+
 @pytest.mark.asyncio
 async def test_ws_proxy_starving_flag_clears_on_first_frame(tmp_path):
     """stream_starving is True while a viewer waits with no video, and clears

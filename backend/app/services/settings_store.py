@@ -69,6 +69,14 @@ _SPECS: list[SettingSpec] = [
     _spec("WORKSTATION_IDLE_TIMEOUT_S", "timeouts", "Workstation idle timeout (s)",
           "Disconnect an idle physical-workstation stream after this many seconds.", "int",
           "WORKSTATION_IDLE_TIMEOUT_S", min=60, max=86400),
+    _spec("WORKSTATION_IDLE_WARN_LEAD_S", "timeouts", "Workstation idle warning lead (s)",
+          "Seconds before idle disconnect to show the client countdown warning. "
+          "Clamped below half the idle timeout.", "int",
+          "WORKSTATION_IDLE_WARN_LEAD_S", min=5, max=3600),
+    _spec("WORKSTATION_IDLE_TIMEOUT_ENABLED", "timeouts", "Workstation idle timeout enabled",
+          "Master switch for workstation idle timeout. Off ⇒ seats never time out "
+          "(no client warning and no server disconnect).", "bool",
+          "WORKSTATION_IDLE_TIMEOUT_ENABLED"),
     _spec("WORKSTATION_OFFLINE_AFTER_S", "timeouts", "Workstation offline-after (s)",
           "Mark a workstation offline after this many seconds without a heartbeat.", "int",
           "WORKSTATION_OFFLINE_AFTER_S", min=30, max=3600),

@@ -146,3 +146,37 @@ async def test_idle_ignored_when_no_connections(client, session):
 
     await session.refresh(ws)
     assert ws.disconnect_pending is False
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_delivers_resolved_idle_config(client, session):
+    """The heartbeat response carries the effective idle config in stream_settings
+    so the agent can configure the gateway. Per-ws override wins; system defaults
+    fill the rest."""
+    await _make_ws(session, status="online",
+                   stream_settings={"framerate": 60, "idle_timeout_s": 600})
+    r = await client.post("/api/agent/heartbeat",
+                          json={"status": "online", "health": {}}, headers=_auth())
+    assert r.status_code == 200
+    ss = r.json()["stream_settings"]
+    assert ss["idle_timeout_s"] == 600            # per-ws override preserved
+    assert ss["idle_warn_lead_s"] == 60           # system default
+    assert ss["idle_timeout_enabled"] is True     # system default
+
+
+@pytest.mark.asyncio
+async def test_idle_disconnect_skipped_when_disabled(client, session):
+    """idle_timeout_enabled=false ⇒ no server-side disconnect even when idle."""
+    ws = await _make_ws(session, status="online",
+                        stream_settings={"framerate": 60, "idle_timeout_s": 900,
+                                         "idle_timeout_enabled": False})
+    ws.active_connections = 1
+    session.add(ws)
+    await session.commit()
+    r = await client.post("/api/agent/heartbeat",
+                          json={"status": "online",
+                                "health": {"active_connections": 1, "idle_seconds": 100_000}},
+                          headers=_auth())
+    assert r.status_code == 200
+    assert r.json()["disconnect_clients"] is False
+    assert r.json()["stream_settings"]["idle_timeout_enabled"] is False

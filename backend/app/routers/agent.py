@@ -65,13 +65,23 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
             ws.occupied_at = None
             # Re-arm the idle latch: a future session starts fresh.
             ws.idle_disconnect_sent = False
-    # Idle disconnect: the agent reports seconds since the last client->server
-    # input. If an occupied seat has been idle past the timeout, drop it (the
-    # existing disconnect flow releases occupancy when the client count hits 0).
-    idle_s = body.health.get("idle_seconds")
-    idle_timeout = (ws.stream_settings or {}).get(
+    # Resolve effective idle config: per-workstation override else system
+    # default. Delivered to the agent (below) so the gateway — the idle
+    # authority — can enforce and warn, and used here for the server backstop.
+    ss = ws.stream_settings or {}
+    idle_timeout = ss.get(
         "idle_timeout_s", _sys_settings.get("WORKSTATION_IDLE_TIMEOUT_S"))
-    if (isinstance(conns, int) and conns > 0
+    idle_lead = ss.get(
+        "idle_warn_lead_s", _sys_settings.get("WORKSTATION_IDLE_WARN_LEAD_S"))
+    idle_enabled = ss.get(
+        "idle_timeout_enabled", _sys_settings.get("WORKSTATION_IDLE_TIMEOUT_ENABLED"))
+    # Idle disconnect backstop: the agent reports seconds since the last
+    # client->server input. If an occupied seat has been idle past the timeout,
+    # drop it (the release flow fires when the client count hits 0). Skipped
+    # when idle timeout is disabled.
+    idle_s = body.health.get("idle_seconds")
+    if (idle_enabled
+            and isinstance(conns, int) and conns > 0
             and isinstance(idle_timeout, (int, float)) and idle_timeout > 0
             and isinstance(idle_s, (int, float)) and idle_s >= idle_timeout
             and not ws.idle_disconnect_sent):
@@ -89,8 +99,15 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
     if routes_dirty:
         from app.services.route_writer import refresh_routes_from_db
         await refresh_routes_from_db(session)
+    # Fold the resolved idle config into stream_settings (a copy — not
+    # persisted) so it rides the existing delivery + gateway-relaunch-on-change
+    # path; the agent forwards it to the gateway as env.
+    effective_ss = {**(ws.stream_settings or {}),
+                    "idle_timeout_s": idle_timeout,
+                    "idle_warn_lead_s": idle_lead,
+                    "idle_timeout_enabled": idle_enabled}
     return WorkstationHeartbeatResponse(
-        state="ok", stream_settings=ws.stream_settings,
+        state="ok", stream_settings=effective_ss,
         heartbeat_interval_s=_settings.WORKSTATION_HEARTBEAT_S,
         disconnect_clients=disconnect)
 

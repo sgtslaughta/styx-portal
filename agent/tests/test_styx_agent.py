@@ -28,7 +28,7 @@ def test_load_config(tmp_path):
 
 
 def test_agent_version_bumped():
-    assert styx_agent.AGENT_VERSION == "0.4.6"
+    assert styx_agent.AGENT_VERSION == "0.4.7"
 
 
 def test_gateway_cmd_secrets_via_env(tmp_path):
@@ -44,12 +44,35 @@ def test_gateway_cmd_secrets_via_env(tmp_path):
     assert not any("pw" in a for a in cmd)
 
 
+def test_gateway_cmd_passes_idle_config_via_env(tmp_path):
+    """Idle timeout config rides in stream_settings (delivered each heartbeat);
+    build_gateway_cmd forwards it to the gateway as env."""
+    _, cfg = _cfg(tmp_path, stream_settings={
+        "framerate": 60, "idle_timeout_s": 600,
+        "idle_warn_lead_s": 45, "idle_timeout_enabled": True})
+    _, env = styx_agent.build_gateway_cmd(cfg, 18444)
+    assert env["STYX_GW_IDLE_TIMEOUT_S"] == "600"
+    assert env["STYX_GW_IDLE_WARN_S"] == "45"
+    assert env["STYX_GW_IDLE_ENABLED"] == "1"
+
+
+def test_gateway_cmd_idle_disabled_when_absent_or_off(tmp_path):
+    _, cfg = _cfg(tmp_path, stream_settings={
+        "framerate": 60, "idle_timeout_s": 600, "idle_timeout_enabled": False})
+    _, env = styx_agent.build_gateway_cmd(cfg, 18444)
+    assert env["STYX_GW_IDLE_ENABLED"] == ""       # off -> gateway skips
+    # missing entirely -> disabled, safe default
+    _, cfg2 = _cfg(tmp_path, stream_settings={"framerate": 60})
+    _, env2 = styx_agent.build_gateway_cmd(cfg2, 18444)
+    assert env2["STYX_GW_IDLE_ENABLED"] == ""
+
+
 def test_health_payload_reports_mode_and_engine(tmp_path):
     _, cfg = _cfg(tmp_path, mode="seat")
     h = styx_agent.health_payload(cfg, selkies_alive=True, gateway_alive=False)
     assert h["mode"] == "seat"
     assert h["engine"] == "pixelflux"
-    assert h["agent_version"] == "0.4.6"
+    assert h["agent_version"] == "0.4.7"
     assert h["selkies_alive"] is True and h["gateway_alive"] is False
     assert h["active_connections"] == 0
 

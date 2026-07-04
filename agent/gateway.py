@@ -52,6 +52,63 @@ def inject_title(html: str, hostname: str) -> str:
     return script + html
 
 
+def inject_idle_watchdog(html: str, timeout_s: int, lead_s: int,
+                         enabled: bool) -> str:
+    """Inject the inactivity overlay: a countdown warning at T-lead and a
+    terminal 'timed out — Reconnect' screen at T. UX only — the gateway is the
+    authority and closes the socket server-side (see create_app), so this needs
+    no access to Selkies' WebSocket. The local clock and the server clock both
+    start from the same last input, so they fire together without coordination;
+    the gateway backstops a throttled/frozen background tab.
+
+    No-op when disabled or timeout_s <= 0 (never times out). `lead_s` is clamped
+    below timeout_s/2 so the warning can't outlive the timeout. Values are ints
+    -> safe to interpolate into the script."""
+    if not enabled or timeout_s <= 0:
+        return html
+    lead = max(1, min(int(lead_s), int(timeout_s) // 2))
+    script = ("<script>(function(){"
+              "var T=%d,LEAD=%d,last=Date.now(),ov=null,dead=false;"
+              "function mk(){var d=document.createElement('div');"
+              "d.style.cssText='position:fixed;inset:0;z-index:2147483647;"
+              "display:flex;align-items:center;justify-content:center;"
+              "flex-direction:column;font:600 20px system-ui,sans-serif;"
+              "color:#e6e9ef;background:rgba(17,20,28,.85);text-align:center';"
+              "document.body.appendChild(d);return d;}"
+              "function hide(){if(ov&&!dead){ov.remove();ov=null;}}"
+              "function reset(){last=Date.now();hide();}"
+              "['mousemove','mousedown','keydown','wheel','touchstart']"
+              ".forEach(function(e){addEventListener(e,reset,"
+              "{capture:true,passive:true});});"
+              "setInterval(function(){if(dead)return;"
+              "var idle=(Date.now()-last)/1000;"
+              "if(idle>=T){dead=true;if(!ov)ov=mk();"
+              "ov.innerHTML='<div>Session timed out due to inactivity</div>"
+              "<button id=\"styx-rc\" style=\"margin-top:16px;padding:8px 20px;"
+              "font:inherit;cursor:pointer;border-radius:8px;border:0;"
+              "background:#2b3650;color:#fff\">Reconnect</button>';"
+              "document.getElementById('styx-rc').onclick=function(){"
+              "location.reload();};}"
+              "else if(idle>=T-LEAD){if(!ov)ov=mk();"
+              "ov.textContent='Disconnecting in '+Math.ceil(T-idle)+"
+              "'s due to inactivity — move to stay';}"
+              "else hide();},1000);})();</script>") % (int(timeout_s), lead)
+    if "</head>" in html:
+        return html.replace("</head>", script + "</head>", 1)
+    return script + html
+
+
+def is_activity(data) -> bool:
+    """Whether a client->server message counts as user activity for idle timing.
+
+    Selkies answers the server's periodic (~5s) ping with 'pong,<ts>'. Counting
+    that keepalive resets the idle clock every few seconds, so the seat never
+    times out — the reason workstation idle appeared not to work at all. Exclude
+    it; genuine input (mouse/key/scroll/touch, clipboard, resolution) still counts.
+    ponytail: add other prefixes here if a new non-input keepalive turns up."""
+    return not (isinstance(data, str) and data.startswith("pong,"))
+
+
 def check_auth(header: str, user: str, password: str) -> bool:
     if not header or not header.startswith("Basic "):
         return False
@@ -65,7 +122,8 @@ def check_auth(header: str, user: str, password: str) -> bool:
 
 def create_app(web_dir: str, user: str, password: str,
                upstream_port: int, files_dir: str = "",
-               state_file: str = "") -> web.Application:
+               state_file: str = "", idle_timeout_s: int = 0,
+               idle_lead_s: int = 60, idle_enabled: bool = False) -> web.Application:
     # Live stream-websocket count, mirrored to a state file the supervisor
     # reads each heartbeat — the portal uses it for occupancy ("in use by").
     conns = {"n": 0}
@@ -103,8 +161,11 @@ def create_app(web_dir: str, user: str, password: str,
             stream["got_frame"] = True
             _write_state()   # publish promptly; disarms the supervisor watchdog
 
-    def mark_input():
-        """Mark client input activity; throttle state-file writes."""
+    def mark_input(data):
+        """Mark real client input activity; throttle state-file writes. Keepalive
+        chatter (pong) is ignored so the idle clock actually advances."""
+        if not is_activity(data):
+            return
         now = time.time()
         last_input["ts"] = now
         if now - last_input["flushed"] >= 5:   # throttle disk writes
@@ -141,11 +202,11 @@ def create_app(web_dir: str, user: str, password: str,
                     async for msg in src:
                         if msg.type == aiohttp.WSMsgType.TEXT:
                             if on_activity:
-                                on_activity()
+                                on_activity(msg.data)
                             await dst.send_str(msg.data)
                         elif msg.type == aiohttp.WSMsgType.BINARY:
                             if on_activity:
-                                on_activity()
+                                on_activity(msg.data)
                             if on_binary:
                                 on_binary()
                             await dst.send_bytes(msg.data)
@@ -153,10 +214,24 @@ def create_app(web_dir: str, user: str, password: str,
                             break
                     await dst.close()
 
+                async def idle_closer():
+                    """Authoritative idle timeout: close the client socket once
+                    no input has arrived for idle_timeout_s. Ends the pumps."""
+                    if not (idle_enabled and idle_timeout_s > 0):
+                        return
+                    while not ws_server.closed:
+                        idle = time.time() - last_input["ts"]
+                        if idle >= idle_timeout_s:
+                            await ws_server.close(
+                                code=4001, message=b"idle timeout")
+                            return
+                        await asyncio.sleep(min(1.0, idle_timeout_s))
+
                 # client->upstream: input (idle tracking). upstream->client:
                 # video frames are BINARY -> mark_frame disarms the watchdog.
                 await asyncio.gather(pump(ws_server, ws_client, on_activity=mark_input),
                                      pump(ws_client, ws_server, on_binary=mark_frame),
+                                     idle_closer(),
                                      return_exceptions=True)
             finally:
                 conns["n"] -= 1
@@ -169,6 +244,8 @@ def create_app(web_dir: str, user: str, password: str,
         try:
             with open(path, encoding="utf-8") as f:
                 html = inject_title(f.read(), socket.gethostname())
+                html = inject_idle_watchdog(html, idle_timeout_s, idle_lead_s,
+                                            idle_enabled)
         except OSError:
             return web.FileResponse(path)  # let aiohttp 404/handle it
         return web.Response(text=html, content_type="text/html")
@@ -230,8 +307,12 @@ def main() -> None:
     files_dir = os.path.expanduser(
         os.environ.get("STYX_FILES_DIR", "~/Downloads"))
     state_file = os.environ.get("STYX_GW_STATE", "")
+    idle_timeout_s = int(os.environ.get("STYX_GW_IDLE_TIMEOUT_S", "0") or "0")
+    idle_lead_s = int(os.environ.get("STYX_GW_IDLE_WARN_S", "60") or "60")
+    idle_enabled = os.environ.get("STYX_GW_IDLE_ENABLED", "") == "1"
     web.run_app(create_app(web_dir, user, password, upstream_port, files_dir,
-                           state_file=state_file),
+                           state_file=state_file, idle_timeout_s=idle_timeout_s,
+                           idle_lead_s=idle_lead_s, idle_enabled=idle_enabled),
                 host="0.0.0.0", port=listen_port)
 
 
