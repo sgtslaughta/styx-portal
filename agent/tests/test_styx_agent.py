@@ -28,7 +28,7 @@ def test_load_config(tmp_path):
 
 
 def test_agent_version_bumped():
-    assert styx_agent.AGENT_VERSION == "0.4.7"
+    assert styx_agent.AGENT_VERSION == "0.4.8"
 
 
 def test_gateway_cmd_secrets_via_env(tmp_path):
@@ -72,7 +72,7 @@ def test_health_payload_reports_mode_and_engine(tmp_path):
     h = styx_agent.health_payload(cfg, selkies_alive=True, gateway_alive=False)
     assert h["mode"] == "seat"
     assert h["engine"] == "pixelflux"
-    assert h["agent_version"] == "0.4.7"
+    assert h["agent_version"] == "0.4.8"
     assert h["selkies_alive"] is True and h["gateway_alive"] is False
     assert h["active_connections"] == 0
 
@@ -95,6 +95,15 @@ def test_active_connections_from_gateway_state(tmp_path):
     # gateway cmd exposes the state path to the child
     _, env = styx_agent.build_gateway_cmd(cfg, 18444)
     assert env["STYX_GW_STATE"] == str(state)
+
+
+def test_settings_change_restart_includes_gateway():
+    """Idle-timeout config rides in stream_settings but reaches the gateway only
+    through its launch env — so a stream_settings change must relaunch the
+    gateway too, else the running gateway keeps stale (idle-less) config."""
+    assert "gateway" in styx_agent.SETTINGS_CHANGE_RESTART
+    for p in ("selkies", "shell", "clipboard"):
+        assert p in styx_agent.SETTINGS_CHANGE_RESTART
 
 
 def test_drop_clients_restarts_gateway():

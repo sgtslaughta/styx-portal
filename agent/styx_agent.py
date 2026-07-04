@@ -18,7 +18,7 @@ import urllib.request
 from hashlib import sha256
 from pathlib import Path
 
-AGENT_VERSION = "0.4.7"
+AGENT_VERSION = "0.4.8"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -219,6 +219,13 @@ FREEZE_TIMEOUT_S = 20
 # first FullFrame is a few seconds); 15s leaves margin. ponytail: bump if slow
 # hosts trip it on legitimately cold starts.
 FRAME_START_TIMEOUT_S = 15
+
+# Procs to relaunch when the backend pushes new stream_settings. The gateway is
+# included because idle-timeout config (idle_timeout_s / idle_warn_lead_s /
+# idle_timeout_enabled) rides in stream_settings and reaches the gateway ONLY
+# through its launch env (STYX_GW_IDLE_*) — without a relaunch the running
+# gateway keeps stale, idle-less config and never warns or disconnects.
+SETTINGS_CHANGE_RESTART = ("selkies", "shell", "clipboard", "gateway")
 
 
 def read_encoder_progress(log_path: Path) -> str | None:
@@ -515,7 +522,7 @@ def run(cfg: dict) -> int:
             if hb["stream_settings"] != cfg["stream_settings"]:
                 cfg["stream_settings"] = hb["stream_settings"]
                 CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
-                for key in ("selkies", "shell", "clipboard"):
+                for key in SETTINGS_CHANGE_RESTART:
                     p = procs[key]
                     if p is not None and p.poll() is None:
                         p.terminate()
