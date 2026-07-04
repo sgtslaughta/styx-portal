@@ -181,6 +181,9 @@ async def auth_check(request: Request,
         claims = _tokens.decode_token(raw)
     except _tokens.TokenError:
         return _unauthenticated(request, "Invalid token")
+    from app.services import token_denylist
+    if await token_denylist.is_access_revoked(session, claims.get("jti")):
+        return _unauthenticated(request, "Token revoked")
     user = await session.get(User, claims.get("sub"))
     if not user or not user.is_active:
         return _unauthenticated(request, "User inactive")

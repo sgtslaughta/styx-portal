@@ -19,6 +19,9 @@ async def get_current_user(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid token")
     if claims.get("type") != "access":
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Wrong token type")
+    from app.services import token_denylist
+    if await token_denylist.is_access_revoked(session, claims.get("jti")):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token revoked")
     user = await session.get(User, claims["sub"])
     if not user or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User inactive")

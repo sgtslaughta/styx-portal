@@ -279,6 +279,19 @@ async def logout(request: Request, response: Response,
     if stored:
         stored.revoked = True
         session.add(stored)
+    # Hard kill-on-logout: revoke the current access-token jti so the stateless
+    # token can't be replayed until exp (e.g. to reconnect a workstation stream).
+    araw = request.cookies.get("access_token")
+    if araw:
+        try:
+            aclaims = tokens.decode_token(araw)
+            if aclaims.get("jti") and aclaims.get("exp"):
+                from app.services import token_denylist
+                await token_denylist.revoke_access(
+                    session, aclaims["jti"],
+                    datetime.fromtimestamp(aclaims["exp"], tz=timezone.utc))
+        except tokens.TokenError:
+            pass
     await audit_request(session, request, "auth.logout", user_id=user_id)
     await session.commit()
     _clear_auth_cookies(response)

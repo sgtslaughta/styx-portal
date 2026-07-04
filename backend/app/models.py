@@ -73,6 +73,16 @@ class RefreshToken(SQLModel, table=True):
     created_at: datetime = Field(default_factory=_now)
 
 
+class RevokedAccessToken(SQLModel, table=True):
+    """Denylist of access-token jtis invalidated before their exp (logout).
+    Rows are purged once past expires_at — a revoked token is dead by then."""
+    __tablename__ = "revoked_access_tokens"
+
+    jti: str = Field(primary_key=True)
+    expires_at: datetime
+    revoked_at: datetime = Field(default_factory=_now)
+
+
 class OAuthProvider(SQLModel, table=True):
     __tablename__ = "oauth_providers"
 

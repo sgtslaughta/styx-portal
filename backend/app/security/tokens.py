@@ -25,6 +25,7 @@ def create_access_token(user_id: str, role: str, ttl: int | None = None) -> str:
         "sub": user_id,
         "role": role,
         "type": "access",
+        "jti": str(uuid.uuid4()),   # enables hard revocation on logout
         "iat": now,
         "exp": now + timedelta(seconds=ttl),
     }
