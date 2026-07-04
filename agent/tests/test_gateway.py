@@ -25,6 +25,60 @@ def test_check_auth_rejects_bad_password_and_garbage():
 
 
 @pytest.mark.asyncio
+async def test_ws_proxy_starving_flag_clears_on_first_frame(tmp_path):
+    """stream_starving is True while a viewer waits with no video, and clears
+    the instant the engine sends its first binary frame — the signal the
+    supervisor uses to restart a stuck (STOP_VIDEO) stream without killing a
+    healthy static session."""
+    import asyncio
+    import json
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+
+    send_frame = asyncio.Event()
+
+    async def upstream_ws(request):
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        await send_frame.wait()          # stay frameless until told
+        await ws.send_bytes(b"\x00frame")
+        async for _ in ws:
+            pass
+        return ws
+
+    upstream = web.Application()
+    upstream.router.add_get("/websocket", upstream_ws)
+    up = TestClient(TestServer(upstream))
+    await up.start_server()
+
+    (tmp_path / "index.html").write_text("x")
+    state = tmp_path / "gw_state.json"
+    app = gateway.create_app(str(tmp_path), "styx", "pw",
+                             upstream_port=up.server.port, state_file=str(state))
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/websocket", headers={"Authorization": _basic("styx", "pw")})
+        await asyncio.sleep(0.1)
+        st = json.loads(state.read_text())
+        assert st["stream_starving"] is True
+        assert isinstance(st["starving_since"], (int, float))
+        # engine finally emits a frame -> flag clears
+        send_frame.set()
+        await ws.receive()               # pull the frame through the proxy
+        await asyncio.sleep(0.1)
+        assert json.loads(state.read_text())["stream_starving"] is False
+        await ws.close()
+        await asyncio.sleep(0.1)
+        # no viewer -> not starving
+        assert json.loads(state.read_text())["stream_starving"] is False
+    finally:
+        await client.close()
+        await up.close()
+
+
+@pytest.mark.asyncio
 async def test_app_serves_static_with_auth(tmp_path):
     from aiohttp.test_utils import TestClient, TestServer
     (tmp_path / "index.html").write_text("<html>dash</html>")
@@ -68,6 +122,17 @@ def test_inject_title_escapes_and_handles_no_head():
     out = gateway.inject_title("<body>x</body>", 'ev"il')
     assert '"ev\\"il"' in out                        # json-escaped, XSS-safe
     assert out.startswith("<script>")               # no </head> -> prepended
+
+
+def test_inject_forces_stream_visible():
+    """Selkies pauses video on document.hidden; embedded in the portal iframe
+    that leaves a backgrounded tab stuck black. The injected shim forces the
+    client to always believe the tab is visible so the stream never pauses."""
+    out = gateway.inject_title("<head></head><body>x</body>", "ws-alice")
+    assert "document" in out and "hidden" in out
+    assert "'visible'" in out or '"visible"' in out
+    # runs before the deferred selkies bundle, i.e. inside <head>
+    assert out.index("hidden") < out.index("</head>")
 
 
 @pytest.mark.asyncio

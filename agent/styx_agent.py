@@ -18,7 +18,7 @@ import urllib.request
 from hashlib import sha256
 from pathlib import Path
 
-AGENT_VERSION = "0.4.5"
+AGENT_VERSION = "0.4.6"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -118,6 +118,29 @@ def idle_seconds(cfg: dict, gateway_alive: bool) -> float | None:
         return None
 
 
+def stream_starving_seconds(cfg: dict, gateway_alive: bool) -> float | None:
+    """Seconds a connected viewer has waited with zero video frames, per the
+    gateway state file. None when the gateway is down, no viewer is starving, or
+    the state is unreadable.
+
+    The gateway sets `stream_starving` when a viewer connects and clears it on
+    the first video frame — so this only ever reports an *all-frameless* session
+    (a stuck STOP_VIDEO stream), never a healthy screen that merely went static.
+    """
+    if not gateway_alive:
+        return None
+    try:
+        d = json.loads(gw_state_path(cfg).read_text())
+        if not d.get("stream_starving"):
+            return None
+        since = d.get("starving_since")
+        if not isinstance(since, (int, float)):
+            return None
+        return max(0.0, time.time() - since)
+    except (OSError, ValueError):
+        return None
+
+
 def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool) -> dict:
     return {
         "mode": cfg.get("mode", "mirror"),
@@ -134,6 +157,28 @@ def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool) -> dict:
 def _write_state(d: dict) -> None:
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     STATE_PATH.write_text(json.dumps(d))
+
+
+def _terminate(p, timeout: int = 10) -> None:
+    """Graceful stop of a child, escalating to kill on timeout."""
+    if p is not None and p.poll() is None:
+        p.terminate()
+        try:
+            p.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            p.kill()
+
+
+def _restart_engine(procs: dict) -> None:
+    """Tear down the engine and (seat mode) its shell + clipboard so the
+    supervisor loop rebuilds all three fresh. In seat mode selkies IS the
+    Wayland compositor: restarting it changes the socket, so labwc/clipboard
+    must come back too or they cling to the dead socket. The gateway is left
+    running — it's the viewer's link home, and the browser reconnects through it.
+    """
+    for key in ("selkies", "shell", "clipboard"):
+        _terminate(procs.get(key))
+        procs[key] = None
 
 
 def drop_clients(procs: dict) -> None:
@@ -161,6 +206,12 @@ def drop_clients(procs: dict) -> None:
 # encoding for a client; if that line stops advancing while a viewer is
 # connected, the engine has frozen.
 FREEZE_TIMEOUT_S = 20
+
+# Stream-start watchdog: how long a connected viewer may sit frameless before
+# the engine is restarted. Must exceed connect->first-frame time (NVENC init +
+# first FullFrame is a few seconds); 15s leaves margin. ponytail: bump if slow
+# hosts trip it on legitimately cold starts.
+FRAME_START_TIMEOUT_S = 15
 
 
 def read_encoder_progress(log_path: Path) -> str | None:
@@ -424,6 +475,18 @@ def run(cfg: dict) -> int:
                     p.kill()
             procs["selkies"] = None
             last_enc_change = time.time()   # grace before re-evaluating
+            continue
+
+        # Stream-start watchdog: a viewer is connected but the engine has
+        # delivered no frame (upstream stuck in STOP_VIDEO after the prior tab
+        # closed) -> restart the engine so the fresh session's START_VIDEO takes.
+        # Universal (NVENC + CPU): keys on real frames at the gateway, not the
+        # EncFPS log line the NVENC path never emits.
+        starving = stream_starving_seconds(cfg, gateway_ok)
+        if selkies_ok and starving is not None and starving >= FRAME_START_TIMEOUT_S:
+            print(f"watchdog: viewer frameless {int(starving)}s "
+                  "(stream never started) — restarting engine", flush=True)
+            _restart_engine(procs)
             continue
 
         try:

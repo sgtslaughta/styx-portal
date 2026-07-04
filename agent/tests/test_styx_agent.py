@@ -28,7 +28,7 @@ def test_load_config(tmp_path):
 
 
 def test_agent_version_bumped():
-    assert styx_agent.AGENT_VERSION == "0.4.5"
+    assert styx_agent.AGENT_VERSION == "0.4.6"
 
 
 def test_gateway_cmd_secrets_via_env(tmp_path):
@@ -49,7 +49,7 @@ def test_health_payload_reports_mode_and_engine(tmp_path):
     h = styx_agent.health_payload(cfg, selkies_alive=True, gateway_alive=False)
     assert h["mode"] == "seat"
     assert h["engine"] == "pixelflux"
-    assert h["agent_version"] == "0.4.5"
+    assert h["agent_version"] == "0.4.6"
     assert h["selkies_alive"] is True and h["gateway_alive"] is False
     assert h["active_connections"] == 0
 
@@ -98,6 +98,64 @@ def test_drop_clients_noop_when_gateway_dead():
 
     gw.terminate.assert_not_called()
     assert procs["gateway"] is None
+
+
+# === Stream-start watchdog (frameless viewer -> restart engine) ===
+
+def test_stream_starving_seconds_reports_wait(tmp_path):
+    """A viewer connected but no frame has flowed: report seconds since connect."""
+    import time
+    _, cfg = _cfg(tmp_path)
+    state = styx_agent.gw_state_path(cfg)
+    state.parent.mkdir(parents=True, exist_ok=True)
+    state.write_text(json.dumps({
+        "active_connections": 1, "stream_starving": True,
+        "starving_since": time.time() - 20, "ts": time.time()}))
+    s = styx_agent.stream_starving_seconds(cfg, gateway_alive=True)
+    assert s is not None and 18 <= s <= 25, s
+
+
+def test_stream_starving_none_when_not_starving_or_gateway_dead(tmp_path):
+    """None once a frame has flowed (flag cleared) or the gateway is down."""
+    import time
+    _, cfg = _cfg(tmp_path)
+    state = styx_agent.gw_state_path(cfg)
+    state.parent.mkdir(parents=True, exist_ok=True)
+    # frame arrived -> gateway cleared the flag
+    state.write_text(json.dumps({
+        "active_connections": 1, "stream_starving": False,
+        "starving_since": time.time() - 99, "ts": time.time()}))
+    assert styx_agent.stream_starving_seconds(cfg, gateway_alive=True) is None
+    # starving but gateway reported dead -> no viewers to rescue
+    state.write_text(json.dumps({
+        "stream_starving": True, "starving_since": time.time() - 99}))
+    assert styx_agent.stream_starving_seconds(cfg, gateway_alive=False) is None
+    # unreadable -> None
+    state.write_text("not json")
+    assert styx_agent.stream_starving_seconds(cfg, gateway_alive=True) is None
+
+
+def test_restart_engine_tears_down_selkies_shell_clipboard():
+    """Frameless-recovery restart rebuilds the whole seat (new Wayland socket),
+    not just selkies — else labwc/clipboard keep the dead compositor's socket."""
+    from unittest.mock import MagicMock
+
+    def alive():
+        p = MagicMock()
+        p.poll.return_value = None
+        return p
+
+    procs = {"selkies": alive(), "shell": alive(), "clipboard": alive(),
+             "gateway": alive()}
+    gw = procs["gateway"]
+
+    styx_agent._restart_engine(procs)
+
+    for key in ("selkies", "shell", "clipboard"):
+        assert procs[key] is None
+    # gateway is the viewer's link home — must survive so the browser reconnects
+    gw.terminate.assert_not_called()
+    assert procs["gateway"] is gw
 
 
 def test_read_encoder_progress_returns_last_fps_line(tmp_path):

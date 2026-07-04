@@ -23,13 +23,29 @@ from aiohttp import web
 
 
 def inject_title(html: str, hostname: str) -> str:
-    """Pin the browser tab title to the workstation hostname. The selkies web
-    client hardcodes `document.title="Selkies"` at init (and re-sets it on
-    reconnect), so a one-shot title loses the race. ponytail: a 1s poll
-    re-asserts it; drop the interval if upstream stops clobbering the title.
+    """Inject a <head> shim that (1) pins the tab title to the workstation
+    hostname and (2) forces the stream to stay live regardless of tab visibility.
+
+    Title: the selkies client hardcodes `document.title="Selkies"` at init (and
+    re-sets it on reconnect), so a one-shot title loses the race. ponytail: a 1s
+    poll re-asserts it; drop the interval if upstream stops clobbering it.
+
+    Visibility: the selkies client sends STOP_VIDEO whenever `document.hidden` is
+    true and only resumes on a `visibilitychange` back to visible. Embedded in
+    the portal iframe, `document.hidden` follows the parent TAB — so backgrounding
+    the portal (or (re)connecting while it's already hidden, which fires no
+    visibilitychange) leaves the seat stuck on a black "Waiting for stream". A
+    portal workstation should always stream, so override `hidden`/`visibilityState`
+    to report visible. Runs in <head>, before the deferred selkies bundle reads
+    them. The server-side idle timeout still releases a genuinely-idle seat.
+
     Hostname goes through json.dumps -> safe JS string literal (XSS-safe)."""
     script = ("<script>(function(){var t=%s;document.title=t;"
               "setInterval(function(){if(document.title!==t)document.title=t;},1000);"
+              "try{Object.defineProperty(document,'hidden',"
+              "{configurable:true,get:function(){return false;}});"
+              "Object.defineProperty(document,'visibilityState',"
+              "{configurable:true,get:function(){return 'visible';}});}catch(e){}"
               "})();</script>") % json.dumps(hostname)
     if "</head>" in html:
         return html.replace("</head>", script + "</head>", 1)
@@ -56,6 +72,14 @@ def create_app(web_dir: str, user: str, password: str,
     # Track last client->server input timestamp (seconds since epoch).
     # Reset on each connection; throttle disk writes.
     last_input = {"ts": time.time(), "flushed": 0.0}
+    # Stream-start liveness: a client can connect (its ws is proxied fine) yet
+    # receive no video — upstream selkies left in STOP_VIDEO after the previous
+    # tab closed, so the new tab's START_VIDEO never restarts capture ("Waiting
+    # for stream" black screen). `got_frame` flips true on the first video
+    # (binary) frame of a viewing session; until then the viewer is "starving"
+    # and the supervisor restarts the engine. Cleared per session, so a healthy
+    # but static screen (which stops sending frames) is never mistaken for stuck.
+    stream = {"got_frame": False, "starve_start": 0.0}
 
     def _write_state():
         if not state_file:
@@ -65,10 +89,19 @@ def create_app(web_dir: str, user: str, password: str,
             with open(tmp, "w") as f:
                 json.dump({"active_connections": conns["n"],
                            "last_input_ts": last_input["ts"],
+                           "stream_starving": conns["n"] > 0
+                           and not stream["got_frame"],
+                           "starving_since": stream["starve_start"],
                            "ts": time.time()}, f)
             os.replace(tmp, state_file)
         except OSError:
             pass  # occupancy is advisory; never break the stream over it
+
+    def mark_frame():
+        """First video frame of this session -> viewer no longer starving."""
+        if not stream["got_frame"]:
+            stream["got_frame"] = True
+            _write_state()   # publish promptly; disarms the supervisor watchdog
 
     def mark_input():
         """Mark client input activity; throttle state-file writes."""
@@ -94,13 +127,17 @@ def create_app(web_dir: str, user: str, password: str,
             except aiohttp.ClientError:
                 return web.Response(status=502, text="stream backend unavailable")
             conns["n"] += 1
-            last_input["ts"] = time.time()  # fresh session: reset idle counter
+            now = time.time()
+            last_input["ts"] = now  # fresh session: reset idle counter
+            if conns["n"] == 1:     # first viewer: arm the stream-start watchdog
+                stream["got_frame"] = False
+                stream["starve_start"] = now
             _write_state()
             try:
                 ws_server = web.WebSocketResponse(max_msg_size=0)
                 await ws_server.prepare(request)
 
-                async def pump(src, dst, on_activity=None):
+                async def pump(src, dst, on_activity=None, on_binary=None):
                     async for msg in src:
                         if msg.type == aiohttp.WSMsgType.TEXT:
                             if on_activity:
@@ -109,14 +146,17 @@ def create_app(web_dir: str, user: str, password: str,
                         elif msg.type == aiohttp.WSMsgType.BINARY:
                             if on_activity:
                                 on_activity()
+                            if on_binary:
+                                on_binary()
                             await dst.send_bytes(msg.data)
                         else:
                             break
                     await dst.close()
 
-                # Only track activity on client->upstream (input); not video (output)
+                # client->upstream: input (idle tracking). upstream->client:
+                # video frames are BINARY -> mark_frame disarms the watchdog.
                 await asyncio.gather(pump(ws_server, ws_client, on_activity=mark_input),
-                                     pump(ws_client, ws_server),
+                                     pump(ws_client, ws_server, on_binary=mark_frame),
                                      return_exceptions=True)
             finally:
                 conns["n"] -= 1
