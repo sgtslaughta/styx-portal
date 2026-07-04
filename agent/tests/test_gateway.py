@@ -46,13 +46,21 @@ def test_inject_idle_watchdog_clamps_lead_below_half_timeout():
     assert "LEAD=50" in out.replace(" ", "")       # 90 -> clamped to 100/2
 
 
-def test_is_activity_excludes_pong_keepalive():
-    # Selkies answers the server's ~5s ping with 'pong,<ts>'. Counting it as
-    # activity resets the idle clock forever -> seat never times out.
-    assert gateway.is_activity("pong,1783193480.9") is False
-    assert gateway.is_activity("m,100,200") is True      # mouse move = activity
-    assert gateway.is_activity("kd,65") is True           # key = activity
-    assert gateway.is_activity(b"\x01\x02") is True        # binary input
+def test_is_activity_excludes_protocol_and_telemetry():
+    # Automated protocol/telemetry that must NOT reset the idle clock:
+    assert gateway.is_activity("CLIENT_FRAME_ACK") is False     # per-frame ack (continuous)
+    assert gateway.is_activity("START_AUDIO") is False
+    assert gateway.is_activity("STOP_VIDEO") is False
+    assert gateway.is_activity('SETTINGS,{"h264_crf":25}') is False
+    assert gateway.is_activity("pong,1783193480.9") is False    # ping reply
+    assert gateway.is_activity("_f,60") is False                # framerate stat (~5s)
+    assert gateway.is_activity("_crf,25") is False
+    # Real user input still counts:
+    assert gateway.is_activity("m2,0,0,1") is True              # mouse
+    assert gateway.is_activity("kd,65") is True                 # key (lowercase)
+    assert gateway.is_activity("cw,hello") is True              # clipboard write
+    assert gateway.is_activity("r,1920,1080") is True           # resize
+    assert gateway.is_activity(b"\x01\x02") is True             # binary input
 
 
 @pytest.mark.asyncio

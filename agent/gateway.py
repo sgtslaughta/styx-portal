@@ -101,12 +101,23 @@ def inject_idle_watchdog(html: str, timeout_s: int, lead_s: int,
 def is_activity(data) -> bool:
     """Whether a client->server message counts as user activity for idle timing.
 
-    Selkies answers the server's periodic (~5s) ping with 'pong,<ts>'. Counting
-    that keepalive resets the idle clock every few seconds, so the seat never
-    times out — the reason workstation idle appeared not to work at all. Exclude
-    it; genuine input (mouse/key/scroll/touch, clipboard, resolution) still counts.
-    ponytail: add other prefixes here if a new non-input keepalive turns up."""
-    return not (isinstance(data, str) and data.startswith("pong,"))
+    Selkies multiplexes protocol/telemetry with input on one channel; counting
+    the automated traffic resets the idle clock continuously so the seat never
+    times out. The command token (text before the first comma) tells them apart:
+      - ALL-CAPS commands are protocol, all automated: CLIENT_FRAME_ACK (one per
+        video frame — the dominant resetter), START_AUDIO, START/STOP_VIDEO,
+        SETTINGS, SESSION, SET_NATIVE_CURSOR_RENDERING, FILE_UPLOAD_ERROR.
+      - '_'-prefixed are internal stats on a timer (_f framerate ~5s, _crf, _rc).
+      - 'pong' is the keepalive reply to the server ping.
+    Real user input uses lowercase codes — mouse 'm2', keyboard, clipboard 'cw',
+    resize 'r'/'s' — and binary frames. Those count.
+
+    Caps-token rule (not an explicit blocklist) so a new protocol command can't
+    silently re-break idle."""
+    if not isinstance(data, str):
+        return True
+    cmd = data.split(",", 1)[0]
+    return not (cmd.isupper() or cmd.startswith("_") or cmd == "pong")
 
 
 def check_auth(header: str, user: str, password: str) -> bool:
