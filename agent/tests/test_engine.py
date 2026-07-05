@@ -448,3 +448,30 @@ def test_write_seat_config_degrades_without_optional_tools(tmp_path, monkeypatch
     import json as _json
     cfg = _json.loads((tmp_path / "install" / "waybar" / "config").read_text())
     assert cfg["custom/menu"]["on-click"] == "true"
+
+
+def _seat_cfg(ss):
+    return {"install_dir": "/tmp/x", "mode": "seat", "stream_settings": ss}
+
+
+def test_build_selkies_cmd_maps_gaming_knobs(monkeypatch):
+    monkeypatch.setattr(engine, "pick_dri_node", lambda: "")
+    monkeypatch.setattr(engine, "resolve_monitor_source", lambda: "")
+    _, env = engine.build_selkies_cmd(_seat_cfg({
+        "h264_crf": 18, "h264_streaming_mode": True,
+        "use_paint_over_quality": False, "h264_paintover_crf": 12}), 1, 2)
+    assert env["SELKIES_H264_CRF"] == "18"
+    assert env["SELKIES_H264_STREAMING_MODE"] == "true"
+    assert env["SELKIES_USE_PAINT_OVER_QUALITY"] == "false"
+    assert env["SELKIES_H264_PAINTOVER_CRF"] == "12"
+
+
+def test_build_selkies_cmd_ignores_absent_and_invalid_knobs(monkeypatch):
+    monkeypatch.setattr(engine, "pick_dri_node", lambda: "")
+    monkeypatch.setattr(engine, "resolve_monitor_source", lambda: "")
+    _, env = engine.build_selkies_cmd(
+        _seat_cfg({"h264_crf": "garbage", "h264_paintover_crf": 999}), 1, 2)
+    assert "SELKIES_H264_CRF" not in env
+    assert "SELKIES_H264_PAINTOVER_CRF" not in env
+    assert "SELKIES_H264_STREAMING_MODE" not in env
+    assert "SELKIES_USE_PAINT_OVER_QUALITY" not in env

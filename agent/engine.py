@@ -100,6 +100,15 @@ def ensure_seat_sink() -> str:
 MIC_SOURCE = "SelkiesVirtualMic"   # name selkies expects to find
 
 
+def _int_in(value, lo: int, hi: int) -> int | None:
+    """Portal-supplied setting -> int within [lo, hi], else None (ignore)."""
+    try:
+        v = int(value)
+    except (TypeError, ValueError):
+        return None
+    return v if lo <= v <= hi else None
+
+
 def ensure_mic_source() -> str:
     """Pre-create the virtual microphone plumbing selkies expects.
 
@@ -501,6 +510,22 @@ def build_selkies_cmd(cfg: dict, internal_port: int, control_port: int) -> tuple
         cmd += ["--is-manual-resolution-mode=true",
                 f"--manual-width={w}", f"--manual-height={h}"]
         monitor = resolve_monitor_source()
+
+    # Gaming/quality knobs from portal stream_settings -> selkies env
+    # (SELKIES_<NAME>; env chosen over argv to match SELKIES_USE_CPU below).
+    # Values are validated here so a bad portal value can't break launch.
+    crf = _int_in(s.get("h264_crf"), 5, 50)
+    if crf is not None:
+        env["SELKIES_H264_CRF"] = str(crf)
+    if s.get("h264_streaming_mode") is True:
+        # Full-motion encoder path: skips region/VNC logic for consistent
+        # latency under heavy motion (gaming); costs bandwidth on static UI.
+        env["SELKIES_H264_STREAMING_MODE"] = "true"
+    if s.get("use_paint_over_quality") is False:
+        env["SELKIES_USE_PAINT_OVER_QUALITY"] = "false"
+    pcrf = _int_in(s.get("h264_paintover_crf"), 5, 50)
+    if pcrf is not None:
+        env["SELKIES_H264_PAINTOVER_CRF"] = str(pcrf)
 
     if monitor:
         env["SELKIES_AUDIO_ENABLED"] = "true"
