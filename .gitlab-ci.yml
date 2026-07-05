@@ -21,6 +21,17 @@ variables:
     - if: '$CI_COMMIT_BRANCH'
 
 # ---- quality -----------------------------------------------------------------
+commitlint:
+  stage: quality
+  image: node:22
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  script:
+    - npm ci --no-audit --no-fund
+    # Enforce Conventional Commits on MR commits so semantic-release can derive
+    # versions + changelog. Config in commitlint.config.js.
+    - npx commitlint --from "$CI_MERGE_REQUEST_DIFF_BASE_SHA" --to HEAD --verbose
+
 ruff:
   stage: quality
   <<: *backend_setup
@@ -113,6 +124,10 @@ semantic-release:
 build-backend:
   <<: *build_template
   variables: { IMAGE: backend, CONTEXT: backend }
+  before_script:
+    - 'V="${VERSION#v}"; echo "Building $IMAGE:$V"'
+    - sh scripts/stamp-version.sh "$V"   # bake released version into pyproject before build
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
 
 build-frontend:
   <<: *build_template
