@@ -246,15 +246,17 @@ def test_inject_title_escapes_and_handles_no_head():
     assert out.startswith("<script>")               # no </head> -> prepended
 
 
-def test_inject_forces_stream_visible():
-    """Selkies pauses video on document.hidden; embedded in the portal iframe
-    that leaves a backgrounded tab stuck black. The injected shim forces the
-    client to always believe the tab is visible so the stream never pauses."""
-    out = gateway.inject_title("<head></head><body>x</body>", "ws-alice")
-    assert "document" in out and "hidden" in out
-    assert "'visible'" in out or '"visible"' in out
-    # runs before the deferred selkies bundle, i.e. inside <head>
-    assert out.index("hidden") < out.index("</head>")
+def test_inject_forces_stream_visible_then_restores():
+    out = gateway.inject_title("<html><head></head><body></body></html>", "box1")
+    # Lies at load so connect-while-hidden still sends START_VIDEO...
+    assert "Object.defineProperty(document,'hidden'" in out
+    assert "Object.defineProperty(document,'visibilityState'" in out
+    # ...then restores native semantics so the client's hidden-tab frame
+    # dropping and STOP_VIDEO work again (unbounded-queue slowdown fix).
+    assert "delete document.hidden" in out
+    assert "delete document.visibilityState" in out
+    assert "new Event('visibilitychange')" in out
+    assert "setTimeout" in out
 
 
 @pytest.mark.asyncio

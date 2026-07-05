@@ -22,22 +22,33 @@ import aiohttp
 from aiohttp import web
 
 
+# How long the injected shim reports the tab as visible after load: long
+# enough for the selkies client to connect and send START_VIDEO even when
+# loaded in a hidden tab, short enough that a backgrounded tab stops
+# decoding (its frame queue is unbounded) soon after.
+VIS_GRACE_MS = 12000
+
+
 def inject_title(html: str, hostname: str) -> str:
     """Inject a <head> shim that (1) pins the tab title to the workstation
-    hostname and (2) forces the stream to stay live regardless of tab visibility.
+    hostname and (2) forces the stream to stay live during connection, then
+    restores native visibility semantics.
 
     Title: the selkies client hardcodes `document.title="Selkies"` at init (and
     re-sets it on reconnect), so a one-shot title loses the race. ponytail: a 1s
     poll re-asserts it; drop the interval if upstream stops clobbering it.
 
-    Visibility: the selkies client sends STOP_VIDEO whenever `document.hidden` is
-    true and only resumes on a `visibilitychange` back to visible. Embedded in
-    the portal iframe, `document.hidden` follows the parent TAB — so backgrounding
-    the portal (or (re)connecting while it's already hidden, which fires no
-    visibilitychange) leaves the seat stuck on a black "Waiting for stream". A
-    portal workstation should always stream, so override `hidden`/`visibilityState`
-    to report visible. Runs in <head>, before the deferred selkies bundle reads
-    them. The server-side idle timeout still releases a genuinely-idle seat.
+    Visibility: the selkies client sends STOP_VIDEO whenever `document.hidden`
+    is true and only resumes on a `visibilitychange` back to visible. A page
+    that (re)connects while already hidden fires no visibilitychange, so the
+    seat stayed on a black "Waiting for stream". Fix: report visible during a
+    short connect grace so START_VIDEO always flows, then RESTORE native
+    visibility and fire a synthetic visibilitychange. Restoring matters: the
+    client's decoded-frame queue is unbounded and only its document.hidden
+    check drops frames when the tab is backgrounded — lying forever made
+    hidden tabs accumulate VideoFrames for hours (session went sluggish until
+    a refresh). With native semantics back, a hidden tab pauses cleanly and
+    the next real visibilitychange resumes it.
 
     Hostname goes through json.dumps -> safe JS string literal (XSS-safe)."""
     script = ("<script>(function(){var t=%s;document.title=t;"
@@ -45,8 +56,12 @@ def inject_title(html: str, hostname: str) -> str:
               "try{Object.defineProperty(document,'hidden',"
               "{configurable:true,get:function(){return false;}});"
               "Object.defineProperty(document,'visibilityState',"
-              "{configurable:true,get:function(){return 'visible';}});}catch(e){}"
-              "})();</script>") % json.dumps(hostname)
+              "{configurable:true,get:function(){return 'visible';}});"
+              "window.styxRestoreVisibility=function(){"
+              "delete document.hidden;delete document.visibilityState;"
+              "document.dispatchEvent(new Event('visibilitychange'));};"
+              "setTimeout(window.styxRestoreVisibility,%d);"
+              "}catch(e){}})();</script>") % (json.dumps(hostname), VIS_GRACE_MS)
     if "</head>" in html:
         return html.replace("</head>", script + "</head>", 1)
     return script + html
