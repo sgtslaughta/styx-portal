@@ -221,7 +221,9 @@ def create_app(web_dir: str, user: str, password: str,
                 stream["starve_start"] = now
             _write_state()
             try:
-                ws_server = web.WebSocketResponse(max_msg_size=0)
+                # compress=False: frames are H264 — permessage-deflate would
+                # re-DEFLATE every frame in Python for no gain.
+                ws_server = web.WebSocketResponse(max_msg_size=0, compress=False)
                 await ws_server.prepare(request)
 
                 async def pump(src, dst, on_activity=None, on_binary=None):

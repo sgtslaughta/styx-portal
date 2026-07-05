@@ -64,6 +64,41 @@ def test_is_activity_excludes_protocol_and_telemetry():
 
 
 @pytest.mark.asyncio
+async def test_ws_proxy_does_not_negotiate_compression(tmp_path):
+    """H264 frames are already compressed; permessage-deflate would re-DEFLATE
+    every frame in Python (latency + CPU). The client must not be granted it."""
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+
+    async def upstream_ws(request):
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        async for _ in ws:
+            pass
+        return ws
+
+    upstream = web.Application()
+    upstream.router.add_get("/websocket", upstream_ws)
+    up = TestClient(TestServer(upstream))
+    await up.start_server()
+
+    (tmp_path / "index.html").write_text("x")
+    app = gateway.create_app(str(tmp_path), "styx", "pw",
+                             upstream_port=up.server.port)
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/websocket", compress=15,
+            headers={"Authorization": _basic("styx", "pw")})
+        assert "Sec-WebSocket-Extensions" not in ws._response.headers
+        await ws.close()
+    finally:
+        await client.close()
+        await up.close()
+
+
+@pytest.mark.asyncio
 async def test_ws_proxy_idle_close_ignores_pong_keepalive(tmp_path):
     """A steady pong keepalive must NOT keep an otherwise-idle session alive."""
     import asyncio
