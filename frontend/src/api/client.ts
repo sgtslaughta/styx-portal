@@ -13,7 +13,7 @@ export type Workstation = {
   lan_ip: string; port: number; status: string; display_server: string;
   gpu_info: Record<string, unknown>; os_info: Record<string, unknown>;
   agent_version: string; agent_outdated: boolean;
-  stream_settings: { encoder: string; framerate: number; bitrate_kbps: number };
+  stream_settings: Record<string, unknown> & { encoder?: string; framerate?: number; bitrate_kbps?: number };
   all_users: boolean; last_heartbeat: string | null; last_error: string | null;
   created_at: string; allowed_user_ids: string[];
   in_use: boolean; in_use_by: string | null; in_use_self: boolean;
