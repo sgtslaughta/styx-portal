@@ -18,7 +18,7 @@ import urllib.request
 from hashlib import sha256
 from pathlib import Path
 
-AGENT_VERSION = "0.4.8"
+AGENT_VERSION = "0.4.9"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -547,6 +547,28 @@ def run(cfg: dict) -> int:
 
 
 # --- Diagnostics -----------------------------------------------------------
+GOVERNOR_PATH = Path("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")
+
+
+def host_tuning_checks() -> list[tuple[str, bool, str]]:
+    """Advisory gaming-performance checks: (label, ok, remedy). Never gates
+    doctor's exit status — a powersave governor is a warning, not a fault."""
+    rows = []
+    if GOVERNOR_PATH.is_file():
+        gov = GOVERNOR_PATH.read_text().strip()
+        rows.append((f"cpu governor: {gov}", gov == "performance",
+                     "" if gov == "performance" else
+                     "for gaming: sudo cpupower frequency-set -g performance"))
+    if shutil.which("nvidia-smi"):
+        r = subprocess.run(["nvidia-smi", "--query-gpu=persistence_mode",
+                            "--format=csv,noheader"],
+                           capture_output=True, text=True, timeout=10)
+        pm = r.stdout.strip().splitlines()[0].strip() if r.stdout.strip() else "?"
+        rows.append((f"nvidia persistence mode: {pm}", pm == "Enabled",
+                     "" if pm == "Enabled" else "enable: sudo nvidia-smi -pm 1"))
+    return rows
+
+
 def _check(label: str, ok: bool, detail: str = "") -> bool:
     print(f"  [{'OK' if ok else 'FAIL'}] {label}" + (f" — {detail}" if detail else ""))
     return ok
@@ -584,6 +606,8 @@ def doctor(cfg: dict) -> int:
         ok &= _check("server reachable + token valid", True)
     except Exception as e:
         ok &= _check("server reachable + token valid", False, str(e))
+    for label, good, detail in host_tuning_checks():
+        _check(label, good, detail)   # advisory: not folded into `ok`
     print("All checks passed." if ok else f"Some checks failed. Logs: {LOG_DIR}")
     return 0 if ok else 1
 
