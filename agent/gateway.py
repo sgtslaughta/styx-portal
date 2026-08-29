@@ -28,6 +28,15 @@ from aiohttp import web
 # decoding (its frame queue is unbounded) soon after.
 VIS_GRACE_MS = 12000
 
+# How long a session that already streamed may go frameless, with the user
+# still driving it, before the stream counts as wedged again. Covers the
+# wlroots swapchain-exhaustion failure (screencopy holds every output buffer ->
+# the compositor renders nothing and the engine emits no frames while still
+# reporting "capture started") and any other mid-session stall. Must clear a
+# normal input->frame round trip on a loaded host. ponytail: bump if a slow
+# link ever trips it mid-session.
+STALL_REARM_S = 2.0
+
 
 def inject_title(html: str, hostname: str) -> str:
     """Inject a <head> shim that (1) pins the tab title to the workstation
@@ -163,7 +172,8 @@ def create_app(web_dir: str, user: str, password: str,
     # (binary) frame of a viewing session; until then the viewer is "starving"
     # and the supervisor restarts the engine. Cleared per session, so a healthy
     # but static screen (which stops sending frames) is never mistaken for stuck.
-    stream = {"got_frame": False, "starve_start": 0.0}
+    # `last_frame` additionally times mid-session stalls: see mark_input.
+    stream = {"got_frame": False, "starve_start": 0.0, "last_frame": 0.0}
 
     def _write_state():
         if not state_file:
@@ -182,7 +192,9 @@ def create_app(web_dir: str, user: str, password: str,
             pass  # occupancy is advisory; never break the stream over it
 
     def mark_frame():
-        """First video frame of this session -> viewer no longer starving."""
+        """First video frame of this session -> viewer no longer starving.
+        Every frame also stamps `last_frame`, the mid-session stall clock."""
+        stream["last_frame"] = time.time()
         if not stream["got_frame"]:
             stream["got_frame"] = True
             _write_state()   # publish promptly; disarms the supervisor watchdog
@@ -194,6 +206,16 @@ def create_app(web_dir: str, user: str, password: str,
             return
         now = time.time()
         last_input["ts"] = now
+        # Frames stopped while the user is still driving the seat -> the stream
+        # is wedged, not idle. Re-arm the starvation flag so the supervisor
+        # restarts the engine. Input is the discriminator: a healthy static
+        # screen sends no frames either, but nobody is asking it to.
+        if stream["got_frame"] and now - stream["last_frame"] > STALL_REARM_S:
+            stream["got_frame"] = False
+            stream["starve_start"] = now
+            last_input["flushed"] = now
+            _write_state()
+            return
         if now - last_input["flushed"] >= 5:   # throttle disk writes
             last_input["flushed"] = now
             _write_state()
@@ -219,6 +241,7 @@ def create_app(web_dir: str, user: str, password: str,
             if conns["n"] == 1:     # first viewer: arm the stream-start watchdog
                 stream["got_frame"] = False
                 stream["starve_start"] = now
+                stream["last_frame"] = now
             _write_state()
             try:
                 # compress=False: frames are H264 — permessage-deflate would

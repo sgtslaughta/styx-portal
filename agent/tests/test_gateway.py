@@ -335,3 +335,61 @@ async def test_ws_proxy_counts_connections_in_state_file(tmp_path):
     finally:
         await client.close()
         await upstream_client.close()
+
+
+@pytest.mark.asyncio
+async def test_ws_proxy_rearms_starving_when_input_gets_no_frames(tmp_path,
+                                                                 monkeypatch):
+    """A session that streamed fine and then went frameless *while the user is
+    still driving it* is wedged, not idle: wlroots can exhaust its output buffer
+    slots (screencopy holds them all), the compositor stops rendering and the
+    engine emits nothing while happily reporting "capture started". Input with
+    no frames behind it re-arms the starvation flag so the supervisor restarts
+    the engine. A static screen with no input must never trip it."""
+    import asyncio
+    import json
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+
+    monkeypatch.setattr(gateway, "STALL_REARM_S", 0.05)
+
+    async def upstream_ws(request):
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        await ws.send_bytes(b"\x00frame")      # healthy start, then silence
+        async for _ in ws:
+            pass
+        return ws
+
+    upstream = web.Application()
+    upstream.router.add_get("/websocket", upstream_ws)
+    up = TestClient(TestServer(upstream))
+    await up.start_server()
+
+    (tmp_path / "index.html").write_text("x")
+    state = tmp_path / "gw_state.json"
+    app = gateway.create_app(str(tmp_path), "styx", "pw",
+                             upstream_port=up.server.port, state_file=str(state))
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/websocket", headers={"Authorization": _basic("styx", "pw")})
+        await ws.receive()                     # first frame -> not starving
+        await asyncio.sleep(0.1)
+        assert json.loads(state.read_text())["stream_starving"] is False
+
+        # Protocol chatter alone must not re-arm (it is not user activity).
+        await ws.send_str("CLIENT_FRAME_ACK")
+        await asyncio.sleep(0.1)
+        assert json.loads(state.read_text())["stream_starving"] is False
+
+        # Real input, no frames behind it -> wedged.
+        await ws.send_str("m2,100,100")
+        await asyncio.sleep(0.1)
+        st = json.loads(state.read_text())
+        assert st["stream_starving"] is True
+        assert st["starving_since"] >= st["last_input_ts"] - 1
+    finally:
+        await client.close()
+        await up.close()

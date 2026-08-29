@@ -18,7 +18,7 @@ import urllib.request
 from hashlib import sha256
 from pathlib import Path
 
-AGENT_VERSION = "0.4.9"
+AGENT_VERSION = "0.4.10"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -131,8 +131,10 @@ def stream_starving_seconds(cfg: dict, gateway_alive: bool) -> float | None:
     the state is unreadable.
 
     The gateway sets `stream_starving` when a viewer connects and clears it on
-    the first video frame — so this only ever reports an *all-frameless* session
-    (a stuck STOP_VIDEO stream), never a healthy screen that merely went static.
+    the first video frame; it also re-arms mid-session when input arrives with
+    no frames behind it (a wedged compositor/encoder). Either way this reports
+    only a viewer who is asking for pixels and getting none — never a healthy
+    screen that merely went static.
     """
     if not gateway_alive:
         return None
