@@ -361,10 +361,14 @@ cat > "$UNIT_DIR/styx-agent.service" <<EOF
 [Unit]
 Description=Styx Portal workstation agent (Selkies streaming)
 After=network-online.target
+# Never let systemd give up on the seat: a workstation that stays dead until a
+# human intervenes is the failure we are avoiding. Must live in [Unit] -- in
+# [Service] systemd ignores it and the 5-starts-per-10s limit still applies.
+StartLimitIntervalSec=0
 
 [Service]
 ExecStart=$INSTALL_DIR/venv/bin/python $INSTALL_DIR/styx_agent.py run
-Restart=on-failure
+Restart=always
 RestartSec=5
 
 [Install]
