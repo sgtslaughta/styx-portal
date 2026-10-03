@@ -430,3 +430,152 @@ def test_inject_cursor_hide():
     assert gateway.inject_cursor_hide(html, False) == html
     out = gateway.inject_cursor_hide(html, True)
     assert "cursor:none !important" in out and out.index("cursor:none") < out.index("</head>")
+def test_inject_title_pins_hostname_in_head():
+    out = gateway.inject_title("<head></head><body>x</body>", "ws-alice")
+    assert '"ws-alice"' in out                      # JS string literal
+    assert "document.title" in out
+    assert out.index("<script>") < out.index("</head>")  # injected inside head
+
+
+def test_inject_title_escapes_and_handles_no_head():
+    out = gateway.inject_title("<body>x</body>", 'ev"il')
+    assert '"ev\\"il"' in out                        # json-escaped, XSS-safe
+    assert out.startswith("<script>")               # no </head> -> prepended
+
+
+def test_inject_forces_stream_visible_then_restores():
+    out = gateway.inject_title("<html><head></head><body></body></html>", "box1")
+    # Lies at load so connect-while-hidden still sends START_VIDEO...
+    assert "Object.defineProperty(document,'hidden'" in out
+    assert "Object.defineProperty(document,'visibilityState'" in out
+    # ...then restores native semantics so the client's hidden-tab frame
+    # dropping and STOP_VIDEO work again (unbounded-queue slowdown fix).
+    assert "delete document.hidden" in out
+    assert "delete document.visibilityState" in out
+    assert "new Event('visibilitychange')" in out
+
+
+async def _fix_upstream():
+    from aiohttp import web
+    seen = {}
+    app = web.Application()
+
+    async def fname(r):
+        seen["raw"] = r.raw_path
+        return web.Response(text=r.match_info["name"])
+    app.router.add_get("/api/files/{name}", fname)
+    app.router.add_get("/big", lambda r: web.Response(body=b"abcdefgh" * 655360))
+
+    async def ws(r):
+        if r.headers.get("Upgrade", "").lower() != "websocket":
+            return web.Response(status=409, text="mode flip")
+        seen["query"] = dict(r.query)
+        w = web.WebSocketResponse()
+        await w.prepare(r)
+        await w.send_bytes(b"\x04z")
+        async for _ in w:
+            pass
+        return w
+    app.router.add_get("/api/websockets", ws)
+    app.router.add_get("/api/files/dir", lambda r: web.Response(
+        status=301, headers={"Location": "/api/files/dir/"}))
+
+    async def cookies(r):
+        resp = web.Response(text="c")
+        resp.set_cookie("a", "1")
+        resp.set_cookie("b", "2")
+        return resp
+    app.router.add_get("/cookies", cookies)
+    app.router.add_get("/", lambda r: web.Response(status=503, text="down"))
+    return app, seen
+
+
+async def _pair():
+    from aiohttp.test_utils import TestClient, TestServer
+    app, seen = await _fix_upstream()
+    up = TestClient(TestServer(app))
+    await up.start_server()
+    gw = TestClient(TestServer(gateway.create_app("styx", "pw", upstream_port=up.server.port)))
+    await gw.start_server()
+    return up, gw, seen, {"Authorization": _basic("styx", "pw")}
+
+
+@pytest.mark.asyncio
+async def test_proxy_preserves_encoded_path():
+    up, gw, seen, h = await _pair()
+    try:
+        r = await gw.get("/api/files/a%2Fb%3Fc", headers=h)
+        assert r.status == 200
+        assert "a%2Fb%3Fc" in seen["raw"]
+    finally:
+        await gw.close()
+        await up.close()
+
+
+@pytest.mark.asyncio
+async def test_proxy_streams_large_body_intact():
+    up, gw, seen, h = await _pair()
+    try:
+        r = await gw.get("/big", headers=h)
+        assert await r.read() == b"abcdefgh" * 655360
+    finally:
+        await gw.close()
+        await up.close()
+
+
+@pytest.mark.asyncio
+async def test_ws_forwards_query_string():
+    up, gw, seen, h = await _pair()
+    try:
+        ws = await gw.ws_connect("/api/websockets?role=viewer&slot=2", headers=h)
+        await ws.receive()
+        await ws.close()
+        assert seen["query"] == {"role": "viewer", "slot": "2"}
+    finally:
+        await gw.close()
+        await up.close()
+
+
+@pytest.mark.asyncio
+async def test_plain_get_on_ws_path_passes_upstream_status():
+    up, gw, seen, h = await _pair()
+    try:
+        assert (await gw.get("/api/websockets", headers=h)).status == 409
+    finally:
+        await gw.close()
+        await up.close()
+
+
+@pytest.mark.asyncio
+async def test_redirect_location_made_relative():
+    up, gw, seen, h = await _pair()
+    try:
+        r = await gw.get("/api/files/dir", headers=h, allow_redirects=False)
+        assert r.status == 301
+        assert r.headers["Location"] == "dir/"
+    finally:
+        await gw.close()
+        await up.close()
+
+
+@pytest.mark.asyncio
+async def test_repeated_set_cookie_forwarded():
+    up, gw, seen, h = await _pair()
+    try:
+        r = await gw.get("/cookies", headers=h)
+        assert len(r.headers.getall("Set-Cookie")) == 2
+    finally:
+        await gw.close()
+        await up.close()
+
+
+@pytest.mark.asyncio
+async def test_index_non_200_passes_through_uninjected():
+    up, gw, seen, h = await _pair()
+    try:
+        r = await gw.get("/", headers=h)
+        assert r.status == 503
+        assert await r.text() == "down"
+    finally:
+        await gw.close()
+        await up.close()

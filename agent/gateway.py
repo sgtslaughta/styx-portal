@@ -13,12 +13,15 @@ import base64
 import hmac
 import json
 import os
+import posixpath
 import socket
 import sys
 import time
 
 import aiohttp
+import yarl
 from aiohttp import web
+from multidict import CIMultiDict
 
 
 # How long the injected shim reports the tab as visible after load: long
@@ -245,10 +248,15 @@ def create_app(user: str, password: str,
         return await handler(request)
 
     async def ws_proxy(request):
+        qs = request.rel_url.raw_query_string
+        if request.headers.get("Upgrade", "").lower() != "websocket":
+            # 2.0 client probes api/websockets over plain HTTP (409 = mode flip)
+            return await forward(request, "/api/websockets" + (f"?{qs}" if qs else ""))
         async with aiohttp.ClientSession() as session:
             try:
                 ws_client = await session.ws_connect(
-                    f"ws://127.0.0.1:{upstream_port}/api/websockets",
+                    f"ws://127.0.0.1:{upstream_port}/api/websockets"
+                    + (f"?{qs}" if qs else ""),
                     max_msg_size=0)
             except aiohttp.ClientError:
                 return web.Response(status=502, text="stream backend unavailable")
@@ -312,6 +320,8 @@ def create_app(user: str, password: str,
     async def index(_request):
         try:
             async with aiohttp.ClientSession() as s, s.get(UPSTREAM + "/") as r:
+                if r.status != 200:
+                    return web.Response(status=r.status, body=await r.read())
                 html = await r.text()
         except aiohttp.ClientError:
             return web.Response(status=502, text="stream backend unavailable")
@@ -320,19 +330,45 @@ def create_app(user: str, password: str,
         html = inject_cursor_hide(html, cursor_workaround)
         return web.Response(text=html, content_type="text/html")
 
-    async def http_proxy(request):
-        """Everything else (client assets, /api/* REST) goes to selkies as-is."""
-        headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP}
+    def _relative_location(request, loc):
+        """Absolute-path redirects would escape a /w/<slug> prefix; make them
+        relative to the request path."""
+        if not loc.startswith("/") or loc.startswith("//"):
+            return loc
+        path, sep, query = loc.partition("?")
+        rel = posixpath.relpath(path, posixpath.dirname(request.path) or "/")
+        if path.endswith("/") and not rel.endswith("/"):
+            rel += "/"
+        return rel + sep + query
+
+    async def forward(request, raw_path_qs):
+        """Stream request to selkies and its response back, as-is."""
+        headers = CIMultiDict()
+        headers.extend((k, v) for k, v in request.headers.items()
+                       if k.lower() not in HOP)
         body = await request.read() if request.body_exists else None
+        url = yarl.URL(UPSTREAM + raw_path_qs, encoded=True)
         try:
             async with aiohttp.ClientSession(auto_decompress=False) as s, s.request(
-                    request.method, UPSTREAM + request.rel_url.path_qs,
-                    headers=headers, data=body, allow_redirects=False) as r:
-                payload = await r.read()
-                out = {k: v for k, v in r.headers.items() if k.lower() not in HOP}
-                return web.Response(status=r.status, body=payload, headers=out)
+                    request.method, url, headers=headers, data=body,
+                    allow_redirects=False) as r:
+                out = CIMultiDict()
+                out.extend((k, v) for k, v in r.headers.items()
+                           if k.lower() not in HOP)
+                if "Location" in out:
+                    out["Location"] = _relative_location(request, out["Location"])
+                resp = web.StreamResponse(status=r.status, headers=out)
+                await resp.prepare(request)
+                async for chunk in r.content.iter_chunked(64 * 1024):
+                    await resp.write(chunk)
+                await resp.write_eof()
+                return resp
         except aiohttp.ClientError:
             return web.Response(status=502, text="stream backend unavailable")
+
+    async def http_proxy(request):
+        """Everything else (client assets, /api/* REST) goes to selkies as-is."""
+        return await forward(request, request.rel_url.raw_path_qs)
 
     async def files(request):
         # Hand-rolled index: aiohttp's show_index emits ABSOLUTE hrefs
