@@ -73,3 +73,14 @@ def test_inject_reload():
     assert "styx-resizing" in refit.HOLD_HTML and "Resizing" in refit.HOLD_HTML and out.index("styx-refit") < out.index("</head>")
     assert refit.inject_reload(html, False) == html
     assert refit.inject_reload("<p>no head</p>", True) == "<p>no head</p>"
+
+
+def test_differs():
+    assert refit.differs((2552, 1294), (1920, 1080)) is True
+    assert refit.differs((2560, 1300), (2552, 1294)) is False
+    assert refit.differs((2552, 1294), None) is True
+
+
+def test_hold_page_waits_instead_of_blind_reload():
+    assert "styxWait()" in refit.HOLD_HTML and "X-Styx-Hold" in refit.HOLD_HTML
+    assert "location.reload()},500" not in refit.HOLD_HTML

@@ -709,7 +709,8 @@ async def test_first_resize_mismatch_requests_refit_and_closes_4002(tmp_path):
         await up.close()
     assert (tmp_path / "refit-request").read_text() == "2552x1294"
     assert "SETTINGS,{}" in received
-    assert "r,2552x1294,primary" in received     # selkies letterboxes meanwhile
+    # Refit-bound size is swallowed: selkies would restart capture at it (black).
+    assert "r,2552x1294,primary" not in received
 
 
 @pytest.mark.asyncio
@@ -783,7 +784,7 @@ async def test_index_holds_while_refit_pending_and_injects_seat_shims(tmp_path):
         r = await client.get("/", headers=h)
         # 200, never 5xx: Traefik swaps 5xx for the portal's unavailable page.
         assert r.status == 200 and 'id="styx-hold"' in await r.text()
-        assert r.headers["Cache-Control"] == "no-store"
+        assert r.headers["Cache-Control"] == "no-store" and r.headers["X-Styx-Hold"] == "1"
         (tmp_path / "refit-request").unlink()
         r = await client.get("/", headers=h)
         body = await r.text()

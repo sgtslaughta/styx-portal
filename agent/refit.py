@@ -14,7 +14,7 @@ CLOSE_CODE = 4002
 MIN_W, MIN_H, MAX_W, MAX_H = 640, 480, 3840, 2160
 TOLERANCE_PX = 16
 MIN_INTERVAL_S = 3.0
-SETTLE_S = 1.0          # browser size must hold this long before a refit
+SETTLE_S = 0.6          # browser size must hold this long before a refit
 _RESIZE = re.compile(r"r,(\d{1,5})x(\d{1,5})(?:,.*)?")
 _SIZE = re.compile(r"(\d{1,5})x(\d{1,5})")
 
@@ -38,31 +38,41 @@ OVERLAY = ("<div id='styx-resizing' style='position:fixed;inset:0;z-index:214748
            "45%,75%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}"
            "</style></div>")
 
-# The gateway sends MARKER, then closes: show the overlay at once, reload on the
-# close (any code), keep the overlay across the reload (sessionStorage flag) and
-# lift it on the first video frame (audio packets are tiny). 15 s safety timeout.
+# Poll the page in the background; reload once, when the gateway serves the real
+# page again (not HOLD_HTML, which carries X-Styx-Hold).
+WAIT_JS = ("function styxWait(){fetch(location.href,{cache:'no-store'}).then(function(r)"
+           "{if(r.ok&&!r.headers.get('X-Styx-Hold'))location.reload();else throw 0})"
+           ".catch(function(){setTimeout(styxWait,400)})}")
+
+# The gateway sends MARKER, then closes: show the overlay at once, wait for the
+# seat on the close (any code), keep the overlay across the single reload
+# (sessionStorage flag; drawn before <body> exists) and lift it 0.8 s after the
+# first video frame (audio packets are tiny; selkies resets right after it
+# connects). 15 s safety timeout.
 RELOAD_JS = (
     '<script id="styx-refit">(function(){var W=window.WebSocket,K="styx-resizing";'
-    "function show(){if(!document.getElementById(K))"
-    'document.body.insertAdjacentHTML("beforeend","' + OVERLAY + '")}'
+    + WAIT_JS +
+    "function show(){if(!document.getElementById(K))(document.body||"
+    'document.documentElement).insertAdjacentHTML("beforeend","' + OVERLAY + '")}'
     "function hide(){try{sessionStorage.removeItem(K)}catch(e){}"
     "var o=document.getElementById(K);if(o)o.remove()}"
     "function arm(){try{sessionStorage.setItem(K,'1')}catch(e){}show()}"
     "var on=false;try{on=sessionStorage.getItem(K)==='1'}catch(e){}"
-    "if(on){document.addEventListener('DOMContentLoaded',show);setTimeout(hide,15000)}"
+    "if(on){show();setTimeout(hide,15000)}"
     "function S(u,p){var s=p===undefined?new W(u):new W(u,p),refit=false;"
     "s.addEventListener('message',function(e){var d=e.data;"
     "if(d==='" + MARKER + "'){refit=true;arm();return}"
-    "if(on&&typeof d!=='string'&&(d.byteLength||d.size||0)>2000){on=false;hide()}});"
+    "if(on&&typeof d!=='string'&&(d.byteLength||d.size||0)>2000){on=false;"
+    "setTimeout(hide,800)}});"
     "s.addEventListener('close',function(e){if(!refit&&e.code!==4002)return;arm();"
-    "setTimeout(function(){location.reload()},300)});return s}"
+    "styxWait()});return s}"
     "S.prototype=W.prototype;['CONNECTING','OPEN','CLOSING','CLOSED'].forEach("
     "function(k){S[k]=W[k]});window.WebSocket=S})();</script>")
 # Served with 200 while the seat is rebuilt: any 5xx would be swapped by Traefik's
 # instance-unavailable page, which bounces the viewer to the portal.
 HOLD_HTML = ('<!doctype html><html><head><title>Resizing desktop</title></head>'
              '<body id="styx-hold" style="margin:0;background:#0c1730">' + OVERLAY +
-             '<script>setTimeout(function(){location.reload()},500)</script></body></html>')
+             '<script>' + WAIT_JS + 'styxWait()</script></body></html>')
 
 
 def clamp(w: int, h: int) -> tuple[int, int]:
@@ -80,12 +90,15 @@ def parse_resize(msg) -> tuple[int, int] | None:
 
 def decide(req, current, last_refit_ts: float, now: float):
     """Target size for a refit, or None (close enough, or refitted < 3 s ago)."""
+    if not differs(req, current) or now - last_refit_ts < MIN_INTERVAL_S:
+        return None
+    return clamp(*req)
+
+
+def differs(req, current) -> bool:
+    """Whether the (clamped) browser size is off the live seat size by > 16 px."""
     w, h = clamp(*req)
-    if current and abs(w - current[0]) <= TOLERANCE_PX and abs(h - current[1]) <= TOLERANCE_PX:
-        return None
-    if now - last_refit_ts < MIN_INTERVAL_S:
-        return None
-    return w, h
+    return not current or abs(w - current[0]) > TOLERANCE_PX or abs(h - current[1]) > TOLERANCE_PX
 
 
 def read_size(path) -> tuple[int, int] | None:
