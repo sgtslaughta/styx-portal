@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-AGENT_VERSION = "0.6.8"
+AGENT_VERSION = "0.6.9"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -378,8 +378,8 @@ def run(cfg: dict) -> int:
         except (urllib.error.URLError, OSError, TimeoutError) as e:
             _write_state({"ts": time.time(), "ok": False, "error": str(e)})
             print(f"heartbeat failed: {e}", flush=True)
-        # GNOME seat: wake early when the gateway asks for a refit (size-at-connect).
-        req = refit.wait_for_request(refit_req, interval) if gseat else time.sleep(interval)
+        req = (refit.wait_for_request(refit_req, interval, stop=lambda: not gseat.alive())
+               if gseat else time.sleep(interval))  # GNOME: wake on refit or seat death
         if req:
             if gseat.alive():
                 print(f"refit: rebuilding seat monitor at {req[0]}x{req[1]}", flush=True)

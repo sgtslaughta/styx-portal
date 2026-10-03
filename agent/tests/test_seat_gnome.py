@@ -205,3 +205,21 @@ def test_gnome_available_reports_missing_helper_deps(monkeypatch):
     monkeypatch.setattr(seat_gnome.subprocess, "run", run)
     ok, why = seat_gnome.gnome_available()
     assert ok is False and "python3-dbus" in why
+
+
+def test_dead_helper_heals_without_restarting_gnome(tmp_path, monkeypatch):
+    """GNOME's screen-share Stop kills only the virtual monitor: keep GNOME."""
+    seat = seat_gnome.GnomeSeat(tmp_path, str(tmp_path), log=subprocess.DEVNULL)
+    seat._proc = _fake_proc()                 # GNOME alive
+    seat._helper = _fake_proc(rc=1)           # helper died
+    seat.size = (2434, 1262)
+    assert seat.alive() is False
+
+    def no_popen(*a, **k):
+        raise AssertionError("GNOME must not be restarted")
+    monkeypatch.setattr(seat_gnome.subprocess, "Popen", no_popen)
+    started = []
+    monkeypatch.setattr(seat, "_start_helper", lambda w, h: started.append((w, h)) or True)
+    seat.start(2434, 1262)
+    assert seat.ready() is True and started == [(2434, 1262)]
+    assert seat.restarts == 0

@@ -245,11 +245,15 @@ class Monitor:
     """Mutter virtual monitor held at w x h by a fakesink consumer.
     ponytail: always-copy costs one copy per painted frame (unmeasurable in the
     spike at 1440p60); drop it if a box's CPU budget ever says otherwise."""
-    def __init__(self, w, h):
+    def __init__(self, w, h, on_closed):
         self.w, self.h, self.pipe, self.playing = w, h, None, False
         path = _mutter("ScreenCast", "/org/gnome/Mutter/ScreenCast",
                        "ScreenCast").CreateSession(dbus.Dictionary({}, signature="sv"))
         self.sess = _mutter("ScreenCast", path, "ScreenCast.Session")
+        # GNOME's screen-share "Stop" closes this session: the monitor is gone,
+        # so exit and let the agent restart us (seat_gnome heal path).
+        bus.add_signal_receiver(lambda *a: on_closed(), "Closed",
+                                M + "ScreenCast.Session", path=path)
         stream = self.sess.RecordVirtual(dbus.Dictionary(
             {"cursor-mode": dbus.UInt32(EMBEDDED), "is-platform": dbus.Boolean(True)},
             signature="sv"))
@@ -314,7 +318,13 @@ def main(argv) -> int:
     ready = os.environ.get("STYX_PORTAL_READY", "")
     loop = GLib.MainLoop()
     st = {"rc": 0, "tries": 0, "frontend": None}
-    mon = Monitor(w, h)
+
+    def on_closed():
+        log("virtual monitor session closed (screen-share Stop?); exiting")
+        st["rc"] = 1
+        loop.quit()
+
+    mon = Monitor(w, h, on_closed)
 
     def poll():
         if mon.playing and mon.is_current():

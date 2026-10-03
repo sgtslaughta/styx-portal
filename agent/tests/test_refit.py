@@ -84,3 +84,10 @@ def test_differs():
 def test_hold_page_waits_instead_of_blind_reload():
     assert "styxWait()" in refit.HOLD_HTML and "X-Styx-Hold" in refit.HOLD_HTML
     assert "location.reload()},500" not in refit.HOLD_HTML
+
+
+def test_wait_for_request_stops_early(tmp_path):
+    t = {"now": 0.0}
+    assert refit.wait_for_request(tmp_path / "r", 30, sleep=lambda s: t.update(now=t["now"] + s),
+                                  clock=lambda: t["now"], stop=lambda: True) is None
+    assert t["now"] == 0.0
