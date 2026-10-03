@@ -707,7 +707,7 @@ async def test_first_resize_mismatch_requests_refit_and_closes_4002(tmp_path):
         await up.close()
     assert (tmp_path / "refit-request").read_text() == "2552x1294"
     assert "SETTINGS,{}" in received
-    assert not any(isinstance(m, str) and m.startswith("r,") for m in received)
+    assert "r,2552x1294,primary" in received     # selkies letterboxes meanwhile
 
 
 @pytest.mark.asyncio
@@ -719,7 +719,7 @@ async def test_matching_resize_is_forwarded(tmp_path):
     try:
         ws = await client.ws_connect("/websocket", headers={"Authorization": _basic("styx", "pw")})
         await ws.send_str("r,2560x1300,primary")
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(1.3)                 # past the settle window
         await ws.close()
     finally:
         await client.close()
@@ -729,23 +729,24 @@ async def test_matching_resize_is_forwarded(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_second_resize_in_window_is_forwarded(tmp_path):
-    """Only a connection's FIRST r, can refit; later ones letterbox upstream."""
+async def test_refit_uses_last_size_after_settle(tmp_path):
+    """Browsers send a provisional size first; only the settled one refits."""
     import asyncio
-    (tmp_path / "seat-size").write_text("2552x1294")
+    (tmp_path / "seat-size").write_text("1920x1080")
     received = []
     up, client = await _refit_pair(tmp_path, received, str(tmp_path))
     try:
         ws = await client.ws_connect("/websocket", headers={"Authorization": _basic("styx", "pw")})
+        await ws.send_str("r,1000x700,primary")
+        await asyncio.sleep(0.3)
         await ws.send_str("r,2552x1294,primary")
-        await ws.send_str("r,1280x720,primary")
-        await asyncio.sleep(0.2)
-        await ws.close()
+        assert not (tmp_path / "refit-request").exists()     # still settling
+        msg = await asyncio.wait_for(ws.receive(), timeout=3)
+        assert msg.type == aiohttp.WSMsgType.CLOSE and msg.data == 4002
     finally:
         await client.close()
         await up.close()
-    assert "r,1280x720,primary" in received
-    assert not (tmp_path / "refit-request").exists()
+    assert (tmp_path / "refit-request").read_text() == "2552x1294"
 
 
 @pytest.mark.asyncio

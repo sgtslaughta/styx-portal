@@ -202,7 +202,7 @@ def create_app(user: str, password: str,
     # but static screen (which stops sending frames) is never mistaken for stuck.
     # `last_frame` additionally times mid-session stalls: see mark_input.
     stream = {"got_frame": False, "starve_start": 0.0, "last_frame": 0.0}
-    # GNOME seat size-at-connect (refit.py): only a connection's first r, can refit.
+    # GNOME seat refit (refit.py): rebuild at the browser size once resizing settles.
     size_file = os.path.join(seat_dir, "seat-size") if seat_dir else ""
     refit_file = os.path.join(seat_dir, "refit-request") if seat_dir else ""
     last_refit = {"ts": float("-inf")}
@@ -286,13 +286,11 @@ def create_app(user: str, password: str,
                 ws_server = web.WebSocketResponse(max_msg_size=0, compress=False)
                 await ws_server.prepare(request)
 
-                async def pump(src, dst, on_activity=None, on_binary=None, intercept=None):
+                async def pump(src, dst, on_activity=None, on_binary=None):
                     async for msg in src:
                         if msg.type == aiohttp.WSMsgType.TEXT:
                             if on_activity:
                                 on_activity(msg.data)
-                            if intercept and intercept(msg.data):
-                                continue
                             await dst.send_str(msg.data)
                         elif msg.type == aiohttp.WSMsgType.BINARY:
                             if on_activity:
@@ -321,30 +319,35 @@ def create_app(user: str, password: str,
 
                 # client->upstream: input (idle tracking). upstream->client:
                 # video frames are BINARY -> mark_frame disarms the watchdog.
-                first_resize = {"done": not seat_dir}
+                resize = {"size": None, "timer": None}
 
-                def refit_on_first_resize(data) -> bool:
-                    """True = swallow: seat is being rebuilt at the browser size."""
-                    if first_resize["done"]:
-                        return False
-                    req = refit.parse_resize(data)
-                    if req is None:
-                        return False
-                    first_resize["done"] = True
-                    now = time.time()
-                    target = refit.decide(req, refit.read_size(size_file), last_refit["ts"], now)
-                    if target is None:
-                        return False
-                    last_refit["ts"] = now
+                def fire_refit():
+                    target = refit.decide(resize["size"], refit.read_size(size_file),
+                                          last_refit["ts"], time.time())
+                    if target is None or ws_server.closed:
+                        return
+                    last_refit["ts"] = time.time()
                     refit.request(refit_file, *target)
                     asyncio.ensure_future(ws_server.close(code=refit.CLOSE_CODE, message=b"refit"))
-                    return True
 
-                await asyncio.gather(pump(ws_server, ws_client, on_activity=mark_input,
-                                          intercept=refit_on_first_resize),
+                def on_client(data):
+                    """Input tracking + refit once the browser size settles. r,
+                    still reaches selkies, which letterboxes until the refit."""
+                    mark_input(data)
+                    req = refit.parse_resize(data) if seat_dir else None
+                    if req:
+                        resize["size"] = req
+                        if resize["timer"]:
+                            resize["timer"].cancel()
+                        resize["timer"] = asyncio.get_running_loop().call_later(
+                            refit.SETTLE_S, fire_refit)
+
+                await asyncio.gather(pump(ws_server, ws_client, on_activity=on_client),
                                      pump(ws_client, ws_server, on_binary=mark_frame),
                                      idle_closer(),
                                      return_exceptions=True)
+                if resize["timer"]:
+                    resize["timer"].cancel()
             finally:
                 conns["n"] -= 1
                 _write_state()

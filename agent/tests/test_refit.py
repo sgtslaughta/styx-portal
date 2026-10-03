@@ -26,8 +26,8 @@ def test_decide_tolerance_and_unknown_current():
 
 
 def test_decide_rate_limited():
-    assert refit.decide((2552, 1294), (1920, 1080), 95, 100) is None      # 5 s after last
-    assert refit.decide((2552, 1294), (1920, 1080), 89, 100) == (2552, 1294)
+    assert refit.decide((2552, 1294), (1920, 1080), 98, 100) is None      # 2 s after last
+    assert refit.decide((2552, 1294), (1920, 1080), 96, 100) == (2552, 1294)
 
 
 def test_size_file_roundtrip_and_request(tmp_path):
