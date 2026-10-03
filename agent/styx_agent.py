@@ -481,6 +481,9 @@ def main() -> int:
     if cmd == "run":
         return run(cfg)
     if cmd == "doctor":
+        if "--grant" in sys.argv:
+            import grant
+            return grant.grant(cfg)
         return doctor(cfg)
     if cmd == "status":
         return status(cfg)
