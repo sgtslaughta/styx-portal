@@ -257,6 +257,8 @@ if [[ "$UPGRADE" == 1 ]]; then
   # Keep logs and the labwc-fallback nwg binaries; venv/web/lib/launcher are NOT carried over.
   [[ -d "$INSTALL_DIR.prev/logs" ]] && cp -a "$INSTALL_DIR.prev/logs" "$INSTALL_DIR/logs"
   [[ -d "$INSTALL_DIR.prev/bin" ]] && cp -a "$INSTALL_DIR.prev/bin" "$INSTALL_DIR/bin"
+  # GNOME seat: keep the last refit size so the seat comes back as the viewer left it.
+  [[ -f "$INSTALL_DIR.prev/seat-size" ]] && cp -a "$INSTALL_DIR.prev/seat-size" "$INSTALL_DIR/seat-size"
 fi
 mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$UNIT_DIR" "$INSTALL_DIR/logs"
 for pair in "agent.py styx_agent.py" "engine.py engine.py" \
