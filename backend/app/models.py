@@ -239,7 +239,7 @@ class Workstation(SQLModel, table=True):
     agent_token_hash: str = Field(default="", index=True)
     selkies_password_enc: str = ""
     stream_settings: dict[str, Any] = Field(
-        default_factory=lambda: {"encoder": "auto", "framerate": 60, "bitrate_kbps": 16000},
+        default_factory=lambda: {"encoder": "auto", "framerate": 60},
         sa_column=Column(JSON),
     )
     all_users: bool = False

@@ -64,6 +64,41 @@ def test_is_activity_excludes_protocol_and_telemetry():
 
 
 @pytest.mark.asyncio
+async def test_ws_proxy_does_not_negotiate_compression(tmp_path):
+    """H264 frames are already compressed; permessage-deflate would re-DEFLATE
+    every frame in Python (latency + CPU). The client must not be granted it."""
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+
+    async def upstream_ws(request):
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        async for _ in ws:
+            pass
+        return ws
+
+    upstream = web.Application()
+    upstream.router.add_get("/websocket", upstream_ws)
+    up = TestClient(TestServer(upstream))
+    await up.start_server()
+
+    (tmp_path / "index.html").write_text("x")
+    app = gateway.create_app(str(tmp_path), "styx", "pw",
+                             upstream_port=up.server.port)
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/websocket", compress=15,
+            headers={"Authorization": _basic("styx", "pw")})
+        assert "Sec-WebSocket-Extensions" not in ws._response.headers
+        await ws.close()
+    finally:
+        await client.close()
+        await up.close()
+
+
+@pytest.mark.asyncio
 async def test_ws_proxy_idle_close_ignores_pong_keepalive(tmp_path):
     """A steady pong keepalive must NOT keep an otherwise-idle session alive."""
     import asyncio
@@ -162,6 +197,7 @@ async def test_ws_proxy_starving_flag_clears_on_first_frame(tmp_path):
     async def upstream_ws(request):
         ws = web.WebSocketResponse()
         await ws.prepare(request)
+        await ws.send_bytes(b"\x01\x00opus")   # audio is binary too, NOT video
         await send_frame.wait()          # stay frameless until told
         await ws.send_bytes(b"\x00frame")
         async for _ in ws:
@@ -182,9 +218,10 @@ async def test_ws_proxy_starving_flag_clears_on_first_frame(tmp_path):
     try:
         ws = await client.ws_connect(
             "/websocket", headers={"Authorization": _basic("styx", "pw")})
+        await ws.receive()               # audio arrives...
         await asyncio.sleep(0.1)
         st = json.loads(state.read_text())
-        assert st["stream_starving"] is True
+        assert st["stream_starving"] is True   # ...but viewer still starving
         assert isinstance(st["starving_since"], (int, float))
         # engine finally emits a frame -> flag clears
         send_frame.set()
@@ -246,15 +283,17 @@ def test_inject_title_escapes_and_handles_no_head():
     assert out.startswith("<script>")               # no </head> -> prepended
 
 
-def test_inject_forces_stream_visible():
-    """Selkies pauses video on document.hidden; embedded in the portal iframe
-    that leaves a backgrounded tab stuck black. The injected shim forces the
-    client to always believe the tab is visible so the stream never pauses."""
-    out = gateway.inject_title("<head></head><body>x</body>", "ws-alice")
-    assert "document" in out and "hidden" in out
-    assert "'visible'" in out or '"visible"' in out
-    # runs before the deferred selkies bundle, i.e. inside <head>
-    assert out.index("hidden") < out.index("</head>")
+def test_inject_forces_stream_visible_then_restores():
+    out = gateway.inject_title("<html><head></head><body></body></html>", "box1")
+    # Lies at load so connect-while-hidden still sends START_VIDEO...
+    assert "Object.defineProperty(document,'hidden'" in out
+    assert "Object.defineProperty(document,'visibilityState'" in out
+    # ...then restores native semantics so the client's hidden-tab frame
+    # dropping and STOP_VIDEO work again (unbounded-queue slowdown fix).
+    assert "delete document.hidden" in out
+    assert "delete document.visibilityState" in out
+    assert "new Event('visibilitychange')" in out
+    assert "setTimeout" in out
 
 
 @pytest.mark.asyncio
@@ -298,3 +337,61 @@ async def test_ws_proxy_counts_connections_in_state_file(tmp_path):
     finally:
         await client.close()
         await upstream_client.close()
+
+
+@pytest.mark.asyncio
+async def test_ws_proxy_rearms_starving_when_input_gets_no_frames(tmp_path,
+                                                                 monkeypatch):
+    """A session that streamed fine and then went frameless *while the user is
+    still driving it* is wedged, not idle: wlroots can exhaust its output buffer
+    slots (screencopy holds them all), the compositor stops rendering and the
+    engine emits nothing while happily reporting "capture started". Input with
+    no frames behind it re-arms the starvation flag so the supervisor restarts
+    the engine. A static screen with no input must never trip it."""
+    import asyncio
+    import json
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+
+    monkeypatch.setattr(gateway, "STALL_REARM_S", 0.05)
+
+    async def upstream_ws(request):
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        await ws.send_bytes(b"\x00frame")      # healthy start, then silence
+        async for _ in ws:
+            pass
+        return ws
+
+    upstream = web.Application()
+    upstream.router.add_get("/websocket", upstream_ws)
+    up = TestClient(TestServer(upstream))
+    await up.start_server()
+
+    (tmp_path / "index.html").write_text("x")
+    state = tmp_path / "gw_state.json"
+    app = gateway.create_app(str(tmp_path), "styx", "pw",
+                             upstream_port=up.server.port, state_file=str(state))
+    client = TestClient(TestServer(app))
+    await client.start_server()
+    try:
+        ws = await client.ws_connect(
+            "/websocket", headers={"Authorization": _basic("styx", "pw")})
+        await ws.receive()                     # first frame -> not starving
+        await asyncio.sleep(0.1)
+        assert json.loads(state.read_text())["stream_starving"] is False
+
+        # Protocol chatter alone must not re-arm (it is not user activity).
+        await ws.send_str("CLIENT_FRAME_ACK")
+        await asyncio.sleep(0.1)
+        assert json.loads(state.read_text())["stream_starving"] is False
+
+        # Real input, no frames behind it -> wedged.
+        await ws.send_str("m2,100,100")
+        await asyncio.sleep(0.1)
+        st = json.loads(state.read_text())
+        assert st["stream_starving"] is True
+        assert st["starving_since"] >= st["last_input_ts"] - 1
+    finally:
+        await client.close()
+        await up.close()

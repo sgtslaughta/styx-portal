@@ -8,6 +8,7 @@ desktops and stream physical/virtual workstations through the browser.
 - **[Quickstart](QUICKSTART.md)** — get a portal running.
 - **[Instances](INSTANCES.md)** — launch containerized streaming desktops (Selkies / linuxserver.io).
 - **[Workstations](WORKSTATIONS.md)** — enroll and stream a machine.
+- **[Performance](PERFORMANCE.md)** — gaming and interactive workload tuning.
 - **[GPU](GPU.md)** — GPU passthrough and acceleration.
 - **[Admin](ADMIN.md)** — user, settings, and security administration.
 - **[Production](PRODUCTION.md)** — hardened deployment.

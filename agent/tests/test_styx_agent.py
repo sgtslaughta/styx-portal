@@ -28,7 +28,7 @@ def test_load_config(tmp_path):
 
 
 def test_agent_version_bumped():
-    assert styx_agent.AGENT_VERSION == "0.4.8"
+    assert styx_agent.AGENT_VERSION == "0.4.11"
 
 
 def test_gateway_cmd_secrets_via_env(tmp_path):
@@ -72,7 +72,7 @@ def test_health_payload_reports_mode_and_engine(tmp_path):
     h = styx_agent.health_payload(cfg, selkies_alive=True, gateway_alive=False)
     assert h["mode"] == "seat"
     assert h["engine"] == "pixelflux"
-    assert h["agent_version"] == "0.4.8"
+    assert h["agent_version"] == "0.4.11"
     assert h["selkies_alive"] is True and h["gateway_alive"] is False
     assert h["active_connections"] == 0
 
@@ -224,3 +224,23 @@ def test_stream_frozen_only_when_viewer_present_and_stalled():
     # even though viewer+alive+stalled all look "frozen"
     assert styx_agent.stream_frozen(1, True, t + 1, t, marker_seen=False) is False
     assert styx_agent.stream_frozen(1, True, t + 1, t, marker_seen=True) is True
+
+
+def test_host_tuning_checks_governor(monkeypatch, tmp_path):
+    gov = tmp_path / "scaling_governor"
+    gov.write_text("powersave\n")
+    monkeypatch.setattr(styx_agent, "GOVERNOR_PATH", gov)
+    monkeypatch.setattr(styx_agent.shutil, "which", lambda _: None)
+    rows = styx_agent.host_tuning_checks()
+    label, ok, detail = next(r for r in rows if "governor" in r[0])
+    assert not ok and "performance" in detail
+
+
+def test_host_tuning_checks_all_good(monkeypatch, tmp_path):
+    gov = tmp_path / "scaling_governor"
+    gov.write_text("performance\n")
+    monkeypatch.setattr(styx_agent, "GOVERNOR_PATH", gov)
+    monkeypatch.setattr(styx_agent.shutil, "which", lambda _: "/usr/bin/nvidia-smi")
+    monkeypatch.setattr(styx_agent.subprocess, "run", lambda *a, **k: type(
+        "R", (), {"stdout": "Enabled\n", "returncode": 0})())
+    assert all(ok for _, ok, _ in styx_agent.host_tuning_checks())

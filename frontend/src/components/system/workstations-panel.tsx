@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { WorkstationSpecs } from "@/components/system/workstation-specs";
+import { WorkstationStreamSettings } from "@/components/system/workstation-stream-settings";
 
 const STATUS_STYLES: Record<string, string> = {
   online: "bg-emerald-500/15 text-emerald-400",
@@ -203,6 +204,7 @@ export function WorkstationsPanel() {
                 </div>
               </div>
               <WorkstationSpecs ws={ws} />
+              <WorkstationStreamSettings ws={ws} onSaved={refresh} />
               {ws.last_error && <p className="text-xs text-rose-400">Agent error: {ws.last_error}</p>}
               <div className="flex flex-wrap items-center gap-3 text-sm">
                 <label className="flex items-center gap-1.5">

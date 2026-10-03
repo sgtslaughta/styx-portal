@@ -31,7 +31,7 @@ if (onGitLab) {
   // .release-version for the image-build job; core pushes only the tag ref
   // (not refs/heads/main), which the ruleset doesn't gate.
   plugins.push(
-    ['@semantic-release/exec', { prepareCmd: "printf '%s' \"${nextRelease.version}\" > .release-version" }],
+    ['@semantic-release/exec', { prepareCmd: "printf '%s' \"${nextRelease.version}\" > .release-version && sh scripts/stamp-version.sh \"${nextRelease.version}\"" }],
     '@semantic-release/github',
   );
 }

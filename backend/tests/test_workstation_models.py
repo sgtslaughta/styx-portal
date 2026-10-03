@@ -21,6 +21,11 @@ async def test_workstation_defaults(session):
     assert ws.all_users is False
 
 
+def test_workstation_default_stream_settings_has_no_dead_bitrate():
+    ws = Workstation(name="x", subdomain="x", created_by="user-1")
+    assert ws.stream_settings == {"encoder": "auto", "framerate": 60}
+
+
 @pytest.mark.asyncio
 async def test_enrollment_token_and_access(session):
     admin = User(username="a", password_hash=hash_password("x"), role="admin")

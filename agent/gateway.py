@@ -22,22 +22,42 @@ import aiohttp
 from aiohttp import web
 
 
+# How long the injected shim reports the tab as visible after load: long
+# enough for the selkies client to connect and send START_VIDEO even when
+# loaded in a hidden tab, short enough that a backgrounded tab stops
+# decoding (its frame queue is unbounded) soon after.
+VIS_GRACE_MS = 12000
+
+# How long a session that already streamed may go frameless, with the user
+# still driving it, before the stream counts as wedged again. Covers the
+# wlroots swapchain-exhaustion failure (screencopy holds every output buffer ->
+# the compositor renders nothing and the engine emits no frames while still
+# reporting "capture started") and any other mid-session stall. Must clear a
+# normal input->frame round trip on a loaded host. ponytail: bump if a slow
+# link ever trips it mid-session.
+STALL_REARM_S = 2.0
+
+
 def inject_title(html: str, hostname: str) -> str:
     """Inject a <head> shim that (1) pins the tab title to the workstation
-    hostname and (2) forces the stream to stay live regardless of tab visibility.
+    hostname and (2) forces the stream to stay live during connection, then
+    restores native visibility semantics.
 
     Title: the selkies client hardcodes `document.title="Selkies"` at init (and
     re-sets it on reconnect), so a one-shot title loses the race. ponytail: a 1s
     poll re-asserts it; drop the interval if upstream stops clobbering it.
 
-    Visibility: the selkies client sends STOP_VIDEO whenever `document.hidden` is
-    true and only resumes on a `visibilitychange` back to visible. Embedded in
-    the portal iframe, `document.hidden` follows the parent TAB — so backgrounding
-    the portal (or (re)connecting while it's already hidden, which fires no
-    visibilitychange) leaves the seat stuck on a black "Waiting for stream". A
-    portal workstation should always stream, so override `hidden`/`visibilityState`
-    to report visible. Runs in <head>, before the deferred selkies bundle reads
-    them. The server-side idle timeout still releases a genuinely-idle seat.
+    Visibility: the selkies client sends STOP_VIDEO whenever `document.hidden`
+    is true and only resumes on a `visibilitychange` back to visible. A page
+    that (re)connects while already hidden fires no visibilitychange, so the
+    seat stayed on a black "Waiting for stream". Fix: report visible during a
+    short connect grace so START_VIDEO always flows, then RESTORE native
+    visibility and fire a synthetic visibilitychange. Restoring matters: the
+    client's decoded-frame queue is unbounded and only its document.hidden
+    check drops frames when the tab is backgrounded — lying forever made
+    hidden tabs accumulate VideoFrames for hours (session went sluggish until
+    a refresh). With native semantics back, a hidden tab pauses cleanly and
+    the next real visibilitychange resumes it.
 
     Hostname goes through json.dumps -> safe JS string literal (XSS-safe)."""
     script = ("<script>(function(){var t=%s;document.title=t;"
@@ -45,8 +65,12 @@ def inject_title(html: str, hostname: str) -> str:
               "try{Object.defineProperty(document,'hidden',"
               "{configurable:true,get:function(){return false;}});"
               "Object.defineProperty(document,'visibilityState',"
-              "{configurable:true,get:function(){return 'visible';}});}catch(e){}"
-              "})();</script>") % json.dumps(hostname)
+              "{configurable:true,get:function(){return 'visible';}});"
+              "window.styxRestoreVisibility=function(){"
+              "delete document.hidden;delete document.visibilityState;"
+              "document.dispatchEvent(new Event('visibilitychange'));};"
+              "setTimeout(window.styxRestoreVisibility,%d);"
+              "}catch(e){}})();</script>") % (json.dumps(hostname), VIS_GRACE_MS)
     if "</head>" in html:
         return html.replace("</head>", script + "</head>", 1)
     return script + html
@@ -148,7 +172,8 @@ def create_app(web_dir: str, user: str, password: str,
     # (binary) frame of a viewing session; until then the viewer is "starving"
     # and the supervisor restarts the engine. Cleared per session, so a healthy
     # but static screen (which stops sending frames) is never mistaken for stuck.
-    stream = {"got_frame": False, "starve_start": 0.0}
+    # `last_frame` additionally times mid-session stalls: see mark_input.
+    stream = {"got_frame": False, "starve_start": 0.0, "last_frame": 0.0}
 
     def _write_state():
         if not state_file:
@@ -167,7 +192,9 @@ def create_app(web_dir: str, user: str, password: str,
             pass  # occupancy is advisory; never break the stream over it
 
     def mark_frame():
-        """First video frame of this session -> viewer no longer starving."""
+        """First video frame of this session -> viewer no longer starving.
+        Every frame also stamps `last_frame`, the mid-session stall clock."""
+        stream["last_frame"] = time.time()
         if not stream["got_frame"]:
             stream["got_frame"] = True
             _write_state()   # publish promptly; disarms the supervisor watchdog
@@ -179,6 +206,16 @@ def create_app(web_dir: str, user: str, password: str,
             return
         now = time.time()
         last_input["ts"] = now
+        # Frames stopped while the user is still driving the seat -> the stream
+        # is wedged, not idle. Re-arm the starvation flag so the supervisor
+        # restarts the engine. Input is the discriminator: a healthy static
+        # screen sends no frames either, but nobody is asking it to.
+        if stream["got_frame"] and now - stream["last_frame"] > STALL_REARM_S:
+            stream["got_frame"] = False
+            stream["starve_start"] = now
+            last_input["flushed"] = now
+            _write_state()
+            return
         if now - last_input["flushed"] >= 5:   # throttle disk writes
             last_input["flushed"] = now
             _write_state()
@@ -204,9 +241,12 @@ def create_app(web_dir: str, user: str, password: str,
             if conns["n"] == 1:     # first viewer: arm the stream-start watchdog
                 stream["got_frame"] = False
                 stream["starve_start"] = now
+                stream["last_frame"] = now
             _write_state()
             try:
-                ws_server = web.WebSocketResponse(max_msg_size=0)
+                # compress=False: frames are H264 — permessage-deflate would
+                # re-DEFLATE every frame in Python for no gain.
+                ws_server = web.WebSocketResponse(max_msg_size=0, compress=False)
                 await ws_server.prepare(request)
 
                 async def pump(src, dst, on_activity=None, on_binary=None):
@@ -218,7 +258,9 @@ def create_app(web_dir: str, user: str, password: str,
                         elif msg.type == aiohttp.WSMsgType.BINARY:
                             if on_activity:
                                 on_activity(msg.data)
-                            if on_binary:
+                            # 0x01 = pcmflux audio; it flows while video is
+                            # dead, so it must not count as a frame.
+                            if on_binary and msg.data[:1] != b"\x01":
                                 on_binary()
                             await dst.send_bytes(msg.data)
                         else:

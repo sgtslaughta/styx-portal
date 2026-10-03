@@ -2,6 +2,7 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -244,7 +245,14 @@ async def _health_sample_loop():
             pass
 
 
-app = FastAPI(title="Styx Portal", version="0.1.0", lifespan=lifespan)
+try:
+    # Version is stamped into pyproject.toml by scripts/stamp-version.sh at release
+    # build time (semantic-release is the source of truth). Falls back in dev/editable.
+    _APP_VERSION = _pkg_version("styx-portal-backend")
+except PackageNotFoundError:  # pragma: no cover
+    _APP_VERSION = "0.0.0"
+
+app = FastAPI(title="Styx Portal", version=_APP_VERSION, lifespan=lifespan)
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(CSRFMiddleware)
