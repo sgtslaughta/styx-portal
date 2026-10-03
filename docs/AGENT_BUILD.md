@@ -21,9 +21,21 @@ one of two modes, auto-detected at enrollment:
 
 ## 2. Seat desktop architecture
 
+### 2a. GNOME seat (default)
+
+```
+browser <── selkies 2.0 (gateway → selkies) ── pixelflux ── xdg-desktop-portal ScreenCast/RemoteDesktop
+                                                                └── headless gnome-shell on a private D-Bus session
+                                                                      └── host apps (Wayland clients)
+```
+
+The agent starts `gnome-shell` headless under `dbus-run-session`; pixelflux captures it and injects input through the portal ScreenCast/RemoteDesktop interfaces. A restore token from the one-time consent grant (`doctor --grant`) lets sessions start without a prompt.
+
+### 2b. labwc seat (fallback)
+
 > **Agent 0.5.0:** the default seat is a real headless GNOME Shell (`seat_shell: gnome`, needs GNOME Shell >= 46) on a private D-Bus session, captured via xdg-desktop-portal with a one-time consent grant (`doctor --grant`). The labwc/pixelflux-compositor design below is the `seat_shell: labwc` fallback, used automatically when GNOME is unavailable. See [GNOME seat](WORKSTATIONS.md#gnome-seat).
 
-Seat mode builds a desktop from scratch each time the streaming shell starts:
+The labwc fallback builds a desktop from scratch each time the streaming shell starts:
 
 ```
 pixelflux  (outer compositor, Smithay) ── captures + encodes ──> browser
@@ -65,7 +77,7 @@ host; needs only Docker), registered in
 
 | Artifact | Contents | Build method |
 |----------|----------|--------------|
-| `wheelhouse-x86_64.tar.gz` | Python wheels (selkies, pixelflux, pcmflux, …) for cp310–cp313 | manylinux container |
+| `wheelhouse-x86_64.tar.gz` | Python wheels (selkies, pixelflux, pcmflux, …) for cp310–cp314 | manylinux container |
 | `nwg-shell-x86_64.tar.gz` | `nwg-drawer` binary | `golang:1.25` + GTK3 dev container |
 
 > **Why server-built, not PPA or on-host toolchain:** enrolled machines stay
@@ -141,7 +153,9 @@ is absent, it falls back to a flat colour.
 
 ## 5. Seat dependencies
 
-Installed by `enroll.sh` (`SEAT_PKG`, per package manager), all from official
+**GNOME seat (default):** not installed by `enroll.sh`; must already be on the box: `gnome-shell` >= 46, `xdg-desktop-portal` + `xdg-desktop-portal-gnome`, `dbus-run-session` / `dbus-update-activation-environment` (dbus), `gdbus` (glib), and `xset` for the consent grant on the physical X display. Without them the agent uses the labwc fallback.
+
+**labwc fallback seat:** installed by `enroll.sh` (`SEAT_PKG`, per package manager), all from official
 repos:
 
 `labwc xwayland waybar swaybg foot wl-clipboard fuzzel thunar

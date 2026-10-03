@@ -30,8 +30,8 @@ The enrollment script will:
 - Check for Python 3.10+, glibc ≥ 2.34, a graphical session or headless capability, and audio (PipeWire or PulseAudio).
 - Auto-detect the capture mode: mirror (if X11 is found) or second-seat (if Wayland or headless). Can be overridden with `--mode mirror|seat`.
 - Verify TLS fingerprint if `--ca-pin` is set.
-- Install mode-specific dependencies (wl-clipboard and seat-shell packages for second-seat; VAAPI drivers for both).
-- Download agent code, prebuilt wheels, and the Selkies app tarball from the server (all cached; ~150 MB total).
+- Install mode-specific dependencies (labwc/waybar fallback-seat packages and wl-clipboard for second-seat; it does **not** install GNOME. The default GNOME seat needs GNOME Shell >= 46 already on the box, as on a standard Ubuntu 24.04 desktop; without it the agent uses the labwc fallback seat; VAAPI drivers for both).
+- Download agent code, the prebuilt wheelhouse (and the `nwg-shell` artifact for the labwc fallback seat) from the server (all cached).
 - Register the machine with the portal and save encrypted config.
 - Start a systemd `--user` service that streams immediately.
 
@@ -65,7 +65,7 @@ scripts/build_agent_artifacts.sh ./data/artifacts
 ```
 
 This generates:
-- `wheelhouse-x86_64.tar.gz` — pinned upstream wheels (selkies 2.0.0, pixelflux 2.1.0, pcmflux 2.1.0) and dependencies (covers Python 3.10–3.13). Wheels are built on the server; nothing is compiled on enrolled boxes.
+- `wheelhouse-x86_64.tar.gz` — pinned upstream wheels (selkies 2.0.0, pixelflux 2.1.0, pcmflux 2.1.0) and dependencies (covers Python 3.10–3.14). Wheels are built on the server; nothing is compiled on enrolled boxes.
 
 Rerun this after portal upgrades to sync agent versions.
 
@@ -95,7 +95,7 @@ Enrollment runs 8 preflight checks. If any fail, the script prints an error code
 | E00 | `--token and --server are required.` | Run the one-liner from the admin Workstations panel. If copying manually, ensure both `--token <TOKEN>` and `--server <URL>` are present. |
 | E01 | `python3/curl/tar/openssl missing, glibc < 2.34, or < 2 GB free in $HOME` | Install the missing tool: `sudo apt install python3 python3-venv curl tar openssl`. Update OS if glibc < 2.34 (need Ubuntu 22.04+, Debian 12+, RHEL 9+). Free disk space if under 2 GB. |
 | E02 | `Mirror mode requested but no X display found.` | Mirror mode requires an active X11 display. Either log into an X11 session, or use `--mode seat` for a private virtual desktop. Check X displays: `ls /tmp/.X11-unix/`. |
-| E03 | `Dependency install failed (labwc, GPU drivers, etc).` | For seat mode, install manually: `sudo apt install labwc wl-clipboard` (Debian/Ubuntu). For GPU: `sudo apt install mesa-va-drivers` (AMD/Intel) or NVIDIA driver package. Restart agent afterward: `systemctl --user restart styx-agent`. |
+| E03 | `Dependency install failed (labwc, GPU drivers, etc).` | These are the labwc fallback seat's packages (enroll never installs GNOME). Install manually: `sudo apt install labwc wl-clipboard` (Debian/Ubuntu). For the GNOME seat, install GNOME Shell >= 46 with `xdg-desktop-portal-gnome`. For GPU: `sudo apt install mesa-va-drivers` (AMD/Intel) or NVIDIA driver package. Restart agent afterward: `systemctl --user restart styx-agent`. |
 | E04 | `Audio stack not found (PipeWire/PulseAudio).` | Install one: `sudo apt install pipewire` (Debian/Ubuntu) or `sudo dnf install pipewire` (Fedora). Verify: `pactl info` should succeed. A warning (not failure) about `libpulse.so.0` means `sudo apt install libpulse0` / `sudo dnf install pulseaudio-libs`. |
 | E05 | `Cannot reach server / download failed / registration rejected (HTTP code + reason shown).` | Check: 1) Is `SERVER_LAN_URL` the **local LAN address**, not a tunnel? 2) Can the workstation reach it: `curl -kv https://<SERVER_LAN_URL>/api/health`? 3) On the server, did you run `scripts/build_agent_artifacts.sh ./data/artifacts`? 4) HTTP 401 = token expired/used — mint a new one. |
 | E06 | `TLS certificate fingerprint mismatch.` | The server's cert doesn't match the pinned `--ca-pin`. Causes: cert rotated (mint a new token), MITM (unlikely on LAN), or wrong host. Verify: `openssl s_client -connect <HOST>:443 2>/dev/null \| openssl x509 -fingerprint -sha256 -noout`. |
@@ -215,6 +215,12 @@ Use the venv interpreter — the system `python3` lacks the agent's audio/displa
 
 4. **Network/bitrate:** Reduce bitrate in admin panel (e.g., 16000 → 8000 kbps) if latency is high.
 
+### GNOME Seat Needs Screen-Share Consent
+
+**Symptom:** The stream shows "GNOME seat needs one-time screen-share consent", or no Allow dialog ever appears.
+
+**Action:** Log in to the box's physical desktop (an X display must be live), make sure no viewer is connected, run `styx_agent.py doctor --grant` (see [One-time screen-share consent](#one-time-screen-share-consent)) and click **Allow** on the dialog that appears on the physical screen.
+
 ### "Revoked by server" Message
 
 **Symptom:** Agent logs "Revoked by server. Stopping. To remove this agent run: `python3 ~/.local/share/styx-agent/styx_agent.py uninstall`".
@@ -281,19 +287,19 @@ Each workstation needs a one-time portal screen-share grant. Until then the stre
 ~/.local/share/styx-agent/venv/bin/python ~/.local/share/styx-agent/styx_agent.py doctor --grant
 ```
 
-This needs a logged-in desktop on the box's physical display: the dialog appears there, someone clicks **Allow**, and the restore token is saved (`~/.local/state/pixelflux/portal-restore-token`). Later sessions start without a prompt. The command refuses while a viewer is connected.
+This needs a live X display on the box (the physical logged-in desktop, default `:0` or the configured display): the dialog appears there, someone clicks **Allow**, and the restore token is saved (`~/.local/state/pixelflux/portal-restore-token`). Later sessions start without a prompt. The command refuses while a viewer is connected.
 
 ### Upgrade and rollback
 
 ```bash
-# Upgrade in place (non-interactive, no sudo; keeps config and cert pinning)
+# Upgrade in place (no enrollment token needed; no package installs; keeps config and cert pinning)
 curl -fsSL https://<portal>/api/enroll/script | bash -s -- --upgrade --server https://<portal>
 
 # Roll back to the previous install
 ~/.local/share/styx-agent/venv/bin/python ~/.local/share/styx-agent/styx_agent.py rollback
 ```
 
-The old install moves to `~/.local/share/styx-agent.prev`; a failed upgrade restores it automatically.
+Upgrade may ask for sudo only to enable user lingering if it is off. The old install moves to `~/.local/share/styx-agent.prev`; a failed upgrade restores it automatically.
 
 ---
 
