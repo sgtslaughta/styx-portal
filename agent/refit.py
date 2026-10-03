@@ -34,8 +34,9 @@ OVERLAY = ("<div id='styx-resizing' style='position:fixed;inset:0;z-index:214748
            "style='filter:drop-shadow(0 4px 14px rgba(0,0,0,.35))'>"
            "<path d='M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1' pathLength='1' style='animation-delay:0.00s'/><path d='M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1' pathLength='1' style='animation-delay:0.12s'/><path d='M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1' pathLength='1' style='animation-delay:0.24s'/></svg>Resizing…<style>#styx-resizing path{stroke-dasharray:1;"
            "stroke-dashoffset:1;animation:styx-draw 1.6s ease-in-out infinite}"
-           "@keyframes styx-draw{0%{stroke-dashoffset:1}45%,70%{stroke-dashoffset:0}"
-           "100%{stroke-dashoffset:-1}}</style></div>")
+           "@keyframes styx-draw{0%{stroke-dashoffset:1;opacity:0}15%{opacity:1}"
+           "45%,75%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}"
+           "</style></div>")
 
 # The gateway sends MARKER, then closes: show the overlay at once, reload on the
 # close (any code), keep the overlay across the reload (sessionStorage flag) and
