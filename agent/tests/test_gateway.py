@@ -608,7 +608,7 @@ async def test_midstream_upstream_drop_aborts_without_second_response():
         r = await gw.get("/broken", headers={"Authorization": _basic("styx", "pw")})
         got = b""
         try:
-            got = await r.read()
+            got = await asyncio.wait_for(r.read(), 5)
         except aiohttp.ClientError:
             pass
         assert b"unavailable" not in got and len(got) < 100000

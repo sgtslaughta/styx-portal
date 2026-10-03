@@ -306,21 +306,21 @@ async def test_list_marks_outdated_agents(admin_client, session, monkeypatch):
     assert by_sub["c"] is False
 
 
-def test_build_update_command_pulls_files_and_restarts():
+def test_build_update_command_is_full_upgrade():
     from app.services.workstations import build_update_command
     cmd = build_update_command("https://styx.example.com")
-    assert "https://styx.example.com/api/enroll/${f%%:*}" in cmd
-    assert "agent.py:styx_agent.py" in cmd
-    assert "gateway.py:gateway.py" in cmd
-    assert "systemctl --user restart styx-agent" in cmd
-    assert "curl -fsSL " in cmd
-    assert " -k " not in cmd
+    assert cmd == ("curl -fsSL https://styx.example.com/api/enroll/script | "
+                   "bash -s -- --upgrade --server https://styx.example.com")
+    assert "--pinnedpubkey" not in cmd and " -k" not in cmd
 
 
-def test_build_update_command_insecure_for_lan():
+def test_build_update_command_keeps_pins():
     from app.services.workstations import build_update_command
-    cmd = build_update_command("https://192.168.1.10", insecure=True)
-    assert "curl -fsSLk " in cmd
+    cmd = build_update_command("https://192.168.1.10", ca_pin="sha256:ab",
+                               pubkey_pin="sha256//xyz")
+    assert "--pinnedpubkey 'sha256//xyz' -k" in cmd
+    assert "--upgrade --server https://192.168.1.10" in cmd
+    assert cmd.endswith("--ca-pin sha256:ab")
 
 
 @pytest.mark.asyncio
@@ -341,9 +341,8 @@ async def test_update_command_endpoint(admin_client, session, monkeypatch):
     body = r.json()
     assert body["latest_version"] == "0.4.2"
     assert body["current_version"] == "0.4.1"
-    assert "agent.py:styx_agent.py" in body["public_command"]
-    assert "/api/enroll/${f%%:*}" in body["public_command"]
-    assert "systemctl --user restart styx-agent" in body["public_command"]
+    assert "--upgrade --server" in body["public_command"]
+    assert "/api/enroll/script" in body["public_command"]
 
 
 @pytest.mark.asyncio

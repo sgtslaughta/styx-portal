@@ -66,6 +66,19 @@ def stream_starving_seconds(cfg: dict, gateway_alive: bool) -> float | None:
 GOVERNOR_PATH = Path("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")
 
 
+def seat_advisories(gnome: tuple[bool, str], token_exists: bool
+                    ) -> list[tuple[str, bool, str]]:
+    """GNOME seat advisories for doctor (never gating: labwc is the fallback)."""
+    ok, why = gnome
+    rows = [("GNOME seat available", ok,
+             "" if ok else f"{why} — falling back to labwc")]
+    if ok:
+        rows.append(("portal restore token", token_exists,
+                     "" if token_exists else
+                     "missing — run: styx_agent.py doctor --grant"))
+    return rows
+
+
 def host_tuning_checks() -> list[tuple[str, bool, str]]:
     """Advisory gaming-performance checks: (label, ok, remedy). Never gates
     doctor's exit status — a powersave governor is a warning, not a fault."""

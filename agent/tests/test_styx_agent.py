@@ -234,3 +234,62 @@ def test_rollback_warns_when_restart_fails(tmp_path, monkeypatch, capsys):
                         lambda *a, **k: SimpleNamespace(returncode=1))
     assert styx_agent.rollback(cur) == 0
     assert "WARNING" in capsys.readouterr().out
+
+
+def test_none_to_default_seat_settings_is_not_a_change():
+    old = {"video_crf": 25}
+    new = {"video_crf": 25, "seat_width": 2560, "seat_height": 1440,
+           "seat_shell": "gnome"}
+    assert "seat" not in styx_agent.settings_restart_keys(old, new)
+    assert "seat" in styx_agent.settings_restart_keys(
+        old, {**new, "seat_shell": "labwc"})
+
+
+def _doctor_env(monkeypatch, tmp_path, mode, gnome, token):
+    monkeypatch.setattr(styx_agent.engine, "pick_dri_node", lambda: None)
+    monkeypatch.setattr(styx_agent.engine, "resolve_monitor_source", lambda: "m")
+    monkeypatch.setattr(styx_agent, "api", lambda *a, **k: {})
+    monkeypatch.setattr(styx_agent, "host_tuning_checks", lambda: [])
+    monkeypatch.setattr(styx_agent.subprocess, "run",
+                        lambda *a, **k: type("R", (), {"stdout": "active\n"})())
+    monkeypatch.setattr(styx_agent.socket.socket, "connect_ex", lambda s, a: 0)
+    monkeypatch.setattr(styx_agent.seat_gnome, "gnome_available", lambda: gnome)
+    tok = tmp_path / "tok"
+    if token:
+        tok.write_text("t")
+    monkeypatch.setattr(styx_agent.seat_gnome, "TOKEN_PATH", tok)
+    inst = tmp_path / "inst"
+    (inst / "venv/bin").mkdir(parents=True)
+    (inst / "venv/bin/python").write_text("")
+    (inst / "venv/bin/selkies").write_text("")
+    return {"install_dir": str(inst), "mode": mode, "port": 1}
+
+
+def test_doctor_no_lib_shim_and_seat_advisories(monkeypatch, tmp_path, capsys):
+    cfg = _doctor_env(monkeypatch, tmp_path, "seat", (True, ""), False)
+    assert styx_agent.doctor(cfg) == 0
+    out = capsys.readouterr().out
+    assert "lib shim" not in out
+    assert "GNOME seat available" in out
+    assert "doctor --grant" in out
+
+
+def test_doctor_gnome_missing_is_advisory(monkeypatch, tmp_path, capsys):
+    cfg = _doctor_env(monkeypatch, tmp_path, "seat",
+                      (False, "gnome-shell not installed"), True)
+    assert styx_agent.doctor(cfg) == 0
+    out = capsys.readouterr().out
+    assert "labwc" in out and "gnome-shell not installed" in out
+
+
+def test_uninstall_removes_prev(monkeypatch, tmp_path):
+    inst = tmp_path / "styx-agent"
+    prev = tmp_path / "styx-agent.prev"
+    inst.mkdir()
+    prev.mkdir()
+    monkeypatch.setattr(styx_agent, "INSTALL_DIR", inst)
+    monkeypatch.setattr(styx_agent, "CONFIG_PATH", tmp_path / "c.json")
+    monkeypatch.setattr(styx_agent, "HOME", tmp_path)
+    monkeypatch.setattr(styx_agent.subprocess, "run", lambda *a, **k: None)
+    assert styx_agent.uninstall(None) == 0
+    assert not inst.exists() and not prev.exists()

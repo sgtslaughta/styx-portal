@@ -35,7 +35,7 @@ import seat_labwc  # noqa: E402
 from portal_api import api, check_pin  # noqa: E402
 from health import (  # noqa: E402
     active_connections, gw_state_path, host_tuning_checks, idle_seconds,
-    rollback, stream_starving_seconds)
+    rollback, seat_advisories, stream_starving_seconds)
 from seat_gnome import (  # noqa: E402
     CONSENT_ERROR, Escalation, needs_consent, pick_seat_shell)
 
@@ -126,7 +126,7 @@ def drop_clients(procs: dict) -> None:
 # hosts trip it on legitimately cold starts.
 FRAME_START_TIMEOUT_S = 15
 
-SEAT_KEYS = ("seat_shell", "seat_width", "seat_height")
+SEAT_DEFAULTS = {"seat_shell": "gnome", "seat_width": 2560, "seat_height": 1440}
 
 
 def settings_restart_keys(old: dict, new: dict) -> tuple[str, ...]:
@@ -134,7 +134,8 @@ def settings_restart_keys(old: dict, new: dict) -> tuple[str, ...]:
     idle-timeout config reaches it only through its launch env (STYX_GW_IDLE_*).
     The GNOME seat restarts only when its shell/geometry changed."""
     keys = ("selkies", "shell", "clipboard", "gateway")
-    if any(old.get(k) != new.get(k) for k in SEAT_KEYS):
+    if any((old.get(k) or d) != (new.get(k) or d)
+           for k, d in SEAT_DEFAULTS.items()):
         keys += ("seat",)
     return keys
 
@@ -404,8 +405,6 @@ def doctor(cfg: dict) -> int:
     install = Path(cfg["install_dir"])
     ok &= _check("venv present", (install / "venv/bin/python").exists())
     ok &= _check("selkies 2.0 installed", (install / "venv/bin/selkies").exists())
-    ok &= _check("lib shim present", (install / "lib").is_dir(),
-                 str(install / "lib"))
     ok &= _check(f"mode: {cfg.get('mode', 'mirror')}", True)
     if cfg.get("mode") == "mirror":
         xa = engine._find_xauthority(cfg)
@@ -429,7 +428,9 @@ def doctor(cfg: dict) -> int:
         ok &= _check("server reachable + token valid", True)
     except Exception as e:
         ok &= _check("server reachable + token valid", False, str(e))
-    for label, good, detail in host_tuning_checks():
+    seat = cfg.get("mode") == "seat" and seat_advisories(
+        seat_gnome.gnome_available(), seat_gnome.TOKEN_PATH.exists())
+    for label, good, detail in host_tuning_checks() + (seat or []):
         _check(label, good, detail)   # advisory: not folded into `ok`
     print("All checks passed." if ok else f"Some checks failed. Logs: {LOG_DIR}")
     return 0 if ok else 1
@@ -461,7 +462,8 @@ def uninstall(cfg: dict | None) -> int:
     unit = HOME / ".config/systemd/user/styx-agent.service"
     unit.unlink(missing_ok=True)
     subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True)
-    shutil.rmtree(INSTALL_DIR, ignore_errors=True)
+    for d in (INSTALL_DIR, INSTALL_DIR.with_name(INSTALL_DIR.name + ".prev")):
+        shutil.rmtree(d, ignore_errors=True)  # .prev: ~1.5 GB upgrade backup
     CONFIG_PATH.unlink(missing_ok=True)
     print("Styx agent removed.")
     return 0

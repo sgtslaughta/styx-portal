@@ -112,5 +112,5 @@ def test_refuses_with_viewer_connected(monkeypatch):
     monkeypatch.setattr(grant, "active_connections", lambda cfg, alive: 1)
     called = []
     monkeypatch.setattr(grant, "_set_activation_display", lambda b, d: called.append(d))
-    assert grant.grant({"port": 8443}) == 1
+    assert grant.grant({"port": 8443}, timeout_s=0.3) == 1
     assert called == []

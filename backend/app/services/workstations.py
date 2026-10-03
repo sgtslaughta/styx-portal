@@ -147,19 +147,20 @@ AGENT_UPDATE_FILES = [
 ]
 
 
-def build_update_command(base: str, *, insecure: bool = False) -> str:
-    """Copy-paste one-liner that re-pulls the agent python files from the public
-    /api/enroll/* endpoints and restarts the user service. No enrollment token
-    needed; the venv/wheels/artifacts are left untouched (code-only update)."""
-    flag = "-fsSLk" if insecure else "-fsSL"
-    pairs = " ".join(f"{remote}:{local}" for remote, local in AGENT_UPDATE_FILES)
-    return (
-        'INSTALL="$HOME/.local/share/styx-agent"; '
-        f'for f in {pairs}; do '
-        f'curl {flag} "{base}/api/enroll/${{f%%:*}}" -o "$INSTALL/${{f##*:}}"; '
-        'done; '
-        'systemctl --user restart styx-agent'
-    )
+def build_update_command(base: str, *, ca_pin: str | None = None,
+                         pubkey_pin: str | None = None) -> str:
+    """Copy-paste one-liner that runs the full enroll-script upgrade
+    (--upgrade): new venv/wheels/artifacts, previous install kept as .prev and
+    restored on failure. No enrollment token needed. Reuses the enroll pin
+    logic so pinned (LAN self-signed) installs stay pinned."""
+    head = "curl -fsSL"
+    if pubkey_pin:
+        head += f" --pinnedpubkey '{pubkey_pin}' -k"
+    cmd = (f"{head} {base}{ENROLL_SCRIPT_PATH} | bash -s -- "
+           f"--upgrade --server {base}")
+    if ca_pin:
+        cmd += f" --ca-pin {ca_pin}"
+    return cmd
 
 
 def slugify_hostname(hostname: str) -> str:

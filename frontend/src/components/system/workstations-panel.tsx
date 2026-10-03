@@ -264,7 +264,7 @@ export function WorkstationsPanel() {
             <div className="space-y-3 text-sm">
               <p className="text-muted-foreground">
                 Run on the workstation to update {updateCmd.current_version || "—"} →{" "}
-                {updateCmd.latest_version}. Restarts the agent; the desktop stays up.
+                {updateCmd.latest_version}. Runs a full upgrade (new engine and wheels; the previous install is kept as a fallback). The desktop session restarts.
               </p>
               {updateCmd.lan_command && (
                 <div>
