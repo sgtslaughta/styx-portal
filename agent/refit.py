@@ -18,20 +18,29 @@ SETTLE_S = 1.0          # browser size must hold this long before a refit
 _RESIZE = re.compile(r"r,(\d{1,5})x(\d{1,5})(?:,.*)?")
 _SIZE = re.compile(r"(\d{1,5})x(\d{1,5})")
 
+# Spinner overlay shared by the shim (shown on the 4002 close) and HOLD_HTML,
+# so the viewer sees one continuous "Resizing…" wait. Single quotes only: it is
+# embedded in a JS string.
+SPINNER = ("<div id='styx-resizing' style='position:fixed;inset:0;z-index:2147483647;"
+           "display:flex;flex-direction:column;align-items:center;justify-content:center;"
+           "gap:16px;background:#000;color:#cfd3dc;font:600 16px system-ui,sans-serif'>"
+           "<div style='width:40px;height:40px;border:4px solid #2b3650;"
+           "border-top-color:#7aa2f7;border-radius:50%;animation:styx-spin .8s linear infinite'>"
+           "</div>Resizing…<style>@keyframes styx-spin{to{transform:rotate(360deg)}}</style></div>")
+
 RELOAD_JS = (
     '<script id="styx-refit">(function(){var W=window.WebSocket;'
     "function S(u,p){var s=p===undefined?new W(u):new W(u,p);"
-    "s.addEventListener('close',function(e){if(e.code===4002)"
+    "s.addEventListener('close',function(e){if(e.code!==4002)return;"
+    'document.body.insertAdjacentHTML("beforeend","' + SPINNER + '");'
     "setTimeout(function(){location.reload()},300)});return s}"
     "S.prototype=W.prototype;['CONNECTING','OPEN','CLOSING','CLOSED'].forEach("
     "function(k){S[k]=W[k]});window.WebSocket=S})();</script>")
 # Served with 200 while the seat is rebuilt: any 5xx would be swapped by Traefik's
 # instance-unavailable page, which bounces the viewer to the portal.
 HOLD_HTML = ('<!doctype html><html><head><title>Resizing desktop</title></head>'
-             '<body id="styx-hold" style="margin:0;height:100vh;display:flex;'
-             'align-items:center;justify-content:center;background:#000;color:#9aa;'
-             'font:16px system-ui">Resizing desktop…<script>setTimeout(function()'
-             '{location.reload()},500)</script></body></html>')
+             '<body id="styx-hold" style="margin:0;background:#000">' + SPINNER +
+             '<script>setTimeout(function(){location.reload()},500)</script></body></html>')
 
 
 def clamp(w: int, h: int) -> tuple[int, int]:
