@@ -21,35 +21,46 @@ _SIZE = re.compile(r"(\d{1,5})x(\d{1,5})")
 # Spinner overlay shared by the shim (shown on the 4002 close) and HOLD_HTML,
 # so the viewer sees one continuous "Resizing…" wait. Single quotes only: it is
 # embedded in a JS string.
-SPINNER = ("<div id='styx-resizing' style='position:fixed;inset:0;z-index:2147483647;"
+MARKER = "styx-refit"   # text frame sent just before the refit close
+# Refit overlay in the portal's connect-splash style (wave glyph from
+# frontend wave-transition.tsx). Single quotes only: embedded in a JS string.
+OVERLAY = ("<div id='styx-resizing' style='position:fixed;inset:0;z-index:2147483647;"
            "display:flex;flex-direction:column;align-items:center;justify-content:center;"
-           "gap:16px;background:#000;color:#cfd3dc;font:600 16px system-ui,sans-serif'>"
-           "<div style='width:40px;height:40px;border:4px solid #2b3650;"
-           "border-top-color:#7aa2f7;border-radius:50%;animation:styx-spin .8s linear infinite'>"
-           "</div>Resizing…<style>@keyframes styx-spin{to{transform:rotate(360deg)}}</style></div>")
+           "gap:16px;color:rgba(255,255,255,.9);font:500 14px system-ui,sans-serif;"
+           "letter-spacing:.02em;background:radial-gradient(circle at 50% 45%,"
+           "#14285a,#0c1730 70%)'>"
+           "<svg width='96' height='96' viewBox='0 0 24 24' fill='none' stroke='#fff' "
+           "stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' "
+           "style='filter:drop-shadow(0 4px 14px rgba(0,0,0,.35))'>"
+           "<path d='M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1' pathLength='1' style='animation-delay:0.00s'/><path d='M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1' pathLength='1' style='animation-delay:0.12s'/><path d='M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1' pathLength='1' style='animation-delay:0.24s'/></svg>Resizing…<style>#styx-resizing path{stroke-dasharray:1;"
+           "stroke-dashoffset:1;animation:styx-draw 1.6s ease-in-out infinite}"
+           "@keyframes styx-draw{0%{stroke-dashoffset:1}45%,70%{stroke-dashoffset:0}"
+           "100%{stroke-dashoffset:-1}}</style></div>")
 
-# The overlay survives the reload (sessionStorage flag) and lifts on the first
-# video frame: audio packets are tiny, a frame is not. 15 s safety timeout.
+# The gateway sends MARKER, then closes: show the overlay at once, reload on the
+# close (any code), keep the overlay across the reload (sessionStorage flag) and
+# lift it on the first video frame (audio packets are tiny). 15 s safety timeout.
 RELOAD_JS = (
     '<script id="styx-refit">(function(){var W=window.WebSocket,K="styx-resizing";'
     "function show(){if(!document.getElementById(K))"
-    'document.body.insertAdjacentHTML("beforeend","' + SPINNER + '")}'
+    'document.body.insertAdjacentHTML("beforeend","' + OVERLAY + '")}'
     "function hide(){try{sessionStorage.removeItem(K)}catch(e){}"
     "var o=document.getElementById(K);if(o)o.remove()}"
+    "function arm(){try{sessionStorage.setItem(K,'1')}catch(e){}show()}"
     "var on=false;try{on=sessionStorage.getItem(K)==='1'}catch(e){}"
     "if(on){document.addEventListener('DOMContentLoaded',show);setTimeout(hide,15000)}"
-    "function S(u,p){var s=p===undefined?new W(u):new W(u,p);"
+    "function S(u,p){var s=p===undefined?new W(u):new W(u,p),refit=false;"
     "s.addEventListener('message',function(e){var d=e.data;"
+    "if(d==='" + MARKER + "'){refit=true;arm();return}"
     "if(on&&typeof d!=='string'&&(d.byteLength||d.size||0)>2000){on=false;hide()}});"
-    "s.addEventListener('close',function(e){if(e.code!==4002)return;"
-    "try{sessionStorage.setItem(K,'1')}catch(x){}show();"
+    "s.addEventListener('close',function(e){if(!refit&&e.code!==4002)return;arm();"
     "setTimeout(function(){location.reload()},300)});return s}"
     "S.prototype=W.prototype;['CONNECTING','OPEN','CLOSING','CLOSED'].forEach("
     "function(k){S[k]=W[k]});window.WebSocket=S})();</script>")
 # Served with 200 while the seat is rebuilt: any 5xx would be swapped by Traefik's
 # instance-unavailable page, which bounces the viewer to the portal.
 HOLD_HTML = ('<!doctype html><html><head><title>Resizing desktop</title></head>'
-             '<body id="styx-hold" style="margin:0;background:#000">' + SPINNER +
+             '<body id="styx-hold" style="margin:0;background:#0c1730">' + OVERLAY +
              '<script>setTimeout(function(){location.reload()},500)</script></body></html>')
 
 

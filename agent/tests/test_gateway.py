@@ -700,6 +700,8 @@ async def test_first_resize_mismatch_requests_refit_and_closes_4002(tmp_path):
         await ws.send_str("SETTINGS,{}")
         await ws.send_str("r,2552x1294,primary")
         msg = await asyncio.wait_for(ws.receive(), timeout=3)
+        assert msg.type == aiohttp.WSMsgType.TEXT and msg.data == "styx-refit"
+        msg = await asyncio.wait_for(ws.receive(), timeout=3)
         assert msg.type == aiohttp.WSMsgType.CLOSE and msg.data == 4002
         await asyncio.sleep(0.1)
     finally:
@@ -741,6 +743,8 @@ async def test_refit_uses_last_size_after_settle(tmp_path):
         await asyncio.sleep(0.3)
         await ws.send_str("r,2552x1294,primary")
         assert not (tmp_path / "refit-request").exists()     # still settling
+        msg = await asyncio.wait_for(ws.receive(), timeout=3)
+        assert msg.type == aiohttp.WSMsgType.TEXT and msg.data == "styx-refit"
         msg = await asyncio.wait_for(ws.receive(), timeout=3)
         assert msg.type == aiohttp.WSMsgType.CLOSE and msg.data == 4002
     finally:
