@@ -141,3 +141,22 @@ async def test_heartbeat_accepts_valid_lan_ip_and_none(client, session):
                           json={"status": "online", "lan_ip": "2001:db8::1"},
                           headers=_auth())
     assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_v2_agent_gets_seat_keys(client, session):
+    await _make_ws(session, status="online")
+    r = await client.post("/api/agent/heartbeat",
+                          json={"status": "online", "health": {"agent_version": "0.5.0"}},
+                          headers=_auth())
+    ss = r.json()["stream_settings"]
+    assert ss["seat_shell"] == "gnome" and ss["cursor_workaround"] is True
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_v1_agent_gets_no_seat_keys(client, session):
+    await _make_ws(session, status="online")
+    r = await client.post("/api/agent/heartbeat",
+                          json={"status": "online", "health": {"agent_version": "0.4.11"}},
+                          headers=_auth())
+    assert "seat_shell" not in r.json()["stream_settings"]
