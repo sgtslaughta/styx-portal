@@ -291,7 +291,6 @@ def run(cfg: dict) -> int:
     interval, backoff, stopping = 30, 2, False
     last_error: str | None = None
     internal_port = engine.pick_free_port()
-    control_port = engine.pick_free_port()
 
     def _stop(*_):
         nonlocal stopping
@@ -351,7 +350,7 @@ def run(cfg: dict) -> int:
                 p.kill()
         procs["clipboard"] = None
         try:
-            cmd, env = engine.build_selkies_cmd(cfg, internal_port, control_port)
+            cmd, env = engine.build_selkies_cmd(cfg, internal_port)
         except Exception as e:
             last_error = f"engine setup failed: {e}"
             return None

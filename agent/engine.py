@@ -440,99 +440,77 @@ def write_seat_config(config_dir: Path) -> None:
     (config_dir / "environment").write_text(build_labwc_environment())
 
 
-def build_selkies_cmd(cfg: dict, internal_port: int, control_port: int) -> tuple[list[str], dict]:
-    """argv + env for the selkies process (run through selkies_launcher.py,
-    which forces a loopback bind). Secrets travel via env, never argv.
+def build_selkies_cmd(cfg: dict, internal_port: int,
+                      seat: dict | None = None) -> tuple[list[str], dict]:
+    """argv + env for selkies 2.0. Secrets travel via env, never argv.
 
-    internal_port: dynamically allocated loopback port for selkies<->gateway.
-    control_port: dynamically allocated control port (independent of internal_port).
-
-    Mirror mode queries the live X display and may raise (Xlib connection/
-    auth errors) — the supervisor catches and reports via heartbeat.
+    seat: {"socket", "bus"} of a headless GNOME seat (host capture via the
+    portal), or None for the labwc seat (pixelflux's own compositor) / mirror.
+    Mirror mode queries the live X display and may raise; the supervisor reports it.
     """
     install = Path(cfg["install_dir"])
     s = cfg.get("stream_settings", {})
-
     env = {
         "HOME": str(HOME),
-        "XDG_RUNTIME_DIR": os.environ.get("XDG_RUNTIME_DIR",
-                                          f"/run/user/{os.getuid()}"),
-        "LD_LIBRARY_PATH": str(install / "lib"),   # libva/libwayland shim
+        "XDG_RUNTIME_DIR": os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"),
         "PYTHONNOUSERSITE": "1",
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        # Upload target; must match the gateway's /files dir (downloads).
-        "FILE_MANAGER_PATH": os.environ.get("FILE_MANAGER_PATH",
-                                            str(HOME / "Downloads")),
+        "FILE_MANAGER_PATH": os.environ.get("FILE_MANAGER_PATH", str(HOME / "Downloads")),
     }
-
     cmd = [
-        str(install / "venv/bin/python"),
-        str(install / "selkies_launcher.py"),
-        f"--port={internal_port}",
-        f"--control-port={control_port}",
-        "--encoder=x264enc",          # pixelflux switches to VAAPI/NVENC itself
-        f"--framerate={s.get('framerate', 60)}",
+        str(install / "venv/bin/selkies"),
+        f"--port={internal_port}",          # 2.0 binds loopback by default
+        "--enable-basic-auth=false",        # gateway owns auth
         "--mode=websockets",
-        # Second screen: upstream's Wayland path captures every display at
-        # offset 0,0 on a single-output compositor (mirror, broken input);
-        # the X11 path would xrandr-resize the REAL display in mirror mode.
-        # Server rejects display2 clients with a clear message.
+        "--encoder=h264enc",
+        f"--framerate={s.get('framerate', 60)}",
         "--second-screen=false",
+        # Off until their phase ships (spec §6): devices, printing.
+        "--printing-enabled=false", "--microphone-enabled=false",
+        "--webcam-enabled=false", "--gamepad-enabled=false",
     ]
-    if cfg.get("mode") == "seat":
-        # Steers WAYLAND_DISPLAY for selkies' helper tools (wl-copy/wl-paste
-        # clipboard, wlr-randr DPI) — the compositor's own bind is independent,
-        # so the supervisor verifies the actual socket and corrects this.
-        cmd.append(f"--wayland-socket-index={cfg.get('seat_socket_index', 1)}")
-
     dri = pick_dri_node()
     if dri:
-        cmd.append(f"--dri-node={dri}")
-        # Lock GPU encoding on. The selkies web client pushes use_cpu=true, which
-        # forces pixelflux to software x264 (CPU-starves under load -> black
-        # screen, audio garble) and leaves the GPU idle. "|locked" makes selkies
-        # ignore the client override. pixelflux still auto-falls back to CPU if
-        # the GPU encoder (NVENC/VAAPI) fails to init, so this is safe when a
-        # render node exists but has no usable hardware encoder.
+        cmd += [f"--encode-dri={dri}", f"--render-dri={dri}"]
+        # Client pushes use_cpu=true; "|locked" keeps the GPU encoder on.
         env["SELKIES_USE_CPU"] = "false|locked"
 
-    if cfg.get("mode") == "seat":
-        env["PIXELFLUX_WAYLAND"] = "true"
-        if dri:
-            env["DRINODE"] = dri
+    if seat is not None:                     # headless GNOME seat
+        cmd += ["--wayland=true", f"--wayland-host-display={seat['socket']}"]
+        env.update({"DBUS_SESSION_BUS_ADDRESS": seat["bus"],
+                    "XDG_CURRENT_DESKTOP": "ubuntu:GNOME",
+                    "XDG_SESSION_TYPE": "wayland"})
+        monitor = f"{SEAT_SINK}.monitor"
+    elif cfg.get("mode") == "seat":          # labwc seat (fallback)
+        cmd.append("--wayland=true")
         monitor = resolve_monitor_source()
-    else:  # mirror
+    else:                                    # mirror
         env["DISPLAY"] = cfg["display"]
         xauth = _find_xauthority(cfg)
         if xauth:
             env["XAUTHORITY"] = xauth
         w, h = query_display_geometry(cfg["display"], xauth)
-        cmd += ["--is-manual-resolution-mode=true",
-                f"--manual-width={w}", f"--manual-height={h}"]
+        cmd += [f"--manual-width={w}", f"--manual-height={h}"]
         monitor = resolve_monitor_source()
 
-    # Gaming/quality knobs from portal stream_settings -> selkies env
-    # (SELKIES_<NAME>; env chosen over argv to match SELKIES_USE_CPU below).
-    # Values are validated here so a bad portal value can't break launch.
-    crf = _int_in(s.get("h264_crf"), 5, 50)
+    # Quality knobs: 2.0 names, old h264_* keys still honored (spec §4).
+    crf = _int_in(s.get("video_crf", s.get("h264_crf")), 5, 50)
     if crf is not None:
-        env["SELKIES_H264_CRF"] = str(crf)
-    if s.get("h264_streaming_mode") is True:
-        # Full-motion encoder path: skips region/VNC logic for consistent
-        # latency under heavy motion (gaming); costs bandwidth on static UI.
-        env["SELKIES_H264_STREAMING_MODE"] = "true"
+        env["SELKIES_VIDEO_CRF"] = str(crf)
+    streaming = s.get("video_streaming_mode", s.get("h264_streaming_mode"))
+    # 2.0 defaults streaming mode ON; keep today's default (off) unless asked.
+    env["SELKIES_VIDEO_STREAMING_MODE"] = "true" if streaming is True else "false"
     if s.get("use_paint_over_quality") is False:
         env["SELKIES_USE_PAINT_OVER_QUALITY"] = "false"
-    pcrf = _int_in(s.get("h264_paintover_crf"), 5, 50)
+    pcrf = _int_in(s.get("video_paintover_crf", s.get("h264_paintover_crf")), 5, 50)
     if pcrf is not None:
-        env["SELKIES_H264_PAINTOVER_CRF"] = str(pcrf)
+        env["SELKIES_VIDEO_PAINTOVER_CRF"] = str(pcrf)
 
     if monitor:
         env["SELKIES_AUDIO_ENABLED"] = "true"
         cmd.append(f"--audio-device-name={monitor}")
     else:
         env["SELKIES_AUDIO_ENABLED"] = "false"
-
     return cmd, env
 
 
