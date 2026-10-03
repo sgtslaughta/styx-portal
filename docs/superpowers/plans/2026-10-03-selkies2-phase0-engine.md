@@ -1665,3 +1665,14 @@ Expected: `UNKNOWN FLAGS: none`.
 - [ ] **Step 5: Run spec §7.3 checklist items 1-9, 11 on EliteMini through Cloudflare**; record pass/fail per item in the PR description. Any fail → stop, open a fix task. Item 9 (browser in seat + physical session at once) is the likeliest failure: GNOME's dock launches browsers with the user's default profile, which the physical session may hold locked. If it fails, the fix task is a seat-only `.desktop` override under the seat's `XDG_DATA_HOME` that adds `--user-data-dir`/`--profile` (as `engine.browser_launch_cmd` does for labwc).
 - [ ] **Step 6: GAME-01** — same upgrade + grant; §7.3 item 10 (NVENC load/latency vs 0.4.11) plus one FPS game with pointer lock (relative motion). If relative motion fails, set GAME-01 `seat_shell: labwc` and record it.
 - [ ] **Step 7: Merge** `feat/selkies2-phase0-engine` → `main` after both boxes pass; tag via semantic-release.
+
+## Task 1 results
+
+RESIZE=fixed
+CONSENT=local
+
+- Headless gnome-shell (virtual-monitor 1920x1080) listed exactly one mode: `'1920x1080@60.000'` (Meta-0). Apply of a second mode failed: `InvalidArgs: Invalid mode '1280x720@60.000' specified`.
+- Selkies 2.0.0 connected to `styx-proof-0` (`[HostCapture] host offers no capture protocol; frames come through the xdg-desktop-portal ScreenCast`; `host lacks zwlr_output_manager_v1; capture follows the host's own size`), but logged `Capture for 'primary' (h264) has delivered no frame in 5 s`.
+- xdg-desktop-portal-gnome raised its consent window (`Failed to associate portal window with parent window`, 10:40:41) and nothing accepted it; mutter then logged `D-Bus client with active sessions vanished`.
+- Portal restore token: mtime before 2026-10-03 08:31:31 (moved aside), absent after the run; no new token written. Old token restored (mtime unchanged).
+- Scripted Mutter RemoteDesktop Enter injection from separate gdbus calls cannot work (session `/Session/u2` vanishes when the caller exits: `Object does not exist`); the portal dialog never resolved unattended, so consent stays local.
