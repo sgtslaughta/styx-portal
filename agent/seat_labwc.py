@@ -1,0 +1,489 @@
+"""labwc seat shell + clipboard bridge launchers (seat mode)."""
+import json
+import os
+import shutil
+import subprocess
+from pathlib import Path
+
+import engine
+
+HOME = Path.home()
+APPLICATIONS_DIRS = ["/usr/share/applications",
+                     "/usr/local/share/applications",
+                     str(HOME / ".local/share/applications")]
+
+
+TERMINALS = ("foot", "alacritty", "kitty", "kgx", "gnome-terminal",
+             "konsole", "xterm")
+
+
+def _xml_escape(s: str) -> str:
+    return (s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+             .replace('"', "&quot;"))
+
+
+def _menu_item(label: str, command: str) -> str:
+    return (f'  <item label="{_xml_escape(label)}">'
+            f'<action name="Execute" command="{_xml_escape(command)}"/></item>')
+
+
+def build_root_menu(entries, term: str, file_mgr: str, home: str) -> str:
+    """labwc/openbox root menu: Files + Terminal at top, an Applications
+    submenu built from `entries`, then Reconfigure/Exit."""
+    apps = "\n".join(_menu_item(n, e) for n, e in entries) or \
+        '  <item label="(no apps found)"><action name="Reconfigure"/></item>'
+    top = []
+    if file_mgr:
+        top.append(_menu_item("Files", f"{file_mgr} {home}"))
+    if term:
+        top.append(_menu_item("Terminal", term))
+    top_xml = "\n".join(top)
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<openbox_menu>
+<menu id="apps-menu" label="Applications">
+{apps}
+</menu>
+<menu id="root-menu" label="Styx">
+{top_xml}
+  <menu id="apps-menu"/>
+  <separator/>
+  <item label="Reconfigure"><action name="Reconfigure"/></item>
+  <item label="Exit session"><action name="Exit"/></item>
+</menu>
+</openbox_menu>
+"""
+
+
+def pick_terminal() -> str:
+    import shutil
+    for term in TERMINALS:
+        if shutil.which(term):
+            return term
+    return ""
+
+
+LAUNCHERS = ("nwg-drawer", "fuzzel")
+
+
+def pick_launcher() -> str:
+    """Full-screen app grid (nwg-drawer) preferred, then a compact search
+    launcher (fuzzel). Empty string -> caller falls back to labwc root menu."""
+    import shutil
+    for name in LAUNCHERS:
+        if shutil.which(name):
+            return name
+    return ""
+
+
+FILE_MANAGERS = ("nautilus", "nemo", "thunar", "pcmanfm-qt", "pcmanfm", "dolphin")
+
+
+def pick_file_manager() -> str:
+    """First GUI file manager present on the host. Empty if none."""
+    import shutil
+    for name in FILE_MANAGERS:
+        if shutil.which(name):
+            return name
+    return ""
+
+
+def scan_desktop_entries(dirs=None) -> list:
+    """(Name, Exec) pairs from .desktop files. Skips NoDisplay/Hidden and
+    entries missing Name or Exec. Strips Exec field codes (%u %F etc.).
+    De-duplicated by name, sorted. First [Desktop Entry] values win."""
+    dirs = dirs if dirs is not None else APPLICATIONS_DIRS
+    seen = {}
+    for d in dirs:
+        p = Path(d)
+        if not p.is_dir():
+            continue
+        for f in sorted(p.glob("*.desktop")):
+            name = exec_ = ""
+            skip = False
+            try:
+                text = f.read_text(errors="ignore")
+            except OSError:
+                continue
+            for line in text.splitlines():
+                if line.startswith("[") and name:
+                    break                       # past first [Desktop Entry]
+                if line.startswith("Name=") and not name:
+                    name = line[5:].strip()
+                elif line.startswith("Exec=") and not exec_:
+                    exec_ = line[5:].strip()
+                elif line.startswith(("NoDisplay=true", "Hidden=true")):
+                    skip = True
+            if skip or not name or not exec_:
+                continue
+            exec_ = " ".join(t for t in exec_.split()
+                             if not (len(t) == 2 and t.startswith("%")))
+            seen.setdefault(name, exec_)
+    return sorted(seen.items())
+
+
+def _primary_ip() -> str:
+    """Best-effort primary LAN IP (no packets sent — TEST-NET dest)."""
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("192.0.2.1", 1))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except OSError:
+        return ""
+
+
+def _os_pretty() -> str:
+    """PRETTY_NAME from /etc/os-release, or empty."""
+    try:
+        for line in Path("/etc/os-release").read_text().splitlines():
+            if line.startswith("PRETTY_NAME="):
+                return line.split("=", 1)[1].strip().strip('"')
+    except OSError:
+        pass
+    return ""
+
+
+def wave_polylines(width: int, height: int, amp: int = 90,
+                   wavelength: int = 900, step: int = 16) -> list:
+    """Stacked sine polylines spanning the full width, tiled top-to-bottom, each
+    phase-shifted — a flowing 'river/ripple' wave field that fills the canvas
+    (echoes the login RippleCanvas brand). Returns ImageMagick 'polyline' ops."""
+    import math
+    lines = []
+    spacing = max(int(amp * 1.6), 1)
+    band = 0
+    y = -amp
+    while y < height + amp:
+        phase = band * 0.9
+        pts = []
+        x = 0
+        while x <= width:
+            yy = y + amp * math.sin(x / wavelength * 2 * math.pi + phase)
+            pts.append(f"{x},{yy:.1f}")
+            x += step
+        lines.append("polyline " + " ".join(pts))
+        y += spacing
+        band += 1
+    return lines
+
+
+def accent_colors(seed: str) -> tuple[str, str]:
+    """Per-workstation wallpaper tint. A stable hue derived from `seed` (the
+    hostname) so multiple open seats are visually distinguishable, kept dark
+    enough that the white bginfo text stays readable. Returns (base, wave) hex.
+    Deterministic: crc32 (not hash(), which is PYTHONHASHSEED-salted) -> hue."""
+    import colorsys
+    import zlib
+    hue = (zlib.crc32(seed.encode()) % 360) / 360.0
+
+    def hexc(light: float, sat: float) -> str:
+        r, g, b = colorsys.hls_to_rgb(hue, light, sat)
+        return "#%02x%02x%02x" % (round(r * 255), round(g * 255), round(b * 255))
+
+    return hexc(0.16, 0.35), hexc(0.24, 0.30)
+
+
+def wallpaper_convert_cmd(tool: str, out: str, title: str, subtitle: str,
+                          color: str = "#1d2433",
+                          size: str = "1920x1080",
+                          wave_color: str = "#2b303a") -> list:
+    """ImageMagick argv: dark base, a full-canvas subtle wave field (dark grey),
+    then a bginfo-style label (hostname large, details small) bottom-right."""
+    w, h = (int(v) for v in size.lower().split("x"))
+    cmd = [tool, "-size", size, f"xc:{color}",
+           "-stroke", wave_color, "-strokewidth", "5", "-fill", "none"]
+    for poly in wave_polylines(w, h):
+        cmd += ["-draw", poly]
+    cmd += [
+        "-stroke", "none", "-gravity", "SouthEast",
+        "-fill", "#9aa4b8", "-pointsize", "24", "-annotate", "+60+55", subtitle,
+        "-fill", "#e6e9ef", "-pointsize", "52", "-annotate", "+60+110", title,
+        out,
+    ]
+    return cmd
+
+
+def build_wallpaper(dest: Path, title: str, subtitle: str,
+                    seed: str | None = None) -> bool:
+    """Render the bginfo wallpaper via ImageMagick (magick/convert). Returns
+    True on success; False (caller falls back to a solid colour) if the tool is
+    absent or rendering fails. The base/wave colours are tinted by `seed`
+    (defaults to `title`, i.e. the hostname) so each workstation looks distinct."""
+    import shutil
+    import subprocess
+    tool = shutil.which("magick") or shutil.which("convert")
+    if not tool:
+        return False
+    base, wave = accent_colors(title if seed is None else seed)
+    try:
+        r = subprocess.run(
+            wallpaper_convert_cmd(tool, str(dest), title, subtitle,
+                                  color=base, wave_color=wave),
+            capture_output=True, timeout=20)
+        return r.returncode == 0 and dest.is_file()
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def write_seat_config(config_dir: Path) -> None:
+    """Generate the full seat desktop shell. `config_dir` is the labwc config
+    dir ($INSTALL_DIR/labwc); the waybar config is written to its sibling
+    $INSTALL_DIR/waybar. Regenerated each shell start so newly installed tools
+    are picked up on restart. Every launch line is command-v-guarded, so a host
+    missing waybar/nwg-*/swaybg still gets a working (if barer) session."""
+    config_dir.mkdir(parents=True, exist_ok=True)
+    waybar_dir = config_dir.parent / "waybar"
+    waybar_dir.mkdir(parents=True, exist_ok=True)
+
+    import socket
+    term = pick_terminal()
+    launcher = pick_launcher()
+    file_mgr = pick_file_manager()
+    browser = pick_browser()
+    entries = scan_desktop_entries()
+
+    cfg_json, style = build_waybar_config(launcher)
+    (waybar_dir / "config").write_text(cfg_json)
+    (waybar_dir / "style.css").write_text(style)
+    dock_json, dock_style = build_waybar_dock(launcher, term, file_mgr, browser)
+    (waybar_dir / "dock-config").write_text(dock_json)
+    (waybar_dir / "dock-style.css").write_text(dock_style)
+
+    # bginfo-style wallpaper: hostname + IP + OS baked into the background.
+    subtitle = "\n".join(x for x in (_primary_ip(), _os_pretty()) if x)
+    wp = config_dir.parent / "wallpaper.png"
+    wallpaper = str(wp) if build_wallpaper(wp, socket.gethostname(), subtitle) else ""
+
+    auto = config_dir / "autostart"
+    auto.write_text(build_autostart(str(waybar_dir / "config"),
+                                    str(waybar_dir / "style.css"),
+                                    str(waybar_dir / "dock-config"),
+                                    str(waybar_dir / "dock-style.css"),
+                                    wallpaper))
+    auto.chmod(0o755)
+    (config_dir / "menu.xml").write_text(
+        build_root_menu(entries, term, file_mgr, str(HOME)))
+    (config_dir / "rc.xml").write_text(build_labwc_rc(launcher, term))
+    (config_dir / "environment").write_text(build_labwc_environment())
+
+
+def build_waybar_config(launcher: str) -> tuple:
+    """(config_json, style_css) for the top panel. `tray` is waybar's built-in
+    StatusNotifier host — JetBrains Toolbox and other SNI apps dock there."""
+    menu_cmd = launcher or "true"
+    # Open windows live on the bottom dock's wlr/taskbar, so the top bar is just
+    # launcher + clock + indicators/tray (GNOME-like).
+    config = {
+        "layer": "top", "position": "top", "height": 32,
+        "modules-left": ["custom/menu"],
+        "modules-center": ["clock"],
+        "modules-right": ["tray", "pulseaudio", "network"],
+        "custom/menu": {"format": "  Apps", "on-click": menu_cmd, "tooltip": False},
+        "clock": {"format": "{:%a %d %b  %H:%M}"},
+        "tray": {"spacing": 8, "icon-size": 18},
+        "pulseaudio": {"format": "{icon} {volume}%",
+                       "format-muted": "muted",
+                       "format-icons": ["", "", ""],
+                       "on-click": "pavucontrol"},
+        "network": {"format-wifi": "{essid}", "format-ethernet": "wired",
+                    "format-disconnected": "offline"},
+    }
+    style = (
+        '* { font-family: "Noto Sans", sans-serif; font-size: 13px; }\n'
+        "window#waybar { background: #1d2433; color: #e6e9ef; }\n"
+        "#custom-menu { padding: 0 14px; background: #2b3650; color: #ffffff; }\n"
+        "#clock, #pulseaudio, #network, #tray { padding: 0 10px; }\n"
+    )
+    return json.dumps(config, indent=2), style
+
+
+BROWSERS = ("google-chrome", "chromium", "chromium-browser", "firefox")
+
+
+def pick_browser() -> str:
+    """First GUI browser present on the host. Empty if none."""
+    import shutil
+    for name in BROWSERS:
+        if shutil.which(name):
+            return name
+    return ""
+
+
+def browser_launch_cmd(browser: str) -> str:
+    """Launch command for the seat browser.
+
+    The seat shares $HOME (and therefore the default browser profile) with any
+    other session the user has open — e.g. a VNC desktop on $DISPLAY=:0. Two
+    consequences, both of which made the dock's Web button open in the wrong
+    session:
+
+    1. Single-instance routing: a browser already running in the :0 session
+       owns the profile's singleton lock, so a plain launch here just asks THAT
+       instance to open a window — on :0. A dedicated per-seat profile dir
+       (--user-data-dir / --profile) gives the seat its own instance.
+    2. Display: Chrome defaults to the X11 backend and $DISPLAY is the VNC
+       server, so even a fresh instance lands on :0. --ozone-platform=wayland
+       binds it to the labwc seat instead. (Firefox follows MOZ_ENABLE_WAYLAND
+       from the labwc environment file.)
+    """
+    if not browser:
+        return ""
+    if "chrom" in browser:  # google-chrome, chromium, chromium-browser
+        prof = HOME / ".config" / "styx-seat-browser"
+        return f"{browser} --ozone-platform=wayland --user-data-dir={prof}"
+    if "firefox" in browser:
+        prof = HOME / ".config" / "styx-seat-firefox"
+        return f"firefox --no-remote --profile {prof}"
+    return browser
+
+
+def build_waybar_dock(launcher: str, term: str, file_mgr: str,
+                      browser: str) -> tuple:
+    """(config_json, style_css) for a second waybar at the BOTTOM, used as a
+    dock: pinned launch buttons + wlr/taskbar icons of open windows. Pure
+    wlroots (no sway IPC), so — unlike nwg-dock — it runs under labwc."""
+    mods: dict = {}
+    pins: list = []
+
+    def pin(key: str, label: str, cmd: str) -> None:
+        if cmd:
+            name = f"custom/{key}"
+            pins.append(name)
+            mods[name] = {"format": label, "on-click": cmd, "tooltip": False}
+
+    pin("apps", "Apps", launcher)
+    pin("files", "Files", f"{file_mgr} {HOME}" if file_mgr else "")
+    pin("web", "Web", browser_launch_cmd(browser))
+    pin("term", "Term", term)
+    config = {
+        "layer": "top", "position": "bottom", "height": 48, "margin-bottom": 6,
+        "modules-left": [], "modules-center": pins + ["wlr/taskbar"],
+        "modules-right": [],
+        "wlr/taskbar": {"format": "{icon}", "icon-size": 32,
+                        "on-click": "activate", "tooltip-format": "{title}"},
+        **mods,
+    }
+    style = (
+        '* { font-family: "Noto Sans", sans-serif; font-size: 13px; }\n'
+        "window#waybar { background: transparent; }\n"
+        "#taskbar, #custom-apps, #custom-files, #custom-web, #custom-term {\n"
+        "  background: #1d2433; color: #e6e9ef; border-radius: 12px;\n"
+        "  padding: 2px 12px; margin: 4px 4px; }\n"
+        "#taskbar button { padding: 0 6px; }\n"
+        "#taskbar button.active { background: #2b3650; border-radius: 8px; }\n"
+    )
+    return json.dumps(config, indent=2), style
+
+
+def build_labwc_rc(launcher: str, term: str) -> str:
+    """labwc keybinds: Super+D / Super opens the launcher, Super+Enter a
+    terminal. `launcher` empty -> bound to `true` (no-op)."""
+    launch = launcher or "true"
+    term = term or "true"
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<labwc_config>
+  <theme><cornerRadius>4</cornerRadius></theme>
+  <keyboard>
+    <keybind key="W-d"><action name="Execute" command="{launch}"/></keybind>
+    <keybind key="Super_L"><action name="Execute" command="{launch}"/></keybind>
+    <keybind key="W-Return"><action name="Execute" command="{term}"/></keybind>
+    <keybind key="A-Tab"><action name="NextWindow"/></keybind>
+  </keyboard>
+</labwc_config>
+"""
+
+
+def build_labwc_environment() -> str:
+    """labwc `environment` file — exported for the whole seat session so GTK/Qt
+    apps render dark. Affects theming only, not config paths."""
+    return ("GTK_THEME=Adwaita-dark\n"
+            "XCURSOR_THEME=Adwaita\n"
+            "XCURSOR_SIZE=24\n"
+            "QT_QPA_PLATFORM=wayland;xcb\n"
+            "QT_STYLE_OVERRIDE=Adwaita-Dark\n"
+            "MOZ_ENABLE_WAYLAND=1\n"
+            "XDG_CURRENT_DESKTOP=labwc:wlroots\n")
+
+
+def build_autostart(waybar_config: str, waybar_style: str,
+                    dock_config: str, dock_style: str,
+                    wallpaper: str = "") -> str:
+    """labwc autostart: wallpaper, dark-mode push, portal, top panel, bottom
+    dock — each guarded by `command -v` so a missing tool is silently skipped.
+    The dock is a second waybar (bottom), not nwg-dock (which is sway-only and
+    fatals under labwc). waybar instances get explicit -c/-s paths (NOT
+    XDG_CONFIG_HOME) so host apps keep their own ~/.config. `wallpaper` (a PNG
+    with the bginfo label) is shown when set; otherwise a flat colour."""
+    bg = (f'swaybg -i "{wallpaper}" -m fill &' if wallpaper
+          else 'swaybg -c "#1d2433" &')
+    return "\n".join([
+        "#!/bin/sh",
+        "# generated by styx agent — regenerated each seat start; do not edit",
+        f"command -v swaybg >/dev/null && {bg}",
+        "if command -v gsettings >/dev/null; then",
+        "  gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark' 2>/dev/null",
+        "  gsettings set org.gnome.desktop.interface gtk-theme 'Adwaita-dark' 2>/dev/null",
+        "  gsettings set org.gnome.desktop.interface icon-theme 'Adwaita' 2>/dev/null",
+        "  gsettings set org.gnome.desktop.interface cursor-theme 'Adwaita' 2>/dev/null",
+        "fi",
+        "# xdg portals (frontend + gtk backend) live in libexec, not on PATH;",
+        "# they provide org.freedesktop.portal.Settings so GTK4/browsers go dark.",
+        "for d in /usr/libexec /usr/lib/x86_64-linux-gnu/xdg-desktop-portal"
+        " /usr/lib/xdg-desktop-portal /usr/lib; do",
+        '  if [ -x "$d/xdg-desktop-portal" ]; then "$d/xdg-desktop-portal" & break; fi',
+        "done",
+        "for d in /usr/libexec /usr/lib/x86_64-linux-gnu/xdg-desktop-portal"
+        " /usr/lib/xdg-desktop-portal /usr/lib; do",
+        '  if [ -x "$d/xdg-desktop-portal-gtk" ]; then "$d/xdg-desktop-portal-gtk" &'
+        " break; fi",
+        "done",
+        f'command -v waybar >/dev/null && waybar -c "{waybar_config}" '
+        f'-s "{waybar_style}" &',
+        f'command -v waybar >/dev/null && waybar -c "{dock_config}" '
+        f'-s "{dock_style}" &',
+        "",
+    ])
+
+
+def start_shell(install_dir: Path, seat_socket: str, runtime_dir: str,
+                log) -> subprocess.Popen | None:
+    if not (seat_socket and shutil.which("labwc")):
+        return None
+    write_seat_config(install_dir / "labwc")
+    shell_env = {**os.environ, "WAYLAND_DISPLAY": seat_socket,
+                 "XDG_RUNTIME_DIR": runtime_dir,
+                 # Route seat apps' audio to the captured null sink —
+                 # they'd otherwise play to the host's default sink
+                 # (physical speakers) and the stream would be silent.
+                 "PULSE_SINK": engine.SEAT_SINK,
+                 # Seat apps record from the browser-fed virtual mic.
+                 "PULSE_SOURCE": engine.MIC_SOURCE}
+    # labwc runs the config dir's autostart (wallpaper, panel, terminal)
+    # AFTER Xwayland is up, so those children inherit DISPLAY and can
+    # launch the machine's X11 apps (Chrome etc.).
+    return subprocess.Popen(["labwc", "-C", str(install_dir / "labwc")],
+                            env=shell_env, stdout=log, stderr=log)
+
+
+def start_clipboard_bridge(install_dir: Path, seat_socket: str | None,
+                           app_socket: str | None, runtime_dir: str,
+                           log_dir: Path) -> subprocess.Popen | None:
+    """Start the bidirectional clipboard bridge between pixelflux and labwc.
+
+    Only runs in seat mode when both sockets are known and different.
+    The bridge needs to restart if either socket changes (e.g. selkies restart).
+    """
+    if not seat_socket or not app_socket or seat_socket == app_socket:
+        return None
+    # Sockets are genuinely different; start the bridge
+    clipboard_log = open(log_dir / "clipboard.log", "ab", buffering=0)
+    cmd = [
+        str(install_dir / "venv/bin/python"),
+        str(install_dir / "clipboard_bridge.py"),
+        seat_socket,
+        app_socket,
+        runtime_dir,
+    ]
+    return subprocess.Popen(cmd, stdout=clipboard_log, stderr=clipboard_log)

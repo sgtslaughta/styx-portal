@@ -182,12 +182,6 @@ async def test_clipboard_bridge_py_served(client):
     assert "bridge_decision" in r.text
 
 
-def test_update_command_includes_clipboard_bridge():
-    from app.services.workstations import build_update_command
-    cmd = build_update_command("https://x")
-    assert "clipboard_bridge.py" in cmd
-
-
 @pytest.mark.asyncio
 async def test_register_rejects_invalid_lan_ip(client, admin_client, session):
     raw = await _mint(session, await _admin_id(session))
@@ -220,8 +214,8 @@ async def test_register_accepts_valid_ipv4_and_ipv6(client, admin_client, sessio
 async def test_artifact_endpoint_serves_prebuilt(client, tmp_path, monkeypatch):
     from app.services import artifacts
     monkeypatch.setattr(artifacts._settings, "ARTIFACT_CACHE_DIR", str(tmp_path))
-    (tmp_path / "selkies-web.tar.gz").write_bytes(b"web-dist")
-    r = await client.get("/api/enroll/artifacts/selkies-web.tar.gz")
+    (tmp_path / "nwg-shell-x86_64.tar.gz").write_bytes(b"web-dist")
+    r = await client.get("/api/enroll/artifacts/nwg-shell-x86_64.tar.gz")
     assert r.status_code == 200
     assert r.content == b"web-dist"
 
@@ -244,6 +238,23 @@ async def test_artifact_endpoint_missing_prebuilt_503(client, tmp_path, monkeypa
 @pytest.mark.asyncio
 async def test_agent_file_endpoints_routed(client):
     # files that exist in ./agent today
-    for name in ("agent.py", "uninstall", "engine.py", "gateway.py", "selkies_launcher.py"):
+    for name in ("agent.py", "uninstall", "engine.py", "gateway.py"):
         r = await client.get(f"/api/enroll/{name}")
         assert r.status_code == 200, name
+
+
+NEW_FILES = ("seat_gnome.py", "seat_labwc.py", "health.py", "grant.py", "portal_api.py")
+
+
+def test_agent_files_for_0_5():
+    from app.services.workstations import AGENT_UPDATE_FILES
+    names = {local for _, local in AGENT_UPDATE_FILES}
+    assert set(NEW_FILES) <= names
+    assert "selkies_launcher.py" not in names
+
+
+@pytest.mark.asyncio
+async def test_new_agent_files_are_served(client):
+    for f in NEW_FILES + ("clipboard_bridge.py",):
+        assert (await client.get(f"/api/enroll/{f}")).status_code == 200, f
+    assert (await client.get("/api/enroll/selkies_launcher.py")).status_code == 404

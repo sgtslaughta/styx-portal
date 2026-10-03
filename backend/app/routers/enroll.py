@@ -62,9 +62,29 @@ async def gateway_py():
     return _serve("gateway.py")
 
 
-@router.get("/selkies_launcher.py")
-async def selkies_launcher_py():
-    return _serve("selkies_launcher.py")
+@router.get("/seat_gnome.py")
+async def seat_gnome_py():
+    return _serve("seat_gnome.py")
+
+
+@router.get("/seat_labwc.py")
+async def seat_labwc_py():
+    return _serve("seat_labwc.py")
+
+
+@router.get("/health.py")
+async def health_py():
+    return _serve("health.py")
+
+
+@router.get("/grant.py")
+async def grant_py():
+    return _serve("grant.py")
+
+
+@router.get("/portal_api.py")
+async def portal_api_py():
+    return _serve("portal_api.py")
 
 
 @router.get("/clipboard_bridge.py")

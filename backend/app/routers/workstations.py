@@ -65,7 +65,9 @@ async def update_command(ws_id: str,
     lan_base, lan_source = lan_enroll_url()
     lan_command = None
     if lan_base:
-        lan_command = build_update_command(lan_base, insecure=True)
+        pin, pubkey_pin, _ = lan_ca_pin(lan_base)
+        lan_command = build_update_command(
+            lan_base, ca_pin=pin, pubkey_pin=pubkey_pin)
     return WorkstationUpdateCommandOut(
         latest_version=get_latest_agent_version(),
         current_version=ws.agent_version,

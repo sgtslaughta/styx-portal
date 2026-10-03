@@ -16,6 +16,7 @@ from app.schemas import WorkstationHeartbeatRequest, WorkstationHeartbeatRespons
 from app.services.audit import audit_request
 from app.services.workstations import sha256_hex
 from app.services.settings_store import settings as _sys_settings
+from app.services.ws_settings import resolve_stream_settings
 
 router = APIRouter()
 _settings = Settings()
@@ -65,16 +66,20 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
             ws.occupied_at = None
             # Re-arm the idle latch: a future session starts fresh.
             ws.idle_disconnect_sent = False
-    # Resolve effective idle config: per-workstation override else system
-    # default. Delivered to the agent (below) so the gateway — the idle
-    # authority — can enforce and warn, and used here for the server backstop.
-    ss = ws.stream_settings or {}
-    idle_timeout = ss.get(
-        "idle_timeout_s", _sys_settings.get("WORKSTATION_IDLE_TIMEOUT_S"))
-    idle_lead = ss.get(
-        "idle_warn_lead_s", _sys_settings.get("WORKSTATION_IDLE_WARN_LEAD_S"))
-    idle_enabled = ss.get(
-        "idle_timeout_enabled", _sys_settings.get("WORKSTATION_IDLE_TIMEOUT_ENABLED"))
+    # Resolve effective stream settings: per-workstation override else system default.
+    # Pass system settings as a dict since SettingsService has only get(), not __getitem__.
+    sys_settings_dict = {
+        "WORKSTATION_IDLE_TIMEOUT_S": _sys_settings.get("WORKSTATION_IDLE_TIMEOUT_S"),
+        "WORKSTATION_IDLE_WARN_LEAD_S": _sys_settings.get("WORKSTATION_IDLE_WARN_LEAD_S"),
+        "WORKSTATION_IDLE_TIMEOUT_ENABLED": _sys_settings.get("WORKSTATION_IDLE_TIMEOUT_ENABLED"),
+        "WORKSTATION_SEAT_WIDTH": _sys_settings.get("WORKSTATION_SEAT_WIDTH"),
+        "WORKSTATION_SEAT_HEIGHT": _sys_settings.get("WORKSTATION_SEAT_HEIGHT"),
+        "WORKSTATION_CURSOR_WORKAROUND": _sys_settings.get("WORKSTATION_CURSOR_WORKAROUND"),
+    }
+    effective_ss = resolve_stream_settings(ws.stream_settings, sys_settings_dict,
+                                           ws.agent_version)
+    idle_timeout = effective_ss["idle_timeout_s"]
+    idle_enabled = effective_ss["idle_timeout_enabled"]
     # Idle disconnect backstop: the agent reports seconds since the last
     # client->server input. If an occupied seat has been idle past the timeout,
     # drop it (the release flow fires when the client count hits 0). Skipped
@@ -99,13 +104,6 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
     if routes_dirty:
         from app.services.route_writer import refresh_routes_from_db
         await refresh_routes_from_db(session)
-    # Fold the resolved idle config into stream_settings (a copy — not
-    # persisted) so it rides the existing delivery + gateway-relaunch-on-change
-    # path; the agent forwards it to the gateway as env.
-    effective_ss = {**(ws.stream_settings or {}),
-                    "idle_timeout_s": idle_timeout,
-                    "idle_warn_lead_s": idle_lead,
-                    "idle_timeout_enabled": idle_enabled}
     return WorkstationHeartbeatResponse(
         state="ok", stream_settings=effective_ss,
         heartbeat_interval_s=_settings.WORKSTATION_HEARTBEAT_S,

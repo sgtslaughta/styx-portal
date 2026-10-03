@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""LAN-facing gateway: dashboard static files + authenticated ws proxy.
+"""LAN-facing gateway: authenticated reverse proxy to loopback selkies.
 
-Mirrors the upstream container's nginx layout (/ -> web dist, /websocket ->
-loopback selkies) so the stock dashboard works unmodified. Basic auth on
-everything: Traefik injects the Authorization header for portal users;
-direct LAN visits get a browser prompt.
+Fronts selkies 2.0 (which serves its own client and /api/*) with auth, idle enforcement and injected shims.
+Basic auth on everything: Traefik injects the Authorization header for portal
+users; direct LAN visits get a browser prompt.
 
-Usage: venv/bin/python gateway.py <web_dir> <listen_port> <upstream_port>
+Usage: venv/bin/python gateway.py <listen_port> <upstream_port>
 Credentials via env: STYX_GW_USER / STYX_GW_PASSWORD (argv is world-readable).
 """
 import asyncio
@@ -14,12 +13,15 @@ import base64
 import hmac
 import json
 import os
+import posixpath
 import socket
 import sys
 import time
 
 import aiohttp
+import yarl
 from aiohttp import web
+from multidict import CIMultiDict
 
 
 # How long the injected shim reports the tab as visible after load: long
@@ -36,6 +38,9 @@ VIS_GRACE_MS = 12000
 # normal input->frame round trip on a loaded host. ponytail: bump if a slow
 # link ever trips it mid-session.
 STALL_REARM_S = 2.0
+
+# Proxied downloads may run arbitrarily long: no total cap, only connect/idle.
+PROXY_TIMEOUT = aiohttp.ClientTimeout(total=None, sock_connect=10)
 
 
 def inject_title(html: str, hostname: str) -> str:
@@ -122,6 +127,19 @@ def inject_idle_watchdog(html: str, timeout_s: int, lead_s: int,
     return script + html
 
 
+CURSOR_HIDE_CSS = ("<style id=\"styx-cursor\">video,canvas,#videoContainer,"
+                   "#overlayInput{cursor:none !important}</style>")
+
+
+def inject_cursor_hide(html: str, enabled: bool) -> str:
+    """GNOME portal capture bakes the cursor into the video and sends no cursor
+    metadata, so the browser cursor doubles it (flicker, stale cursor on leave).
+    Hide the browser one; the in-video cursor is the only cursor (spec 5.2)."""
+    if not enabled or "</head>" not in html:
+        return html
+    return html.replace("</head>", CURSOR_HIDE_CSS + "</head>", 1)
+
+
 def is_activity(data) -> bool:
     """Whether a client->server message counts as user activity for idle timing.
 
@@ -155,10 +173,15 @@ def check_auth(header: str, user: str, password: str) -> bool:
     return hmac.compare_digest(got.encode(), expected.encode())
 
 
-def create_app(web_dir: str, user: str, password: str,
+def create_app(user: str, password: str,
                upstream_port: int, files_dir: str = "",
                state_file: str = "", idle_timeout_s: int = 0,
-               idle_lead_s: int = 60, idle_enabled: bool = False) -> web.Application:
+               idle_lead_s: int = 60, idle_enabled: bool = False,
+               cursor_workaround: bool = False) -> web.Application:
+    UPSTREAM = f"http://127.0.0.1:{upstream_port}"
+    HOP = {"host", "connection", "keep-alive", "transfer-encoding", "upgrade",
+           "authorization", "origin", "content-length", "accept-encoding"}
+
     # Live stream-websocket count, mirrored to a state file the supervisor
     # reads each heartbeat — the portal uses it for occupancy ("in use by").
     conns = {"n": 0}
@@ -228,10 +251,15 @@ def create_app(web_dir: str, user: str, password: str,
         return await handler(request)
 
     async def ws_proxy(request):
+        qs = request.rel_url.raw_query_string
+        if request.headers.get("Upgrade", "").lower() != "websocket":
+            # 2.0 client probes api/websockets over plain HTTP (409 = mode flip)
+            return await forward(request, "/api/websockets" + (f"?{qs}" if qs else ""))
         async with aiohttp.ClientSession() as session:
             try:
                 ws_client = await session.ws_connect(
-                    f"ws://127.0.0.1:{upstream_port}{request.path}",
+                    f"ws://127.0.0.1:{upstream_port}/api/websockets"
+                    + (f"?{qs}" if qs else ""),
                     max_msg_size=0)
             except aiohttp.ClientError:
                 return web.Response(status=502, text="stream backend unavailable")
@@ -293,15 +321,71 @@ def create_app(web_dir: str, user: str, password: str,
         return ws_server
 
     async def index(_request):
-        path = os.path.join(web_dir, "index.html")
         try:
-            with open(path, encoding="utf-8") as f:
-                html = inject_title(f.read(), socket.gethostname())
-                html = inject_idle_watchdog(html, idle_timeout_s, idle_lead_s,
-                                            idle_enabled)
-        except OSError:
-            return web.FileResponse(path)  # let aiohttp 404/handle it
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as s, \
+                    s.get(UPSTREAM + "/", allow_redirects=False) as r:
+                if r.status != 200:
+                    hdr = {"Location": r.headers["Location"]} if "Location" in r.headers else {}
+                    return web.Response(status=r.status, body=await r.read(), headers=hdr)
+                html = await r.text()
+        except aiohttp.ClientError:
+            return web.Response(status=502, text="stream backend unavailable")
+        except asyncio.TimeoutError:
+            return web.Response(status=504, text="stream backend timed out")
+        html = inject_title(html, socket.gethostname())
+        html = inject_idle_watchdog(html, idle_timeout_s, idle_lead_s, idle_enabled)
+        html = inject_cursor_hide(html, cursor_workaround)
         return web.Response(text=html, content_type="text/html")
+
+    def _relative_location(request, loc):
+        """Absolute-path redirects would escape a /w/<slug> prefix; make them
+        relative to the request path."""
+        if not loc.startswith("/") or loc.startswith("//"):
+            return loc
+        path, sep, query = loc.partition("?")
+        rel = posixpath.relpath(path, posixpath.dirname(request.path) or "/")
+        if path.endswith("/") and not rel.endswith("/"):
+            rel += "/"
+        return rel + sep + query
+
+    async def forward(request, raw_path_qs):
+        """Stream request to selkies and its response back, as-is."""
+        headers = CIMultiDict()
+        headers.extend((k, v) for k, v in request.headers.items()
+                       if k.lower() not in HOP)
+        body = await request.read() if request.body_exists else None
+        url = yarl.URL(UPSTREAM + raw_path_qs, encoded=True)
+        resp = None
+        try:
+            async with aiohttp.ClientSession(
+                    auto_decompress=False, timeout=PROXY_TIMEOUT) as s, s.request(
+                    request.method, url, headers=headers, data=body,
+                    allow_redirects=False) as r:
+                out = CIMultiDict()
+                out.extend((k, v) for k, v in r.headers.items()
+                           if k.lower() not in HOP)
+                if "Location" in out:
+                    out["Location"] = _relative_location(request, out["Location"])
+                resp = web.StreamResponse(status=r.status, headers=out)
+                await resp.prepare(request)
+                async for chunk in r.content.iter_chunked(64 * 1024):
+                    await resp.write(chunk)
+                await resp.write_eof()
+                return resp
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            if resp is not None and resp.prepared:
+                # headers already sent: drop the connection, never append a 2nd response
+                resp.force_close()
+                if request.transport:
+                    request.transport.close()
+                raise
+            if isinstance(e, asyncio.TimeoutError):
+                return web.Response(status=504, text="stream backend timed out")
+            return web.Response(status=502, text="stream backend unavailable")
+
+    async def http_proxy(request):
+        """Everything else (client assets, /api/* REST) goes to selkies as-is."""
+        return await forward(request, request.rel_url.raw_path_qs)
 
     async def files(request):
         # Hand-rolled index: aiohttp's show_index emits ABSOLUTE hrefs
@@ -338,23 +422,19 @@ def create_app(web_dir: str, user: str, password: str,
 
     _write_state()   # reset any stale count from a previous gateway run
 
-    app = web.Application(middlewares=[auth_mw])
-    # The dashboard appends "websockets" to its base path (selkies-core.js);
-    # upstream nginx also exposes /websocket. Route both.
-    app.router.add_get("/websocket", ws_proxy)
-    app.router.add_get("/websockets", ws_proxy)
+    app = web.Application(middlewares=[auth_mw], client_max_size=0)
+    for path in ("/api/websockets", "/websockets", "/websocket"):
+        app.router.add_get(path, ws_proxy)
     app.router.add_get("/", index)
     if files_dir and os.path.isdir(files_dir):
-        # Dashboard's Files download popup opens <base>/files/.
         app.router.add_get("/files", files)
         app.router.add_get("/files/{path:.*}", files)
-    app.router.add_static("/", web_dir)
+    app.router.add_route("*", "/{tail:.*}", http_proxy)
     return app
 
 
 def main() -> None:
-    web_dir, listen_port, upstream_port = (
-        sys.argv[1], int(sys.argv[2]), int(sys.argv[3]))
+    listen_port, upstream_port = int(sys.argv[1]), int(sys.argv[2])
     user = os.environ["STYX_GW_USER"]
     password = os.environ["STYX_GW_PASSWORD"]
     files_dir = os.path.expanduser(
@@ -363,9 +443,11 @@ def main() -> None:
     idle_timeout_s = int(os.environ.get("STYX_GW_IDLE_TIMEOUT_S", "0") or "0")
     idle_lead_s = int(os.environ.get("STYX_GW_IDLE_WARN_S", "60") or "60")
     idle_enabled = os.environ.get("STYX_GW_IDLE_ENABLED", "") == "1"
-    web.run_app(create_app(web_dir, user, password, upstream_port, files_dir,
+    cursor = os.environ.get("STYX_GW_CURSOR_WORKAROUND", "") == "1"
+    web.run_app(create_app(user, password, upstream_port, files_dir,
                            state_file=state_file, idle_timeout_s=idle_timeout_s,
-                           idle_lead_s=idle_lead_s, idle_enabled=idle_enabled),
+                           idle_lead_s=idle_lead_s, idle_enabled=idle_enabled,
+                           cursor_workaround=cursor),
                 host="0.0.0.0", port=listen_port)
 
 

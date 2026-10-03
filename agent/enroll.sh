@@ -2,9 +2,10 @@
 # Styx Portal workstation enrollment.
 # Usage: curl -fsSL https://SERVER/api/enroll/script | bash -s -- \
 #          --token <TOKEN> --server https://SERVER [--ca-pin sha256:<FP>]
+# Upgrade an enrolled box:  ... | bash -s -- --upgrade --server https://SERVER
 set -euo pipefail
 
-TOKEN="" SERVER="" CA_PIN="" FORCE_DISPLAY="" FORCE_MODE="auto"
+TOKEN="" SERVER="" CA_PIN="" FORCE_DISPLAY="" FORCE_MODE="auto" UPGRADE=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --token)   TOKEN="$2"; shift 2 ;;
@@ -14,11 +15,18 @@ while [[ $# -gt 0 ]]; do
     # KasmVNC/Xvnc :1 under a Wayland login). Implies x11 capture.
     --display) FORCE_DISPLAY="$2"; shift 2 ;;
     --mode)    FORCE_MODE="$2"; shift 2 ;;
+    # Re-install code + wheels over an enrolled agent: keeps config.json, skips
+    # token/registration, backs up the old install to <install>.prev.
+    --upgrade) UPGRADE=1; shift ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
 done
-[[ -n "$TOKEN" && -n "$SERVER" ]] || {
-  echo "E00: --token and --server are required." >&2; exit 2; }
+if [[ "$UPGRADE" == 1 ]]; then
+  [[ -n "$SERVER" ]] || { echo "E00: --server is required." >&2; exit 2; }
+else
+  [[ -n "$TOKEN" && -n "$SERVER" ]] || {
+    echo "E00: --token and --server are required." >&2; exit 2; }
+fi
 if [[ "$FORCE_MODE" != "auto" && "$FORCE_MODE" != "mirror" && "$FORCE_MODE" != "seat" ]]; then
   echo "E00: --mode must be auto, mirror, or seat (got: $FORCE_MODE)" >&2; exit 2
 fi
@@ -28,7 +36,28 @@ INSTALL_DIR="$HOME/.local/share/styx-agent"
 CONFIG_DIR="$HOME/.config/styx-agent"
 UNIT_DIR="$HOME/.config/systemd/user"
 
-fail() { local code="$1"; shift; echo ""; echo "✗ $code: $*" >&2; exit 1; }
+# --upgrade reuses the enrolled config: mode and (unless --ca-pin is given) the pinned cert.
+if [[ "$UPGRADE" == 1 ]]; then
+  [[ -f "$CONFIG_DIR/config.json" && -d "$INSTALL_DIR" ]] \
+    || { echo "E01: --upgrade needs an existing enrollment (no $CONFIG_DIR/config.json). Run a normal enroll." >&2; exit 1; }
+  _cfg() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get(sys.argv[2]) or "")' "$CONFIG_DIR/config.json" "$1"; }
+  FORCE_MODE="$(_cfg mode)"; [[ -n "$FORCE_MODE" ]] || FORCE_MODE="seat"
+  if [[ -z "$CA_PIN" && -n "$(_cfg ca_pin)" && -f "$(_cfg server_cert)" ]]; then
+    CA_PIN="$(_cfg ca_pin)"
+  fi
+fi
+
+# --upgrade moves the old install to .prev; any failure afterwards restores it.
+RESTORE_ARMED=0
+restore_prev() {
+  [[ "$RESTORE_ARMED" == 1 ]] || return 0
+  RESTORE_ARMED=0; trap - ERR
+  rm -rf "$INSTALL_DIR"
+  mv "$INSTALL_DIR.prev" "$INSTALL_DIR"
+  systemctl --user start styx-agent || true
+  note "upgrade failed — previous version restored"
+}
+fail() { local code="$1"; shift; echo ""; echo "✗ $code: $*" >&2; restore_prev; exit 1; }
 note() { echo "  → $*"; }
 step() { echo ""; echo "[$1] $2"; }
 
@@ -55,8 +84,9 @@ python3 -m venv "$_vprobe/p" >/dev/null 2>&1 \
 rm -rf "$_vprobe"
 # Wheels + venv + web dist need ~1.5 GB; require 2 GB headroom.
 FREE_MB=$(df -Pm "$HOME" 2>/dev/null | awk 'NR==2{print $4}')
-if [[ -n "${FREE_MB:-}" ]] && (( FREE_MB < 2048 )); then
-  fail E01 "Less than 2 GB free in $HOME (${FREE_MB} MB). Free up space and re-run."
+NEED_MB=2048; [[ "$UPGRADE" == 1 ]] && NEED_MB=1536   # old install is moved, not copied
+if [[ -n "${FREE_MB:-}" ]] && (( FREE_MB < NEED_MB )); then
+  fail E01 "Less than $((NEED_MB / 1024)) GB free in $HOME (${FREE_MB} MB). Free up space and re-run."
 fi
 # awk consumes the whole stream (unlike `head`, which closes the pipe early
 # and trips SIGPIPE under pipefail); $2 of the first line is glibc's version.
@@ -139,6 +169,9 @@ case "$LDCACHE" in
 esac
 
 step 5/8 "Installing desktop + GPU dependencies (E03)"
+if [[ "$UPGRADE" == 1 ]]; then
+  note "upgrade: skipping system package install"
+else
 # Detect the package manager and install what each mode needs. Seat mode
 # needs labwc (Wayland WM) + wl-clipboard; both modes benefit from VAAPI (AMD/Intel HW
 # encode). This is the one place we touch the system with sudo.
@@ -199,12 +232,13 @@ else
   note "No GPU encoder detected — using CPU x264 (works; higher latency)."
 fi
 id -nG | grep -qw render || note "Note: user not in 'render' group — for HW encode: sudo usermod -aG render $USER && re-login"
+fi
 
 step 6/8 "Checking port and systemd (E07/E08)"
 SELKIES_PORT=8443
 # Capture first (no pipe to grep -q, which closes early and trips SIGPIPE
-# under pipefail — masking a busy port).
-if command -v ss >/dev/null; then
+# under pipefail — masking a busy port). Skipped on --upgrade (agent owns it).
+if [[ "$UPGRADE" != 1 ]] && command -v ss >/dev/null; then
   PORT_LISTEN=$(ss -ltn "sport = :$SELKIES_PORT" 2>/dev/null || true)
   case "$PORT_LISTEN" in
     *LISTEN*) fail E07 "Port $SELKIES_PORT already in use. Free it or change WORKSTATION_DEFAULT_PORT on the server." ;;
@@ -214,9 +248,21 @@ systemctl --user show-environment >/dev/null 2>&1 \
   || fail E08 "systemd --user session unavailable. Log in as this user via a normal session (not su/sudo)."
 
 step 7/8 "Installing agent (venv + wheels from portal cache)"
+if [[ "$UPGRADE" == 1 ]]; then
+  systemctl --user stop styx-agent || true
+  rm -rf "$INSTALL_DIR.prev"
+  mv "$INSTALL_DIR" "$INSTALL_DIR.prev"
+  RESTORE_ARMED=1; set -o errtrace; trap restore_prev ERR
+  mkdir -p "$INSTALL_DIR"
+  # Keep logs and the labwc-fallback nwg binaries; venv/web/lib/launcher are NOT carried over.
+  [[ -d "$INSTALL_DIR.prev/logs" ]] && cp -a "$INSTALL_DIR.prev/logs" "$INSTALL_DIR/logs"
+  [[ -d "$INSTALL_DIR.prev/bin" ]] && cp -a "$INSTALL_DIR.prev/bin" "$INSTALL_DIR/bin"
+fi
 mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$UNIT_DIR" "$INSTALL_DIR/logs"
 for pair in "agent.py styx_agent.py" "engine.py engine.py" \
-            "gateway.py gateway.py" "selkies_launcher.py selkies_launcher.py" \
+            "gateway.py gateway.py" "seat_gnome.py seat_gnome.py" \
+            "seat_labwc.py seat_labwc.py" "health.py health.py" \
+            "grant.py grant.py" "portal_api.py portal_api.py" \
             "clipboard_bridge.py clipboard_bridge.py" "uninstall uninstall.sh"; do
   read -r remote local_name <<<"$pair"
   fetch "$SERVER/api/enroll/$remote" -o "$INSTALL_DIR/$local_name" \
@@ -224,25 +270,24 @@ for pair in "agent.py styx_agent.py" "engine.py engine.py" \
 done
 chmod +x "$INSTALL_DIR/uninstall.sh"
 
-note "downloading wheels + web dist + lib shim (cached on server)…"
-for art in wheelhouse-x86_64.tar.gz selkies-web.tar.gz libshim-x86_64.tar.gz; do
+note "downloading wheels (cached on server)…"
+for art in wheelhouse-x86_64.tar.gz; do
   fetch "$SERVER/api/enroll/artifacts/$art" -o "$INSTALL_DIR/$art" \
     || fail E05 "Artifact $art unavailable. On the server run scripts/build_agent_artifacts.sh (see docs/WORKSTATIONS.md)."
 done
-for art in wheelhouse-x86_64 selkies-web libshim-x86_64; do
+for art in wheelhouse-x86_64; do
   tar -xzf "$INSTALL_DIR/$art.tar.gz" -C "$INSTALL_DIR" \
     || fail E03 "Extracting $art.tar.gz failed — corrupt download or out of disk. Re-run enrollment."
 done
 
 note "creating venv (system python, prebuilt wheels only — no compiling)…"
-# The wheelhouse already contains a `selkies` wheel built from the pinned
-# tarball, so install everything by name with --no-index — nothing is ever
-# compiled on the workstation.
+# The wheelhouse already contains every selkies 2.0 wheel + deps, so install
+# by name with --no-index — nothing is ever compiled on the workstation.
 python3 -m venv "$INSTALL_DIR/venv" \
   || fail E01 "venv creation failed — check python3-venv is installed and $HOME has free space."
 "$INSTALL_DIR/venv/bin/pip" -q install --no-index \
   --find-links "$INSTALL_DIR/wheelhouse" \
-  selkies pixelflux==1.6.4 pcmflux setuptools aiohttp pulsectl \
+  selkies==2.0.0 pixelflux==2.1.0 pcmflux==2.1.0 setuptools aiohttp pulsectl \
   || fail E03 "Wheel install failed — likely an unsupported python version ($(python3 -V)). The wheelhouse covers python 3.10–3.14; rebuild it on the server (scripts/build_agent_artifacts.sh) if your python is newer."
 
 # Seat-only, OPTIONAL: nwg-drawer (app grid) + nwg-dock binaries, server-built
@@ -263,6 +308,15 @@ if [[ "$MODE" == "seat" ]]; then
   fi
 fi
 rm -rf "$INSTALL_DIR/wheelhouse" "$INSTALL_DIR"/*.tar.gz
+
+if [[ "$UPGRADE" == 1 ]]; then
+  systemctl --user start styx-agent
+  RESTORE_ARMED=0; trap - ERR
+  echo ""
+  echo "✓ Upgraded. Previous install kept at $INSTALL_DIR.prev"
+  echo "  Rollback: $INSTALL_DIR/venv/bin/python $INSTALL_DIR/styx_agent.py rollback"
+  exit 0
+fi
 
 step 8/8 "Registering with portal"
 SERVER_HOST="${SERVER#http*://}"; SERVER_HOST="${SERVER_HOST%%/*}"; SERVER_HOST="${SERVER_HOST%%:*}"
@@ -321,7 +375,7 @@ print(json.dumps({
         "disk_free_gb": round(du.free / 1e9),
         "mode": sys.argv[6],
     },
-    "agent_version": "0.4.1"}))
+    "agent_version": "0.5.0"}))
 PY
 ) || fail E01 "Could not gather system info (python error above)."
 

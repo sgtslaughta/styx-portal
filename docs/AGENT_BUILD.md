@@ -21,7 +21,21 @@ one of two modes, auto-detected at enrollment:
 
 ## 2. Seat desktop architecture
 
-Seat mode builds a desktop from scratch each time the streaming shell starts:
+### 2a. GNOME seat (default)
+
+```
+browser <── selkies 2.0 (gateway → selkies) ── pixelflux ── xdg-desktop-portal ScreenCast/RemoteDesktop
+                                                                └── headless gnome-shell on a private D-Bus session
+                                                                      └── host apps (Wayland clients)
+```
+
+The agent starts `gnome-shell` headless under `dbus-run-session`; pixelflux captures it and injects input through the portal ScreenCast/RemoteDesktop interfaces. A restore token from the one-time consent grant (`doctor --grant`) lets sessions start without a prompt.
+
+### 2b. labwc seat (fallback)
+
+> **Agent 0.5.0:** the default seat is a real headless GNOME Shell (`seat_shell: gnome`, needs GNOME Shell >= 46) on a private D-Bus session, captured via xdg-desktop-portal with a one-time consent grant (`doctor --grant`). The labwc/pixelflux-compositor design below is the `seat_shell: labwc` fallback, used automatically when GNOME is unavailable. See [GNOME seat](WORKSTATIONS.md#gnome-seat).
+
+The labwc fallback builds a desktop from scratch each time the streaming shell starts:
 
 ```
 pixelflux  (outer compositor, Smithay) ── captures + encodes ──> browser
@@ -63,9 +77,7 @@ host; needs only Docker), registered in
 
 | Artifact | Contents | Build method |
 |----------|----------|--------------|
-| `wheelhouse-x86_64.tar.gz` | Python wheels (selkies, pixelflux, pcmflux, …) for cp310–cp313 | manylinux container |
-| `selkies-web.tar.gz` | Dashboard web dist | extracted from linuxserver image |
-| `libshim-x86_64.tar.gz` | libva 2.22 + libwayland-server 1.23 | pinned Ubuntu debs |
+| `wheelhouse-x86_64.tar.gz` | Python wheels (selkies, pixelflux, pcmflux, …) for cp310–cp314 | manylinux container |
 | `nwg-shell-x86_64.tar.gz` | `nwg-drawer` binary | `golang:1.25` + GTK3 dev container |
 
 > **Why server-built, not PPA or on-host toolchain:** enrolled machines stay
@@ -87,9 +99,10 @@ docker cp data/artifacts/nwg-shell-x86_64.tar.gz remote-access-backend-1:/app/da
 
 ## 4. Decision log (the "why")
 
-**labwc as the seat WM.** Lightweight, openbox-style, runs cleanly *nested* on
-pixelflux's socket. Full desktop shells (GNOME Shell, KWin) expect to *be* the
-compositor and are heavy; they aren't a good fit as a nested, captured session.
+**labwc as the fallback seat WM.** Lightweight, openbox-style, runs cleanly *nested* on
+pixelflux's socket. Full desktop shells expect to *be* the compositor, so
+GNOME Shell instead runs as its own headless session and is captured through
+xdg-desktop-portal (the 0.5.0 default); labwc remains the fallback.
 
 **nwg-drawer for the app grid, built on the server.** It gives the GNOME-style
 full-screen app grid, but it isn't packaged on every distro (e.g. **absent from
@@ -140,7 +153,9 @@ is absent, it falls back to a flat colour.
 
 ## 5. Seat dependencies
 
-Installed by `enroll.sh` (`SEAT_PKG`, per package manager), all from official
+**GNOME seat (default):** not installed by `enroll.sh`; must already be on the box: `gnome-shell` >= 46, `xdg-desktop-portal` + `xdg-desktop-portal-gnome`, `dbus-run-session` / `dbus-update-activation-environment` (dbus), `gdbus` (glib), and `xset` for the consent grant on the physical X display. The agent falls back to the labwc seat only if `gnome-shell` is missing or older than 46. The other prerequisites (`xdg-desktop-portal` + `xdg-desktop-portal-gnome`, started on demand by D-Bus and used for screen capture and input; `dbus-run-session`, `dbus-update-activation-environment`, `gdbus`, and `xset` for `doctor --grant`) are part of a standard Ubuntu desktop install; if they are missing the GNOME seat fails to stream and the portal shows the error instead of falling back.
+
+**labwc fallback seat:** installed by `enroll.sh` (`SEAT_PKG`, per package manager), all from official
 repos:
 
 `labwc xwayland waybar swaybg foot wl-clipboard fuzzel thunar

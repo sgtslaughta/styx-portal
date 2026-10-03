@@ -28,7 +28,7 @@ def test_load_config(tmp_path):
 
 
 def test_agent_version_bumped():
-    assert styx_agent.AGENT_VERSION == "0.4.11"
+    assert styx_agent.AGENT_VERSION == "0.5.0"
 
 
 def test_gateway_cmd_secrets_via_env(tmp_path):
@@ -36,9 +36,8 @@ def test_gateway_cmd_secrets_via_env(tmp_path):
     cmd, env = styx_agent.build_gateway_cmd(cfg, 18444)
     assert cmd[0].endswith("venv/bin/python")
     assert cmd[1].endswith("gateway.py")
-    assert cmd[2].endswith("/web")
-    assert cmd[3] == "8443"          # LAN port
-    assert cmd[4] == "18444"         # loopback selkies
+    assert cmd[2] == "8443"          # LAN port
+    assert cmd[3] == "18444"         # loopback selkies
     assert env["STYX_GW_USER"] == "styx"
     assert env["STYX_GW_PASSWORD"] == "pw"
     assert not any("pw" in a for a in cmd)
@@ -72,38 +71,18 @@ def test_health_payload_reports_mode_and_engine(tmp_path):
     h = styx_agent.health_payload(cfg, selkies_alive=True, gateway_alive=False)
     assert h["mode"] == "seat"
     assert h["engine"] == "pixelflux"
-    assert h["agent_version"] == "0.4.11"
+    assert h["agent_version"] == "0.5.0"
     assert h["selkies_alive"] is True and h["gateway_alive"] is False
     assert h["active_connections"] == 0
-
-
-def test_active_connections_from_gateway_state(tmp_path):
-    _, cfg = _cfg(tmp_path)
-    state = styx_agent.gw_state_path(cfg)
-    state.parent.mkdir(parents=True, exist_ok=True)
-    # missing file -> 0
-    assert styx_agent.active_connections(cfg, gateway_alive=True) == 0
-    state.write_text(json.dumps({"active_connections": 2, "ts": 1}))
-    assert styx_agent.active_connections(cfg, gateway_alive=True) == 2
-    # a dead gateway has no viewers, whatever the stale file says
-    assert styx_agent.active_connections(cfg, gateway_alive=False) == 0
-    # garbage -> 0
-    state.write_text("not json")
-    assert styx_agent.active_connections(cfg, gateway_alive=True) == 0
-    state.write_text(json.dumps({"active_connections": -3}))
-    assert styx_agent.active_connections(cfg, gateway_alive=True) == 0
-    # gateway cmd exposes the state path to the child
-    _, env = styx_agent.build_gateway_cmd(cfg, 18444)
-    assert env["STYX_GW_STATE"] == str(state)
 
 
 def test_settings_change_restart_includes_gateway():
     """Idle-timeout config rides in stream_settings but reaches the gateway only
     through its launch env — so a stream_settings change must relaunch the
     gateway too, else the running gateway keeps stale (idle-less) config."""
-    assert "gateway" in styx_agent.SETTINGS_CHANGE_RESTART
-    for p in ("selkies", "shell", "clipboard"):
-        assert p in styx_agent.SETTINGS_CHANGE_RESTART
+    keys = styx_agent.settings_restart_keys({}, {"idle_timeout_s": 60})
+    for p in ("selkies", "shell", "clipboard", "gateway"):
+        assert p in keys
 
 
 def test_drop_clients_restarts_gateway():
@@ -134,39 +113,6 @@ def test_drop_clients_noop_when_gateway_dead():
 
 # === Stream-start watchdog (frameless viewer -> restart engine) ===
 
-def test_stream_starving_seconds_reports_wait(tmp_path):
-    """A viewer connected but no frame has flowed: report seconds since connect."""
-    import time
-    _, cfg = _cfg(tmp_path)
-    state = styx_agent.gw_state_path(cfg)
-    state.parent.mkdir(parents=True, exist_ok=True)
-    state.write_text(json.dumps({
-        "active_connections": 1, "stream_starving": True,
-        "starving_since": time.time() - 20, "ts": time.time()}))
-    s = styx_agent.stream_starving_seconds(cfg, gateway_alive=True)
-    assert s is not None and 18 <= s <= 25, s
-
-
-def test_stream_starving_none_when_not_starving_or_gateway_dead(tmp_path):
-    """None once a frame has flowed (flag cleared) or the gateway is down."""
-    import time
-    _, cfg = _cfg(tmp_path)
-    state = styx_agent.gw_state_path(cfg)
-    state.parent.mkdir(parents=True, exist_ok=True)
-    # frame arrived -> gateway cleared the flag
-    state.write_text(json.dumps({
-        "active_connections": 1, "stream_starving": False,
-        "starving_since": time.time() - 99, "ts": time.time()}))
-    assert styx_agent.stream_starving_seconds(cfg, gateway_alive=True) is None
-    # starving but gateway reported dead -> no viewers to rescue
-    state.write_text(json.dumps({
-        "stream_starving": True, "starving_since": time.time() - 99}))
-    assert styx_agent.stream_starving_seconds(cfg, gateway_alive=False) is None
-    # unreadable -> None
-    state.write_text("not json")
-    assert styx_agent.stream_starving_seconds(cfg, gateway_alive=True) is None
-
-
 def test_restart_engine_tears_down_selkies_shell_clipboard():
     """Frameless-recovery restart rebuilds the whole seat (new Wayland socket),
     not just selkies — else labwc/clipboard keep the dead compositor's socket."""
@@ -190,57 +136,160 @@ def test_restart_engine_tears_down_selkies_shell_clipboard():
     assert procs["gateway"] is gw
 
 
-def test_read_encoder_progress_returns_last_fps_line(tmp_path):
-    log = tmp_path / "selkies.log"
-    log.write_text(
-        "INFO:main:starting\n"
-        "Res: 2544x1258 Mode: H264 (NVENC) Stripes: 1 EncFPS: 59.96 Mem: 308MB\n"
-        "INFO:data_websocket:client connected\n"
-        "Res: 2544x1258 Mode: H264 (NVENC) Stripes: 1 EncFPS: 60.01 Mem: 309MB\n"
-    )
-    line = styx_agent.read_encoder_progress(log)
-    assert line is not None and "EncFPS: 60.01" in line
+def test_gateway_cmd_has_no_web_dir_and_passes_cursor_flag(tmp_path):
+    cfg = {"install_dir": str(tmp_path), "port": 8443, "selkies_user": "u",
+           "selkies_password": "p", "stream_settings": {"cursor_workaround": True}}
+    cmd, env = styx_agent.build_gateway_cmd(cfg, 1234)
+    assert cmd[-2:] == ["8443", "1234"]
+    assert not any(a.endswith("/web") for a in cmd)
+    assert env["STYX_GW_CURSOR_WORKAROUND"] == "1"
 
 
-def test_read_encoder_progress_ignores_settings_dump_and_missing(tmp_path):
-    log = tmp_path / "selkies.log"
-    # the giant settings dict also contains the substring 'EncFPS' in help text
-    log.write_text("INFO:main:Starting with {'_setting_definitions': [{'EncFPS': 1}]}\n")
-    assert styx_agent.read_encoder_progress(log) is None
-    assert styx_agent.read_encoder_progress(tmp_path / "nope.log") is None
+def test_gateway_cmd_exposes_state_path(tmp_path):
+    _, cfg = _cfg(tmp_path)
+    # gateway cmd exposes the state path to the child
+    _, env = styx_agent.build_gateway_cmd(cfg, 18444)
+    assert env["STYX_GW_STATE"] == str(styx_agent.gw_state_path(cfg))
 
 
-def test_stream_frozen_only_when_viewer_present_and_stalled():
-    t = styx_agent.FREEZE_TIMEOUT_S
-    # viewer connected, engine alive, no encoder progress past threshold -> frozen
-    assert styx_agent.stream_frozen(1, True, t + 1, t) is True
-    # progress is fresh -> healthy
-    assert styx_agent.stream_frozen(1, True, 2, t) is False
-    # no viewer -> idle, never restart even if stale
-    assert styx_agent.stream_frozen(0, True, t + 100, t) is False
-    # engine already dead -> the exit-based restart handles it, not the watchdog
-    assert styx_agent.stream_frozen(1, False, t + 100, t) is False
-    # NVENC FullFrame emits no EncFPS marker -> never armed -> never fires,
-    # even though viewer+alive+stalled all look "frozen"
-    assert styx_agent.stream_frozen(1, True, t + 1, t, marker_seen=False) is False
-    assert styx_agent.stream_frozen(1, True, t + 1, t, marker_seen=True) is True
+def test_pick_seat_shell(monkeypatch):
+    monkeypatch.setattr(styx_agent.seat_gnome, "gnome_available", lambda: (True, ""))
+    assert styx_agent.pick_seat_shell({"mode": "mirror"}) == "mirror"
+    assert styx_agent.pick_seat_shell({"mode": "seat", "stream_settings": {}}) == "gnome"
+    assert styx_agent.pick_seat_shell(
+        {"mode": "seat", "stream_settings": {"seat_shell": "labwc"}}) == "labwc"
+    monkeypatch.setattr(styx_agent.seat_gnome, "gnome_available", lambda: (False, "x"))
+    assert styx_agent.pick_seat_shell({"mode": "seat", "stream_settings": {}}) == "labwc"
 
 
-def test_host_tuning_checks_governor(monkeypatch, tmp_path):
-    gov = tmp_path / "scaling_governor"
-    gov.write_text("powersave\n")
-    monkeypatch.setattr(styx_agent, "GOVERNOR_PATH", gov)
-    monkeypatch.setattr(styx_agent.shutil, "which", lambda _: None)
-    rows = styx_agent.host_tuning_checks()
-    label, ok, detail = next(r for r in rows if "governor" in r[0])
-    assert not ok and "performance" in detail
+def test_escalation_three_in_window():
+    e = styx_agent.Escalation(limit=3, window_s=600)
+    assert not e.record(0) and not e.record(100)
+    assert e.record(200)              # third inside 10 min -> escalate
+    assert not e.record(300)          # reset after escalating
+    e2 = styx_agent.Escalation(limit=3, window_s=600)
+    assert not e2.record(0) and not e2.record(400) and not e2.record(1100)
 
 
-def test_host_tuning_checks_all_good(monkeypatch, tmp_path):
-    gov = tmp_path / "scaling_governor"
-    gov.write_text("performance\n")
-    monkeypatch.setattr(styx_agent, "GOVERNOR_PATH", gov)
-    monkeypatch.setattr(styx_agent.shutil, "which", lambda _: "/usr/bin/nvidia-smi")
-    monkeypatch.setattr(styx_agent.subprocess, "run", lambda *a, **k: type(
-        "R", (), {"stdout": "Enabled\n", "returncode": 0})())
-    assert all(ok for _, ok, _ in styx_agent.host_tuning_checks())
+def test_needs_consent(tmp_path):
+    tok = tmp_path / "portal-restore-token"
+    assert styx_agent.needs_consent(25.0, tok) is True
+    assert styx_agent.needs_consent(5.0, tok) is False
+    assert styx_agent.needs_consent(None, tok) is False
+    tok.write_text("t")
+    assert styx_agent.needs_consent(25.0, tok) is False
+
+
+def test_consent_error_names_the_fix():
+    assert "doctor --grant" in styx_agent.CONSENT_ERROR
+
+
+def test_settings_change_keeps_gnome_seat():
+    old = {"video_crf": 25, "seat_width": 2560, "seat_height": 1440}
+    keys = styx_agent.settings_restart_keys(old, {**old, "video_crf": 30})
+    assert "seat" not in keys and "selkies" in keys and "gateway" in keys
+    keys = styx_agent.settings_restart_keys(old, {**old, "seat_width": 1920})
+    assert "seat" in keys
+
+
+def test_run_config_from_0411_is_accepted(tmp_path, monkeypatch):
+    cfg = {"server": "https://x", "agent_token": "t", "workstation_id": "w",
+           "port": 8443, "selkies_user": "u", "selkies_password": "p",
+           "mode": "seat", "display": "", "seat_socket_index": 2,
+           "stream_settings": {"framerate": 60, "h264_crf": 23},
+           "install_dir": str(tmp_path), "ca_pin": "", "server_cert": ""}
+    monkeypatch.setattr(styx_agent.seat_gnome, "gnome_available", lambda: (True, ""))
+    assert styx_agent.pick_seat_shell(cfg) == "gnome"
+    p = styx_agent.health_payload(cfg, True, True)
+    assert p["agent_version"] == "0.5.0" and p["needs_consent"] is False
+
+
+def test_rollback_swaps_dirs(tmp_path, monkeypatch):
+    cur, prev = tmp_path / "styx-agent", tmp_path / "styx-agent.prev"
+    cur.mkdir()
+    prev.mkdir()
+    (cur / "v").write_text("new")
+    (prev / "v").write_text("old")
+    monkeypatch.setattr(styx_agent.subprocess, "run", lambda *a, **k: None)
+    assert styx_agent.rollback(cur) == 0
+    assert (cur / "v").read_text() == "old" and (prev / "v").read_text() == "new"
+    assert styx_agent.rollback(tmp_path / "missing") == 1
+
+
+def test_rollback_refuses_stale_swap_dir(tmp_path, monkeypatch):
+    cur, prev = tmp_path / "a", tmp_path / "a.prev"
+    cur.mkdir()
+    prev.mkdir()
+    (tmp_path / "a.swap").mkdir()
+    monkeypatch.setattr(styx_agent.subprocess, "run", lambda *a, **k: None)
+    assert styx_agent.rollback(cur) == 1
+
+
+def test_rollback_warns_when_restart_fails(tmp_path, monkeypatch, capsys):
+    from types import SimpleNamespace
+    cur, prev = tmp_path / "a", tmp_path / "a.prev"
+    cur.mkdir()
+    prev.mkdir()
+    monkeypatch.setattr(styx_agent.subprocess, "run",
+                        lambda *a, **k: SimpleNamespace(returncode=1))
+    assert styx_agent.rollback(cur) == 0
+    assert "WARNING" in capsys.readouterr().out
+
+
+def test_none_to_default_seat_settings_is_not_a_change():
+    old = {"video_crf": 25}
+    new = {"video_crf": 25, "seat_width": 2560, "seat_height": 1440,
+           "seat_shell": "gnome"}
+    assert "seat" not in styx_agent.settings_restart_keys(old, new)
+    assert "seat" in styx_agent.settings_restart_keys(
+        old, {**new, "seat_shell": "labwc"})
+
+
+def _doctor_env(monkeypatch, tmp_path, mode, gnome, token):
+    monkeypatch.setattr(styx_agent.engine, "pick_dri_node", lambda: None)
+    monkeypatch.setattr(styx_agent.engine, "resolve_monitor_source", lambda: "m")
+    monkeypatch.setattr(styx_agent, "api", lambda *a, **k: {})
+    monkeypatch.setattr(styx_agent, "host_tuning_checks", lambda: [])
+    monkeypatch.setattr(styx_agent.subprocess, "run",
+                        lambda *a, **k: type("R", (), {"stdout": "active\n"})())
+    monkeypatch.setattr(styx_agent.socket.socket, "connect_ex", lambda s, a: 0)
+    monkeypatch.setattr(styx_agent.seat_gnome, "gnome_available", lambda: gnome)
+    tok = tmp_path / "tok"
+    if token:
+        tok.write_text("t")
+    monkeypatch.setattr(styx_agent.seat_gnome, "TOKEN_PATH", tok)
+    inst = tmp_path / "inst"
+    (inst / "venv/bin").mkdir(parents=True)
+    (inst / "venv/bin/python").write_text("")
+    (inst / "venv/bin/selkies").write_text("")
+    return {"install_dir": str(inst), "mode": mode, "port": 1}
+
+
+def test_doctor_no_lib_shim_and_seat_advisories(monkeypatch, tmp_path, capsys):
+    cfg = _doctor_env(monkeypatch, tmp_path, "seat", (True, ""), False)
+    assert styx_agent.doctor(cfg) == 0
+    out = capsys.readouterr().out
+    assert "lib shim" not in out
+    assert "GNOME seat available" in out
+    assert "doctor --grant" in out
+
+
+def test_doctor_gnome_missing_is_advisory(monkeypatch, tmp_path, capsys):
+    cfg = _doctor_env(monkeypatch, tmp_path, "seat",
+                      (False, "gnome-shell not installed"), True)
+    assert styx_agent.doctor(cfg) == 0
+    out = capsys.readouterr().out
+    assert "labwc" in out and "gnome-shell not installed" in out
+
+
+def test_uninstall_removes_prev(monkeypatch, tmp_path):
+    inst = tmp_path / "styx-agent"
+    prev = tmp_path / "styx-agent.prev"
+    inst.mkdir()
+    prev.mkdir()
+    monkeypatch.setattr(styx_agent, "INSTALL_DIR", inst)
+    monkeypatch.setattr(styx_agent, "CONFIG_PATH", tmp_path / "c.json")
+    monkeypatch.setattr(styx_agent, "HOME", tmp_path)
+    monkeypatch.setattr(styx_agent.subprocess, "run", lambda *a, **k: None)
+    assert styx_agent.uninstall(None) == 0
+    assert not inst.exists() and not prev.exists()

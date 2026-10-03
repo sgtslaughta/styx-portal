@@ -11,6 +11,6 @@ else
   systemctl --user disable --now styx-agent.service 2>/dev/null || true
   rm -f "$HOME/.config/systemd/user/styx-agent.service"
   systemctl --user daemon-reload 2>/dev/null || true
-  rm -rf "$INSTALL_DIR" "$HOME/.config/styx-agent"
+  rm -rf "$INSTALL_DIR" "$INSTALL_DIR.prev" "$HOME/.config/styx-agent"
   echo "Styx agent removed (agent script was missing; cleaned up files directly)."
 fi
