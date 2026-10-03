@@ -129,11 +129,13 @@ def clear_request(path) -> None:
 
 
 def wait_for_request(path, timeout: float, poll: float = 0.25,
-                     sleep=time.sleep, clock=time.monotonic):
-    """Sleep up to `timeout`, returning early with a pending request's size.
-    An unparsable request file is cleared (else the gateway 503s forever)."""
+                     sleep=time.sleep, clock=time.monotonic, stop=None):
+    """Sleep up to `timeout`, returning early with a pending request's size, or
+    None as soon as stop() is true. An unparsable request file is cleared."""
     end = clock() + timeout
     while True:
+        if stop and stop():
+            return None
         req = read_size(path)
         if req:
             return req

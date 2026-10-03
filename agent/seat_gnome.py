@@ -132,9 +132,16 @@ class GnomeSeat:
         self.ready_file = Path(runtime_dir) / "styx-seat-portal.ready"
         self.size: tuple[int, int] | None = None
         self._helper = None
+        self._heal = False
 
     def start(self, width: int, height: int) -> None:
         from engine import SEAT_SINK
+        if (self._proc is not None and self._proc.poll() is None
+                and self._helper is not None and self._helper.poll() is not None):
+            # Only the helper died (e.g. GNOME's screen-share Stop closed the
+            # virtual monitor): keep GNOME and its windows; ready() re-arms it.
+            self._heal = True
+            return
         if self.alive():
             self.stop()
         if self._started:
@@ -169,6 +176,9 @@ class GnomeSeat:
         return r.returncode == 0
 
     def ready(self, timeout: float = 20) -> bool:
+        if self._heal:
+            self._heal = False
+            return self._start_helper(*self.size)
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if not self.alive():
