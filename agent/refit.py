@@ -1,7 +1,7 @@
-"""Size-at-connect refit for the headless GNOME seat (spec: phase 0.5).
+"""Refit the headless GNOME seat to the browser size (spec: phase 0.5).
 
-The gateway sees the browser's first `r,WxH[,display]` message. If it differs
-from the live seat size (<install>/seat-size) it writes <install>/refit-request
+The gateway watches the browser's `r,WxH[,display]` messages. Once the size
+has held for SETTLE_S and differs from the live seat size (<install>/seat-size) it writes <install>/refit-request
 and closes the socket with CLOSE_CODE; the agent rebuilds the virtual monitor at
 that size, then clears the request. The injected shim reloads the page once the
 gateway serves it again (503 while a request is pending). Pure helpers only."""
@@ -13,7 +13,8 @@ from pathlib import Path
 CLOSE_CODE = 4002
 MIN_W, MIN_H, MAX_W, MAX_H = 640, 480, 3840, 2160
 TOLERANCE_PX = 16
-MIN_INTERVAL_S = 10.0
+MIN_INTERVAL_S = 3.0
+SETTLE_S = 1.0          # browser size must hold this long before a refit
 _RESIZE = re.compile(r"r,(\d{1,5})x(\d{1,5})(?:,.*)?")
 _SIZE = re.compile(r"(\d{1,5})x(\d{1,5})")
 
@@ -42,7 +43,7 @@ def parse_resize(msg) -> tuple[int, int] | None:
 
 
 def decide(req, current, last_refit_ts: float, now: float):
-    """Target size for a refit, or None (close enough, or refitted < 10 s ago)."""
+    """Target size for a refit, or None (close enough, or refitted < 3 s ago)."""
     w, h = clamp(*req)
     if current and abs(w - current[0]) <= TOLERANCE_PX and abs(h - current[1]) <= TOLERANCE_PX:
         return None

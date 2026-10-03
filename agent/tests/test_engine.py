@@ -113,7 +113,7 @@ def test_quality_env_ignores_bad_values(tmp_path, monkeypatch):
     _stub(monkeypatch)
     _, env = engine.build_selkies_cmd(cfg, 1)
     assert "SELKIES_VIDEO_CRF" not in env
-    assert env["SELKIES_VIDEO_PAINTOVER_CRF"] == "16"          # bad value -> default
+    assert env["SELKIES_VIDEO_PAINTOVER_CRF"] == "12"          # bad value -> default
     assert env["SELKIES_VIDEO_STREAMING_MODE"] == "false"   # 2.0 default is true; keep ours
 
 
@@ -246,11 +246,11 @@ def test_bitrate_locked_server_side(tmp_path, monkeypatch):
     """Stale 1.x client storage sends video_bitrate=8 (meant Mbps); 2.0 reads
     kbps and clamps to 100 kbps -> blurry stream. Lock it server-side."""
     cmd = _seat_cmd(tmp_path, monkeypatch, {})
-    assert "--video-bitrate=16000-16000" in cmd
+    assert "--video-bitrate=25000-25000" in cmd
     cmd = _seat_cmd(tmp_path, monkeypatch, {"video_bitrate_kbps": 20000})
     assert "--video-bitrate=20000-20000" in cmd
     cmd = _seat_cmd(tmp_path, monkeypatch, {"video_bitrate_kbps": "junk"})
-    assert "--video-bitrate=16000-16000" in cmd
+    assert "--video-bitrate=25000-25000" in cmd
 
 
 def test_gnome_seat_always_disables_client_cursor(tmp_path, monkeypatch):
@@ -265,9 +265,9 @@ def test_quality_defaults(tmp_path, monkeypatch):
     cfg = _cfg(tmp_path, stream_settings={})
     _stub(monkeypatch)
     cmd, env = engine.build_selkies_cmd(cfg, 1)
-    assert "--video-max-qp=28" in cmd and "--encoder=h264enc" in cmd
+    assert "--video-max-qp=22" in cmd and "--encoder=h264enc" in cmd
     assert env["SELKIES_USE_PAINT_OVER_QUALITY"] == "true"
-    assert env["SELKIES_VIDEO_PAINTOVER_CRF"] == "16"
+    assert env["SELKIES_VIDEO_PAINTOVER_CRF"] == "12"
     _, env = engine.build_selkies_cmd(
         {**cfg, "stream_settings": {"use_paint_over_quality": False}}, 1)
     assert env["SELKIES_USE_PAINT_OVER_QUALITY"] == "false"

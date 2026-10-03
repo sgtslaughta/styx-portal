@@ -247,14 +247,14 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
     env["SELKIES_VIDEO_STREAMING_MODE"] = "true" if streaming is True else "false"
     # Locked server-side: stale 1.x client storage sends video_bitrate=8 (Mbps
     # there), which 2.0 reads as kbps and clamps to 100 kbps -> blurry stream.
-    kbps = _int_in(s.get("video_bitrate_kbps"), 500, 200000) or 16000
+    kbps = _int_in(s.get("video_bitrate_kbps"), 500, 200000) or 25000
     cmd.append(f"--video-bitrate={kbps}-{kbps}")
     # Caps compression under motion so screen text stays legible.
-    cmd.append("--video-max-qp=28")
+    cmd.append("--video-max-qp=22")
     env["SELKIES_USE_PAINT_OVER_QUALITY"] = (
         "false" if s.get("use_paint_over_quality") is False else "true")
     pcrf = _int_in(s.get("video_paintover_crf", s.get("h264_paintover_crf")), 5, 50)
-    env["SELKIES_VIDEO_PAINTOVER_CRF"] = str(16 if pcrf is None else pcrf)
+    env["SELKIES_VIDEO_PAINTOVER_CRF"] = str(12 if pcrf is None else pcrf)
 
     if monitor:
         env["SELKIES_AUDIO_ENABLED"] = "true"
