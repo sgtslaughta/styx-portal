@@ -39,6 +39,9 @@ VIS_GRACE_MS = 12000
 # link ever trips it mid-session.
 STALL_REARM_S = 2.0
 
+# Proxied downloads may run arbitrarily long: no total cap, only connect/idle.
+PROXY_TIMEOUT = aiohttp.ClientTimeout(total=None, sock_connect=10)
+
 
 def inject_title(html: str, hostname: str) -> str:
     """Inject a <head> shim that (1) pins the tab title to the workstation
@@ -319,12 +322,16 @@ def create_app(user: str, password: str,
 
     async def index(_request):
         try:
-            async with aiohttp.ClientSession() as s, s.get(UPSTREAM + "/") as r:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as s, \
+                    s.get(UPSTREAM + "/", allow_redirects=False) as r:
                 if r.status != 200:
-                    return web.Response(status=r.status, body=await r.read())
+                    hdr = {"Location": r.headers["Location"]} if "Location" in r.headers else {}
+                    return web.Response(status=r.status, body=await r.read(), headers=hdr)
                 html = await r.text()
         except aiohttp.ClientError:
             return web.Response(status=502, text="stream backend unavailable")
+        except asyncio.TimeoutError:
+            return web.Response(status=504, text="stream backend timed out")
         html = inject_title(html, socket.gethostname())
         html = inject_idle_watchdog(html, idle_timeout_s, idle_lead_s, idle_enabled)
         html = inject_cursor_hide(html, cursor_workaround)
@@ -348,8 +355,10 @@ def create_app(user: str, password: str,
                        if k.lower() not in HOP)
         body = await request.read() if request.body_exists else None
         url = yarl.URL(UPSTREAM + raw_path_qs, encoded=True)
+        resp = None
         try:
-            async with aiohttp.ClientSession(auto_decompress=False) as s, s.request(
+            async with aiohttp.ClientSession(
+                    auto_decompress=False, timeout=PROXY_TIMEOUT) as s, s.request(
                     request.method, url, headers=headers, data=body,
                     allow_redirects=False) as r:
                 out = CIMultiDict()
@@ -363,7 +372,15 @@ def create_app(user: str, password: str,
                     await resp.write(chunk)
                 await resp.write_eof()
                 return resp
-        except aiohttp.ClientError:
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            if resp is not None and resp.prepared:
+                # headers already sent: drop the connection, never append a 2nd response
+                resp.force_close()
+                if request.transport:
+                    request.transport.close()
+                raise
+            if isinstance(e, asyncio.TimeoutError):
+                return web.Response(status=504, text="stream backend timed out")
             return web.Response(status=502, text="stream backend unavailable")
 
     async def http_proxy(request):

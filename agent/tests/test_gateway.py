@@ -579,3 +579,82 @@ async def test_index_non_200_passes_through_uninjected():
     finally:
         await gw.close()
         await up.close()
+
+
+def test_proxy_timeout_has_no_total():
+    assert gateway.PROXY_TIMEOUT.total is None
+
+
+@pytest.mark.asyncio
+async def test_midstream_upstream_drop_aborts_without_second_response():
+    import asyncio
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+    upapp = web.Application()
+
+    async def broken(r):
+        resp = web.StreamResponse(headers={"Content-Length": "100000"})
+        await resp.prepare(r)
+        await resp.write(b"x" * 1000)
+        await asyncio.sleep(0.05)
+        r.transport.close()
+        return resp
+    upapp.router.add_get("/broken", broken)
+    up = TestClient(TestServer(upapp))
+    await up.start_server()
+    gw = TestClient(TestServer(gateway.create_app("styx", "pw", upstream_port=up.server.port)))
+    await gw.start_server()
+    try:
+        r = await gw.get("/broken", headers={"Authorization": _basic("styx", "pw")})
+        got = b""
+        try:
+            got = await r.read()
+        except aiohttp.ClientError:
+            pass
+        assert b"unavailable" not in got and len(got) < 100000
+    finally:
+        await gw.close()
+        await up.close()
+
+
+@pytest.mark.asyncio
+async def test_upstream_timeout_before_prepare_is_504(monkeypatch):
+    import asyncio
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+    monkeypatch.setattr(gateway, "PROXY_TIMEOUT", aiohttp.ClientTimeout(total=None, sock_read=0.2))
+    upapp = web.Application()
+
+    async def slow(r):
+        await asyncio.sleep(1)
+        return web.Response(text="late")
+    upapp.router.add_get("/slow", slow)
+    up = TestClient(TestServer(upapp))
+    await up.start_server()
+    gw = TestClient(TestServer(gateway.create_app("styx", "pw", upstream_port=up.server.port)))
+    await gw.start_server()
+    try:
+        r = await gw.get("/slow", headers={"Authorization": _basic("styx", "pw")})
+        assert r.status == 504
+    finally:
+        await gw.close()
+        await up.close()
+
+
+@pytest.mark.asyncio
+async def test_index_3xx_forwards_location():
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+    upapp = web.Application()
+    upapp.router.add_get("/", lambda r: web.Response(status=302, headers={"Location": "/x"}))
+    up = TestClient(TestServer(upapp))
+    await up.start_server()
+    gw = TestClient(TestServer(gateway.create_app("styx", "pw", upstream_port=up.server.port)))
+    await gw.start_server()
+    try:
+        r = await gw.get("/", headers={"Authorization": _basic("styx", "pw")},
+                         allow_redirects=False)
+        assert r.status == 302 and r.headers["Location"] == "/x"
+    finally:
+        await gw.close()
+        await up.close()
