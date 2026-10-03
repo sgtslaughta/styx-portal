@@ -28,11 +28,21 @@ SPINNER = ("<div id='styx-resizing' style='position:fixed;inset:0;z-index:214748
            "border-top-color:#7aa2f7;border-radius:50%;animation:styx-spin .8s linear infinite'>"
            "</div>Resizing…<style>@keyframes styx-spin{to{transform:rotate(360deg)}}</style></div>")
 
+# The overlay survives the reload (sessionStorage flag) and lifts on the first
+# video frame: audio packets are tiny, a frame is not. 15 s safety timeout.
 RELOAD_JS = (
-    '<script id="styx-refit">(function(){var W=window.WebSocket;'
+    '<script id="styx-refit">(function(){var W=window.WebSocket,K="styx-resizing";'
+    "function show(){if(!document.getElementById(K))"
+    'document.body.insertAdjacentHTML("beforeend","' + SPINNER + '")}'
+    "function hide(){try{sessionStorage.removeItem(K)}catch(e){}"
+    "var o=document.getElementById(K);if(o)o.remove()}"
+    "var on=false;try{on=sessionStorage.getItem(K)==='1'}catch(e){}"
+    "if(on){document.addEventListener('DOMContentLoaded',show);setTimeout(hide,15000)}"
     "function S(u,p){var s=p===undefined?new W(u):new W(u,p);"
+    "s.addEventListener('message',function(e){var d=e.data;"
+    "if(on&&typeof d!=='string'&&(d.byteLength||d.size||0)>2000){on=false;hide()}});"
     "s.addEventListener('close',function(e){if(e.code!==4002)return;"
-    'document.body.insertAdjacentHTML("beforeend","' + SPINNER + '");'
+    "try{sessionStorage.setItem(K,'1')}catch(x){}show();"
     "setTimeout(function(){location.reload()},300)});return s}"
     "S.prototype=W.prototype;['CONNECTING','OPEN','CLOSING','CLOSED'].forEach("
     "function(k){S[k]=W[k]});window.WebSocket=S})();</script>")
