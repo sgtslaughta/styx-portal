@@ -69,7 +69,7 @@ def test_wait_for_request_clears_garbage(tmp_path):
 def test_inject_reload():
     html = "<html><head></head><body></body></html>"
     out = refit.inject_reload(html, True)
-    assert 'id="styx-refit"' in out and "4002" in out and "styx-resizing" in out
+    assert 'id="styx-refit"' in out and "4002" in out and "styx-resizing" in out and refit.MARKER in out
     assert "styx-resizing" in refit.HOLD_HTML and "Resizing" in refit.HOLD_HTML and out.index("styx-refit") < out.index("</head>")
     assert refit.inject_reload(html, False) == html
     assert refit.inject_reload("<p>no head</p>", True) == "<p>no head</p>"

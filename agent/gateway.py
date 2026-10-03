@@ -328,7 +328,11 @@ def create_app(user: str, password: str,
                         return
                     last_refit["ts"] = time.time()
                     refit.request(refit_file, *target)
-                    asyncio.ensure_future(ws_server.close(code=refit.CLOSE_CODE, message=b"refit"))
+                    asyncio.ensure_future(announce_and_close())
+
+                async def announce_and_close():
+                    await ws_server.send_str(refit.MARKER)   # shim shows the overlay
+                    await ws_server.close(code=refit.CLOSE_CODE, message=b"refit")
 
                 def on_client(data):
                     """Input tracking + refit once the browser size settles. r,
