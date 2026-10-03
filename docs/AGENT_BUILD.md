@@ -21,6 +21,8 @@ one of two modes, auto-detected at enrollment:
 
 ## 2. Seat desktop architecture
 
+> **Agent 0.5.0:** the default seat is a real headless GNOME Shell (`seat_shell: gnome`, needs GNOME Shell >= 46) on a private D-Bus session, captured via xdg-desktop-portal with a one-time consent grant (`doctor --grant`). The labwc/pixelflux-compositor design below is the `seat_shell: labwc` fallback, used automatically when GNOME is unavailable. See [GNOME seat](WORKSTATIONS.md#gnome-seat).
+
 Seat mode builds a desktop from scratch each time the streaming shell starts:
 
 ```
@@ -85,9 +87,10 @@ docker cp data/artifacts/nwg-shell-x86_64.tar.gz remote-access-backend-1:/app/da
 
 ## 4. Decision log (the "why")
 
-**labwc as the seat WM.** Lightweight, openbox-style, runs cleanly *nested* on
-pixelflux's socket. Full desktop shells (GNOME Shell, KWin) expect to *be* the
-compositor and are heavy; they aren't a good fit as a nested, captured session.
+**labwc as the fallback seat WM.** Lightweight, openbox-style, runs cleanly *nested* on
+pixelflux's socket. Full desktop shells expect to *be* the compositor, so
+GNOME Shell instead runs as its own headless session and is captured through
+xdg-desktop-portal (the 0.5.0 default); labwc remains the fallback.
 
 **nwg-drawer for the app grid, built on the server.** It gives the GNOME-style
 full-screen app grid, but it isn't packaged on every distro (e.g. **absent from

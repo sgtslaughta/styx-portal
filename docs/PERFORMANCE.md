@@ -20,6 +20,7 @@ The workstation agent (`styx_agent.py doctor`) checks and advises on the followi
 
 ## Operational Tips
 
+- **Seat resolution:** GNOME seats stream at a fixed `seat_width` x `seat_height` (default 2560x1440); lower it per workstation on slow links or weak encoders.
 - **Tab visibility:** The stream pauses when its tab is backgrounded and resumes on return (by design — prevents long-session memory growth). Refresh if a stream ever sticks.
 - **Audio latency:** Audio adds 100–250 ms pipeline latency after settling; disable audio for competitive play.
 - **GPU acceleration:** NVENC engages automatically when a render node exists; `doctor` shows `GPU render node`. CPU x264 fallback costs latency and quality.

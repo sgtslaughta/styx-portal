@@ -8,7 +8,7 @@ Styx Portal can stream physical Linux workstations to browsers alongside contain
 
 **Desktop modes (auto-detected at enrollment):**
 - **Mirror mode:** Your existing X11 desktop is live-streamed. The remote user and you share control of the same session — input from the browser moves your local cursor. Requires a running X11 graphical session (`:0`, `:1`, etc.).
-- **Second-seat mode:** A private GPU-accelerated desktop runs on the machine (via pixelflux's Smithay compositor + a nested labwc window manager) alongside your login session. The physical screen is untouched. Your desktop, apps, and files are available to the remote user; no interference with local work. Used when the host is Wayland, headless, or when mirror mode is explicitly disabled. The seat presents a GNOME-like shell — top panel with system tray, full-screen app grid, bottom dock, dark theme, and a hostname/IP/OS wallpaper. How it's built and **why each choice was made** is documented in [Agent & Workstation Desktop Build](AGENT_BUILD.md).
+- **Second-seat mode:** A private GPU-accelerated desktop runs on the machine (by default a real headless GNOME Shell captured through xdg-desktop-portal; see [GNOME seat](#gnome-seat)) alongside your login session. The physical screen is untouched. Your desktop, apps, and files are available to the remote user; no interference with local work. Used when the host is Wayland, headless, or when mirror mode is explicitly disabled. With `seat_shell: labwc` (the fallback) the seat is a GNOME-like labwc/waybar shell instead. How it's built and **why each choice was made** is documented in [Agent & Workstation Desktop Build](AGENT_BUILD.md).
 
 **Architecture:**
 - Enrollment script (`enroll.sh`) performs 8-step preflight (server reachability verified **before** any sudo package install), downloads agent daemon and prebuilt wheels from the portal, and registers the workstation with a one-time hardware/OS report (distro, kernel, CPU model/cores, RAM, disk, GPU model) shown in the admin Workstations panel.
@@ -30,7 +30,7 @@ The enrollment script will:
 - Check for Python 3.10+, glibc ≥ 2.34, a graphical session or headless capability, and audio (PipeWire or PulseAudio).
 - Auto-detect the capture mode: mirror (if X11 is found) or second-seat (if Wayland or headless). Can be overridden with `--mode mirror|seat`.
 - Verify TLS fingerprint if `--ca-pin` is set.
-- Install mode-specific dependencies (labwc + wl-clipboard for second-seat; VAAPI drivers for both).
+- Install mode-specific dependencies (wl-clipboard and seat-shell packages for second-seat; VAAPI drivers for both).
 - Download agent code, prebuilt wheels, and the Selkies app tarball from the server (all cached; ~150 MB total).
 - Register the machine with the portal and save encrypted config.
 - Start a systemd `--user` service that streams immediately.
@@ -65,7 +65,7 @@ scripts/build_agent_artifacts.sh ./data/artifacts
 ```
 
 This generates:
-- `wheelhouse-x86_64.tar.gz` — Python wheels for pixelflux, pcmflux, selkies 2.x, and dependencies (covers Python 3.10–3.13).
+- `wheelhouse-x86_64.tar.gz` — pinned upstream wheels (selkies 2.0.0, pixelflux 2.1.0, pcmflux 2.1.0) and dependencies (covers Python 3.10–3.13). Wheels are built on the server; nothing is compiled on enrolled boxes.
 
 Rerun this after portal upgrades to sync agent versions.
 
@@ -77,7 +77,7 @@ All settings are environment variables or `.env` file entries on the **server**.
 |---|---|---|
 | `SERVER_LAN_URL` | `""` (auto-detects) | Local LAN address for enrollment commands. Example: `https://192.168.1.10` or `https://portal.local`. Workstations must reach this address. When unset, the portal auto-detects (usually correct; set explicitly in Docker bridge networks). |
 | `SERVER_CA_PIN` | `""` (auto-pin) | Override for the TLS pin in enrollment commands. Format: `sha256:<hex>`. Leave empty: the portal auto-generates a self-signed LAN cert and pins it automatically. |
-| `ARTIFACT_CACHE_DIR` | `/app/data/artifacts` | Server-side directory for cached agent wheelhouse, Selkies app tarball, and lib shims. Must be writable. Enrollment artifacts are served from here. |
+| `ARTIFACT_CACHE_DIR` | `/app/data/artifacts` | Server-side directory for cached agent wheelhouse and seat artifacts. Must be writable. Enrollment artifacts are served from here. |
 | `AGENT_DIR` | `/app/agent` | Server path to the `agent/` directory (scripts and daemon). Mounted from the repo in Docker Compose. |
 | `ENROLL_TOKEN_TTL_HOURS` | `24` | Lifetime of enrollment tokens (hours). Tokens are single-use and expire after this duration. |
 | `WORKSTATION_OFFLINE_AFTER_S` | `90` | Heartbeat timeout (seconds). If a workstation doesn't heartbeat for 90+ seconds, it is marked offline. |
@@ -128,7 +128,7 @@ $AGENT/venv/bin/python $AGENT/styx_agent.py doctor
 # View logs
 tail -f $AGENT/logs/selkies.log    # streaming engine
 tail -f $AGENT/logs/gateway.log    # LAN gateway (dashboard + websocket)
-tail -f $AGENT/logs/seat.log       # seat window manager (labwc)
+tail -f $AGENT/logs/seat.log       # seat compositor / shell (GNOME or labwc)
 ```
 
 Use the venv interpreter — the system `python3` lacks the agent's audio/display helpers, so `doctor` under-reports.
@@ -155,10 +155,10 @@ Use the venv interpreter — the system `python3` lacks the agent's audio/displa
 | Feature | How it works |
 |---|---|
 | **Audio out** | Automatic. In seat mode, audio is isolated: apps play into a dedicated `styx-seat` null sink (via `PULSE_SINK`), so nothing comes out of the workstation's physical speakers. |
-| **Microphone** | Toggle in the sidebar; the browser will prompt for mic permission. The agent pre-creates the PipeWire plumbing (an `input` sink + `SelkiesVirtualMic` source) and seat apps record from it via `PULSE_SOURCE`. Relaunch an app inside the seat if it was already recording. |
+| **Microphone** | Locked off in agent 0.5.0 (returns in a later phase). |
 | **Clipboard** | Automatic two-way sync on Chromium-based browsers — allow the site's **Clipboard** permission (lock icon → Site settings → Clipboard → Allow). Firefox blocks programmatic clipboard *read*, so local→remote requires the sidebar's clipboard panel there. |
 | **File transfer** | Sidebar **Files** section. Uploads land in `~/Downloads` on the workstation; the download popup lists the same directory. Override with `FILE_MANAGER_PATH` (selkies/upload side) and `STYX_FILES_DIR` (gateway/download side) on the systemd unit — keep them equal. |
-| **Gamepads** | Automatic — games inside the session see virtual Xbox 360 pads. |
+| **Gamepads** | Locked off in agent 0.5.0 (later phase). Webcam and printing are also off. |
 | **Second screen** | **Disabled.** Upstream's Wayland path captures every display at offset 0,0 (a broken mirror), and the X11 path would xrandr-resize the *physical* monitor in mirror mode. Revisit when pixelflux gains multi-output support. |
 | **Sharing links** | Generated by the sidebar, but viewers must be logged into the portal — Traefik's forward-auth gates all `/w/` traffic. |
 
@@ -263,6 +263,40 @@ bash ~/.local/share/styx-agent/uninstall.sh
 
 ---
 
+## GNOME seat
+
+Agent 0.5.0 runs upstream selkies 2.0.0 + pixelflux 2.1.0 + pcmflux 2.1.0. In seat mode the default `seat_shell: gnome` starts a real headless GNOME Shell on a private D-Bus session and captures it through xdg-desktop-portal.
+
+- **Requirement:** GNOME Shell >= 46 on the box. If GNOME is unavailable the agent automatically falls back to `seat_shell: labwc` (the previous labwc/waybar seat). Changing `seat_shell` restarts the agent.
+- **Resolution:** fixed per workstation from `seat_width` / `seat_height` (system defaults 2560x1440 in **Settings -> Workstation features**). The browser scales the stream. Live resize is not supported (headless GNOME exposes a single mode).
+- **Cursor:** the GNOME capture path bakes the cursor into the video, so the gateway hides the browser cursor (`cursor_workaround`, default on) to avoid a double or stale cursor. The cursor lags by one encode round-trip.
+- **Shared profile:** the seat runs as the same Linux user as the physical login, so dconf settings, extensions, wallpaper and keyring are shared with the local session.
+- **Watchdog:** a stream stall restarts only selkies (apps survive); 3 stalls in 10 minutes restart the GNOME session and report the workstation degraded.
+
+### One-time screen-share consent
+
+Each workstation needs a one-time portal screen-share grant. Until then the stream shows: "GNOME seat needs one-time screen-share consent: run 'styx-agent doctor --grant' on the box".
+
+```bash
+~/.local/share/styx-agent/venv/bin/python ~/.local/share/styx-agent/styx_agent.py doctor --grant
+```
+
+This needs a logged-in desktop on the box's physical display: the dialog appears there, someone clicks **Allow**, and the restore token is saved (`~/.local/state/pixelflux/portal-restore-token`). Later sessions start without a prompt. The command refuses while a viewer is connected.
+
+### Upgrade and rollback
+
+```bash
+# Upgrade in place (non-interactive, no sudo; keeps config and cert pinning)
+curl -fsSL https://<portal>/api/enroll/script | bash -s -- --upgrade --server https://<portal>
+
+# Roll back to the previous install
+~/.local/share/styx-agent/venv/bin/python ~/.local/share/styx-agent/styx_agent.py rollback
+```
+
+The old install moves to `~/.local/share/styx-agent.prev`; a failed upgrade restores it automatically.
+
+---
+
 ## Advanced
 
 ### Capture Mode Overrides
@@ -331,7 +365,7 @@ Last heartbeat timestamp, status (ok/failed), and error message.
 ```
 ~/.local/share/styx-agent/logs/selkies.log   # Video/audio capture and stream
 ~/.local/share/styx-agent/logs/gateway.log   # HTTP gateway (auth, credential injection)
-~/.local/share/styx-agent/logs/seat.log      # Second-seat mode logs (compositor, labwc)
+~/.local/share/styx-agent/logs/seat.log      # Second-seat mode logs (GNOME session or labwc)
 ```
 
 **systemd user service logs:**
@@ -358,7 +392,7 @@ Agent daemon startup, crashes, restarts.
 
 - **No SSH tunneling:** Workstations must have direct LAN connectivity to `SERVER_LAN_URL`. Remote access requires a VPN or SSH tunnel set up outside the portal.
 - **Single stream per machine:** The agent streams one desktop per machine. For multi-monitor setups, use a virtual compositor or extended desktop.
-- **Wayland mirror not supported:** The agent cannot mirror an existing Wayland desktop (upstream Selkies limitation; see [selkies#46](https://github.com/selkies-project/selkies/issues/46)). Wayland machines get a private second-seat desktop instead.
+- **Wayland mirror not supported:** The agent cannot mirror an existing Wayland desktop (upstream Selkies limitation; see [selkies#46](https://github.com/selkies-project/selkies/issues/46)). Wayland machines get a private second-seat desktop (GNOME by default) instead.
 - **Display-only streaming:** Selkies streams the visual desktop; no file transfer or additional terminal. Use file sharing (NFS, Samba, sshfs) or SSH for files.
 - **Performance:** Quality depends on network bandwidth, encoder choice, and GPU availability. Start with default settings and reduce bitrate/framerate on slow links.
 
