@@ -153,7 +153,7 @@ is absent, it falls back to a flat colour.
 
 ## 5. Seat dependencies
 
-**GNOME seat (default):** not installed by `enroll.sh`; must already be on the box: `gnome-shell` >= 46, `xdg-desktop-portal` + `xdg-desktop-portal-gnome`, `dbus-run-session` / `dbus-update-activation-environment` (dbus), `gdbus` (glib), and `xset` for the consent grant on the physical X display. Without them the agent uses the labwc fallback.
+**GNOME seat (default):** not installed by `enroll.sh`; must already be on the box: `gnome-shell` >= 46, `xdg-desktop-portal` + `xdg-desktop-portal-gnome`, `dbus-run-session` / `dbus-update-activation-environment` (dbus), `gdbus` (glib), and `xset` for the consent grant on the physical X display. The agent falls back to the labwc seat only if `gnome-shell` is missing or older than 46. The other prerequisites (`xdg-desktop-portal` + `xdg-desktop-portal-gnome`, started on demand by D-Bus and used for screen capture and input; `dbus-run-session`, `dbus-update-activation-environment`, `gdbus`, and `xset` for `doctor --grant`) are part of a standard Ubuntu desktop install; if they are missing the GNOME seat fails to stream and the portal shows the error instead of falling back.
 
 **labwc fallback seat:** installed by `enroll.sh` (`SEAT_PKG`, per package manager), all from official
 repos:
