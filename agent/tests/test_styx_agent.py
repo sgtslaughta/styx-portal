@@ -76,26 +76,6 @@ def test_health_payload_reports_mode_and_engine(tmp_path):
     assert h["active_connections"] == 0
 
 
-def test_active_connections_from_gateway_state(tmp_path):
-    _, cfg = _cfg(tmp_path)
-    state = styx_agent.gw_state_path(cfg)
-    state.parent.mkdir(parents=True, exist_ok=True)
-    # missing file -> 0
-    assert styx_agent.active_connections(cfg, gateway_alive=True) == 0
-    state.write_text(json.dumps({"active_connections": 2, "ts": 1}))
-    assert styx_agent.active_connections(cfg, gateway_alive=True) == 2
-    # a dead gateway has no viewers, whatever the stale file says
-    assert styx_agent.active_connections(cfg, gateway_alive=False) == 0
-    # garbage -> 0
-    state.write_text("not json")
-    assert styx_agent.active_connections(cfg, gateway_alive=True) == 0
-    state.write_text(json.dumps({"active_connections": -3}))
-    assert styx_agent.active_connections(cfg, gateway_alive=True) == 0
-    # gateway cmd exposes the state path to the child
-    _, env = styx_agent.build_gateway_cmd(cfg, 18444)
-    assert env["STYX_GW_STATE"] == str(state)
-
-
 def test_settings_change_restart_includes_gateway():
     """Idle-timeout config rides in stream_settings but reaches the gateway only
     through its launch env — so a stream_settings change must relaunch the
@@ -133,39 +113,6 @@ def test_drop_clients_noop_when_gateway_dead():
 
 # === Stream-start watchdog (frameless viewer -> restart engine) ===
 
-def test_stream_starving_seconds_reports_wait(tmp_path):
-    """A viewer connected but no frame has flowed: report seconds since connect."""
-    import time
-    _, cfg = _cfg(tmp_path)
-    state = styx_agent.gw_state_path(cfg)
-    state.parent.mkdir(parents=True, exist_ok=True)
-    state.write_text(json.dumps({
-        "active_connections": 1, "stream_starving": True,
-        "starving_since": time.time() - 20, "ts": time.time()}))
-    s = styx_agent.stream_starving_seconds(cfg, gateway_alive=True)
-    assert s is not None and 18 <= s <= 25, s
-
-
-def test_stream_starving_none_when_not_starving_or_gateway_dead(tmp_path):
-    """None once a frame has flowed (flag cleared) or the gateway is down."""
-    import time
-    _, cfg = _cfg(tmp_path)
-    state = styx_agent.gw_state_path(cfg)
-    state.parent.mkdir(parents=True, exist_ok=True)
-    # frame arrived -> gateway cleared the flag
-    state.write_text(json.dumps({
-        "active_connections": 1, "stream_starving": False,
-        "starving_since": time.time() - 99, "ts": time.time()}))
-    assert styx_agent.stream_starving_seconds(cfg, gateway_alive=True) is None
-    # starving but gateway reported dead -> no viewers to rescue
-    state.write_text(json.dumps({
-        "stream_starving": True, "starving_since": time.time() - 99}))
-    assert styx_agent.stream_starving_seconds(cfg, gateway_alive=False) is None
-    # unreadable -> None
-    state.write_text("not json")
-    assert styx_agent.stream_starving_seconds(cfg, gateway_alive=True) is None
-
-
 def test_restart_engine_tears_down_selkies_shell_clipboard():
     """Frameless-recovery restart rebuilds the whole seat (new Wayland socket),
     not just selkies — else labwc/clipboard keep the dead compositor's socket."""
@@ -187,42 +134,6 @@ def test_restart_engine_tears_down_selkies_shell_clipboard():
     # gateway is the viewer's link home — must survive so the browser reconnects
     gw.terminate.assert_not_called()
     assert procs["gateway"] is gw
-
-
-def test_read_encoder_progress_returns_last_fps_line(tmp_path):
-    log = tmp_path / "selkies.log"
-    log.write_text(
-        "INFO:main:starting\n"
-        "Res: 2544x1258 Mode: H264 (NVENC) Stripes: 1 EncFPS: 59.96 Mem: 308MB\n"
-        "INFO:data_websocket:client connected\n"
-        "Res: 2544x1258 Mode: H264 (NVENC) Stripes: 1 EncFPS: 60.01 Mem: 309MB\n"
-    )
-    line = styx_agent.read_encoder_progress(log)
-    assert line is not None and "EncFPS: 60.01" in line
-
-
-def test_read_encoder_progress_ignores_settings_dump_and_missing(tmp_path):
-    log = tmp_path / "selkies.log"
-    # the giant settings dict also contains the substring 'EncFPS' in help text
-    log.write_text("INFO:main:Starting with {'_setting_definitions': [{'EncFPS': 1}]}\n")
-    assert styx_agent.read_encoder_progress(log) is None
-    assert styx_agent.read_encoder_progress(tmp_path / "nope.log") is None
-
-
-def test_stream_frozen_only_when_viewer_present_and_stalled():
-    t = styx_agent.FREEZE_TIMEOUT_S
-    # viewer connected, engine alive, no encoder progress past threshold -> frozen
-    assert styx_agent.stream_frozen(1, True, t + 1, t) is True
-    # progress is fresh -> healthy
-    assert styx_agent.stream_frozen(1, True, 2, t) is False
-    # no viewer -> idle, never restart even if stale
-    assert styx_agent.stream_frozen(0, True, t + 100, t) is False
-    # engine already dead -> the exit-based restart handles it, not the watchdog
-    assert styx_agent.stream_frozen(1, False, t + 100, t) is False
-    # NVENC FullFrame emits no EncFPS marker -> never armed -> never fires,
-    # even though viewer+alive+stalled all look "frozen"
-    assert styx_agent.stream_frozen(1, True, t + 1, t, marker_seen=False) is False
-    assert styx_agent.stream_frozen(1, True, t + 1, t, marker_seen=True) is True
 
 
 def test_host_tuning_checks_governor(monkeypatch, tmp_path):
@@ -252,3 +163,10 @@ def test_gateway_cmd_has_no_web_dir_and_passes_cursor_flag(tmp_path):
     assert cmd[-2:] == ["8443", "1234"]
     assert not any(a.endswith("/web") for a in cmd)
     assert env["STYX_GW_CURSOR_WORKAROUND"] == "1"
+
+
+def test_gateway_cmd_exposes_state_path(tmp_path):
+    _, cfg = _cfg(tmp_path)
+    # gateway cmd exposes the state path to the child
+    _, env = styx_agent.build_gateway_cmd(cfg, 18444)
+    assert env["STYX_GW_STATE"] == str(styx_agent.gw_state_path(cfg))

@@ -32,6 +32,9 @@ def load_config(path: Path = CONFIG_PATH) -> dict:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import engine  # noqa: E402  (installed next to this file by enroll.sh)
+import seat_labwc  # noqa: E402
+from health import (  # noqa: E402
+    active_connections, gw_state_path, idle_seconds, stream_starving_seconds)
 
 
 # --- TLS pinning -----------------------------------------------------------
@@ -72,10 +75,6 @@ def api(cfg: dict, path: str, payload: dict | None = None) -> dict:
         return json.loads(resp.read().decode() or "{}")
 
 
-def gw_state_path(cfg: dict) -> Path:
-    return Path(cfg["install_dir"]) / "gw_state.json"
-
-
 def build_gateway_cmd(cfg: dict, upstream_port: int) -> tuple[list[str], dict]:
     install = Path(cfg["install_dir"])
     # Idle timeout rides in stream_settings (resolved by the backend each
@@ -95,59 +94,6 @@ def build_gateway_cmd(cfg: dict, upstream_port: int) -> tuple[list[str], dict]:
     cmd = [str(install / "venv/bin/python"), str(install / "gateway.py"),
            str(cfg["port"]), str(upstream_port)]
     return cmd, env
-
-
-def active_connections(cfg: dict, gateway_alive: bool) -> int:
-    """Live stream-websocket count from the gateway's state file. A dead
-    gateway means no viewers regardless of what the file says."""
-    if not gateway_alive:
-        return 0
-    try:
-        n = json.loads(gw_state_path(cfg).read_text()).get("active_connections")
-        return n if isinstance(n, int) and n >= 0 else 0
-    except (OSError, ValueError):
-        return 0
-
-
-def idle_seconds(cfg: dict, gateway_alive: bool) -> float | None:
-    """Seconds since the last client->server input frame (per the gateway
-    state file). None when the gateway is down or the state is unreadable.
-    Backend only acts on this when active_connections > 0."""
-    if not gateway_alive:
-        return None
-    try:
-        data = json.loads(gw_state_path(cfg).read_text())
-        ts = data.get("last_input_ts")
-        if not isinstance(ts, (int, float)):
-            return None
-        return max(0.0, time.time() - ts)
-    except (OSError, ValueError):
-        return None
-
-
-def stream_starving_seconds(cfg: dict, gateway_alive: bool) -> float | None:
-    """Seconds a connected viewer has waited with zero video frames, per the
-    gateway state file. None when the gateway is down, no viewer is starving, or
-    the state is unreadable.
-
-    The gateway sets `stream_starving` when a viewer connects and clears it on
-    the first video frame; it also re-arms mid-session when input arrives with
-    no frames behind it (a wedged compositor/encoder). Either way this reports
-    only a viewer who is asking for pixels and getting none — never a healthy
-    screen that merely went static.
-    """
-    if not gateway_alive:
-        return None
-    try:
-        d = json.loads(gw_state_path(cfg).read_text())
-        if not d.get("stream_starving"):
-            return None
-        since = d.get("starving_since")
-        if not isinstance(since, (int, float)):
-            return None
-        return max(0.0, time.time() - since)
-    except (OSError, ValueError):
-        return None
 
 
 def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool) -> dict:
@@ -207,15 +153,7 @@ def drop_clients(procs: dict) -> None:
     procs["gateway"] = None
 
 
-# --- frozen-engine watchdog ------------------------------------------------
-# The supervisor only restarts selkies when the *process* exits. A
-# CPU-starved or wedged encoder stays alive but stops producing frames
-# (black screen, audio keeps flowing) and is invisible to that check.
-# pixelflux prints a per-second "EncFPS:" stats line only while actively
-# encoding for a client; if that line stops advancing while a viewer is
-# connected, the engine has frozen.
-FREEZE_TIMEOUT_S = 20
-
+# --- stream watchdogs ------------------------------------------------------
 # Stream-start watchdog: how long a connected viewer may sit frameless before
 # the engine is restarted. Must exceed connect->first-frame time (NVENC init +
 # first FullFrame is a few seconds); 15s leaves margin. ponytail: bump if slow
@@ -228,39 +166,6 @@ FRAME_START_TIMEOUT_S = 15
 # through its launch env (STYX_GW_IDLE_*) — without a relaunch the running
 # gateway keeps stale, idle-less config and never warns or disconnects.
 SETTINGS_CHANGE_RESTART = ("selkies", "shell", "clipboard", "gateway")
-
-
-def read_encoder_progress(log_path: Path) -> str | None:
-    """Latest pixelflux 'EncFPS:' stats line — a liveness marker that advances
-    ~once a second while encoding. None if absent/unreadable. Reads only the
-    file tail; selkies.log grows unbounded."""
-    try:
-        with open(log_path, "rb") as f:
-            f.seek(0, 2)
-            f.seek(max(0, f.tell() - 8192))
-            tail = f.read().decode("utf-8", "replace")
-    except OSError:
-        return None
-    # The startup settings dump contains 'EncFPS' in help text — the real stats
-    # line starts with "Res:". Match on that to avoid a false liveness signal.
-    lines = [ln for ln in tail.splitlines()
-             if "EncFPS:" in ln and ln.lstrip().startswith("Res:")]
-    return lines[-1] if lines else None
-
-
-def stream_frozen(active_conns: int, selkies_alive: bool,
-                  secs_since_progress: float, threshold: float,
-                  marker_seen: bool = True) -> bool:
-    """True when a viewer is connected and the engine is alive but the encoder
-    has produced no new frames for `threshold`s. Idle (no viewer) and an
-    already-dead process are left to the existing restart paths.
-
-    `marker_seen` arms the check: the NVENC FullFrame path emits no 'EncFPS:'
-    line, so read_encoder_progress never advances there. Without this gate the
-    watchdog would false-fire on every GPU box. Stay dormant until a real
-    heartbeat has been seen at least once (i.e. CPU striped mode is active)."""
-    return (marker_seen and active_conns > 0 and selkies_alive
-            and secs_since_progress >= threshold)
 
 
 def run(cfg: dict) -> int:
@@ -297,44 +202,6 @@ def run(cfg: dict) -> int:
         stopping = True
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
-
-    def start_shell():
-        if not (seat_socket and shutil.which("labwc")):
-            return None
-        engine.write_seat_config(INSTALL_DIR / "labwc")
-        shell_env = {**os.environ, "WAYLAND_DISPLAY": seat_socket,
-                     "XDG_RUNTIME_DIR": runtime_dir,
-                     # Route seat apps' audio to the captured null sink —
-                     # they'd otherwise play to the host's default sink
-                     # (physical speakers) and the stream would be silent.
-                     "PULSE_SINK": engine.SEAT_SINK,
-                     # Seat apps record from the browser-fed virtual mic.
-                     "PULSE_SOURCE": engine.MIC_SOURCE}
-        # labwc runs the config dir's autostart (wallpaper, panel, terminal)
-        # AFTER Xwayland is up, so those children inherit DISPLAY and can
-        # launch the machine's X11 apps (Chrome etc.).
-        return subprocess.Popen(["labwc", "-C", str(INSTALL_DIR / "labwc")],
-                                env=shell_env, stdout=seat_log, stderr=seat_log)
-
-    def start_clipboard_bridge():
-        """Start the bidirectional clipboard bridge between pixelflux and labwc.
-
-        Only runs in seat mode when both sockets are known and different.
-        The bridge needs to restart if either socket changes (e.g. selkies restart).
-        """
-        nonlocal app_socket
-        if not seat_socket or not app_socket or seat_socket == app_socket:
-            return None
-        # Sockets are genuinely different; start the bridge
-        clipboard_log = open(LOG_DIR / "clipboard.log", "ab", buffering=0)
-        cmd = [
-            str(INSTALL_DIR / "venv/bin/python"),
-            str(INSTALL_DIR / "clipboard_bridge.py"),
-            seat_socket,
-            app_socket,
-            runtime_dir,
-        ]
-        return subprocess.Popen(cmd, stdout=clipboard_log, stderr=clipboard_log)
 
     def start_selkies():
         nonlocal last_error, seat_socket, app_socket
@@ -393,7 +260,8 @@ def run(cfg: dict) -> int:
                 before = {p.name for p in Path(runtime_dir).glob("wayland-*")
                           if not p.name.endswith(".lock")}
                 app_socket_ts = time.time() - 1
-                procs["shell"] = start_shell()
+                procs["shell"] = seat_labwc.start_shell(
+                    INSTALL_DIR, seat_socket, runtime_dir, seat_log)
                 if procs["shell"] is not None:
                     # labwc creates a new socket for its clients; wait for it.
                     # Exclude seat_socket: it was just created and matches the
@@ -405,7 +273,8 @@ def run(cfg: dict) -> int:
                         app_socket = app_sock
                         print(f"app socket is {app_socket}; starting clipboard bridge",
                               flush=True)
-                        procs["clipboard"] = start_clipboard_bridge()
+                        procs["clipboard"] = seat_labwc.start_clipboard_bridge(
+                            INSTALL_DIR, seat_socket, app_socket, runtime_dir, LOG_DIR)
                 elif not shutil.which("labwc"):
                     last_error = ("labwc not installed — seat has no window "
                                   "manager. Install: sudo apt install labwc")
@@ -414,9 +283,6 @@ def run(cfg: dict) -> int:
                               "window manager. See logs/selkies.log")
         return proc
 
-    last_enc_line: str | None = None
-    last_enc_change = time.time()
-    enc_marker_seen = False
     while not stopping:
         if procs["selkies"] is None or procs["selkies"].poll() is not None:
             if procs["selkies"] is not None:
@@ -438,7 +304,8 @@ def run(cfg: dict) -> int:
             before = {p.name for p in Path(runtime_dir).glob("wayland-*")
                       if not p.name.endswith(".lock")}
             app_socket_ts = time.time() - 1
-            procs["shell"] = start_shell()
+            procs["shell"] = seat_labwc.start_shell(
+                    INSTALL_DIR, seat_socket, runtime_dir, seat_log)
             if procs["shell"] is not None:
                 app_sock = engine.wait_for_wayland_socket(
                     runtime_dir, before, app_socket_ts, timeout=10,
@@ -453,12 +320,14 @@ def run(cfg: dict) -> int:
                             old.wait(timeout=5)
                         except subprocess.TimeoutExpired:
                             old.kill()
-                    procs["clipboard"] = start_clipboard_bridge()
+                    procs["clipboard"] = seat_labwc.start_clipboard_bridge(
+                            INSTALL_DIR, seat_socket, app_socket, runtime_dir, LOG_DIR)
         if (seat_mode and app_socket and procs["selkies"] is not None
                 and procs["selkies"].poll() is None
                 and (procs["clipboard"] is None or procs["clipboard"].poll() is not None)):
             # Clipboard bridge respawn (if socket didn't change)
-            procs["clipboard"] = start_clipboard_bridge()
+            procs["clipboard"] = seat_labwc.start_clipboard_bridge(
+                            INSTALL_DIR, seat_socket, app_socket, runtime_dir, LOG_DIR)
         selkies_ok = procs["selkies"] is not None and procs["selkies"].poll() is None
         gateway_ok = procs["gateway"] is not None and procs["gateway"].poll() is None
         if selkies_ok and gateway_ok:
@@ -466,31 +335,6 @@ def run(cfg: dict) -> int:
                 last_error = None
         elif not selkies_ok and last_error is None:
             last_error = "selkies not running — see logs/selkies.log"
-
-        # Frozen-engine watchdog: process alive but encoder stalled while a
-        # viewer is connected -> kill selkies so the loop respawns it.
-        enc_line = read_encoder_progress(LOG_DIR / "selkies.log")
-        if enc_line is not None:
-            enc_marker_seen = True
-        if enc_line != last_enc_line:
-            last_enc_line = enc_line
-            last_enc_change = time.time()
-        if stream_frozen(active_connections(cfg, gateway_ok), selkies_ok,
-                         time.time() - last_enc_change, FREEZE_TIMEOUT_S,
-                         marker_seen=enc_marker_seen):
-            print(f"watchdog: encoder stalled "
-                  f"{int(time.time() - last_enc_change)}s with viewers — "
-                  "restarting selkies", flush=True)
-            p = procs["selkies"]
-            if p is not None and p.poll() is None:
-                p.terminate()
-                try:
-                    p.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    p.kill()
-            procs["selkies"] = None
-            last_enc_change = time.time()   # grace before re-evaluating
-            continue
 
         # Stream-start watchdog: a viewer is connected but the engine has
         # delivered no frame (upstream stuck in STOP_VIDEO after the prior tab
