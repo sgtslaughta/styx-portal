@@ -28,7 +28,7 @@ def test_load_config(tmp_path):
 
 
 def test_agent_version_bumped():
-    assert styx_agent.AGENT_VERSION == "0.5.0"
+    assert styx_agent.AGENT_VERSION == "0.6.0"
 
 
 def test_gateway_cmd_secrets_via_env(tmp_path):
@@ -71,7 +71,8 @@ def test_health_payload_reports_mode_and_engine(tmp_path):
     h = styx_agent.health_payload(cfg, selkies_alive=True, gateway_alive=False)
     assert h["mode"] == "seat"
     assert h["engine"] == "pixelflux"
-    assert h["agent_version"] == "0.5.0"
+    assert h["agent_version"] == "0.6.0"
+    assert "needs_consent" not in h
     assert h["selkies_alive"] is True and h["gateway_alive"] is False
     assert h["active_connections"] == 0
 
@@ -136,13 +137,16 @@ def test_restart_engine_tears_down_selkies_shell_clipboard():
     assert procs["gateway"] is gw
 
 
-def test_gateway_cmd_has_no_web_dir_and_passes_cursor_flag(tmp_path):
-    cfg = {"install_dir": str(tmp_path), "port": 8443, "selkies_user": "u",
-           "selkies_password": "p", "stream_settings": {"cursor_workaround": True}}
-    cmd, env = styx_agent.build_gateway_cmd(cfg, 1234)
-    assert cmd[-2:] == ["8443", "1234"]
+def test_gateway_cmd_passes_seat_dir_only_for_gnome(tmp_path):
+    cfg = {"install_dir": str(tmp_path), "selkies_user": "u", "selkies_password": "p",
+           "port": 8443, "stream_settings": {"cursor_workaround": True}}
+    cmd, env = styx_agent.build_gateway_cmd(cfg, 9000, seat_dir=str(tmp_path))
+    assert cmd[-2:] == ["8443", "9000"]
     assert not any(a.endswith("/web") for a in cmd)
-    assert env["STYX_GW_CURSOR_WORKAROUND"] == "1"
+    assert env["STYX_GW_SEAT_DIR"] == str(tmp_path)
+    assert "STYX_GW_CURSOR_WORKAROUND" not in env
+    _, env = styx_agent.build_gateway_cmd(cfg, 9000)
+    assert env["STYX_GW_SEAT_DIR"] == ""
 
 
 def test_gateway_cmd_exposes_state_path(tmp_path):
@@ -171,27 +175,6 @@ def test_escalation_three_in_window():
     assert not e2.record(0) and not e2.record(400) and not e2.record(1100)
 
 
-def test_needs_consent(tmp_path):
-    tok = tmp_path / "portal-restore-token"
-    assert styx_agent.needs_consent(25.0, tok) is True
-    assert styx_agent.needs_consent(5.0, tok) is False
-    assert styx_agent.needs_consent(None, tok) is False
-    tok.write_text("t")
-    assert styx_agent.needs_consent(25.0, tok) is False
-
-
-def test_consent_error_names_the_fix():
-    assert "doctor --grant" in styx_agent.CONSENT_ERROR
-
-
-def test_settings_change_keeps_gnome_seat():
-    old = {"video_crf": 25, "seat_width": 2560, "seat_height": 1440}
-    keys = styx_agent.settings_restart_keys(old, {**old, "video_crf": 30})
-    assert "seat" not in keys and "selkies" in keys and "gateway" in keys
-    keys = styx_agent.settings_restart_keys(old, {**old, "seat_width": 1920})
-    assert "seat" in keys
-
-
 def test_run_config_from_0411_is_accepted(tmp_path, monkeypatch):
     cfg = {"server": "https://x", "agent_token": "t", "workstation_id": "w",
            "port": 8443, "selkies_user": "u", "selkies_password": "p",
@@ -201,7 +184,7 @@ def test_run_config_from_0411_is_accepted(tmp_path, monkeypatch):
     monkeypatch.setattr(styx_agent.seat_gnome, "gnome_available", lambda: (True, ""))
     assert styx_agent.pick_seat_shell(cfg) == "gnome"
     p = styx_agent.health_payload(cfg, True, True)
-    assert p["agent_version"] == "0.5.0" and p["needs_consent"] is False
+    assert p["agent_version"] == "0.6.0" and "needs_consent" not in p
 
 
 def test_rollback_swaps_dirs(tmp_path, monkeypatch):
@@ -254,10 +237,6 @@ def _doctor_env(monkeypatch, tmp_path, mode, gnome, token):
                         lambda *a, **k: type("R", (), {"stdout": "active\n"})())
     monkeypatch.setattr(styx_agent.socket.socket, "connect_ex", lambda s, a: 0)
     monkeypatch.setattr(styx_agent.seat_gnome, "gnome_available", lambda: gnome)
-    tok = tmp_path / "tok"
-    if token:
-        tok.write_text("t")
-    monkeypatch.setattr(styx_agent.seat_gnome, "TOKEN_PATH", tok)
     inst = tmp_path / "inst"
     (inst / "venv/bin").mkdir(parents=True)
     (inst / "venv/bin/python").write_text("")
@@ -271,7 +250,7 @@ def test_doctor_no_lib_shim_and_seat_advisories(monkeypatch, tmp_path, capsys):
     out = capsys.readouterr().out
     assert "lib shim" not in out
     assert "GNOME seat available" in out
-    assert "doctor --grant" in out
+    assert "doctor --grant" not in out
 
 
 def test_doctor_gnome_missing_is_advisory(monkeypatch, tmp_path, capsys):

@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-AGENT_VERSION = "0.5.0"
+AGENT_VERSION = "0.6.0"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -29,6 +29,7 @@ def load_config(path: Path = CONFIG_PATH) -> dict:
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import refit  # noqa: E402
 import engine  # noqa: E402  (installed next to this file by enroll.sh)
 import seat_gnome  # noqa: E402
 import seat_labwc  # noqa: E402
@@ -36,11 +37,11 @@ from portal_api import api, check_pin  # noqa: E402
 from health import (  # noqa: E402
     active_connections, gw_state_path, host_tuning_checks, idle_seconds,
     rollback, seat_advisories, stream_starving_seconds)
-from seat_gnome import (  # noqa: E402
-    CONSENT_ERROR, Escalation, needs_consent, pick_seat_shell)
+from seat_gnome import Escalation, pick_seat_shell  # noqa: E402
 
 
-def build_gateway_cmd(cfg: dict, upstream_port: int) -> tuple[list[str], dict]:
+def build_gateway_cmd(cfg: dict, upstream_port: int,
+                      seat_dir: str = "") -> tuple[list[str], dict]:
     install = Path(cfg["install_dir"])
     # Idle timeout rides in stream_settings (resolved by the backend each
     # heartbeat: per-workstation override else system default). The gateway is
@@ -54,7 +55,7 @@ def build_gateway_cmd(cfg: dict, upstream_port: int) -> tuple[list[str], dict]:
         "STYX_GW_IDLE_TIMEOUT_S": str(ss.get("idle_timeout_s", 0)),
         "STYX_GW_IDLE_WARN_S": str(ss.get("idle_warn_lead_s", 60)),
         "STYX_GW_IDLE_ENABLED": "1" if ss.get("idle_timeout_enabled") else "",
-        "STYX_GW_CURSOR_WORKAROUND": "1" if ss.get("cursor_workaround") else "",
+        "STYX_GW_SEAT_DIR": seat_dir,
     }
     cmd = [str(install / "venv/bin/python"), str(install / "gateway.py"),
            str(cfg["port"]), str(upstream_port)]
@@ -64,7 +65,6 @@ def build_gateway_cmd(cfg: dict, upstream_port: int) -> tuple[list[str], dict]:
 def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool,
                    seat_shell: str = "", seat_restarts: int = 0,
                    degraded: bool = False) -> dict:
-    starving = stream_starving_seconds(cfg, gateway_alive)
     return {
         "mode": cfg.get("mode", "mirror"),
         "engine": "pixelflux",
@@ -77,7 +77,6 @@ def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool,
         "seat_shell": seat_shell or cfg.get("mode", "mirror"),
         "seat_restarts": seat_restarts,
         "degraded": degraded,
-        "needs_consent": seat_shell == "gnome" and needs_consent(starving),
     }
 
 
@@ -164,6 +163,8 @@ def run(cfg: dict) -> int:
                   "higher slot", flush=True)
     gseat = (seat_gnome.GnomeSeat(INSTALL_DIR, runtime_dir, seat_log)
              if shell_kind == "gnome" else None)
+    refit_req = INSTALL_DIR / "refit-request"
+    refit.clear_request(refit_req)        # stale request from a previous run
     escalation, degraded = Escalation(), False
     last_engine_restart = float("-inf")   # watchdog grace after a restart
     exit_code = 0
@@ -190,8 +191,9 @@ def run(cfg: dict) -> int:
             engine.ensure_seat_sink()   # seat audio -> styx-seat via PULSE_SINK
         except Exception as e:
             print(f"seat sink setup failed: {e}", flush=True)
-        gseat.start(int(ss.get("seat_width") or 2560),
-                    int(ss.get("seat_height") or 1440))
+        size = refit.read_size(gseat.size_file) or (
+            int(ss.get("seat_width") or 2560), int(ss.get("seat_height") or 1440))
+        gseat.start(*refit.clamp(*size))
         if not gseat.ready():
             last_error = "GNOME seat failed to start — see logs/seat.log"
             gseat.stop()
@@ -290,7 +292,8 @@ def run(cfg: dict) -> int:
                 backoff *= 2
             procs["selkies"] = start_selkies()
         if procs["gateway"] is None or procs["gateway"].poll() is not None:
-            cmd, env = build_gateway_cmd(cfg, internal_port)
+            cmd, env = build_gateway_cmd(
+                cfg, internal_port, str(INSTALL_DIR) if gseat else "")
             procs["gateway"] = subprocess.Popen(cmd, env=env,
                                                 stdout=gateway_log,
                                                 stderr=gateway_log)
@@ -312,18 +315,10 @@ def run(cfg: dict) -> int:
 
         # Stream-start watchdog: a viewer is connected but the engine has
         # delivered no frame -> restart the engine so the fresh session's
-        # START_VIDEO takes. Keys on real frames at the gateway. GNOME seat
-        # without a restore token: the portal is waiting on consent and a
-        # restart only re-opens the dialog — report needs_consent instead.
+        # START_VIDEO takes. Keys on real frames at the gateway.
         starving = stream_starving_seconds(cfg, gateway_ok)
-        consent_pending = gseat is not None and not seat_gnome.TOKEN_PATH.exists()
         in_grace = time.monotonic() - last_engine_restart < FRAME_START_TIMEOUT_S
-        if gseat and needs_consent(starving):
-            last_error = CONSENT_ERROR
-        elif last_error == CONSENT_ERROR:
-            last_error = None
-        if (selkies_ok and starving is not None and not consent_pending
-                and not in_grace
+        if (selkies_ok and starving is not None and not in_grace
                 and starving >= FRAME_START_TIMEOUT_S):
             print(f"watchdog: viewer frameless {int(starving)}s — restarting "
                   "selkies", flush=True)
@@ -383,7 +378,17 @@ def run(cfg: dict) -> int:
         except (urllib.error.URLError, OSError, TimeoutError) as e:
             _write_state({"ts": time.time(), "ok": False, "error": str(e)})
             print(f"heartbeat failed: {e}", flush=True)
-        time.sleep(interval)
+        # GNOME seat: wake early when the gateway asks for a refit (size-at-connect).
+        req = refit.wait_for_request(refit_req, interval) if gseat else time.sleep(interval)
+        if req:
+            if gseat.alive():
+                print(f"refit: rebuilding seat monitor at {req[0]}x{req[1]}", flush=True)
+                _terminate(procs["selkies"])
+                procs["selkies"] = None
+                if not gseat.refit(*req):
+                    last_error = f"refit to {req[0]}x{req[1]} failed — kept previous size"
+                last_engine_restart = time.monotonic()
+            refit.clear_request(refit_req)
 
     for p in procs.values():
         _terminate(p)
@@ -428,8 +433,7 @@ def doctor(cfg: dict) -> int:
         ok &= _check("server reachable + token valid", True)
     except Exception as e:
         ok &= _check("server reachable + token valid", False, str(e))
-    seat = cfg.get("mode") == "seat" and seat_advisories(
-        seat_gnome.gnome_available(), seat_gnome.TOKEN_PATH.exists())
+    seat = cfg.get("mode") == "seat" and seat_advisories(seat_gnome.gnome_available())
     for label, good, detail in host_tuning_checks() + (seat or []):
         _check(label, good, detail)   # advisory: not folded into `ok`
     print("All checks passed." if ok else f"Some checks failed. Logs: {LOG_DIR}")
@@ -485,9 +489,6 @@ def main() -> int:
     if cmd == "run":
         return run(cfg)
     if cmd == "doctor":
-        if "--grant" in sys.argv:
-            import grant
-            return grant.grant(cfg)
         return doctor(cfg)
     if cmd == "status":
         return status(cfg)
