@@ -9,7 +9,7 @@ import seat_gnome  # noqa: E402
 
 
 def test_launch_script_scrubs_display_and_sets_activation_env_before_exec():
-    s = seat_gnome.build_launch_script(2560, 1440, "styx-seat", "/tmp/bus")
+    s = seat_gnome.build_launch_script("styx-seat", "/tmp/bus", "/p")
     lines = s.splitlines()
     unset = next(i for i, ln in enumerate(lines) if ln.startswith("unset DISPLAY WAYLAND_DISPLAY"))
     act = next(i for i, ln in enumerate(lines) if ln.startswith("dbus-update-activation-environment"))
@@ -18,10 +18,13 @@ def test_launch_script_scrubs_display_and_sets_activation_env_before_exec():
     assert "DISPLAY=" in lines[act] and "WAYLAND_DISPLAY=styx-seat-0" in lines[act]
     assert "PULSE_SINK=styx-seat" in lines[act]
     assert "export PULSE_SINK=styx-seat" in s
-    assert "--virtual-monitor 2560x1440" in lines[exe]
     assert "--wayland-display=styx-seat-0" in lines[exe]
     assert "--unsafe-mode" not in s
     assert '> /tmp/bus' in s
+    assert "--virtual-monitor" not in s
+    assert "export XDG_DESKTOP_PORTAL_DIR=/p" in s
+    act = next(i for i, ln in enumerate(lines) if ln.startswith("dbus-update-activation-environment"))
+    assert "XDG_DESKTOP_PORTAL_DIR=/p" in lines[act] and act < exe
 
 
 def test_gnome_available_version_gate(monkeypatch):
@@ -42,6 +45,8 @@ def test_ready_needs_socket_and_bus(tmp_path, monkeypatch):
     monkeypatch.setattr(seat, "_shell_answers", lambda: True)
     assert seat.ready(timeout=0.2) is False          # no socket yet
     (tmp_path / seat_gnome.SOCKET).touch()
+    monkeypatch.setattr(seat, "_start_helper", lambda w, h: True)
+    seat.size = (2560, 1440)
     assert seat.ready(timeout=0.2) is True
     assert seat.info() == {"socket": "styx-seat-0", "bus": "unix:path=/x"}
 
@@ -128,3 +133,75 @@ def test_shell_probe_timeout_is_not_ready(tmp_path, monkeypatch):
     (tmp_path / "gnome-bus.addr").write_text("unix:path=/x\n")
     (tmp_path / seat_gnome.SOCKET).touch()
     assert seat.ready(timeout=0.2) is False
+
+
+def test_write_portal_dir_routes_screencast_and_remote_desktop_to_styx(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "gnome.portal").write_text("[portal]\n")
+    d = tmp_path / "portals"
+    seat_gnome.write_portal_dir(d, src)
+    seat_gnome.write_portal_dir(d, src)                       # idempotent
+    assert (d / "gnome.portal").exists()
+    assert "DBusName=org.freedesktop.impl.portal.desktop.styx" in (d / "styx.portal").read_text()
+    for n in ("portals.conf", "ubuntu-portals.conf", "gnome-portals.conf"):
+        t = (d / n).read_text()
+        assert "org.freedesktop.impl.portal.ScreenCast=styx;" in t
+        assert "org.freedesktop.impl.portal.RemoteDesktop=styx;" in t
+
+
+def _fake_proc(rc=None):
+    return type("P", (), {"poll": lambda self: rc, "pid": 0})()
+
+
+def test_refit_success_persists_size(tmp_path, monkeypatch):
+    seat = seat_gnome.GnomeSeat(tmp_path, str(tmp_path), log=subprocess.DEVNULL)
+    seat.bus = "unix:path=/b"
+
+    def spawn(w, h):
+        seat.ready_file.write_text(f"{w}x{h}")
+        return _fake_proc()
+    monkeypatch.setattr(seat, "_spawn_helper", spawn)
+    monkeypatch.setattr(seat, "_stop_helper", lambda: None)
+    assert seat.refit(2552, 1294) is True
+    assert seat.size == (2552, 1294)
+    assert (tmp_path / "seat-size").read_text() == "2552x1294"
+
+
+def test_refit_failure_restores_previous_size(tmp_path, monkeypatch):
+    seat = seat_gnome.GnomeSeat(tmp_path, str(tmp_path), log=subprocess.DEVNULL)
+    seat.bus = "unix:path=/b"
+    seat.size = (1920, 1080)
+    calls = []
+
+    def spawn(w, h):
+        calls.append((w, h))
+        if (w, h) == (1920, 1080):
+            seat.ready_file.write_text("1920x1080")
+            return _fake_proc()
+        return _fake_proc(rc=1)                                # helper died
+    monkeypatch.setattr(seat, "_spawn_helper", spawn)
+    monkeypatch.setattr(seat, "_stop_helper", lambda: None)
+    assert seat.refit(2552, 1294) is False
+    assert calls == [(2552, 1294), (1920, 1080)]
+    assert seat.size == (1920, 1080)
+
+
+def test_alive_requires_helper_once_started(tmp_path):
+    seat = seat_gnome.GnomeSeat(tmp_path, str(tmp_path), log=subprocess.DEVNULL)
+    seat._proc = _fake_proc()
+    assert seat.alive() is True                               # helper not started yet
+    seat._helper = _fake_proc(rc=1)
+    assert seat.alive() is False
+
+
+def test_gnome_available_reports_missing_helper_deps(monkeypatch):
+    monkeypatch.setattr(seat_gnome.shutil, "which", lambda n: "/usr/bin/gnome-shell")
+
+    def run(cmd, *a, **k):
+        if cmd[0] == "gnome-shell":
+            return subprocess.CompletedProcess(cmd, 0, "GNOME Shell 46.0\n", "")
+        return subprocess.CompletedProcess(cmd, 1, "", "ModuleNotFoundError")
+    monkeypatch.setattr(seat_gnome.subprocess, "run", run)
+    ok, why = seat_gnome.gnome_available()
+    assert ok is False and "python3-dbus" in why
