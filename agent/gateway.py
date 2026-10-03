@@ -128,7 +128,11 @@ def inject_idle_watchdog(html: str, timeout_s: int, lead_s: int,
 
 
 CURSOR_HIDE_CSS = ("<style id=\"styx-cursor\">video,canvas,#videoContainer,"
-                   "#overlayInput{cursor:none !important}</style>")
+                   "#overlayInput{cursor:none !important}"
+                   # selkies 2.0 client-drawn cursor: an id-less fixed canvas
+                   # appended to <body> with z-index 999999.
+                   'body>canvas[style*="999999"]{display:none !important}'
+                   "</style>")
 
 
 def inject_cursor_hide(html: str, enabled: bool) -> str:

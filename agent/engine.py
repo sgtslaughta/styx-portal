@@ -218,6 +218,10 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
 
     if seat is not None:                     # headless GNOME seat
         cmd += ["--wayland=true", f"--wayland-host-display={seat['socket']}"]
+        if s.get("cursor_workaround"):
+            # Portal capture bakes the cursor into the video; a client-drawn
+            # cursor on top doubles it (flicker, stale cursor on leave).
+            cmd.append("--enable-cursors=false")
         env.update({"DBUS_SESSION_BUS_ADDRESS": seat["bus"],
                     "XDG_CURRENT_DESKTOP": "ubuntu:GNOME",
                     "XDG_SESSION_TYPE": "wayland"})
@@ -242,6 +246,10 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
     streaming = s.get("video_streaming_mode", s.get("h264_streaming_mode"))
     # 2.0 defaults streaming mode ON; keep today's default (off) unless asked.
     env["SELKIES_VIDEO_STREAMING_MODE"] = "true" if streaming is True else "false"
+    # Locked server-side: stale 1.x client storage sends video_bitrate=8 (Mbps
+    # there), which 2.0 reads as kbps and clamps to 100 kbps -> blurry stream.
+    kbps = _int_in(s.get("video_bitrate_kbps"), 500, 200000) or 8000
+    cmd.append(f"--video-bitrate={kbps}-{kbps}")
     if s.get("use_paint_over_quality") is False:
         env["SELKIES_USE_PAINT_OVER_QUALITY"] = "false"
     pcrf = _int_in(s.get("video_paintover_crf", s.get("h264_paintover_crf")), 5, 50)

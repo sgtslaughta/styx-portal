@@ -658,3 +658,8 @@ async def test_index_3xx_forwards_location():
     finally:
         await gw.close()
         await up.close()
+
+
+def test_cursor_hide_also_hides_client_cursor_canvas():
+    out = gateway.inject_cursor_hide("<html><head></head><body></body></html>", True)
+    assert 'canvas[style*="999999"]' in out and "display:none !important" in out
