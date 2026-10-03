@@ -1,5 +1,5 @@
 import pytest
-from app.services.settings_store import settings, SCHEMA
+from app.services.settings_store import settings, SCHEMA, _SPECS, _GROUP_LABELS
 
 
 def test_schema_excludes_secrets():
@@ -61,3 +61,12 @@ def test_effective_lists_groups_with_metadata():
     eff = settings.effective()
     keys = {row["key"] for g in eff for row in g["settings"]}
     assert "LOCKOUT_THRESHOLD" in keys and "PASSWORD_MIN_LENGTH" in keys
+
+
+def test_all_spec_groups_have_labels():
+    """Every group used in _SPECS must have a label in _GROUP_LABELS."""
+    spec_groups = {s.group for s in _SPECS}
+    assert spec_groups <= set(_GROUP_LABELS), \
+        f"Missing labels for groups: {spec_groups - set(_GROUP_LABELS)}"
+    assert _GROUP_LABELS.get("workstation_features") == "Workstation features", \
+        "workstation_features group must map to 'Workstation features'"

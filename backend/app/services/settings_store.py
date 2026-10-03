@@ -113,6 +113,7 @@ _GROUP_LABELS = {
     "rate_limits": "Rate limits",
     "sessions": "Sessions & tokens",
     "timeouts": "Timeouts",
+    "workstation_features": "Workstation features",
     "quota": "Quotas",
     "password_policy": "Password policy",
 }
