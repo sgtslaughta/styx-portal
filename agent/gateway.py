@@ -289,8 +289,8 @@ def create_app(user: str, password: str,
                 async def pump(src, dst, on_activity=None, on_binary=None):
                     async for msg in src:
                         if msg.type == aiohttp.WSMsgType.TEXT:
-                            if on_activity:
-                                on_activity(msg.data)
+                            if on_activity and on_activity(msg.data):
+                                continue        # swallowed (refit-bound resize)
                             await dst.send_str(msg.data)
                         elif msg.type == aiohttp.WSMsgType.BINARY:
                             if on_activity:
@@ -334,24 +334,23 @@ def create_app(user: str, password: str,
                     await ws_server.send_str(refit.MARKER)   # shim shows the overlay
                     await ws_server.close(code=refit.CLOSE_CODE, message=b"refit")
 
-                def on_client(data):
-                    """Input tracking + refit once the browser size settles. r,
-                    still reaches selkies, which letterboxes until the refit."""
+                def on_client(data) -> bool:
+                    """Input tracking + settle-then-refit. Refit-bound sizes are
+                    swallowed: selkies would restart capture at them (black)."""
                     mark_input(data)
                     req = refit.parse_resize(data) if seat_dir else None
-                    if req:
-                        resize["size"] = req
-                        if resize["timer"]:
-                            resize["timer"].cancel()
-                        resize["timer"] = asyncio.get_running_loop().call_later(
-                            refit.SETTLE_S, fire_refit)
+                    if not req:
+                        return False
+                    resize["size"] = req
+                    resize["timer"] and resize["timer"].cancel()
+                    resize["timer"] = asyncio.get_running_loop().call_later(refit.SETTLE_S, fire_refit)
+                    return refit.differs(req, refit.read_size(size_file))
 
                 await asyncio.gather(pump(ws_server, ws_client, on_activity=on_client),
                                      pump(ws_client, ws_server, on_binary=mark_frame),
                                      idle_closer(),
                                      return_exceptions=True)
-                if resize["timer"]:
-                    resize["timer"].cancel()
+                resize["timer"] and resize["timer"].cancel()
             finally:
                 conns["n"] -= 1
                 _write_state()
@@ -360,7 +359,7 @@ def create_app(user: str, password: str,
 
     async def index(_request):
         hold = web.Response(text=refit.HOLD_HTML, content_type="text/html",
-                            headers={"Cache-Control": "no-store"})
+                            headers={"Cache-Control": "no-store", "X-Styx-Hold": "1"})
         if refit_file and refit.pending(refit_file):
             return hold
         try:
