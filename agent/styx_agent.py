@@ -35,7 +35,7 @@ import seat_labwc  # noqa: E402
 from portal_api import api, check_pin  # noqa: E402
 from health import (  # noqa: E402
     active_connections, gw_state_path, host_tuning_checks, idle_seconds,
-    stream_starving_seconds)
+    rollback, stream_starving_seconds)
 from seat_gnome import (  # noqa: E402
     CONSENT_ERROR, Escalation, needs_consent, pick_seat_shell)
 
@@ -475,6 +475,8 @@ def main() -> int:
         cfg = None
     if cmd == "uninstall":
         return uninstall(cfg)
+    if cmd == "rollback":
+        return rollback(INSTALL_DIR)
     if cfg is None:
         print(f"Config missing at {CONFIG_PATH} — re-run enrollment.")
         return 1
@@ -487,7 +489,7 @@ def main() -> int:
         return doctor(cfg)
     if cmd == "status":
         return status(cfg)
-    print(f"Unknown command: {cmd} (expected run|status|doctor|uninstall)")
+    print(f"Unknown command: {cmd} (expected run|status|doctor|rollback|uninstall)")
     return 2
 
 

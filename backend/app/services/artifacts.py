@@ -3,9 +3,8 @@
 Two kinds of artifacts:
 - URL-backed: downloaded once from a pinned upstream URL, then cached.
 - Prebuilt:   produced by scripts/build_agent_artifacts.sh on the server
-  host and pre-placed in ARTIFACT_CACHE_DIR (wheels need a manylinux build
-  env; the web dist is extracted from the linuxserver image). Never
-  downloaded here.
+  host and pre-placed in ARTIFACT_CACHE_DIR (the wheelhouse needs a
+  manylinux build env). Never downloaded here.
 """
 import asyncio
 from pathlib import Path
@@ -21,8 +20,6 @@ _lock = asyncio.Lock()
 ARTIFACTS: dict[str, str | None] = {
     "selkies-app.tar.gz": _settings.SELKIES_APP_URL,
     "wheelhouse-x86_64.tar.gz": None,
-    "selkies-web.tar.gz": None,
-    "libshim-x86_64.tar.gz": None,
     # nwg-drawer (app grid) + nwg-dock binaries — built on the server because
     # they are absent from some distro repos (e.g. Ubuntu 24.04).
     "nwg-shell-x86_64.tar.gz": None,

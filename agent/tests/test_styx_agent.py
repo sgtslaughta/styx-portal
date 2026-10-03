@@ -202,3 +202,15 @@ def test_run_config_from_0411_is_accepted(tmp_path, monkeypatch):
     assert styx_agent.pick_seat_shell(cfg) == "gnome"
     p = styx_agent.health_payload(cfg, True, True)
     assert p["agent_version"] == "0.5.0" and p["needs_consent"] is False
+
+
+def test_rollback_swaps_dirs(tmp_path, monkeypatch):
+    cur, prev = tmp_path / "styx-agent", tmp_path / "styx-agent.prev"
+    cur.mkdir()
+    prev.mkdir()
+    (cur / "v").write_text("new")
+    (prev / "v").write_text("old")
+    monkeypatch.setattr(styx_agent.subprocess, "run", lambda *a, **k: None)
+    assert styx_agent.rollback(cur) == 0
+    assert (cur / "v").read_text() == "old" and (prev / "v").read_text() == "new"
+    assert styx_agent.rollback(tmp_path / "missing") == 1

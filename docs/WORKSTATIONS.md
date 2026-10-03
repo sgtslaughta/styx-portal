@@ -66,8 +66,6 @@ scripts/build_agent_artifacts.sh ./data/artifacts
 
 This generates:
 - `wheelhouse-x86_64.tar.gz` — Python wheels for pixelflux, pcmflux, selkies 2.x, and dependencies (covers Python 3.10–3.13).
-- `selkies-web.tar.gz` — Browser UI dashboard.
-- `libshim-x86_64.tar.gz` — Compatibility libraries (libva, libwayland) for older distros.
 
 Rerun this after portal upgrades to sync agent versions.
 

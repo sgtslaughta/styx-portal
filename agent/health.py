@@ -83,3 +83,18 @@ def host_tuning_checks() -> list[tuple[str, bool, str]]:
         rows.append((f"nvidia persistence mode: {pm}", pm == "Enabled",
                      "" if pm == "Enabled" else "enable: sudo nvidia-smi -pm 1"))
     return rows
+
+
+def rollback(install_dir: Path) -> int:
+    """Swap install_dir with install_dir.prev (left by enroll --upgrade), restart."""
+    prev = install_dir.with_name(install_dir.name + ".prev")
+    if not (install_dir.is_dir() and prev.is_dir()):
+        print(f"No previous install at {prev}")
+        return 1
+    tmp = install_dir.with_name(install_dir.name + ".swap")
+    install_dir.rename(tmp)
+    prev.rename(install_dir)
+    tmp.rename(prev)
+    subprocess.run(["systemctl", "--user", "restart", "styx-agent"])
+    print("Rolled back; current install is the previous version.")
+    return 0

@@ -64,8 +64,6 @@ host; needs only Docker), registered in
 | Artifact | Contents | Build method |
 |----------|----------|--------------|
 | `wheelhouse-x86_64.tar.gz` | Python wheels (selkies, pixelflux, pcmflux, …) for cp310–cp313 | manylinux container |
-| `selkies-web.tar.gz` | Dashboard web dist | extracted from linuxserver image |
-| `libshim-x86_64.tar.gz` | libva 2.22 + libwayland-server 1.23 | pinned Ubuntu debs |
 | `nwg-shell-x86_64.tar.gz` | `nwg-drawer` binary | `golang:1.25` + GTK3 dev container |
 
 > **Why server-built, not PPA or on-host toolchain:** enrolled machines stay

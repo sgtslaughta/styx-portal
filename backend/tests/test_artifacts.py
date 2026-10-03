@@ -34,8 +34,8 @@ async def test_prebuilt_artifact_never_downloads(tmp_path, monkeypatch):
 @pytest.mark.asyncio
 async def test_prebuilt_artifact_served_when_placed(tmp_path, monkeypatch):
     monkeypatch.setattr(artifacts._settings, "ARTIFACT_CACHE_DIR", str(tmp_path))
-    (tmp_path / "selkies-web.tar.gz").write_bytes(b"web")
-    path = await artifacts.ensure_artifact("selkies-web.tar.gz")
+    (tmp_path / "wheelhouse-x86_64.tar.gz").write_bytes(b"web")
+    path = await artifacts.ensure_artifact("wheelhouse-x86_64.tar.gz")
     assert path.read_bytes() == b"web"
 
 
@@ -57,3 +57,9 @@ async def test_unknown_artifact_rejected(tmp_path, monkeypatch):
     monkeypatch.setattr(artifacts._settings, "ARTIFACT_CACHE_DIR", str(tmp_path))
     with pytest.raises(artifacts.ArtifactMissing):
         await artifacts.ensure_artifact("../../etc/passwd")
+
+
+def test_artifacts_for_selkies2():
+    assert "selkies-web.tar.gz" not in artifacts.ARTIFACTS
+    assert "libshim-x86_64.tar.gz" not in artifacts.ARTIFACTS
+    assert "wheelhouse-x86_64.tar.gz" in artifacts.ARTIFACTS

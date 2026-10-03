@@ -55,7 +55,8 @@ class Settings(BaseSettings):
     # --- Workstation streaming (physical machines) ---
     SERVER_LAN_URL: str = ""        # e.g. https://192.168.1.10 — used in enrollment one-liner
     SERVER_CA_PIN: str = ""         # optional sha256:<hex fp> for self-signed LAN TLS
-    # selkies 2.x has no PyPI release; pin the exact commit linuxserver builds.
+    # Legacy source tarball. selkies 2.0 ships as PyPI wheels (see
+    # scripts/build_agent_artifacts.sh); agents >= 0.5.0 do not use this.
     SELKIES_APP_URL: str = (
         "https://github.com/selkies-project/selkies/archive/"
         "0d134b6e1ffe42a579bc66363b0e7159ab22aacc.tar.gz"
