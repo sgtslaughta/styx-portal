@@ -258,7 +258,9 @@ def create_app(web_dir: str, user: str, password: str,
                         elif msg.type == aiohttp.WSMsgType.BINARY:
                             if on_activity:
                                 on_activity(msg.data)
-                            if on_binary:
+                            # 0x01 = pcmflux audio; it flows while video is
+                            # dead, so it must not count as a frame.
+                            if on_binary and msg.data[:1] != b"\x01":
                                 on_binary()
                             await dst.send_bytes(msg.data)
                         else:

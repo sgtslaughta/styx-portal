@@ -197,6 +197,7 @@ async def test_ws_proxy_starving_flag_clears_on_first_frame(tmp_path):
     async def upstream_ws(request):
         ws = web.WebSocketResponse()
         await ws.prepare(request)
+        await ws.send_bytes(b"\x01\x00opus")   # audio is binary too, NOT video
         await send_frame.wait()          # stay frameless until told
         await ws.send_bytes(b"\x00frame")
         async for _ in ws:
@@ -217,9 +218,10 @@ async def test_ws_proxy_starving_flag_clears_on_first_frame(tmp_path):
     try:
         ws = await client.ws_connect(
             "/websocket", headers={"Authorization": _basic("styx", "pw")})
+        await ws.receive()               # audio arrives...
         await asyncio.sleep(0.1)
         st = json.loads(state.read_text())
-        assert st["stream_starving"] is True
+        assert st["stream_starving"] is True   # ...but viewer still starving
         assert isinstance(st["starving_since"], (int, float))
         # engine finally emits a frame -> flag clears
         send_frame.set()
