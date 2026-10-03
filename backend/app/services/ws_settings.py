@@ -35,6 +35,4 @@ def resolve_stream_settings(ws_ss: dict | None, sys: Mapping[str, Any],
     eff["seat_shell"] = shell if shell in _SEAT_SHELLS else "gnome"
     eff["seat_width"] = ss.get("seat_width", sys.get("WORKSTATION_SEAT_WIDTH"))
     eff["seat_height"] = ss.get("seat_height", sys.get("WORKSTATION_SEAT_HEIGHT"))
-    eff["cursor_workaround"] = ss.get("cursor_workaround",
-                                      sys.get("WORKSTATION_CURSOR_WORKAROUND"))
     return eff

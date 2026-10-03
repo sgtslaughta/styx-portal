@@ -141,7 +141,8 @@ AGENT_UPDATE_FILES = [
     ("seat_gnome.py", "seat_gnome.py"),
     ("seat_labwc.py", "seat_labwc.py"),
     ("health.py", "health.py"),
-    ("grant.py", "grant.py"),
+    ("refit.py", "refit.py"),
+    ("seat_portal.py", "seat_portal.py"),
     ("portal_api.py", "portal_api.py"),
     ("clipboard_bridge.py", "clipboard_bridge.py"),
 ]

@@ -215,12 +215,6 @@ Use the venv interpreter — the system `python3` lacks the agent's audio/displa
 
 4. **Network/bitrate:** Reduce bitrate in admin panel (e.g., 16000 → 8000 kbps) if latency is high.
 
-### GNOME Seat Needs Screen-Share Consent
-
-**Symptom:** The stream shows "GNOME seat needs one-time screen-share consent", or no Allow dialog ever appears.
-
-**Action:** Log in to the box's physical desktop (an X display must be live), make sure no viewer is connected, run `styx_agent.py doctor --grant` (see [One-time screen-share consent](#one-time-screen-share-consent)) and click **Allow** on the dialog that appears on the physical screen.
-
 ### "Revoked by server" Message
 
 **Symptom:** Agent logs "Revoked by server. Stopping. To remove this agent run: `python3 ~/.local/share/styx-agent/styx_agent.py uninstall`".
@@ -275,19 +269,11 @@ Agent 0.5.0 runs upstream selkies 2.0.0 + pixelflux 2.1.0 + pcmflux 2.1.0. In se
 
 - **Requirement:** GNOME Shell >= 46 on the box. If GNOME is unavailable the agent automatically falls back to `seat_shell: labwc` (the previous labwc/waybar seat). Changing `seat_shell` restarts the agent.
 - **Resolution:** fixed per workstation from `seat_width` / `seat_height` (system defaults 2560x1440 in **Settings -> Workstation features**). The browser scales the stream. Live resize is not supported (headless GNOME exposes a single mode).
-- **Cursor:** the GNOME capture path bakes the cursor into the video, so the gateway hides the browser cursor (`cursor_workaround`, default on) to avoid a double or stale cursor. The cursor lags by one encode round-trip.
+- **Cursor:** the GNOME seat always embeds the cursor in the video (Mutter cursor-mode 1); the `cursor_workaround` setting was removed.
 - **Shared profile:** the seat runs as the same Linux user as the physical login, so dconf settings, extensions, wallpaper and keyring are shared with the local session.
 - **Watchdog:** a stream stall restarts only selkies (apps survive); 3 stalls in 10 minutes restart the GNOME session and report the workstation degraded.
 
-### One-time screen-share consent
-
-Each workstation needs a one-time portal screen-share grant. Until then the stream shows: "GNOME seat needs one-time screen-share consent: run 'styx-agent doctor --grant' on the box".
-
-```bash
-~/.local/share/styx-agent/venv/bin/python ~/.local/share/styx-agent/styx_agent.py doctor --grant
-```
-
-This needs a live X display on the box (the physical logged-in desktop, default `:0` or the configured display): the dialog appears there, someone clicks **Allow**, and the restore token is saved (`~/.local/state/pixelflux/portal-restore-token`). Later sessions start without a prompt. The command refuses while a viewer is connected.
+The GNOME seat needs no screen-share consent since agent 0.6.0.
 
 ### Upgrade and rollback
 

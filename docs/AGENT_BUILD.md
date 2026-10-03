@@ -29,11 +29,11 @@ browser <── selkies 2.0 (gateway → selkies) ── pixelflux ── xdg-de
                                                                       └── host apps (Wayland clients)
 ```
 
-The agent starts `gnome-shell` headless under `dbus-run-session`; pixelflux captures it and injects input through the portal ScreenCast/RemoteDesktop interfaces. A restore token from the one-time consent grant (`doctor --grant`) lets sessions start without a prompt.
+The agent starts `gnome-shell` headless under `dbus-run-session`; pixelflux captures it and injects input through the portal ScreenCast/RemoteDesktop interfaces. No consent prompt is needed since agent 0.6.0.
 
 ### 2b. labwc seat (fallback)
 
-> **Agent 0.5.0:** the default seat is a real headless GNOME Shell (`seat_shell: gnome`, needs GNOME Shell >= 46) on a private D-Bus session, captured via xdg-desktop-portal with a one-time consent grant (`doctor --grant`). The labwc/pixelflux-compositor design below is the `seat_shell: labwc` fallback, used automatically when GNOME is unavailable. See [GNOME seat](WORKSTATIONS.md#gnome-seat).
+> **Agent 0.5.0:** the default seat is a real headless GNOME Shell (`seat_shell: gnome`, needs GNOME Shell >= 46) on a private D-Bus session, captured via xdg-desktop-portal; no consent grant is needed since agent 0.6.0. The labwc/pixelflux-compositor design below is the `seat_shell: labwc` fallback, used automatically when GNOME is unavailable. See [GNOME seat](WORKSTATIONS.md#gnome-seat).
 
 The labwc fallback builds a desktop from scratch each time the streaming shell starts:
 
@@ -153,7 +153,7 @@ is absent, it falls back to a flat colour.
 
 ## 5. Seat dependencies
 
-**GNOME seat (default):** not installed by `enroll.sh`; must already be on the box: `gnome-shell` >= 46, `xdg-desktop-portal` + `xdg-desktop-portal-gnome`, `dbus-run-session` / `dbus-update-activation-environment` (dbus), `gdbus` (glib), and `xset` for the consent grant on the physical X display. The agent falls back to the labwc seat only if `gnome-shell` is missing or older than 46. The other prerequisites (`xdg-desktop-portal` + `xdg-desktop-portal-gnome`, started on demand by D-Bus and used for screen capture and input; `dbus-run-session`, `dbus-update-activation-environment`, `gdbus`, and `xset` for `doctor --grant`) are part of a standard Ubuntu desktop install; if they are missing the GNOME seat fails to stream and the portal shows the error instead of falling back.
+**GNOME seat (default):** not installed by `enroll.sh`; must already be on the box: `gnome-shell` >= 46, `xdg-desktop-portal` + `xdg-desktop-portal-gnome`, `dbus-run-session` / `dbus-update-activation-environment` (dbus), `gdbus` (glib). The agent falls back to the labwc seat only if `gnome-shell` is missing or older than 46. The other prerequisites (`xdg-desktop-portal` + `xdg-desktop-portal-gnome`, started on demand by D-Bus and used for screen capture and input; `dbus-run-session`, `dbus-update-activation-environment`, `gdbus`) are part of a standard Ubuntu desktop install; if they are missing the GNOME seat fails to stream and the portal shows the error instead of falling back.
 
 **labwc fallback seat:** installed by `enroll.sh` (`SEAT_PKG`, per package manager), all from official
 repos:
