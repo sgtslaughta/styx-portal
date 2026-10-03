@@ -36,9 +36,8 @@ def test_gateway_cmd_secrets_via_env(tmp_path):
     cmd, env = styx_agent.build_gateway_cmd(cfg, 18444)
     assert cmd[0].endswith("venv/bin/python")
     assert cmd[1].endswith("gateway.py")
-    assert cmd[2].endswith("/web")
-    assert cmd[3] == "8443"          # LAN port
-    assert cmd[4] == "18444"         # loopback selkies
+    assert cmd[2] == "8443"          # LAN port
+    assert cmd[3] == "18444"         # loopback selkies
     assert env["STYX_GW_USER"] == "styx"
     assert env["STYX_GW_PASSWORD"] == "pw"
     assert not any("pw" in a for a in cmd)
@@ -244,3 +243,12 @@ def test_host_tuning_checks_all_good(monkeypatch, tmp_path):
     monkeypatch.setattr(styx_agent.subprocess, "run", lambda *a, **k: type(
         "R", (), {"stdout": "Enabled\n", "returncode": 0})())
     assert all(ok for _, ok, _ in styx_agent.host_tuning_checks())
+
+
+def test_gateway_cmd_has_no_web_dir_and_passes_cursor_flag(tmp_path):
+    cfg = {"install_dir": str(tmp_path), "port": 8443, "selkies_user": "u",
+           "selkies_password": "p", "stream_settings": {"cursor_workaround": True}}
+    cmd, env = styx_agent.build_gateway_cmd(cfg, 1234)
+    assert cmd[-2:] == ["8443", "1234"]
+    assert not any(a.endswith("/web") for a in cmd)
+    assert env["STYX_GW_CURSOR_WORKAROUND"] == "1"

@@ -90,10 +90,10 @@ def build_gateway_cmd(cfg: dict, upstream_port: int) -> tuple[list[str], dict]:
         "STYX_GW_IDLE_TIMEOUT_S": str(ss.get("idle_timeout_s", 0)),
         "STYX_GW_IDLE_WARN_S": str(ss.get("idle_warn_lead_s", 60)),
         "STYX_GW_IDLE_ENABLED": "1" if ss.get("idle_timeout_enabled") else "",
+        "STYX_GW_CURSOR_WORKAROUND": "1" if ss.get("cursor_workaround") else "",
     }
     cmd = [str(install / "venv/bin/python"), str(install / "gateway.py"),
-           str(install / "web"), str(cfg["port"]),
-           str(upstream_port)]
+           str(cfg["port"]), str(upstream_port)]
     return cmd, env
 
 

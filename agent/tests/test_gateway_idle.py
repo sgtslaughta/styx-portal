@@ -153,14 +153,13 @@ async def test_gateway_writes_last_input_ts_on_connect(tmp_path):
         return ws
 
     upstream = web.Application()
-    upstream.router.add_get("/websocket", upstream_ws)
+    upstream.router.add_get("/api/websockets", upstream_ws)
     upstream_client = TestClient(TestServer(upstream))
     await upstream_client.start_server()
     upstream_port = upstream_client.server.port
 
-    (tmp_path / "index.html").write_text("x")
     state = tmp_path / "gw_state.json"
-    app = gateway.create_app(str(tmp_path), "styx", "pw",
+    app = gateway.create_app("styx", "pw",
                              upstream_port=upstream_port,
                              state_file=str(state))
     client = TestClient(TestServer(app))
@@ -207,14 +206,13 @@ async def test_gateway_updates_last_input_ts_on_client_input(tmp_path):
         return ws
 
     upstream = web.Application()
-    upstream.router.add_get("/websocket", upstream_ws)
+    upstream.router.add_get("/api/websockets", upstream_ws)
     upstream_client = TestClient(TestServer(upstream))
     await upstream_client.start_server()
     upstream_port = upstream_client.server.port
 
-    (tmp_path / "index.html").write_text("x")
     state = tmp_path / "gw_state.json"
-    app = gateway.create_app(str(tmp_path), "styx", "pw",
+    app = gateway.create_app("styx", "pw",
                              upstream_port=upstream_port,
                              state_file=str(state))
     client = TestClient(TestServer(app))
