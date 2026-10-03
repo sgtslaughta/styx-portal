@@ -386,7 +386,7 @@ async def test_single_upstream_index_assets_api_and_ws(tmp_path):
     up = TestClient(TestServer(await _upstream_app()))
     await up.start_server()
     app = gateway.create_app("styx", "pw", upstream_port=up.server.port,
-                             cursor_workaround=True)
+                             seat_dir=str(tmp_path))
     c = TestClient(TestServer(app))
     await c.start_server()
     h = {"Authorization": _basic("styx", "pw")}
@@ -663,3 +663,124 @@ async def test_index_3xx_forwards_location():
 def test_cursor_hide_also_hides_client_cursor_canvas():
     out = gateway.inject_cursor_hide("<html><head></head><body></body></html>", True)
     assert 'canvas[style*="999999"]' in out and "display:none !important" in out
+
+
+async def _recording_upstream(received):
+    from aiohttp import web
+
+    async def upstream_ws(request):
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        async for m in ws:
+            received.append(m.data)
+        return ws
+    app = web.Application()
+    app.router.add_get("/api/websockets", upstream_ws)
+    return app
+
+
+async def _refit_pair(tmp_path, received, seat_dir):
+    from aiohttp.test_utils import TestClient, TestServer
+    up = TestClient(TestServer(await _recording_upstream(received)))
+    await up.start_server()
+    client = TestClient(TestServer(gateway.create_app(
+        "styx", "pw", upstream_port=up.server.port, seat_dir=seat_dir)))
+    await client.start_server()
+    return up, client
+
+
+@pytest.mark.asyncio
+async def test_first_resize_mismatch_requests_refit_and_closes_4002(tmp_path):
+    import asyncio
+    (tmp_path / "seat-size").write_text("1920x1080")
+    received = []
+    up, client = await _refit_pair(tmp_path, received, str(tmp_path))
+    try:
+        ws = await client.ws_connect("/websocket", headers={"Authorization": _basic("styx", "pw")})
+        await ws.send_str("SETTINGS,{}")
+        await ws.send_str("r,2552x1294,primary")
+        msg = await asyncio.wait_for(ws.receive(), timeout=3)
+        assert msg.type == aiohttp.WSMsgType.CLOSE and msg.data == 4002
+        await asyncio.sleep(0.1)
+    finally:
+        await client.close()
+        await up.close()
+    assert (tmp_path / "refit-request").read_text() == "2552x1294"
+    assert "SETTINGS,{}" in received
+    assert not any(isinstance(m, str) and m.startswith("r,") for m in received)
+
+
+@pytest.mark.asyncio
+async def test_matching_resize_is_forwarded(tmp_path):
+    import asyncio
+    (tmp_path / "seat-size").write_text("2552x1294")
+    received = []
+    up, client = await _refit_pair(tmp_path, received, str(tmp_path))
+    try:
+        ws = await client.ws_connect("/websocket", headers={"Authorization": _basic("styx", "pw")})
+        await ws.send_str("r,2560x1300,primary")
+        await asyncio.sleep(0.2)
+        await ws.close()
+    finally:
+        await client.close()
+        await up.close()
+    assert "r,2560x1300,primary" in received
+    assert not (tmp_path / "refit-request").exists()
+
+
+@pytest.mark.asyncio
+async def test_second_resize_in_window_is_forwarded(tmp_path):
+    """Only a connection's FIRST r, can refit; later ones letterbox upstream."""
+    import asyncio
+    (tmp_path / "seat-size").write_text("2552x1294")
+    received = []
+    up, client = await _refit_pair(tmp_path, received, str(tmp_path))
+    try:
+        ws = await client.ws_connect("/websocket", headers={"Authorization": _basic("styx", "pw")})
+        await ws.send_str("r,2552x1294,primary")
+        await ws.send_str("r,1280x720,primary")
+        await asyncio.sleep(0.2)
+        await ws.close()
+    finally:
+        await client.close()
+        await up.close()
+    assert "r,1280x720,primary" in received
+    assert not (tmp_path / "refit-request").exists()
+
+
+@pytest.mark.asyncio
+async def test_resize_untouched_without_seat_dir(tmp_path):
+    import asyncio
+    received = []
+    up, client = await _refit_pair(tmp_path, received, "")
+    try:
+        ws = await client.ws_connect("/websocket", headers={"Authorization": _basic("styx", "pw")})
+        await ws.send_str("r,2552x1294,primary")
+        await asyncio.sleep(0.2)
+        await ws.close()
+    finally:
+        await client.close()
+        await up.close()
+    assert "r,2552x1294,primary" in received
+
+
+@pytest.mark.asyncio
+async def test_index_503_while_refit_pending_and_injects_seat_shims(tmp_path):
+    from aiohttp.test_utils import TestClient, TestServer
+    up = TestClient(TestServer(await _upstream_app()))
+    await up.start_server()
+    client = TestClient(TestServer(gateway.create_app(
+        "styx", "pw", upstream_port=up.server.port, seat_dir=str(tmp_path))))
+    await client.start_server()
+    h = {"Authorization": _basic("styx", "pw")}
+    try:
+        (tmp_path / "refit-request").write_text("2552x1294")
+        r = await client.get("/", headers=h)
+        assert r.status == 503
+        (tmp_path / "refit-request").unlink()
+        r = await client.get("/", headers=h)
+        body = await r.text()
+        assert r.status == 200 and 'id="styx-refit"' in body and 'id="styx-cursor"' in body
+    finally:
+        await client.close()
+        await up.close()

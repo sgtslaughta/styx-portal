@@ -72,7 +72,6 @@ class Settings(BaseSettings):
     WORKSTATION_IDLE_TIMEOUT_ENABLED: bool = True
     WORKSTATION_SEAT_WIDTH: int = 2560
     WORKSTATION_SEAT_HEIGHT: int = 1440
-    WORKSTATION_CURSOR_WORKAROUND: bool = True
     LAN_CERT_DIR: str = "/app/data/lan-certs"      # backend-side path (lan-certs volume)
     TRAEFIK_LAN_CERT_DIR: str = "/lan-certs"       # same volume as seen by Traefik
 

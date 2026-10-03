@@ -74,7 +74,6 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
         "WORKSTATION_IDLE_TIMEOUT_ENABLED": _sys_settings.get("WORKSTATION_IDLE_TIMEOUT_ENABLED"),
         "WORKSTATION_SEAT_WIDTH": _sys_settings.get("WORKSTATION_SEAT_WIDTH"),
         "WORKSTATION_SEAT_HEIGHT": _sys_settings.get("WORKSTATION_SEAT_HEIGHT"),
-        "WORKSTATION_CURSOR_WORKAROUND": _sys_settings.get("WORKSTATION_CURSOR_WORKAROUND"),
     }
     effective_ss = resolve_stream_settings(ws.stream_settings, sys_settings_dict,
                                            ws.agent_version)

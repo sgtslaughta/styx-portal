@@ -6,7 +6,7 @@ from pathlib import Path
 AGENT = Path(__file__).resolve().parents[1]
 BACKEND_LIST = AGENT.parent / "backend/app/services/workstations.py"
 ENTRY = ["styx_agent", "engine", "gateway", "seat_gnome", "seat_labwc",
-         "grant", "health", "portal_api"]
+         "health", "portal_api", "refit"]
 
 
 def _local_imports(path: Path) -> set[str]:
@@ -28,6 +28,7 @@ def test_all_imported_local_modules_are_served():
         for mod in _local_imports(AGENT / f"{name}.py"):
             assert f"{mod}.py" in served, f"{name} imports {mod}, not served"
     assert "selkies_launcher.py" not in served
+    assert "seat_portal.py" in served   # launched by path, not imported
 
 
 def test_enroll_upgrade_is_atomic_and_self_restoring():

@@ -243,7 +243,7 @@ async def test_agent_file_endpoints_routed(client):
         assert r.status_code == 200, name
 
 
-NEW_FILES = ("seat_gnome.py", "seat_labwc.py", "health.py", "grant.py", "portal_api.py")
+NEW_FILES = ("seat_gnome.py", "seat_labwc.py", "health.py", "refit.py", "seat_portal.py", "portal_api.py")
 
 
 def test_agent_files_for_0_5():

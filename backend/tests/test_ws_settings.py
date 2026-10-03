@@ -2,7 +2,7 @@ from app.services.ws_settings import is_v2_agent, resolve_stream_settings
 
 SYS = {"WORKSTATION_IDLE_TIMEOUT_S": 900, "WORKSTATION_IDLE_WARN_LEAD_S": 60,
        "WORKSTATION_IDLE_TIMEOUT_ENABLED": True, "WORKSTATION_SEAT_WIDTH": 2560,
-       "WORKSTATION_SEAT_HEIGHT": 1440, "WORKSTATION_CURSOR_WORKAROUND": True}
+       "WORKSTATION_SEAT_HEIGHT": 1440}
 
 
 def test_is_v2_agent():
@@ -17,7 +17,7 @@ def test_defaults_fill_and_overrides_win():
     assert eff["idle_warn_lead_s"] == 60           # default fills
     assert eff["seat_shell"] == "gnome"
     assert (eff["seat_width"], eff["seat_height"]) == (2560, 1440)
-    assert eff["cursor_workaround"] is True
+    assert "cursor_workaround" not in eff
 
 
 def test_old_h264_keys_alias_to_video_keys_for_v2():
@@ -36,7 +36,7 @@ def test_new_video_key_beats_old_alias():
 def test_v1_agent_gets_todays_shape_only():
     eff = resolve_stream_settings({"h264_crf": 22}, SYS, "0.4.11")
     assert eff["h264_crf"] == 22
-    for k in ("seat_shell", "seat_width", "cursor_workaround", "video_crf"):
+    for k in ("seat_shell", "seat_width", "video_crf"):
         assert k not in eff
     assert eff["idle_timeout_s"] == 900
 
@@ -44,3 +44,10 @@ def test_v1_agent_gets_todays_shape_only():
 def test_bad_seat_shell_falls_back_to_gnome():
     eff = resolve_stream_settings({"seat_shell": "kde"}, SYS, "0.5.0")
     assert eff["seat_shell"] == "gnome"
+
+
+def test_removed_cursor_setting_row_is_ignored():
+    """Old DBs still hold WORKSTATION_CURSOR_WORKAROUND; it must not leak or crash."""
+    sys_settings = {**SYS, "WORKSTATION_CURSOR_WORKAROUND": True}
+    eff = resolve_stream_settings({}, sys_settings, "0.6.0")
+    assert "cursor_workaround" not in eff

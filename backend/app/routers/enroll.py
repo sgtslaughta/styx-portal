@@ -77,9 +77,14 @@ async def health_py():
     return _serve("health.py")
 
 
-@router.get("/grant.py")
-async def grant_py():
-    return _serve("grant.py")
+@router.get("/refit.py")
+async def refit_py():
+    return _serve("refit.py")
+
+
+@router.get("/seat_portal.py")
+async def seat_portal_py():
+    return _serve("seat_portal.py")
 
 
 @router.get("/portal_api.py")

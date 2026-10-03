@@ -150,7 +150,7 @@ async def test_heartbeat_v2_agent_gets_seat_keys(client, session):
                           json={"status": "online", "health": {"agent_version": "0.5.0"}},
                           headers=_auth())
     ss = r.json()["stream_settings"]
-    assert ss["seat_shell"] == "gnome" and ss["cursor_workaround"] is True
+    assert ss["seat_shell"] == "gnome" and "cursor_workaround" not in ss
 
 
 @pytest.mark.asyncio

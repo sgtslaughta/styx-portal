@@ -262,7 +262,7 @@ mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$UNIT_DIR" "$INSTALL_DIR/logs"
 for pair in "agent.py styx_agent.py" "engine.py engine.py" \
             "gateway.py gateway.py" "seat_gnome.py seat_gnome.py" \
             "seat_labwc.py seat_labwc.py" "health.py health.py" \
-            "grant.py grant.py" "portal_api.py portal_api.py" \
+            "refit.py refit.py" "seat_portal.py seat_portal.py" "portal_api.py portal_api.py" \
             "clipboard_bridge.py clipboard_bridge.py" "uninstall uninstall.sh"; do
   read -r remote local_name <<<"$pair"
   fetch "$SERVER/api/enroll/$remote" -o "$INSTALL_DIR/$local_name" \
