@@ -766,7 +766,7 @@ async def test_resize_untouched_without_seat_dir(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_index_503_while_refit_pending_and_injects_seat_shims(tmp_path):
+async def test_index_holds_while_refit_pending_and_injects_seat_shims(tmp_path):
     from aiohttp.test_utils import TestClient, TestServer
     up = TestClient(TestServer(await _upstream_app()))
     await up.start_server()
@@ -777,7 +777,9 @@ async def test_index_503_while_refit_pending_and_injects_seat_shims(tmp_path):
     try:
         (tmp_path / "refit-request").write_text("2552x1294")
         r = await client.get("/", headers=h)
-        assert r.status == 503
+        # 200, never 5xx: Traefik swaps 5xx for the portal's unavailable page.
+        assert r.status == 200 and 'id="styx-hold"' in await r.text()
+        assert r.headers["Cache-Control"] == "no-store"
         (tmp_path / "refit-request").unlink()
         r = await client.get("/", headers=h)
         body = await r.text()
@@ -785,3 +787,26 @@ async def test_index_503_while_refit_pending_and_injects_seat_shims(tmp_path):
     finally:
         await client.close()
         await up.close()
+
+
+@pytest.mark.asyncio
+async def test_index_holds_when_seat_selkies_down(tmp_path):
+    from aiohttp.test_utils import TestClient, TestServer
+    import socket as _s
+    sock = _s.socket()
+    sock.bind(("127.0.0.1", 0))
+    dead = sock.getsockname()[1]
+    sock.close()
+    h = {"Authorization": _basic("styx", "pw")}
+    seat = TestClient(TestServer(gateway.create_app("styx", "pw", upstream_port=dead,
+                                                    seat_dir=str(tmp_path))))
+    plain = TestClient(TestServer(gateway.create_app("styx", "pw", upstream_port=dead)))
+    await seat.start_server()
+    await plain.start_server()
+    try:
+        r = await seat.get("/", headers=h)
+        assert r.status == 200 and 'id="styx-hold"' in await r.text()
+        assert (await plain.get("/", headers=h)).status == 502
+    finally:
+        await seat.close()
+        await plain.close()

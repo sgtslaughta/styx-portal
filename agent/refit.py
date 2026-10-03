@@ -3,8 +3,8 @@
 The gateway watches the browser's `r,WxH[,display]` messages. Once the size
 has held for SETTLE_S and differs from the live seat size (<install>/seat-size) it writes <install>/refit-request
 and closes the socket with CLOSE_CODE; the agent rebuilds the virtual monitor at
-that size, then clears the request. The injected shim reloads the page once the
-gateway serves it again (503 while a request is pending). Pure helpers only."""
+that size, then clears the request. The injected shim reloads the page; the gateway
+serves HOLD_HTML (which retries) until selkies is back. Pure helpers only."""
 import os
 import re
 import time
@@ -21,12 +21,17 @@ _SIZE = re.compile(r"(\d{1,5})x(\d{1,5})")
 RELOAD_JS = (
     '<script id="styx-refit">(function(){var W=window.WebSocket;'
     "function S(u,p){var s=p===undefined?new W(u):new W(u,p);"
-    "s.addEventListener('close',function(e){if(e.code!==4002)return;var n=0;"
-    "(function poll(){fetch(location.href,{cache:'no-store'}).then(function(r){"
-    "if(r.ok)location.reload();else throw 0}).catch(function(){if(++n<60)"
-    "setTimeout(poll,500)})})()});return s}"
+    "s.addEventListener('close',function(e){if(e.code===4002)"
+    "setTimeout(function(){location.reload()},300)});return s}"
     "S.prototype=W.prototype;['CONNECTING','OPEN','CLOSING','CLOSED'].forEach("
     "function(k){S[k]=W[k]});window.WebSocket=S})();</script>")
+# Served with 200 while the seat is rebuilt: any 5xx would be swapped by Traefik's
+# instance-unavailable page, which bounces the viewer to the portal.
+HOLD_HTML = ('<!doctype html><html><head><title>Resizing desktop</title></head>'
+             '<body id="styx-hold" style="margin:0;height:100vh;display:flex;'
+             'align-items:center;justify-content:center;background:#000;color:#9aa;'
+             'font:16px system-ui">Resizing desktop…<script>setTimeout(function()'
+             '{location.reload()},500)</script></body></html>')
 
 
 def clamp(w: int, h: int) -> tuple[int, int]:
