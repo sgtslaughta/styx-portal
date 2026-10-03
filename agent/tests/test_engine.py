@@ -227,3 +227,36 @@ def test_pick_dri_node(tmp_path, monkeypatch):
 def test_pick_free_port():
     p = engine.pick_free_port()
     assert 1024 < p < 65536
+
+
+_SEQ = __import__("itertools").count()
+
+
+def _seat_cmd(tmp_path, monkeypatch, ss, seat=None, mode="seat"):
+    sub = tmp_path / str(next(_SEQ))
+    sub.mkdir()
+    cfg = _cfg(sub, mode=mode, display="", stream_settings=ss)
+    monkeypatch.setattr(engine, "pick_dri_node", lambda: "")
+    monkeypatch.setattr(engine, "resolve_monitor_source", lambda: "")
+    return engine.build_selkies_cmd(cfg, 1, seat)[0]
+
+
+def test_bitrate_locked_server_side(tmp_path, monkeypatch):
+    """Stale 1.x client storage sends video_bitrate=8 (meant Mbps); 2.0 reads
+    kbps and clamps to 100 kbps -> blurry stream. Lock it server-side."""
+    cmd = _seat_cmd(tmp_path, monkeypatch, {})
+    assert "--video-bitrate=8000-8000" in cmd
+    cmd = _seat_cmd(tmp_path, monkeypatch, {"video_bitrate_kbps": 20000})
+    assert "--video-bitrate=20000-20000" in cmd
+    cmd = _seat_cmd(tmp_path, monkeypatch, {"video_bitrate_kbps": "junk"})
+    assert "--video-bitrate=8000-8000" in cmd
+
+
+def test_gnome_cursor_workaround_disables_client_cursor(tmp_path, monkeypatch):
+    seat = {"socket": "s", "bus": "b"}
+    on = _seat_cmd(tmp_path, monkeypatch, {"cursor_workaround": True}, seat)
+    assert "--enable-cursors=false" in on
+    off = _seat_cmd(tmp_path, monkeypatch, {"cursor_workaround": False}, seat)
+    assert "--enable-cursors=false" not in off
+    labwc = _seat_cmd(tmp_path, monkeypatch, {"cursor_workaround": True})
+    assert "--enable-cursors=false" not in labwc   # labwc forwards real cursor metadata
