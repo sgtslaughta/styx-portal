@@ -42,6 +42,7 @@ class FakeProc:
 class FakeSeat:
     def __init__(self, h):
         self.h, self.restarts, self._alive, self.started = h, 0, False, False
+        self.size_file = h.tmp / "seat-size"
 
     def alive(self):
         return self._alive
@@ -68,7 +69,7 @@ class FakeSeat:
 
 
 class Harness:
-    def __init__(self, tmp_path, monkeypatch, script, *, token=False,
+    def __init__(self, tmp_path, monkeypatch, script, *,
                  starving_since=None, settings=None):
         self.events, self.payloads, self.passes = [], [], 0
         self.now, self.seat, self.script = 1_000_000.0, None, script
@@ -84,11 +85,9 @@ class Harness:
             (tmp_path / "gw_state.json").write_text(json.dumps({
                 "active_connections": 1, "stream_starving": True,
                 "starving_since": self.now + starving_since}))
-        tok = tmp_path / "portal-restore-token"
-        if token:
-            tok.write_text("t")
         sg = styx_agent.seat_gnome
-        monkeypatch.setattr(sg, "TOKEN_PATH", tok)
+        monkeypatch.setattr(styx_agent.refit, "wait_for_request",
+                            lambda path, timeout, **k: self.sleep(timeout))
         monkeypatch.setattr(sg, "gnome_available", lambda: (True, ""))
 
         def make_seat(*_a):
@@ -144,20 +143,8 @@ def _revoke_at(n):
     return lambda h, i: "revoke" if i >= n else None
 
 
-def test_first_boot_waits_for_consent(tmp_path, monkeypatch):
-    h = Harness(tmp_path, monkeypatch, _revoke_at(3), token=False, starving_since=0)
-    assert h.run() == 0
-    assert h.events[0][0] == "seat_start" and h.events[1] == ("popen", "selkies")
-    assert h.count("term", "selkies") == 0          # no watchdog while pending
-    assert h.count("popen", "selkies") == 1
-    last = h.payloads[-1]
-    assert last["last_error"] == styx_agent.CONSENT_ERROR
-    assert last["health"]["needs_consent"] is True
-    assert last["health"]["seat_shell"] == "gnome"
-
-
 def test_watchdog_restarts_selkies_then_escalates(tmp_path, monkeypatch):
-    h = Harness(tmp_path, monkeypatch, _revoke_at(4), token=True, starving_since=0)
+    h = Harness(tmp_path, monkeypatch, _revoke_at(4), starving_since=0)
     assert h.run() == 0
     # First restart touches only selkies: no seat stop/start in between.
     i = h.events.index(("term", "selkies"))
@@ -177,7 +164,7 @@ def test_dead_gnome_shell_restarts_seat_then_selkies(tmp_path, monkeypatch):
         if i == 1:
             h.seat.die()
         return "revoke" if i >= 2 else None
-    h = Harness(tmp_path, monkeypatch, script, token=True)
+    h = Harness(tmp_path, monkeypatch, script)
     assert h.run() == 0
     i = h.events.index(("term", "selkies"))
     assert h.events[i + 1][0] == "seat_start"
@@ -194,7 +181,7 @@ def test_settings_push_restarts_seat_only_on_geometry(tmp_path, monkeypatch):
             assert h.count("term", "selkies") == 1 and h.count("term", "gateway") == 1
             return {**ss, "seat_width": 1920}
         return "revoke"
-    h = Harness(tmp_path, monkeypatch, script, token=True)
+    h = Harness(tmp_path, monkeypatch, script)
     assert h.run() == 0
     assert ("seat_start", 1920, 1440) in h.events
     assert h.count("seat_start") == 2
@@ -205,7 +192,7 @@ def test_seat_shell_flip_exits_for_restart(tmp_path, monkeypatch):
         if i == 1:
             return {**h.cfg["stream_settings"], "seat_shell": "labwc"}
         pytest.fail("run() kept going after seat_shell changed")
-    h = Harness(tmp_path, monkeypatch, script, token=True)
+    h = Harness(tmp_path, monkeypatch, script)
     assert h.run() != 0
     assert h.count("seat_stop") >= 1
     assert h.count("term", "selkies") == 1 and h.count("term", "gateway") == 1
