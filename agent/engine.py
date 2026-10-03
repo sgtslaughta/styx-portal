@@ -466,8 +466,8 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
         f"--framerate={s.get('framerate', 60)}",
         "--second-screen=false",
         # Off until their phase ships (spec §6): devices, printing.
-        "--printing-enabled=false", "--microphone-enabled=false",
-        "--webcam-enabled=false", "--gamepad-enabled=false",
+        "--printing-enabled=false|locked", "--microphone-enabled=false|locked",
+        "--webcam-enabled=false|locked", "--gamepad-enabled=false|locked",
     ]
     dri = pick_dri_node()
     if dri:
@@ -482,7 +482,8 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
                     "XDG_SESSION_TYPE": "wayland"})
         monitor = f"{SEAT_SINK}.monitor"
     elif cfg.get("mode") == "seat":          # labwc seat (fallback)
-        cmd.append("--wayland=true")
+        cmd += ["--wayland=true",
+                f"--wayland-socket-index={cfg.get('seat_socket_index', 1)}"]
         monitor = resolve_monitor_source()
     else:                                    # mirror
         env["DISPLAY"] = cfg["display"]

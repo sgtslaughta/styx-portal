@@ -68,6 +68,7 @@ def test_gnome_seat_cmd_targets_host_display(tmp_path, monkeypatch):
     assert env["XDG_CURRENT_DESKTOP"] == "ubuntu:GNOME"
     assert "DISPLAY" not in env and "WAYLAND_DISPLAY" not in env
     assert "--audio-device-name=styx-seat.monitor" in cmd
+    assert not any(a.startswith("--wayland-socket-index") for a in cmd)
 
 
 def test_labwc_seat_cmd_uses_own_compositor(tmp_path, monkeypatch):
@@ -78,14 +79,22 @@ def test_labwc_seat_cmd_uses_own_compositor(tmp_path, monkeypatch):
     assert "--wayland=true" in cmd
     assert not any(a.startswith("--wayland-host-display") for a in cmd)
     assert "SELKIES_USE_CPU" not in env and env["SELKIES_AUDIO_ENABLED"] == "false"
+    assert "--wayland-socket-index=1" in cmd
+
+
+def test_labwc_seat_cmd_uses_persisted_socket_index(tmp_path, monkeypatch):
+    cfg = _cfg(tmp_path, mode="seat", display="", seat_socket_index=3)
+    _stub(monkeypatch)
+    cmd, _ = engine.build_selkies_cmd(cfg, 18444)
+    assert "--wayland-socket-index=3" in cmd
 
 
 def test_features_off_until_their_phase(tmp_path, monkeypatch):
     cfg = _cfg(tmp_path)
     _stub(monkeypatch)
     cmd, _ = engine.build_selkies_cmd(cfg, 1)
-    for f in ("--printing-enabled=false", "--microphone-enabled=false",
-              "--webcam-enabled=false", "--gamepad-enabled=false"):
+    for f in ("--printing-enabled=false|locked", "--microphone-enabled=false|locked",
+              "--webcam-enabled=false|locked", "--gamepad-enabled=false|locked"):
         assert f in cmd
 
 
