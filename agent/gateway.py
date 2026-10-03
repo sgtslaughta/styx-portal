@@ -355,8 +355,10 @@ def create_app(user: str, password: str,
         return ws_server
 
     async def index(_request):
+        hold = web.Response(text=refit.HOLD_HTML, content_type="text/html",
+                            headers={"Cache-Control": "no-store"})
         if refit_file and refit.pending(refit_file):
-            return web.Response(status=503, text="resizing desktop")
+            return hold
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as s, \
                     s.get(UPSTREAM + "/", allow_redirects=False) as r:
@@ -365,6 +367,8 @@ def create_app(user: str, password: str,
                     return web.Response(status=r.status, body=await r.read(), headers=hdr)
                 html = await r.text()
         except aiohttp.ClientError:
+            if seat_dir:            # GNOME seat: selkies restarting after a refit
+                return hold
             return web.Response(status=502, text="stream backend unavailable")
         except asyncio.TimeoutError:
             return web.Response(status=504, text="stream backend timed out")
