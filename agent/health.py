@@ -1,5 +1,7 @@
-"""Gateway-state-file health readers for the Styx agent."""
+"""Health readers for the Styx agent: gateway state file + host tuning."""
 import json
+import shutil
+import subprocess
 import time
 from pathlib import Path
 
@@ -59,3 +61,25 @@ def stream_starving_seconds(cfg: dict, gateway_alive: bool) -> float | None:
         return max(0.0, time.time() - since)
     except (OSError, ValueError):
         return None
+
+
+GOVERNOR_PATH = Path("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")
+
+
+def host_tuning_checks() -> list[tuple[str, bool, str]]:
+    """Advisory gaming-performance checks: (label, ok, remedy). Never gates
+    doctor's exit status — a powersave governor is a warning, not a fault."""
+    rows = []
+    if GOVERNOR_PATH.is_file():
+        gov = GOVERNOR_PATH.read_text().strip()
+        rows.append((f"cpu governor: {gov}", gov == "performance",
+                     "" if gov == "performance" else
+                     "for gaming: sudo cpupower frequency-set -g performance"))
+    if shutil.which("nvidia-smi"):
+        r = subprocess.run(["nvidia-smi", "--query-gpu=persistence_mode",
+                            "--format=csv,noheader"],
+                           capture_output=True, text=True, timeout=10)
+        pm = r.stdout.strip().splitlines()[0].strip() if r.stdout.strip() else "?"
+        rows.append((f"nvidia persistence mode: {pm}", pm == "Enabled",
+                     "" if pm == "Enabled" else "enable: sudo nvidia-smi -pm 1"))
+    return rows

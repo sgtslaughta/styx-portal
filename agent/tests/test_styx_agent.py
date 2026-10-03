@@ -28,7 +28,7 @@ def test_load_config(tmp_path):
 
 
 def test_agent_version_bumped():
-    assert styx_agent.AGENT_VERSION == "0.4.11"
+    assert styx_agent.AGENT_VERSION == "0.5.0"
 
 
 def test_gateway_cmd_secrets_via_env(tmp_path):
@@ -71,7 +71,7 @@ def test_health_payload_reports_mode_and_engine(tmp_path):
     h = styx_agent.health_payload(cfg, selkies_alive=True, gateway_alive=False)
     assert h["mode"] == "seat"
     assert h["engine"] == "pixelflux"
-    assert h["agent_version"] == "0.4.11"
+    assert h["agent_version"] == "0.5.0"
     assert h["selkies_alive"] is True and h["gateway_alive"] is False
     assert h["active_connections"] == 0
 
@@ -80,9 +80,9 @@ def test_settings_change_restart_includes_gateway():
     """Idle-timeout config rides in stream_settings but reaches the gateway only
     through its launch env — so a stream_settings change must relaunch the
     gateway too, else the running gateway keeps stale (idle-less) config."""
-    assert "gateway" in styx_agent.SETTINGS_CHANGE_RESTART
-    for p in ("selkies", "shell", "clipboard"):
-        assert p in styx_agent.SETTINGS_CHANGE_RESTART
+    keys = styx_agent.settings_restart_keys({}, {"idle_timeout_s": 60})
+    for p in ("selkies", "shell", "clipboard", "gateway"):
+        assert p in keys
 
 
 def test_drop_clients_restarts_gateway():
@@ -136,26 +136,6 @@ def test_restart_engine_tears_down_selkies_shell_clipboard():
     assert procs["gateway"] is gw
 
 
-def test_host_tuning_checks_governor(monkeypatch, tmp_path):
-    gov = tmp_path / "scaling_governor"
-    gov.write_text("powersave\n")
-    monkeypatch.setattr(styx_agent, "GOVERNOR_PATH", gov)
-    monkeypatch.setattr(styx_agent.shutil, "which", lambda _: None)
-    rows = styx_agent.host_tuning_checks()
-    label, ok, detail = next(r for r in rows if "governor" in r[0])
-    assert not ok and "performance" in detail
-
-
-def test_host_tuning_checks_all_good(monkeypatch, tmp_path):
-    gov = tmp_path / "scaling_governor"
-    gov.write_text("performance\n")
-    monkeypatch.setattr(styx_agent, "GOVERNOR_PATH", gov)
-    monkeypatch.setattr(styx_agent.shutil, "which", lambda _: "/usr/bin/nvidia-smi")
-    monkeypatch.setattr(styx_agent.subprocess, "run", lambda *a, **k: type(
-        "R", (), {"stdout": "Enabled\n", "returncode": 0})())
-    assert all(ok for _, ok, _ in styx_agent.host_tuning_checks())
-
-
 def test_gateway_cmd_has_no_web_dir_and_passes_cursor_flag(tmp_path):
     cfg = {"install_dir": str(tmp_path), "port": 8443, "selkies_user": "u",
            "selkies_password": "p", "stream_settings": {"cursor_workaround": True}}
@@ -170,3 +150,55 @@ def test_gateway_cmd_exposes_state_path(tmp_path):
     # gateway cmd exposes the state path to the child
     _, env = styx_agent.build_gateway_cmd(cfg, 18444)
     assert env["STYX_GW_STATE"] == str(styx_agent.gw_state_path(cfg))
+
+
+def test_pick_seat_shell(monkeypatch):
+    monkeypatch.setattr(styx_agent.seat_gnome, "gnome_available", lambda: (True, ""))
+    assert styx_agent.pick_seat_shell({"mode": "mirror"}) == "mirror"
+    assert styx_agent.pick_seat_shell({"mode": "seat", "stream_settings": {}}) == "gnome"
+    assert styx_agent.pick_seat_shell(
+        {"mode": "seat", "stream_settings": {"seat_shell": "labwc"}}) == "labwc"
+    monkeypatch.setattr(styx_agent.seat_gnome, "gnome_available", lambda: (False, "x"))
+    assert styx_agent.pick_seat_shell({"mode": "seat", "stream_settings": {}}) == "labwc"
+
+
+def test_escalation_three_in_window():
+    e = styx_agent.Escalation(limit=3, window_s=600)
+    assert not e.record(0) and not e.record(100)
+    assert e.record(200)              # third inside 10 min -> escalate
+    assert not e.record(300)          # reset after escalating
+    e2 = styx_agent.Escalation(limit=3, window_s=600)
+    assert not e2.record(0) and not e2.record(400) and not e2.record(1100)
+
+
+def test_needs_consent(tmp_path):
+    tok = tmp_path / "portal-restore-token"
+    assert styx_agent.needs_consent(25.0, tok) is True
+    assert styx_agent.needs_consent(5.0, tok) is False
+    assert styx_agent.needs_consent(None, tok) is False
+    tok.write_text("t")
+    assert styx_agent.needs_consent(25.0, tok) is False
+
+
+def test_consent_error_names_the_fix():
+    assert "doctor --grant" in styx_agent.CONSENT_ERROR
+
+
+def test_settings_change_keeps_gnome_seat():
+    old = {"video_crf": 25, "seat_width": 2560, "seat_height": 1440}
+    keys = styx_agent.settings_restart_keys(old, {**old, "video_crf": 30})
+    assert "seat" not in keys and "selkies" in keys and "gateway" in keys
+    keys = styx_agent.settings_restart_keys(old, {**old, "seat_width": 1920})
+    assert "seat" in keys
+
+
+def test_run_config_from_0411_is_accepted(tmp_path, monkeypatch):
+    cfg = {"server": "https://x", "agent_token": "t", "workstation_id": "w",
+           "port": 8443, "selkies_user": "u", "selkies_password": "p",
+           "mode": "seat", "display": "", "seat_socket_index": 2,
+           "stream_settings": {"framerate": 60, "h264_crf": 23},
+           "install_dir": str(tmp_path), "ca_pin": "", "server_cert": ""}
+    monkeypatch.setattr(styx_agent.seat_gnome, "gnome_available", lambda: (True, ""))
+    assert styx_agent.pick_seat_shell(cfg) == "gnome"
+    p = styx_agent.health_payload(cfg, True, True)
+    assert p["agent_version"] == "0.5.0" and p["needs_consent"] is False

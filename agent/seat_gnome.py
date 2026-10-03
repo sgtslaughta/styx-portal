@@ -53,6 +53,31 @@ def gnome_available() -> tuple[bool, str]:
     return True, ""
 
 
+# GNOME seat consent (spec §5.4/§5.5): the portal's restore token is written
+# after the one-time grant; without it a frameless viewer is a pending dialog.
+CONSENT_PENDING_S = 20
+TOKEN_PATH = Path.home() / ".local/state/pixelflux/portal-restore-token"
+CONSENT_ERROR = ("GNOME seat needs one-time screen-share consent: run "
+                 "'styx-agent doctor --grant' on the box")
+
+
+def pick_seat_shell(cfg: dict) -> str:
+    if cfg.get("mode") != "seat":
+        return "mirror"
+    want = (cfg.get("stream_settings") or {}).get("seat_shell", "gnome")
+    if want == "gnome":
+        ok, why = gnome_available()
+        if ok:
+            return "gnome"
+        print(f"GNOME seat unavailable ({why}); using labwc seat", flush=True)
+    return "labwc"
+
+
+def needs_consent(starving_s: float | None, token_path: Path = TOKEN_PATH) -> bool:
+    return (starving_s is not None and starving_s >= CONSENT_PENDING_S
+            and not token_path.exists())
+
+
 class GnomeSeat:
     def __init__(self, install_dir: Path, runtime_dir: str, log):
         self.install_dir = Path(install_dir)

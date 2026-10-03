@@ -9,16 +9,14 @@ import os
 import shutil
 import signal
 import socket
-import ssl
 import subprocess
 import sys
 import time
 import urllib.error
 import urllib.request
-from hashlib import sha256
 from pathlib import Path
 
-AGENT_VERSION = "0.4.11"
+AGENT_VERSION = "0.5.0"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -32,47 +30,14 @@ def load_config(path: Path = CONFIG_PATH) -> dict:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import engine  # noqa: E402  (installed next to this file by enroll.sh)
+import seat_gnome  # noqa: E402
 import seat_labwc  # noqa: E402
+from portal_api import api, check_pin  # noqa: E402
 from health import (  # noqa: E402
-    active_connections, gw_state_path, idle_seconds, stream_starving_seconds)
-
-
-# --- TLS pinning -----------------------------------------------------------
-# Enrollment verified the server certificate's SHA256 fingerprint against the
-# pin embedded in the minted command and saved the cert to server_cert (PEM).
-# We use that cert as the ONLY trusted CA — full chain verification against
-# the pinned cert, never an unverified connection. Hostname check is off
-# because self-signed LAN certs rarely carry the LAN IP in their SAN; trust
-# comes from the pin, not the name.
-def _ssl_context(cfg: dict) -> ssl.SSLContext:
-    cert_file = cfg.get("server_cert", "")
-    if cert_file and Path(cert_file).is_file():
-        ctx = ssl.create_default_context(cafile=cert_file)
-        ctx.check_hostname = False
-        return ctx
-    return ssl.create_default_context()
-
-
-def check_pin(cert_file: str, ca_pin: str) -> bool:
-    """Doctor check: pinned cert file still matches the fingerprint."""
-    if not ca_pin or not cert_file:
-        return True
-    expected = ca_pin.split(":", 1)[1].replace(":", "").lower()
-    pem = Path(cert_file).read_text()
-    der = ssl.PEM_cert_to_DER_cert(pem)
-    return sha256(der).hexdigest() == expected
-
-
-def api(cfg: dict, path: str, payload: dict | None = None) -> dict:
-    url = cfg["server"].rstrip("/") + path
-    data = json.dumps(payload).encode() if payload is not None else None
-    req = urllib.request.Request(
-        url, data=data, method="POST" if data is not None else "GET",
-        headers={"Authorization": f"Bearer {cfg['agent_token']}",
-                 "Content-Type": "application/json"})
-    ctx = _ssl_context(cfg) if url.startswith("https") else None
-    with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
-        return json.loads(resp.read().decode() or "{}")
+    active_connections, gw_state_path, host_tuning_checks, idle_seconds,
+    stream_starving_seconds)
+from seat_gnome import (  # noqa: E402
+    CONSENT_ERROR, TOKEN_PATH, needs_consent, pick_seat_shell)
 
 
 def build_gateway_cmd(cfg: dict, upstream_port: int) -> tuple[list[str], dict]:
@@ -96,7 +61,10 @@ def build_gateway_cmd(cfg: dict, upstream_port: int) -> tuple[list[str], dict]:
     return cmd, env
 
 
-def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool) -> dict:
+def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool,
+                   seat_shell: str = "", seat_restarts: int = 0,
+                   degraded: bool = False) -> dict:
+    starving = stream_starving_seconds(cfg, gateway_alive)
     return {
         "mode": cfg.get("mode", "mirror"),
         "engine": "pixelflux",
@@ -106,6 +74,10 @@ def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool) -> dict:
         "gateway_alive": gateway_alive,
         "active_connections": active_connections(cfg, gateway_alive),
         "idle_seconds": idle_seconds(cfg, gateway_alive),
+        "seat_shell": seat_shell or cfg.get("mode", "mirror"),
+        "seat_restarts": seat_restarts,
+        "degraded": degraded,
+        "needs_consent": seat_shell == "gnome" and needs_consent(starving),
     }
 
 
@@ -143,13 +115,7 @@ def drop_clients(procs: dict) -> None:
     through the portal's forward-auth, which fails once the user has logged out
     — so the session genuinely ends rather than silently resuming.
     """
-    p = procs.get("gateway")
-    if p is not None and p.poll() is None:
-        p.terminate()
-        try:
-            p.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            p.kill()
+    _terminate(procs.get("gateway"))
     procs["gateway"] = None
 
 
@@ -160,12 +126,30 @@ def drop_clients(procs: dict) -> None:
 # hosts trip it on legitimately cold starts.
 FRAME_START_TIMEOUT_S = 15
 
-# Procs to relaunch when the backend pushes new stream_settings. The gateway is
-# included because idle-timeout config (idle_timeout_s / idle_warn_lead_s /
-# idle_timeout_enabled) rides in stream_settings and reaches the gateway ONLY
-# through its launch env (STYX_GW_IDLE_*) — without a relaunch the running
-# gateway keeps stale, idle-less config and never warns or disconnects.
-SETTINGS_CHANGE_RESTART = ("selkies", "shell", "clipboard", "gateway")
+SEAT_KEYS = ("seat_shell", "seat_width", "seat_height")
+
+
+class Escalation:
+    """N engine restarts inside a window -> restart the whole seat (spec §5.4)."""
+    def __init__(self, limit: int = 3, window_s: float = 600):
+        self.limit, self.window_s, self.times = limit, window_s, []
+
+    def record(self, now: float) -> bool:
+        self.times = [t for t in self.times if now - t < self.window_s] + [now]
+        if len(self.times) >= self.limit:
+            self.times = []
+            return True
+        return False
+
+
+def settings_restart_keys(old: dict, new: dict) -> tuple[str, ...]:
+    """Procs to relaunch on a stream_settings push. The gateway is always in:
+    idle-timeout config reaches it only through its launch env (STYX_GW_IDLE_*).
+    The GNOME seat restarts only when its shell/geometry changed."""
+    keys = ("selkies", "shell", "clipboard", "gateway")
+    if any(old.get(k) != new.get(k) for k in SEAT_KEYS):
+        keys += ("seat",)
+    return keys
 
 
 def run(cfg: dict) -> int:
@@ -180,15 +164,19 @@ def run(cfg: dict) -> int:
     gateway_log = open(LOG_DIR / "gateway.log", "ab", buffering=0)
     seat_log = open(LOG_DIR / "seat.log", "ab", buffering=0)
 
-    seat_mode = cfg.get("mode") == "seat"
     runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
-    if seat_mode:
+    shell_kind = pick_seat_shell(cfg)
+    labwc = shell_kind == "labwc"
+    if labwc:
         # Held (not used) for the agent's lifetime: keeps the compositors off
         # wayland-0, the slot WAYLAND_DISPLAY-less host apps fall back to.
         wayland0_guard = engine.guard_default_socket(runtime_dir)
         if wayland0_guard is None:
             print("wayland-0 owned by another session; seat will use a "
                   "higher slot", flush=True)
+    gseat = (seat_gnome.GnomeSeat(INSTALL_DIR, runtime_dir, seat_log)
+             if shell_kind == "gnome" else None)
+    escalation, degraded = Escalation(), False
     procs: dict[str, subprocess.Popen | None] = {
         "selkies": None, "gateway": None, "shell": None, "clipboard": None}
     seat_socket: str | None = None
@@ -203,25 +191,61 @@ def run(cfg: dict) -> int:
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
 
+    def ensure_gnome_seat() -> bool:
+        nonlocal last_error
+        if gseat.alive():
+            return True
+        ss = cfg.get("stream_settings") or {}
+        try:
+            engine.ensure_seat_sink()   # seat audio -> styx-seat via PULSE_SINK
+        except Exception as e:
+            print(f"seat sink setup failed: {e}", flush=True)
+        gseat.start(int(ss.get("seat_width") or 2560),
+                    int(ss.get("seat_height") or 1440))
+        if not gseat.ready():
+            last_error = "GNOME seat failed to start — see logs/seat.log"
+            gseat.stop()
+            return False
+        return True
+
+    def start_labwc_shell() -> None:
+        """labwc shell on the seat socket, then the clipboard bridge between
+        the seat socket and the socket labwc creates for its clients."""
+        nonlocal app_socket
+        before = {p.name for p in Path(runtime_dir).glob("wayland-*")
+                  if not p.name.endswith(".lock")}
+        since_ts = time.time() - 1
+        procs["shell"] = seat_labwc.start_shell(
+            INSTALL_DIR, seat_socket, runtime_dir, seat_log)
+        if procs["shell"] is None:
+            return
+        # Exclude seat_socket: it was just created and matches the mtime
+        # slack, so it'd be returned instead of labwc's.
+        app_sock = engine.wait_for_wayland_socket(
+            runtime_dir, before, since_ts, timeout=10, exclude={seat_socket})
+        if app_sock:
+            app_socket = app_sock
+            print(f"app socket is {app_socket}; starting clipboard bridge",
+                  flush=True)
+            _terminate(procs.get("clipboard"), 5)
+            procs["clipboard"] = seat_labwc.start_clipboard_bridge(
+                INSTALL_DIR, seat_socket, app_socket, runtime_dir, LOG_DIR)
+
     def start_selkies():
         nonlocal last_error, seat_socket, app_socket
-        seat_socket = None
-        app_socket = None
+        seat_socket = app_socket = None
         # Kill the clipboard bridge since sockets are about to change
-        p = procs.get("clipboard")
-        if p is not None and p.poll() is None:
-            p.terminate()
-            try:
-                p.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                p.kill()
+        _terminate(procs.get("clipboard"), 5)
         procs["clipboard"] = None
+        if gseat and not ensure_gnome_seat():
+            return None
         try:
-            cmd, env = engine.build_selkies_cmd(cfg, internal_port)
+            cmd, env = engine.build_selkies_cmd(
+                cfg, internal_port, gseat.info() if gseat else None)
         except Exception as e:
             last_error = f"engine setup failed: {e}"
             return None
-        if seat_mode:
+        if labwc:
             try:
                 monitor = engine.ensure_seat_sink()
                 cmd = [a for a in cmd if not a.startswith("--audio-device-name=")]
@@ -237,53 +261,37 @@ def run(cfg: dict) -> int:
         since_ts = time.time() - 1  # 1s slack for coarse fs timestamps
         proc = subprocess.Popen(cmd, env=env, stdout=selkies_log,
                                 stderr=selkies_log)
-        if seat_mode:
-            sock = engine.wait_for_wayland_socket(runtime_dir, before, since_ts)
-            if sock:
-                seat_socket = sock
-                # Clipboard/DPI helpers inside selkies address the seat as
-                # wayland-{seat_socket_index}; if the compositor bound a
-                # different index, persist it and restart selkies once.
-                idx = int(sock.rsplit("-", 1)[1])
-                if idx != cfg.get("seat_socket_index", 1):
-                    cfg["seat_socket_index"] = idx
-                    CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
-                    print(f"seat socket is {sock}; restarting selkies with "
-                          f"matching index", flush=True)
-                    proc.terminate()
-                    try:
-                        proc.wait(timeout=10)
-                    except subprocess.TimeoutExpired:
-                        proc.kill()
-                    return None
-                # Detect app socket BEFORE starting shell (snapshot sockets)
-                before = {p.name for p in Path(runtime_dir).glob("wayland-*")
-                          if not p.name.endswith(".lock")}
-                app_socket_ts = time.time() - 1
-                procs["shell"] = seat_labwc.start_shell(
-                    INSTALL_DIR, seat_socket, runtime_dir, seat_log)
-                if procs["shell"] is not None:
-                    # labwc creates a new socket for its clients; wait for it.
-                    # Exclude seat_socket: it was just created and matches the
-                    # mtime slack, so it'd be returned instead of labwc's.
-                    app_sock = engine.wait_for_wayland_socket(
-                        runtime_dir, before, app_socket_ts, timeout=10,
-                        exclude={seat_socket})
-                    if app_sock:
-                        app_socket = app_sock
-                        print(f"app socket is {app_socket}; starting clipboard bridge",
-                              flush=True)
-                        procs["clipboard"] = seat_labwc.start_clipboard_bridge(
-                            INSTALL_DIR, seat_socket, app_socket, runtime_dir, LOG_DIR)
-                elif not shutil.which("labwc"):
-                    last_error = ("labwc not installed — seat has no window "
-                                  "manager. Install: sudo apt install labwc")
-            else:
-                last_error = ("compositor socket not found — seat has no "
-                              "window manager. See logs/selkies.log")
+        if not labwc:
+            return proc
+        sock = engine.wait_for_wayland_socket(runtime_dir, before, since_ts)
+        if not sock:
+            last_error = ("compositor socket not found — seat has no "
+                          "window manager. See logs/selkies.log")
+            return proc
+        seat_socket = sock
+        # Clipboard/DPI helpers inside selkies address the seat as
+        # wayland-{seat_socket_index}; if the compositor bound a
+        # different index, persist it and restart selkies once.
+        idx = int(sock.rsplit("-", 1)[1])
+        if idx != cfg.get("seat_socket_index", 1):
+            cfg["seat_socket_index"] = idx
+            CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
+            print(f"seat socket is {sock}; restarting selkies with "
+                  f"matching index", flush=True)
+            _terminate(proc)
+            return None
+        start_labwc_shell()
+        if procs["shell"] is None and not shutil.which("labwc"):
+            last_error = ("labwc not installed — seat has no window "
+                          "manager. Install: sudo apt install labwc")
         return proc
 
     while not stopping:
+        if gseat and not gseat.alive():
+            # Seat died: selkies is captured against a dead portal session.
+            # The next branch restarts it, which brings the seat back first.
+            _terminate(procs["selkies"])
+            procs["selkies"] = None
         if procs["selkies"] is None or procs["selkies"].poll() is not None:
             if procs["selkies"] is not None:
                 print(f"selkies exited rc={procs['selkies'].returncode}; "
@@ -296,39 +304,15 @@ def run(cfg: dict) -> int:
             procs["gateway"] = subprocess.Popen(cmd, env=env,
                                                 stdout=gateway_log,
                                                 stderr=gateway_log)
-        if (seat_mode and seat_socket
-                and procs["selkies"] is not None
-                and procs["selkies"].poll() is None
+        selkies_ok = procs["selkies"] is not None and procs["selkies"].poll() is None
+        if (labwc and seat_socket and selkies_ok
                 and (procs["shell"] is None or procs["shell"].poll() is not None)):
-            # When shell restarts, detect its new socket and start clipboard bridge
-            before = {p.name for p in Path(runtime_dir).glob("wayland-*")
-                      if not p.name.endswith(".lock")}
-            app_socket_ts = time.time() - 1
-            procs["shell"] = seat_labwc.start_shell(
-                    INSTALL_DIR, seat_socket, runtime_dir, seat_log)
-            if procs["shell"] is not None:
-                app_sock = engine.wait_for_wayland_socket(
-                    runtime_dir, before, app_socket_ts, timeout=10,
-                    exclude={seat_socket})
-                if app_sock:
-                    app_socket = app_sock
-                    # Kill the old clipboard bridge before starting a new one
-                    old = procs.get("clipboard")
-                    if old is not None and old.poll() is None:
-                        old.terminate()
-                        try:
-                            old.wait(timeout=5)
-                        except subprocess.TimeoutExpired:
-                            old.kill()
-                    procs["clipboard"] = seat_labwc.start_clipboard_bridge(
-                            INSTALL_DIR, seat_socket, app_socket, runtime_dir, LOG_DIR)
-        if (seat_mode and app_socket and procs["selkies"] is not None
-                and procs["selkies"].poll() is None
+            start_labwc_shell()   # shell restarts -> new socket -> new bridge
+        if (labwc and app_socket and selkies_ok
                 and (procs["clipboard"] is None or procs["clipboard"].poll() is not None)):
             # Clipboard bridge respawn (if socket didn't change)
             procs["clipboard"] = seat_labwc.start_clipboard_bridge(
-                            INSTALL_DIR, seat_socket, app_socket, runtime_dir, LOG_DIR)
-        selkies_ok = procs["selkies"] is not None and procs["selkies"].poll() is None
+                INSTALL_DIR, seat_socket, app_socket, runtime_dir, LOG_DIR)
         gateway_ok = procs["gateway"] is not None and procs["gateway"].poll() is None
         if selkies_ok and gateway_ok:
             if last_error and not last_error.startswith("labwc"):
@@ -337,22 +321,39 @@ def run(cfg: dict) -> int:
             last_error = "selkies not running — see logs/selkies.log"
 
         # Stream-start watchdog: a viewer is connected but the engine has
-        # delivered no frame (upstream stuck in STOP_VIDEO after the prior tab
-        # closed) -> restart the engine so the fresh session's START_VIDEO takes.
-        # Universal (NVENC + CPU): keys on real frames at the gateway, not the
-        # EncFPS log line the NVENC path never emits.
+        # delivered no frame -> restart the engine so the fresh session's
+        # START_VIDEO takes. Keys on real frames at the gateway. GNOME seat
+        # without a restore token: the portal is waiting on consent and a
+        # restart only re-opens the dialog — report needs_consent instead.
         starving = stream_starving_seconds(cfg, gateway_ok)
-        if selkies_ok and starving is not None and starving >= FRAME_START_TIMEOUT_S:
-            print(f"watchdog: viewer frameless {int(starving)}s "
-                  "(stream never started) — restarting engine", flush=True)
-            _restart_engine(procs)
+        consent_pending = gseat is not None and not TOKEN_PATH.exists()
+        if gseat and needs_consent(starving):
+            last_error = CONSENT_ERROR
+        elif last_error == CONSENT_ERROR:
+            last_error = None
+        if (selkies_ok and starving is not None and not consent_pending
+                and starving >= FRAME_START_TIMEOUT_S):
+            print(f"watchdog: viewer frameless {int(starving)}s — restarting "
+                  "selkies", flush=True)
+            if gseat:
+                _terminate(procs["selkies"])
+                procs["selkies"] = None
+                if escalation.record(time.time()):
+                    print("watchdog: 3 restarts in 10 min — restarting GNOME "
+                          "seat", flush=True)
+                    gseat.stop()
+                    degraded = True
+            else:
+                _restart_engine(procs)
             continue
 
         try:
             hb = api(cfg, "/api/agent/heartbeat", {
                 "status": "online" if selkies_ok and gateway_ok else "error",
                 "last_error": last_error,
-                "health": health_payload(cfg, selkies_ok, gateway_ok),
+                "health": health_payload(
+                    cfg, selkies_ok, gateway_ok, shell_kind,
+                    gseat.restarts if gseat else 0, degraded),
             })
             _write_state({"ts": time.time(), "ok": True, "state": hb["state"]})
             if hb["state"] == "revoked":
@@ -365,14 +366,16 @@ def run(cfg: dict) -> int:
                       "restarting gateway", flush=True)
                 drop_clients(procs)
             if hb["stream_settings"] != cfg["stream_settings"]:
+                old_ss = cfg["stream_settings"]
                 cfg["stream_settings"] = hb["stream_settings"]
                 CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
-                for key in SETTINGS_CHANGE_RESTART:
-                    p = procs[key]
-                    if p is not None and p.poll() is None:
-                        p.terminate()
-                        p.wait(timeout=10)
-                    procs[key] = None
+                keys = settings_restart_keys(old_ss, hb["stream_settings"])
+                for key in keys:
+                    if key in procs:
+                        _terminate(procs[key])
+                        procs[key] = None
+                if "seat" in keys and gseat:
+                    gseat.stop()
                 continue
             interval = hb.get("heartbeat_interval_s", 30)
             backoff = 2
@@ -382,38 +385,13 @@ def run(cfg: dict) -> int:
         time.sleep(interval)
 
     for p in procs.values():
-        if p is not None and p.poll() is None:
-            p.terminate()
-            try:
-                p.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                p.kill()
+        _terminate(p)
+    if gseat:
+        gseat.stop()
     return 0
 
 
 # --- Diagnostics -----------------------------------------------------------
-GOVERNOR_PATH = Path("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")
-
-
-def host_tuning_checks() -> list[tuple[str, bool, str]]:
-    """Advisory gaming-performance checks: (label, ok, remedy). Never gates
-    doctor's exit status — a powersave governor is a warning, not a fault."""
-    rows = []
-    if GOVERNOR_PATH.is_file():
-        gov = GOVERNOR_PATH.read_text().strip()
-        rows.append((f"cpu governor: {gov}", gov == "performance",
-                     "" if gov == "performance" else
-                     "for gaming: sudo cpupower frequency-set -g performance"))
-    if shutil.which("nvidia-smi"):
-        r = subprocess.run(["nvidia-smi", "--query-gpu=persistence_mode",
-                            "--format=csv,noheader"],
-                           capture_output=True, text=True, timeout=10)
-        pm = r.stdout.strip().splitlines()[0].strip() if r.stdout.strip() else "?"
-        rows.append((f"nvidia persistence mode: {pm}", pm == "Enabled",
-                     "" if pm == "Enabled" else "enable: sudo nvidia-smi -pm 1"))
-    return rows
-
-
 def _check(label: str, ok: bool, detail: str = "") -> bool:
     print(f"  [{'OK' if ok else 'FAIL'}] {label}" + (f" — {detail}" if detail else ""))
     return ok
@@ -425,7 +403,7 @@ def doctor(cfg: dict) -> int:
     ok &= _check("config readable", True, str(CONFIG_PATH))
     install = Path(cfg["install_dir"])
     ok &= _check("venv present", (install / "venv/bin/python").exists())
-    ok &= _check("web dist present", (install / "web/index.html").exists())
+    ok &= _check("selkies 2.0 installed", (install / "venv/bin/selkies").exists())
     ok &= _check("lib shim present", (install / "lib").is_dir(),
                  str(install / "lib"))
     ok &= _check(f"mode: {cfg.get('mode', 'mirror')}", True)

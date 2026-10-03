@@ -58,3 +58,23 @@ def test_stream_starving_none_when_not_starving_or_gateway_dead(tmp_path):
     # unreadable -> None
     state.write_text("not json")
     assert health.stream_starving_seconds(cfg, gateway_alive=True) is None
+
+
+def test_host_tuning_checks_governor(monkeypatch, tmp_path):
+    gov = tmp_path / "scaling_governor"
+    gov.write_text("powersave\n")
+    monkeypatch.setattr(health, "GOVERNOR_PATH", gov)
+    monkeypatch.setattr(health.shutil, "which", lambda _: None)
+    rows = health.host_tuning_checks()
+    label, ok, detail = next(r for r in rows if "governor" in r[0])
+    assert not ok and "performance" in detail
+
+
+def test_host_tuning_checks_all_good(monkeypatch, tmp_path):
+    gov = tmp_path / "scaling_governor"
+    gov.write_text("performance\n")
+    monkeypatch.setattr(health, "GOVERNOR_PATH", gov)
+    monkeypatch.setattr(health.shutil, "which", lambda _: "/usr/bin/nvidia-smi")
+    monkeypatch.setattr(health.subprocess, "run", lambda *a, **k: type(
+        "R", (), {"stdout": "Enabled\n", "returncode": 0})())
+    assert all(ok for _, ok, _ in health.host_tuning_checks())
