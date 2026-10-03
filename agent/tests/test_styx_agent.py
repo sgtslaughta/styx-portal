@@ -214,3 +214,23 @@ def test_rollback_swaps_dirs(tmp_path, monkeypatch):
     assert styx_agent.rollback(cur) == 0
     assert (cur / "v").read_text() == "old" and (prev / "v").read_text() == "new"
     assert styx_agent.rollback(tmp_path / "missing") == 1
+
+
+def test_rollback_refuses_stale_swap_dir(tmp_path, monkeypatch):
+    cur, prev = tmp_path / "a", tmp_path / "a.prev"
+    cur.mkdir()
+    prev.mkdir()
+    (tmp_path / "a.swap").mkdir()
+    monkeypatch.setattr(styx_agent.subprocess, "run", lambda *a, **k: None)
+    assert styx_agent.rollback(cur) == 1
+
+
+def test_rollback_warns_when_restart_fails(tmp_path, monkeypatch, capsys):
+    from types import SimpleNamespace
+    cur, prev = tmp_path / "a", tmp_path / "a.prev"
+    cur.mkdir()
+    prev.mkdir()
+    monkeypatch.setattr(styx_agent.subprocess, "run",
+                        lambda *a, **k: SimpleNamespace(returncode=1))
+    assert styx_agent.rollback(cur) == 0
+    assert "WARNING" in capsys.readouterr().out

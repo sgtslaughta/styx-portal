@@ -92,9 +92,14 @@ def rollback(install_dir: Path) -> int:
         print(f"No previous install at {prev}")
         return 1
     tmp = install_dir.with_name(install_dir.name + ".swap")
+    if tmp.exists():
+        print(f"Stale {tmp} exists (interrupted rollback?) — inspect/remove it first.")
+        return 1
     install_dir.rename(tmp)
     prev.rename(install_dir)
     tmp.rename(prev)
-    subprocess.run(["systemctl", "--user", "restart", "styx-agent"])
+    r = subprocess.run(["systemctl", "--user", "restart", "styx-agent"])
+    if getattr(r, "returncode", 0):
+        print("WARNING: service restart failed — run: systemctl --user restart styx-agent")
     print("Rolled back; current install is the previous version.")
     return 0

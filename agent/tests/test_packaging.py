@@ -28,3 +28,15 @@ def test_all_imported_local_modules_are_served():
         for mod in _local_imports(AGENT / f"{name}.py"):
             assert f"{mod}.py" in served, f"{name} imports {mod}, not served"
     assert "selkies_launcher.py" not in served
+
+
+def test_enroll_upgrade_is_atomic_and_self_restoring():
+    sh = (AGENT / "enroll.sh").read_text()
+    assert 'mv "$INSTALL_DIR" "$INSTALL_DIR.prev"' in sh
+    assert "trap restore_prev ERR" in sh
+    body = sh.split("restore_prev() {", 1)[1].split("\n}", 1)[0]
+    assert 'mv "$INSTALL_DIR.prev" "$INSTALL_DIR"' in body
+    assert "restore_prev; exit 1" in sh  # fail() restores too
+    assert 'cp -a "$INSTALL_DIR"' not in sh.replace('"$INSTALL_DIR.prev/', "")
+    step5 = sh.split('step 5/8', 1)[1].split('step 6/8', 1)[0]
+    assert 'if [[ "$UPGRADE" == 1 ]]' in step5.split("install_pkgs()", 1)[0]
