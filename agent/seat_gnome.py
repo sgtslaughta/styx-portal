@@ -73,9 +73,22 @@ def pick_seat_shell(cfg: dict) -> str:
     return "labwc"
 
 
-def needs_consent(starving_s: float | None, token_path: Path = TOKEN_PATH) -> bool:
+def needs_consent(starving_s: float | None, token_path: Path | None = None) -> bool:
     return (starving_s is not None and starving_s >= CONSENT_PENDING_S
-            and not token_path.exists())
+            and not (token_path or TOKEN_PATH).exists())
+
+
+class Escalation:
+    """N engine restarts inside a window -> restart the whole seat (spec §5.4)."""
+    def __init__(self, limit: int = 3, window_s: float = 600):
+        self.limit, self.window_s, self.times = limit, window_s, []
+
+    def record(self, now: float) -> bool:
+        self.times = [t for t in self.times if now - t < self.window_s] + [now]
+        if len(self.times) >= self.limit:
+            self.times = []
+            return True
+        return False
 
 
 class GnomeSeat:

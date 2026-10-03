@@ -37,7 +37,7 @@ from health import (  # noqa: E402
     active_connections, gw_state_path, host_tuning_checks, idle_seconds,
     stream_starving_seconds)
 from seat_gnome import (  # noqa: E402
-    CONSENT_ERROR, TOKEN_PATH, needs_consent, pick_seat_shell)
+    CONSENT_ERROR, Escalation, needs_consent, pick_seat_shell)
 
 
 def build_gateway_cmd(cfg: dict, upstream_port: int) -> tuple[list[str], dict]:
@@ -129,19 +129,6 @@ FRAME_START_TIMEOUT_S = 15
 SEAT_KEYS = ("seat_shell", "seat_width", "seat_height")
 
 
-class Escalation:
-    """N engine restarts inside a window -> restart the whole seat (spec §5.4)."""
-    def __init__(self, limit: int = 3, window_s: float = 600):
-        self.limit, self.window_s, self.times = limit, window_s, []
-
-    def record(self, now: float) -> bool:
-        self.times = [t for t in self.times if now - t < self.window_s] + [now]
-        if len(self.times) >= self.limit:
-            self.times = []
-            return True
-        return False
-
-
 def settings_restart_keys(old: dict, new: dict) -> tuple[str, ...]:
     """Procs to relaunch on a stream_settings push. The gateway is always in:
     idle-timeout config reaches it only through its launch env (STYX_GW_IDLE_*).
@@ -177,6 +164,8 @@ def run(cfg: dict) -> int:
     gseat = (seat_gnome.GnomeSeat(INSTALL_DIR, runtime_dir, seat_log)
              if shell_kind == "gnome" else None)
     escalation, degraded = Escalation(), False
+    last_engine_restart = float("-inf")   # watchdog grace after a restart
+    exit_code = 0
     procs: dict[str, subprocess.Popen | None] = {
         "selkies": None, "gateway": None, "shell": None, "clipboard": None}
     seat_socket: str | None = None
@@ -326,15 +315,18 @@ def run(cfg: dict) -> int:
         # without a restore token: the portal is waiting on consent and a
         # restart only re-opens the dialog — report needs_consent instead.
         starving = stream_starving_seconds(cfg, gateway_ok)
-        consent_pending = gseat is not None and not TOKEN_PATH.exists()
+        consent_pending = gseat is not None and not seat_gnome.TOKEN_PATH.exists()
+        in_grace = time.monotonic() - last_engine_restart < FRAME_START_TIMEOUT_S
         if gseat and needs_consent(starving):
             last_error = CONSENT_ERROR
         elif last_error == CONSENT_ERROR:
             last_error = None
         if (selkies_ok and starving is not None and not consent_pending
+                and not in_grace
                 and starving >= FRAME_START_TIMEOUT_S):
             print(f"watchdog: viewer frameless {int(starving)}s — restarting "
                   "selkies", flush=True)
+            last_engine_restart = time.monotonic()
             if gseat:
                 _terminate(procs["selkies"])
                 procs["selkies"] = None
@@ -369,6 +361,14 @@ def run(cfg: dict) -> int:
                 old_ss = cfg["stream_settings"]
                 cfg["stream_settings"] = hb["stream_settings"]
                 CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
+                new_shell = pick_seat_shell(cfg)
+                if new_shell != shell_kind:
+                    # Shell is chosen once per process; systemd (Restart=always)
+                    # brings the agent back up on the new one.
+                    print(f"seat_shell changed to {new_shell}; restarting agent",
+                          flush=True)
+                    exit_code = 1
+                    break
                 keys = settings_restart_keys(old_ss, hb["stream_settings"])
                 for key in keys:
                     if key in procs:
@@ -388,7 +388,7 @@ def run(cfg: dict) -> int:
         _terminate(p)
     if gseat:
         gseat.stop()
-    return 0
+    return exit_code
 
 
 # --- Diagnostics -----------------------------------------------------------
