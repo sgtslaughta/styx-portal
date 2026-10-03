@@ -19,6 +19,7 @@ import sys
 import time
 
 import aiohttp
+import refit
 import yarl
 from aiohttp import web
 from multidict import CIMultiDict
@@ -181,7 +182,7 @@ def create_app(user: str, password: str,
                upstream_port: int, files_dir: str = "",
                state_file: str = "", idle_timeout_s: int = 0,
                idle_lead_s: int = 60, idle_enabled: bool = False,
-               cursor_workaround: bool = False) -> web.Application:
+               seat_dir: str = "") -> web.Application:
     UPSTREAM = f"http://127.0.0.1:{upstream_port}"
     HOP = {"host", "connection", "keep-alive", "transfer-encoding", "upgrade",
            "authorization", "origin", "content-length", "accept-encoding"}
@@ -201,6 +202,10 @@ def create_app(user: str, password: str,
     # but static screen (which stops sending frames) is never mistaken for stuck.
     # `last_frame` additionally times mid-session stalls: see mark_input.
     stream = {"got_frame": False, "starve_start": 0.0, "last_frame": 0.0}
+    # GNOME seat size-at-connect (refit.py): only a connection's first r, can refit.
+    size_file = os.path.join(seat_dir, "seat-size") if seat_dir else ""
+    refit_file = os.path.join(seat_dir, "refit-request") if seat_dir else ""
+    last_refit = {"ts": float("-inf")}
 
     def _write_state():
         if not state_file:
@@ -281,11 +286,13 @@ def create_app(user: str, password: str,
                 ws_server = web.WebSocketResponse(max_msg_size=0, compress=False)
                 await ws_server.prepare(request)
 
-                async def pump(src, dst, on_activity=None, on_binary=None):
+                async def pump(src, dst, on_activity=None, on_binary=None, intercept=None):
                     async for msg in src:
                         if msg.type == aiohttp.WSMsgType.TEXT:
                             if on_activity:
                                 on_activity(msg.data)
+                            if intercept and intercept(msg.data):
+                                continue
                             await dst.send_str(msg.data)
                         elif msg.type == aiohttp.WSMsgType.BINARY:
                             if on_activity:
@@ -314,7 +321,27 @@ def create_app(user: str, password: str,
 
                 # client->upstream: input (idle tracking). upstream->client:
                 # video frames are BINARY -> mark_frame disarms the watchdog.
-                await asyncio.gather(pump(ws_server, ws_client, on_activity=mark_input),
+                first_resize = {"done": not seat_dir}
+
+                def refit_on_first_resize(data) -> bool:
+                    """True = swallow: seat is being rebuilt at the browser size."""
+                    if first_resize["done"]:
+                        return False
+                    req = refit.parse_resize(data)
+                    if req is None:
+                        return False
+                    first_resize["done"] = True
+                    now = time.time()
+                    target = refit.decide(req, refit.read_size(size_file), last_refit["ts"], now)
+                    if target is None:
+                        return False
+                    last_refit["ts"] = now
+                    refit.request(refit_file, *target)
+                    asyncio.ensure_future(ws_server.close(code=refit.CLOSE_CODE, message=b"refit"))
+                    return True
+
+                await asyncio.gather(pump(ws_server, ws_client, on_activity=mark_input,
+                                          intercept=refit_on_first_resize),
                                      pump(ws_client, ws_server, on_binary=mark_frame),
                                      idle_closer(),
                                      return_exceptions=True)
@@ -325,6 +352,8 @@ def create_app(user: str, password: str,
         return ws_server
 
     async def index(_request):
+        if refit_file and refit.pending(refit_file):
+            return web.Response(status=503, text="resizing desktop")
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as s, \
                     s.get(UPSTREAM + "/", allow_redirects=False) as r:
@@ -338,7 +367,8 @@ def create_app(user: str, password: str,
             return web.Response(status=504, text="stream backend timed out")
         html = inject_title(html, socket.gethostname())
         html = inject_idle_watchdog(html, idle_timeout_s, idle_lead_s, idle_enabled)
-        html = inject_cursor_hide(html, cursor_workaround)
+        html = inject_cursor_hide(html, bool(seat_dir))
+        html = refit.inject_reload(html, bool(seat_dir))
         return web.Response(text=html, content_type="text/html")
 
     def _relative_location(request, loc):
@@ -447,11 +477,11 @@ def main() -> None:
     idle_timeout_s = int(os.environ.get("STYX_GW_IDLE_TIMEOUT_S", "0") or "0")
     idle_lead_s = int(os.environ.get("STYX_GW_IDLE_WARN_S", "60") or "60")
     idle_enabled = os.environ.get("STYX_GW_IDLE_ENABLED", "") == "1"
-    cursor = os.environ.get("STYX_GW_CURSOR_WORKAROUND", "") == "1"
+    seat_dir = os.environ.get("STYX_GW_SEAT_DIR", "")
     web.run_app(create_app(user, password, upstream_port, files_dir,
                            state_file=state_file, idle_timeout_s=idle_timeout_s,
                            idle_lead_s=idle_lead_s, idle_enabled=idle_enabled,
-                           cursor_workaround=cursor),
+                           seat_dir=seat_dir),
                 host="0.0.0.0", port=listen_port)
 
 
