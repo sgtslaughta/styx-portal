@@ -48,7 +48,7 @@ I routinely require access to resources running at home, while not at home, usin
 Massive shoutout to LinuxServer.io. I discovered their transition away from Kasm Workspaces to a `project selkies`-based image system. Once I saw the performance gain over 'other' options, I knew I had to have it.
 
 ### Is it vibe coded?
-- Of course it's vibe coded! I don't have months and months to spend grinding! Kidding, not kidding. I have a lot of experience with much of the tech stack involved and needed a solution quickly, so here we are.
+- **Of course it's vibe coded!** I don't have months and months to spend grinding! Kidding, *not kidding*. I have a lot of experience with much of the tech stack involved and needed a solution quickly, so here we are.
 - You might disparage anything vibe coded and that is your prerogative, but luckily, you don't have to use it! Fork it and hand jam your own code!
 
 ### Is it secure?
@@ -58,7 +58,7 @@ Massive shoutout to LinuxServer.io. I discovered their transition away from Kasm
 > I highly suggest you do not leave it exposed on the internet — put it behind a CF Application / 2FA! See [Cloudflare Applications](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/).
 
 ### Did I run exhaustive tests across every surface?
-- No, bugs are likely on the fringes. Make an issue if you hit one.
+- **No**. Bugs are likely on the fringes. Make an issue if you hit one.
 
 ## Features
 
@@ -76,6 +76,7 @@ Massive shoutout to LinuxServer.io. I discovered their transition away from Kasm
 
 ## Quickstart
 
+See the [documentation site](https://sgtslaughta.github.io/styx-portal/).
 See **[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
 
 ## Documentation
@@ -102,4 +103,4 @@ and changelogs are automated. Example: `feat(agent): add reconnect backoff`.
 
 ## License
 
-<!-- TODO(owner): choose and state a license. -->
+GPL-2.0 license
