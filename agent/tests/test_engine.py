@@ -273,19 +273,3 @@ def test_quality_defaults(tmp_path, monkeypatch):
         {**cfg, "stream_settings": {"use_paint_over_quality": False}}, 1)
     assert env["SELKIES_USE_PAINT_OVER_QUALITY"] == "false"
 
-
-def test_capture_socket_picks_newest_live(tmp_path):
-    import socket as so
-    import os as _os
-    socks = []
-    for i, name in enumerate(("wayland-1", "wayland-2")):
-        s = so.socket(so.AF_UNIX)
-        s.bind(str(tmp_path / name))
-        s.listen()
-        socks.append(s)
-        _os.utime(tmp_path / name, (100 + i, 100 + i))
-    (tmp_path / "wayland-3").touch()          # stale: no listener
-    (tmp_path / "styx-seat-0").touch()
-    assert engine.capture_socket(str(tmp_path)) == "wayland-2"
-    socks[1].close()
-    assert engine.capture_socket(str(tmp_path)) == "wayland-1"

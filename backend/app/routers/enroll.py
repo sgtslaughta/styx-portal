@@ -87,6 +87,11 @@ async def seat_portal_py():
     return _serve("seat_portal.py")
 
 
+@router.get("/seat_clipboard.py")
+async def seat_clipboard_py():
+    return _serve("seat_clipboard.py")
+
+
 @router.get("/portal_api.py")
 async def portal_api_py():
     return _serve("portal_api.py")

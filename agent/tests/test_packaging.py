@@ -6,7 +6,7 @@ from pathlib import Path
 AGENT = Path(__file__).resolve().parents[1]
 BACKEND_LIST = AGENT.parent / "backend/app/services/workstations.py"
 ENTRY = ["styx_agent", "engine", "gateway", "seat_gnome", "seat_labwc",
-         "health", "portal_api", "refit"]
+         "health", "portal_api", "refit", "seat_portal"]
 
 
 def _local_imports(path: Path) -> set[str]:
