@@ -9,8 +9,12 @@ and GStreamer's pipewiresrc). Only ever run on the seat's private session bus.
    process: renegotiating caps in place stalls frames.
 3. Once Mutter reports that monitor current, starts xdg-desktop-portal
    --replace (it reads XDG_DESKTOP_PORTAL_DIR) and writes WxH to
-   $STYX_PORTAL_READY."""
+   $STYX_PORTAL_READY.
+4. Mirrors the seat's text clipboard <-> selkies' own compositor through the
+   RemoteDesktop session's clipboard (Mutter has no wlr/ext data-control)."""
+import base64
 import os
+import select
 import signal
 import subprocess
 import sys
@@ -23,6 +27,8 @@ from dbus.mainloop.glib import DBusGMainLoop
 gi.require_version("Gst", "1.0")
 from gi.repository import GLib, Gst  # noqa: E402
 
+from engine import capture_socket  # noqa: E402 — stdlib-only, ships alongside
+
 BUS_NAME = "org.freedesktop.impl.portal.desktop.styx"
 PATH = "/org/freedesktop/portal/desktop"
 SC_IFACE = "org.freedesktop.impl.portal.ScreenCast"
@@ -32,6 +38,8 @@ M = "org.gnome.Mutter."
 EMBEDDED = 1            # Mutter cursor-mode: 0 hidden, 1 embedded, 2 metadata
 FRONTENDS = ("/usr/libexec/xdg-desktop-portal", "/usr/lib/xdg-desktop-portal")
 LIVE_TRIES = 50         # x 200 ms = 10 s for the monitor to come up
+TEXT_MIMES = ("text/plain;charset=utf-8", "text/plain", "UTF8_STRING", "STRING", "TEXT")
+CLIP_CAP = 16 << 20     # bytes; bigger selections are truncated
 
 bus = None              # set in main(); classes only touch it at call time
 sessions = {}
@@ -52,17 +60,101 @@ def _mutter(name, path, iface):
     return dbus.Interface(bus.get_object(M + name, path), M + iface)
 
 
+def _read_fd(fd: int, timeout: float = 2.0) -> bytes:
+    """Drain a selection pipe; a stalled owner gives up after `timeout`."""
+    out = bytearray()
+    with os.fdopen(fd, "rb", buffering=0) as f:
+        while len(out) < CLIP_CAP and select.select([f], [], [], timeout)[0]:
+            chunk = f.read(65536)
+            if not chunk:
+                break
+            out += chunk
+    return bytes(out)
+
+
+class Clipboard:
+    """Text clipboard mirror: Mutter seat <-> selkies' capture compositor,
+    where selkies' own clipboard calls land (see engine.seat_selkies_main).
+    `last` dedupes so a mirrored value never echoes back.
+    ponytail: text only; add image/html flavours when someone asks."""
+    def __init__(self, rd, rd_path):
+        self.rd, self.last, self.buf = rd, None, b""
+        self.sock = capture_socket()
+        if self.sock is None:
+            raise RuntimeError("no capture compositor socket")
+        rd.EnableClipboard(dbus.Dictionary({}, signature="sv"))
+        iface = M + "RemoteDesktop.Session"
+        self.rx = [bus.add_signal_receiver(self._owner, "SelectionOwnerChanged", iface,
+                                           path=rd_path),
+                   bus.add_signal_receiver(self._transfer, "SelectionTransfer", iface,
+                                           path=rd_path)]
+        self.env = {**os.environ, "WAYLAND_DISPLAY": self.sock}
+        # One base64 line per selection change on the capture compositor.
+        self.watch = subprocess.Popen(
+            ["wl-paste", "-n", "-t", "text", "--watch", "sh", "-c", "base64 -w0; echo"],
+            env=self.env, stdout=subprocess.PIPE)
+        GLib.io_add_watch(self.watch.stdout.fileno(), GLib.IO_IN | GLib.IO_HUP, self._on_watch)
+        log("clipboard mirror on", self.sock)
+
+    def _on_watch(self, fd, _cond):
+        chunk = os.read(fd, 65536)
+        if not chunk:
+            return False
+        *lines, self.buf = (self.buf + chunk).split(b"\n")
+        for line in lines:
+            data = base64.b64decode(line)
+            if data and data != self.last:
+                self.last = data
+                self.rd.SetSelection(dbus.Dictionary(
+                    {"mime-types": dbus.Array(TEXT_MIMES, signature="s")}, signature="sv"))
+        return True
+
+    def _transfer(self, _mime, serial):
+        ok = True
+        try:
+            with os.fdopen(self.rd.SelectionWrite(serial).take(), "wb") as f:
+                f.write(self.last or b"")
+        except (OSError, dbus.DBusException) as e:
+            log("clipboard write failed:", e)
+            ok = False
+        self.rd.SelectionWriteDone(serial, ok)
+
+    def _owner(self, options):
+        if options.get("session-is-owner"):
+            return                          # our own SetSelection
+        mimes = {str(m) for m in options.get("mime-types", [])}
+        mime = next((m for m in TEXT_MIMES if m in mimes), None)
+        if mime is None:
+            return
+        try:
+            data = _read_fd(self.rd.SelectionRead(mime).take())
+        except (OSError, dbus.DBusException) as e:
+            log("clipboard read failed:", e)
+            return
+        if data and data != self.last:
+            self.last = data
+            subprocess.run(["wl-copy", "-t", "text/plain;charset=utf-8"], input=data,
+                           env=self.env, timeout=5, check=False)
+
+    def stop(self):
+        for r in self.rx:
+            r.remove()
+        self.watch.terminate()
+
+
 class Session(dbus.service.Object):
     def __init__(self, handle):
         super().__init__(bus, handle)
         self.handle = str(handle)
-        self.rd = self.rd_path = self.stream_path = None
+        self.rd = self.rd_path = self.stream_path = self.clip = None
         self.devices = 3
         self.want_screen = True
 
     @dbus.service.method(SESS_IFACE)
     def Close(self):
         log("Close", self.handle)
+        if self.clip is not None:
+            self.clip.stop()
         try:
             if self.rd is not None:
                 self.rd.Stop()
@@ -120,10 +212,16 @@ class Portal(dbus.service.Object):
                     ok(dbus.UInt32(0), dbus.Dictionary({
                         "streams": dbus.Array([stream], signature="(ua{sv})"),
                         "devices": dbus.UInt32(s.devices),
-                        "clipboard_enabled": dbus.Boolean(False)}, signature="sv"))
+                        "clipboard_enabled": dbus.Boolean(s.clip is not None)},
+                        signature="sv"))
                 bus.add_signal_receiver(added, "PipeWireStreamAdded",
                                         M + "ScreenCast.Stream", path=s.stream_path)
             s.rd.Start()
+            if s.clip is None:
+                try:
+                    s.clip = Clipboard(s.rd, s.rd_path)
+                except (RuntimeError, OSError, dbus.DBusException) as e:
+                    log("clipboard mirror off:", e)   # streaming still works
             if not s.want_screen:
                 ok(dbus.UInt32(0), dbus.Dictionary({"devices": dbus.UInt32(s.devices)},
                                                    signature="sv"))
@@ -360,6 +458,9 @@ def main(argv) -> int:
             st["frontend"].wait(timeout=5)
         except subprocess.TimeoutExpired:
             st["frontend"].kill()
+    for s in list(sessions.values()):
+        if s.clip is not None:
+            s.clip.stop()
     mon.stop()
     if ready:
         try:

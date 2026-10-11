@@ -64,6 +64,7 @@ def test_gnome_seat_cmd_targets_host_display(tmp_path, monkeypatch):
     cmd, env = engine.build_selkies_cmd(cfg, 18444, seat)
     assert "--wayland=true" in cmd
     assert "--wayland-host-display=styx-seat-0" in cmd
+    assert cmd[1].endswith("engine.py")    # clipboard shim launcher
     assert env["DBUS_SESSION_BUS_ADDRESS"] == "unix:path=/tmp/bus"
     assert env["XDG_CURRENT_DESKTOP"] == "ubuntu:GNOME"
     assert "DISPLAY" not in env and "WAYLAND_DISPLAY" not in env
@@ -271,3 +272,20 @@ def test_quality_defaults(tmp_path, monkeypatch):
     _, env = engine.build_selkies_cmd(
         {**cfg, "stream_settings": {"use_paint_over_quality": False}}, 1)
     assert env["SELKIES_USE_PAINT_OVER_QUALITY"] == "false"
+
+
+def test_capture_socket_picks_newest_live(tmp_path):
+    import socket as so
+    import os as _os
+    socks = []
+    for i, name in enumerate(("wayland-1", "wayland-2")):
+        s = so.socket(so.AF_UNIX)
+        s.bind(str(tmp_path / name))
+        s.listen()
+        socks.append(s)
+        _os.utime(tmp_path / name, (100 + i, 100 + i))
+    (tmp_path / "wayland-3").touch()          # stale: no listener
+    (tmp_path / "styx-seat-0").touch()
+    assert engine.capture_socket(str(tmp_path)) == "wayland-2"
+    socks[1].close()
+    assert engine.capture_socket(str(tmp_path)) == "wayland-1"
