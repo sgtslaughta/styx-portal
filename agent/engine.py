@@ -7,6 +7,7 @@ seat:   pixelflux's own Wayland compositor; host apps join via WAYLAND_DISPLAY.
 import glob
 import os
 import socket
+import sys
 import time
 from pathlib import Path
 
@@ -181,6 +182,55 @@ def wait_for_wayland_socket(runtime_dir: str, before: set[str],
 
 
 
+def capture_socket(runtime_dir: str | None = None) -> str | None:
+    """Newest live wayland-N socket. On the GNOME seat that is selkies' own
+    pixelflux compositor (the seat itself listens on styx-seat-0).
+    ponytail: mtime heuristic; pin pixelflux's socket if a seat box ever runs
+    a second live wayland-N."""
+    rd = Path(runtime_dir or os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
+    best = None
+    for p in rd.glob("wayland-*"):
+        if not p.name[len("wayland-"):].isdigit():
+            continue
+        try:
+            with socket.socket(socket.AF_UNIX) as s:
+                s.settimeout(0.2)
+                s.connect(str(p))
+            m = p.stat().st_mtime
+        except OSError:
+            continue                       # stale file, no listener
+        if best is None or m > best[0]:
+            best = (m, p.name)
+    return best[1] if best else None
+
+
+CLIPBOARD_APP_CALLS = ("clipboard_read_app", "clipboard_types_app",
+                       "clipboard_write_app", "clipboard_watch_app")
+
+
+def seat_selkies_main() -> None:
+    """selkies for the GNOME seat (`python engine.py <selkies args>`). Mutter
+    has no wlr/ext data-control, so selkies' clipboard calls aimed at the seat
+    socket fail; aim them at selkies' own compositor instead, which
+    seat_portal.py mirrors to the seat via Mutter's RemoteDesktop clipboard."""
+    from pixelflux import ScreenCapture
+    from selkies import input_handler
+    from selkies.__main__ import main
+
+    class SeatCapture:
+        def __init__(self):
+            self._real = ScreenCapture()
+
+        def __getattr__(self, name):
+            attr = getattr(self._real, name)
+            if name not in CLIPBOARD_APP_CALLS:
+                return attr
+            return lambda display, *a: attr(capture_socket() or display, *a)
+
+    input_handler.ScreenCapture = SeatCapture
+    sys.exit(main())
+
+
 def build_selkies_cmd(cfg: dict, internal_port: int,
                       seat: dict | None = None) -> tuple[list[str], dict]:
     """argv + env for selkies 2.0. Secrets travel via env, never argv.
@@ -217,6 +267,7 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
         env["SELKIES_USE_CPU"] = "false|locked"
 
     if seat is not None:                     # headless GNOME seat
+        cmd[0:1] = [str(install / "venv/bin/python"), str(install / "engine.py")]
         cmd += ["--wayland=true", f"--wayland-host-display={seat['socket']}"]
         # The seat portal embeds the cursor in the frames (metadata cursors
         # flicker); a client-drawn cursor on top would double it.
@@ -262,3 +313,7 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
     else:
         env["SELKIES_AUDIO_ENABLED"] = "false"
     return cmd, env
+
+
+if __name__ == "__main__":
+    seat_selkies_main()
