@@ -70,7 +70,8 @@ def test_round_trip_all_flavours(tmp_path):
         rd, lambda fn, member: sigs.setdefault(member, fn) and Match(), path)
     try:
         # a seat app copies html + png
-        sigs["SelectionOwnerChanged"]({"mime-types": ["text/html", "image/png"]})
+        # Mutter's wire format wraps the list in a struct: (as)
+        sigs["SelectionOwnerChanged"]({"mime-types": (["text/html", "image/png"],)})
         assert json.loads(_serve(srv, {"op": "types"}, path)) == ["text/html", "image/png"]
         assert _serve(srv, {"op": "read", "mime": "image/png"}, path) == b"\x89PNG"
         assert isinstance(_serve(srv, {"op": "read", "mime": "nope"}, path), RuntimeError)
