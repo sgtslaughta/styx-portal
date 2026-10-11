@@ -76,7 +76,10 @@ class ClipboardServer:
         if options.get("session-is-owner"):
             return                          # our own SetSelection
         self.owned = {}
-        self.mimes = [str(m) for m in options.get("mime-types", [])]
+        mimes = options.get("mime-types", [])
+        if isinstance(mimes, tuple):        # Mutter sends (as), not as
+            mimes = mimes[0] if mimes else []
+        self.mimes = [str(m) for m in mimes]
         line = json.dumps(self.mimes).encode() + b"\n"
         for w in list(self.watchers):
             try:
