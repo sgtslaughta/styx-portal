@@ -256,6 +256,45 @@ ScreenCastLevel = type("ScreenCastLevel", (Portal,), SC_METHODS)
 Seat = type("Seat", (ScreenCastLevel,), RD_METHODS)
 
 
+SD_NAME = "org.freedesktop.systemd1"
+SD_IFACE = SD_NAME + ".Manager"
+SD_PATH = "/org/freedesktop/systemd1"
+
+
+class SystemdStub(dbus.service.Object):
+    """gnome-shell runs inside the agent's systemd user unit, so before it lets
+    Xwayland start it asks the session bus's systemd for
+    gnome-session-x11-services-ready.target, and any failure but NOT_SUPPORTED
+    aborts X11: X11-only apps (GIMP 2.10, JetBrains IDEs) never open. The
+    seat's private bus has no systemd, so answer every job as done.
+    ponytail: the X11 services (gsd-xsettings) are not started, so X11 apps
+    get toolkit-default theme/scaling; spawn gsd-xsettings here if that matters."""
+    def __init__(self):
+        super().__init__(bus, SD_PATH)
+        self.jobs = 0
+
+    def _job(self, unit):
+        self.jobs += 1
+        job = dbus.ObjectPath(f"{SD_PATH}/job/{self.jobs}")
+        log("systemd stub: job done for", unit)
+        # After the method reply: gnome-shell matches JobRemoved to the returned path.
+        n = dbus.UInt32(self.jobs)
+        GLib.timeout_add(50, lambda: self.JobRemoved(n, job, unit, "done") and False)
+        return job
+
+    @dbus.service.method(SD_IFACE, in_signature="ss", out_signature="o")
+    def StartUnit(self, unit, mode):
+        return self._job(unit)
+
+    @dbus.service.method(SD_IFACE, in_signature="ss", out_signature="o")
+    def StopUnit(self, unit, mode):
+        return self._job(unit)
+
+    @dbus.service.signal(SD_IFACE, signature="uoss")
+    def JobRemoved(self, id_, job, unit, result):
+        pass
+
+
 class Monitor:
     """Mutter virtual monitor held at w x h by a fakesink consumer.
     ponytail: always-copy costs one copy per painted frame (unmeasurable in the
@@ -316,6 +355,7 @@ def selftest() -> int:
     assert rd["NotifyPointerMotionAbsolute"]._dbus_in_signature == "oa{sv}udd"
     assert rd["ConnectToEIS"]._dbus_out_signature == "h"
     assert parse_size("2552x1294") == (2552, 1294)
+    assert SystemdStub.__dict__["StartUnit"]._dbus_out_signature == "o"
     print("selftest ok", flush=True)
     return 0
 
@@ -330,6 +370,8 @@ def main(argv) -> int:
     bus = dbus.SessionBus()
     name = dbus.service.BusName(BUS_NAME, bus)  # noqa: F841 — held for life
     Seat()
+    sd_name = dbus.service.BusName(SD_NAME, bus)  # noqa: F841 — private bus only
+    SystemdStub()
     ready = os.environ.get("STYX_PORTAL_READY", "")
     loop = GLib.MainLoop()
     st = {"rc": 0, "tries": 0, "frontend": None}
