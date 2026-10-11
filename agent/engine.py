@@ -4,7 +4,9 @@ mirror: attach to a live X display (XShm capture), resolution locked to the
         physical screen so selkies never xrandr-resizes the user's monitor.
 seat:   pixelflux's own Wayland compositor; host apps join via WAYLAND_DISPLAY.
 """
+import base64
 import glob
+import json
 import os
 import socket
 import sys
@@ -182,37 +184,67 @@ def wait_for_wayland_socket(runtime_dir: str, before: set[str],
 
 
 
-def capture_socket(runtime_dir: str | None = None) -> str | None:
-    """Newest live wayland-N socket. On the GNOME seat that is selkies' own
-    pixelflux compositor (the seat itself listens on styx-seat-0).
-    ponytail: mtime heuristic; pin pixelflux's socket if a seat box ever runs
-    a second live wayland-N."""
-    rd = Path(runtime_dir or os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"))
-    best = None
-    for p in rd.glob("wayland-*"):
-        if not p.name[len("wayland-"):].isdigit():
-            continue
-        try:
-            with socket.socket(socket.AF_UNIX) as s:
-                s.settimeout(0.2)
-                s.connect(str(p))
-            m = p.stat().st_mtime
-        except OSError:
-            continue                       # stale file, no listener
-        if best is None or m > best[0]:
-            best = (m, p.name)
-    return best[1] if best else None
+CLIP_SOCKET = "styx-clipboard.sock"
 
 
-CLIPBOARD_APP_CALLS = ("clipboard_read_app", "clipboard_types_app",
-                       "clipboard_write_app", "clipboard_watch_app")
+def clip_socket_path() -> str:
+    rd = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+    return os.path.join(rd, CLIP_SOCKET)
+
+
+def _clip_open(req: dict, path: str) -> socket.socket:
+    s = socket.socket(socket.AF_UNIX)
+    s.settimeout(5)
+    s.connect(path)
+    s.sendall(json.dumps(req).encode() + b"\n")
+    s.shutdown(socket.SHUT_WR)
+    return s
+
+
+def clip_call(req: dict, path: str | None = None) -> bytes:
+    """One request to seat_clipboard.py; raises on an error reply."""
+    with _clip_open(req, path or clip_socket_path()) as s:
+        out = b"".join(iter(lambda: s.recv(65536), b""))
+    if out[:1] != b"+":
+        raise RuntimeError(out[1:].decode(errors="replace") or "seat clipboard: no reply")
+    return out[1:]
+
+
+def clip_watch(on_change, path: str | None = None) -> None:
+    """Daemon thread calling on_change(mimes) per seat selection change;
+    reconnects when seat_portal restarts (refit, self-heal)."""
+    import threading
+
+    def run():
+        while True:
+            try:
+                with _clip_open({"op": "watch"}, path or clip_socket_path()) as s:
+                    s.settimeout(None)
+                    f = s.makefile("rb")
+                    if f.read(1) != b"+":
+                        raise OSError("watch refused")
+                    for line in f:
+                        on_change(json.loads(line))
+            except (OSError, ValueError):
+                pass
+            time.sleep(1)
+    threading.Thread(target=run, daemon=True, name="styx-clip-watch").start()
+
+
+SEAT_CLIPBOARD = {
+    "clipboard_types_app": lambda _d: json.loads(clip_call({"op": "types"})),
+    "clipboard_read_app": lambda _d, mime: clip_call({"op": "read", "mime": mime}),
+    "clipboard_write_app": lambda _d, offered: clip_call({"op": "write", "offers": [
+        [m, base64.b64encode(bytes(d)).decode()] for m, d in offered]}),
+    "clipboard_watch_app": lambda _d, cb: clip_watch(cb),
+}
 
 
 def seat_selkies_main() -> None:
     """selkies for the GNOME seat (`python engine.py <selkies args>`). Mutter
     has no wlr/ext data-control, so selkies' clipboard calls aimed at the seat
-    socket fail; aim them at selkies' own compositor instead, which
-    seat_portal.py mirrors to the seat via Mutter's RemoteDesktop clipboard."""
+    socket fail; route them to seat_clipboard.py, which serves the seat's
+    clipboard (all flavours) from Mutter's RemoteDesktop clipboard API."""
     from pixelflux import ScreenCapture
     from selkies import input_handler
     from selkies.__main__ import main
@@ -222,10 +254,7 @@ def seat_selkies_main() -> None:
             self._real = ScreenCapture()
 
         def __getattr__(self, name):
-            attr = getattr(self._real, name)
-            if name not in CLIPBOARD_APP_CALLS:
-                return attr
-            return lambda display, *a: attr(capture_socket() or display, *a)
+            return SEAT_CLIPBOARD.get(name) or getattr(self._real, name)
 
     input_handler.ScreenCapture = SeatCapture
     sys.exit(main())

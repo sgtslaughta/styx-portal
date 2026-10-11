@@ -65,7 +65,9 @@ def build_launch_script(sink: str, bus_file: str, portal_dir: str) -> str:
         f"XDG_DESKTOP_PORTAL_DIR={portal_dir}",
         f'echo "$DBUS_SESSION_BUS_ADDRESS" > {bus_file}',
         # No --virtual-monitor: seat_portal.py owns the monitor and its size.
-        f"exec gnome-shell --headless --wayland --no-x11 --wayland-display={SOCKET}",
+        # Xwayland on demand for X11-only apps; seat_portal.py stubs the
+        # systemd job gnome-shell waits on before it lets X11 start.
+        f"exec gnome-shell --headless --wayland --wayland-display={SOCKET}",
         "",
     ])
 

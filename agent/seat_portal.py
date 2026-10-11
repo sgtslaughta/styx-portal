@@ -10,11 +10,9 @@ and GStreamer's pipewiresrc). Only ever run on the seat's private session bus.
 3. Once Mutter reports that monitor current, starts xdg-desktop-portal
    --replace (it reads XDG_DESKTOP_PORTAL_DIR) and writes WxH to
    $STYX_PORTAL_READY.
-4. Mirrors the seat's text clipboard <-> selkies' own compositor through the
-   RemoteDesktop session's clipboard (Mutter has no wlr/ext data-control)."""
-import base64
+4. Serves the seat's clipboard (all flavours) to selkies via seat_clipboard.py
+   on the RemoteDesktop session (Mutter has no wlr/ext data-control)."""
 import os
-import select
 import signal
 import subprocess
 import sys
@@ -27,7 +25,7 @@ from dbus.mainloop.glib import DBusGMainLoop
 gi.require_version("Gst", "1.0")
 from gi.repository import GLib, Gst  # noqa: E402
 
-from engine import capture_socket  # noqa: E402 — stdlib-only, ships alongside
+from seat_clipboard import ClipboardServer  # noqa: E402
 
 BUS_NAME = "org.freedesktop.impl.portal.desktop.styx"
 PATH = "/org/freedesktop/portal/desktop"
@@ -38,8 +36,6 @@ M = "org.gnome.Mutter."
 EMBEDDED = 1            # Mutter cursor-mode: 0 hidden, 1 embedded, 2 metadata
 FRONTENDS = ("/usr/libexec/xdg-desktop-portal", "/usr/lib/xdg-desktop-portal")
 LIVE_TRIES = 50         # x 200 ms = 10 s for the monitor to come up
-TEXT_MIMES = ("text/plain;charset=utf-8", "text/plain", "UTF8_STRING", "STRING", "TEXT")
-CLIP_CAP = 16 << 20     # bytes; bigger selections are truncated
 
 bus = None              # set in main(); classes only touch it at call time
 sessions = {}
@@ -58,88 +54,6 @@ def parse_size(arg: str) -> tuple[int, int]:
 
 def _mutter(name, path, iface):
     return dbus.Interface(bus.get_object(M + name, path), M + iface)
-
-
-def _read_fd(fd: int, timeout: float = 2.0) -> bytes:
-    """Drain a selection pipe; a stalled owner gives up after `timeout`."""
-    out = bytearray()
-    with os.fdopen(fd, "rb", buffering=0) as f:
-        while len(out) < CLIP_CAP and select.select([f], [], [], timeout)[0]:
-            chunk = f.read(65536)
-            if not chunk:
-                break
-            out += chunk
-    return bytes(out)
-
-
-class Clipboard:
-    """Text clipboard mirror: Mutter seat <-> selkies' capture compositor,
-    where selkies' own clipboard calls land (see engine.seat_selkies_main).
-    `last` dedupes so a mirrored value never echoes back.
-    ponytail: text only; add image/html flavours when someone asks."""
-    def __init__(self, rd, rd_path):
-        self.rd, self.last, self.buf = rd, None, b""
-        self.sock = capture_socket()
-        if self.sock is None:
-            raise RuntimeError("no capture compositor socket")
-        rd.EnableClipboard(dbus.Dictionary({}, signature="sv"))
-        iface = M + "RemoteDesktop.Session"
-        self.rx = [bus.add_signal_receiver(self._owner, "SelectionOwnerChanged", iface,
-                                           path=rd_path),
-                   bus.add_signal_receiver(self._transfer, "SelectionTransfer", iface,
-                                           path=rd_path)]
-        self.env = {**os.environ, "WAYLAND_DISPLAY": self.sock}
-        # One base64 line per selection change on the capture compositor.
-        self.watch = subprocess.Popen(
-            ["wl-paste", "-n", "-t", "text", "--watch", "sh", "-c", "base64 -w0; echo"],
-            env=self.env, stdout=subprocess.PIPE)
-        GLib.io_add_watch(self.watch.stdout.fileno(), GLib.IO_IN | GLib.IO_HUP, self._on_watch)
-        log("clipboard mirror on", self.sock)
-
-    def _on_watch(self, fd, _cond):
-        chunk = os.read(fd, 65536)
-        if not chunk:
-            return False
-        *lines, self.buf = (self.buf + chunk).split(b"\n")
-        for line in lines:
-            data = base64.b64decode(line)
-            if data and data != self.last:
-                self.last = data
-                self.rd.SetSelection(dbus.Dictionary(
-                    {"mime-types": dbus.Array(TEXT_MIMES, signature="s")}, signature="sv"))
-        return True
-
-    def _transfer(self, _mime, serial):
-        ok = True
-        try:
-            with os.fdopen(self.rd.SelectionWrite(serial).take(), "wb") as f:
-                f.write(self.last or b"")
-        except (OSError, dbus.DBusException) as e:
-            log("clipboard write failed:", e)
-            ok = False
-        self.rd.SelectionWriteDone(serial, ok)
-
-    def _owner(self, options):
-        if options.get("session-is-owner"):
-            return                          # our own SetSelection
-        mimes = {str(m) for m in options.get("mime-types", [])}
-        mime = next((m for m in TEXT_MIMES if m in mimes), None)
-        if mime is None:
-            return
-        try:
-            data = _read_fd(self.rd.SelectionRead(mime).take())
-        except (OSError, dbus.DBusException) as e:
-            log("clipboard read failed:", e)
-            return
-        if data and data != self.last:
-            self.last = data
-            subprocess.run(["wl-copy", "-t", "text/plain;charset=utf-8"], input=data,
-                           env=self.env, timeout=5, check=False)
-
-    def stop(self):
-        for r in self.rx:
-            r.remove()
-        self.watch.terminate()
 
 
 class Session(dbus.service.Object):
@@ -219,9 +133,12 @@ class Portal(dbus.service.Object):
             s.rd.Start()
             if s.clip is None:
                 try:
-                    s.clip = Clipboard(s.rd, s.rd_path)
+                    s.clip = ClipboardServer(s.rd, lambda fn, member, p=s.rd_path:
+                                             bus.add_signal_receiver(
+                                                 fn, member, M + "RemoteDesktop.Session",
+                                                 path=p))
                 except (RuntimeError, OSError, dbus.DBusException) as e:
-                    log("clipboard mirror off:", e)   # streaming still works
+                    log("clipboard off:", e)   # streaming still works
             if not s.want_screen:
                 ok(dbus.UInt32(0), dbus.Dictionary({"devices": dbus.UInt32(s.devices)},
                                                    signature="sv"))
@@ -339,6 +256,45 @@ ScreenCastLevel = type("ScreenCastLevel", (Portal,), SC_METHODS)
 Seat = type("Seat", (ScreenCastLevel,), RD_METHODS)
 
 
+SD_NAME = "org.freedesktop.systemd1"
+SD_IFACE = SD_NAME + ".Manager"
+SD_PATH = "/org/freedesktop/systemd1"
+
+
+class SystemdStub(dbus.service.Object):
+    """gnome-shell runs inside the agent's systemd user unit, so before it lets
+    Xwayland start it asks the session bus's systemd for
+    gnome-session-x11-services-ready.target, and any failure but NOT_SUPPORTED
+    aborts X11: X11-only apps (GIMP 2.10, JetBrains IDEs) never open. The
+    seat's private bus has no systemd, so answer every job as done.
+    ponytail: the X11 services (gsd-xsettings) are not started, so X11 apps
+    get toolkit-default theme/scaling; spawn gsd-xsettings here if that matters."""
+    def __init__(self):
+        super().__init__(bus, SD_PATH)
+        self.jobs = 0
+
+    def _job(self, unit):
+        self.jobs += 1
+        job = dbus.ObjectPath(f"{SD_PATH}/job/{self.jobs}")
+        log("systemd stub: job done for", unit)
+        # After the method reply: gnome-shell matches JobRemoved to the returned path.
+        n = dbus.UInt32(self.jobs)
+        GLib.timeout_add(50, lambda: self.JobRemoved(n, job, unit, "done") and False)
+        return job
+
+    @dbus.service.method(SD_IFACE, in_signature="ss", out_signature="o")
+    def StartUnit(self, unit, mode):
+        return self._job(unit)
+
+    @dbus.service.method(SD_IFACE, in_signature="ss", out_signature="o")
+    def StopUnit(self, unit, mode):
+        return self._job(unit)
+
+    @dbus.service.signal(SD_IFACE, signature="uoss")
+    def JobRemoved(self, id_, job, unit, result):
+        pass
+
+
 class Monitor:
     """Mutter virtual monitor held at w x h by a fakesink consumer.
     ponytail: always-copy costs one copy per painted frame (unmeasurable in the
@@ -399,6 +355,7 @@ def selftest() -> int:
     assert rd["NotifyPointerMotionAbsolute"]._dbus_in_signature == "oa{sv}udd"
     assert rd["ConnectToEIS"]._dbus_out_signature == "h"
     assert parse_size("2552x1294") == (2552, 1294)
+    assert SystemdStub.__dict__["StartUnit"]._dbus_out_signature == "o"
     print("selftest ok", flush=True)
     return 0
 
@@ -413,6 +370,8 @@ def main(argv) -> int:
     bus = dbus.SessionBus()
     name = dbus.service.BusName(BUS_NAME, bus)  # noqa: F841 — held for life
     Seat()
+    sd_name = dbus.service.BusName(SD_NAME, bus)  # noqa: F841 — private bus only
+    SystemdStub()
     ready = os.environ.get("STYX_PORTAL_READY", "")
     loop = GLib.MainLoop()
     st = {"rc": 0, "tries": 0, "frontend": None}
