@@ -129,13 +129,15 @@ All service routers are `Host(<domain>) && ...`, get `ip-ban-gate` and
   `PathPrefix(`/api`) && Header(`X-Styx-Client`, `1`)` so Styx's own API
   keeps working while the cookie is set, and the app's `/api` reaches the
   app.
-- Entering: the Styx tile hits `GET /api/services/<slug>/enter`, backend
-  sets `styx_svc=<slug>; Path=/; Secure; HttpOnly; SameSite=Lax` and
-  redirects to `/`.
-- Escape hatch: `GET /_styx/exit` (backend route, priority 90) clears the
-  cookie and redirects to `/`. The portal shows a persistent "You are in
-  <name>, exit" banner only on its own pages; inside the app the user uses
-  `/_styx/exit` or the browser's back-to-portal bookmark.
+- Entering: the Styx tile calls `POST /api/services/<slug>/enter` through
+  the frontend fetch wrapper (so the `X-Styx-Client` header and CSRF token
+  are present even if another takeover cookie is already set). Backend
+  checks the ACL, sets `styx_svc=<slug>; Path=/; Secure; HttpOnly;
+  SameSite=Lax`, and the frontend then navigates to `/`.
+- Escape hatch: `GET /_styx/exit` (backend route, Traefik priority 90)
+  clears the cookie and redirects to `/`. While the cookie is set the portal
+  itself is not reachable, so there is no in-portal banner; the tile tooltip
+  and the docs name `/_styx/exit`, and the unavailable page links to it.
 - Limits (documented, shown in UI): one cookie-root service active per
   browser; browser-only (mobile apps cannot set the cookie).
 
@@ -219,11 +221,11 @@ Admin-only unless noted. All mutations write `audit_log`.
 | POST | `/api/services/{id}/enable` / `disable` | |
 | GET | `/api/services/discover` | §6 |
 | GET | `/api/services/presets` | seeded presets |
-| GET | `/api/services/{slug}/enter` | any user; cookie-root entry, checks ACL first |
+| POST | `/api/services/{slug}/enter` | any user; cookie-root entry, checks ACL first |
 | GET | `/_styx/exit` | any; clears cookie |
 | GET | `/api/services/{slug}/auth-check` | Traefik only (internal network), §5 |
 | GET | `/api/groups`, POST, PUT, DELETE | groups CRUD |
-| PUT | `/api/users/{id}/groups` | set memberships |
+| GET, PUT | `/api/users/{id}/groups` | read / set memberships |
 
 Every write triggers `route_writer.write_routes` (extend signature with
 `services=`), same as instances/workstations.
