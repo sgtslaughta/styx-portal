@@ -28,7 +28,7 @@ def test_load_config(tmp_path):
 
 
 def test_agent_version_bumped():
-    assert styx_agent.AGENT_VERSION == "0.6.13"
+    assert styx_agent.AGENT_VERSION == "0.6.14"
 
 
 def test_gateway_cmd_secrets_via_env(tmp_path):
@@ -71,7 +71,7 @@ def test_health_payload_reports_mode_and_engine(tmp_path):
     h = styx_agent.health_payload(cfg, selkies_alive=True, gateway_alive=False)
     assert h["mode"] == "seat"
     assert h["engine"] == "pixelflux"
-    assert h["agent_version"] == "0.6.13"
+    assert h["agent_version"] == "0.6.14"
     assert "needs_consent" not in h
     assert h["selkies_alive"] is True and h["gateway_alive"] is False
     assert h["active_connections"] == 0
@@ -184,7 +184,7 @@ def test_run_config_from_0411_is_accepted(tmp_path, monkeypatch):
     monkeypatch.setattr(styx_agent.seat_gnome, "gnome_available", lambda: (True, ""))
     assert styx_agent.pick_seat_shell(cfg) == "gnome"
     p = styx_agent.health_payload(cfg, True, True)
-    assert p["agent_version"] == "0.6.13" and "needs_consent" not in p
+    assert p["agent_version"] == "0.6.14" and "needs_consent" not in p
 
 
 def test_rollback_swaps_dirs(tmp_path, monkeypatch):
@@ -272,3 +272,23 @@ def test_uninstall_removes_prev(monkeypatch, tmp_path):
     monkeypatch.setattr(styx_agent.subprocess, "run", lambda *a, **k: None)
     assert styx_agent.uninstall(None) == 0
     assert not inst.exists() and not prev.exists()
+
+
+def test_snap_scope_props_pins_caller_and_strips_exec():
+    import pytest
+    import seat_portal
+
+    ok = [("PIDs", [4242]), ("Description", "firefox"), ("Slice", "evil.slice"),
+          ("ExecStart", [["/bin/sh", ["sh", "-c", "id"], False]])]
+    assert seat_portal.snap_scope_props("snap.firefox.firefox-1.scope", ok, [], 4242) == [
+        ("PIDs", [4242]), ("Description", "firefox")]
+    with pytest.raises(ValueError):  # another process of the same uid
+        seat_portal.snap_scope_props("snap.firefox.firefox-1.scope", [("PIDs", [1])], [], 4242)
+    with pytest.raises(ValueError):  # no PIDs at all
+        seat_portal.snap_scope_props("snap.firefox.firefox-1.scope", [], [], 4242)
+    with pytest.raises(ValueError):  # service unit with ExecStart, not a scope
+        seat_portal.snap_scope_props("snap.x.service", ok, [], 4242)
+    with pytest.raises(ValueError):  # not a snap at all
+        seat_portal.snap_scope_props("evil.scope", ok, [], 4242)
+    with pytest.raises(ValueError):  # aux units
+        seat_portal.snap_scope_props("snap.firefox.firefox-1.scope", ok, [("x.service", [])], 4242)
