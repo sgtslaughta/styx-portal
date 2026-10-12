@@ -86,8 +86,12 @@ def _write_state(d: dict) -> None:
 
 
 def _terminate(p, timeout: int = 10) -> None:
-    """Graceful stop of a child, escalating to kill on timeout."""
+    """Graceful stop of a child, escalating to kill on timeout (0 = kill now)."""
     if p is not None and p.poll() is None:
+        if timeout <= 0:
+            p.kill()
+            p.wait()
+            return
         p.terminate()
         try:
             p.wait(timeout=timeout)
@@ -132,7 +136,7 @@ def settings_restart_keys(old: dict, new: dict) -> tuple[str, ...]:
     """Procs to relaunch on a stream_settings push. The gateway is always in:
     idle-timeout config reaches it only through its launch env (STYX_GW_IDLE_*).
     The GNOME seat restarts only when its shell/geometry changed."""
-    keys = ("selkies", "shell", "clipboard", "gateway")
+    keys = ("selkies", "standby", "shell", "clipboard", "gateway")
     if any((old.get(k) or d) != (new.get(k) or d)
            for k, d in SEAT_DEFAULTS.items()):
         keys += ("seat",)
@@ -169,12 +173,35 @@ def run(cfg: dict) -> int:
     last_engine_restart = float("-inf")   # watchdog grace after a restart
     exit_code = 0
     procs: dict[str, subprocess.Popen | None] = {
-        "selkies": None, "gateway": None, "shell": None, "clipboard": None}
+        "selkies": None, "gateway": None, "shell": None, "clipboard": None,
+        "standby": None}
     seat_socket: str | None = None
     app_socket: str | None = None
     interval, backoff, stopping = 30, 2, False
     last_error: str | None = None
     internal_port = engine.pick_free_port()
+    port_file = INSTALL_DIR / "selkies-port"   # gateway reads it per request
+
+    def publish_port():
+        tmp = port_file.with_suffix(".tmp")
+        tmp.write_text(str(internal_port))
+        os.replace(tmp, port_file)
+
+    def spawn_standby():
+        """GNOME seat only: a booted, idle selkies on its own port. A refit
+        promotes it, so the viewer never waits for a process start (~0.5 s of
+        the hold). Idle cost: one more selkies (~190 MB RSS)."""
+        if not gseat or not gseat.alive():
+            return None
+        port = engine.pick_free_port()
+        try:
+            cmd, env = engine.build_selkies_cmd(cfg, port, gseat.info())
+        except Exception as e:
+            print(f"standby selkies not started: {e}", flush=True)
+            return None
+        proc = subprocess.Popen(cmd, env=env, stdout=selkies_log, stderr=selkies_log)
+        proc.styx_port = port
+        return proc
 
     def _stop(*_):
         nonlocal stopping
@@ -291,6 +318,10 @@ def run(cfg: dict) -> int:
                 time.sleep(min(backoff, 60))
                 backoff *= 2
             procs["selkies"] = start_selkies()
+            publish_port()
+        if gseat and procs["selkies"] is not None and (
+                procs["standby"] is None or procs["standby"].poll() is not None):
+            procs["standby"] = spawn_standby()
         if procs["gateway"] is None or procs["gateway"].poll() is not None:
             cmd, env = build_gateway_cmd(
                 cfg, internal_port, str(INSTALL_DIR) if gseat else "")
@@ -378,15 +409,23 @@ def run(cfg: dict) -> int:
         except (urllib.error.URLError, OSError, TimeoutError) as e:
             _write_state({"ts": time.time(), "ok": False, "error": str(e)})
             print(f"heartbeat failed: {e}", flush=True)
-        req = (refit.wait_for_request(refit_req, interval, stop=lambda: not gseat.alive())
+        req = (refit.wait_for_request(refit_req, interval, poll=0.05, stop=lambda: not gseat.alive())
                if gseat else time.sleep(interval))  # GNOME: wake on refit or seat death
         if req:
             if gseat.alive():
                 print(f"refit: rebuilding seat monitor at {req[0]}x{req[1]}", flush=True)
-                _terminate(procs["selkies"], timeout=2)
+                # SIGKILL: selkies has nothing to flush and its portal session is
+                # closed by the frontend when the peer vanishes; SIGTERM took 10 s.
+                _terminate(procs["selkies"], timeout=0)
                 procs["selkies"] = None
                 if not (gseat.resize_live(*req) or gseat.refit(*req)):
                     last_error = f"refit to {req[0]}x{req[1]} failed — kept previous size"
+                standby = procs["standby"]
+                if standby is not None and standby.poll() is None:
+                    procs["selkies"], procs["standby"] = standby, None
+                    internal_port = standby.styx_port
+                    publish_port()
+                    print(f"refit: promoted standby selkies on port {internal_port}", flush=True)
                 last_engine_restart = time.monotonic()
             refit.clear_request(refit_req)
 

@@ -178,7 +178,8 @@ def test_settings_push_restarts_seat_only_on_geometry(tmp_path, monkeypatch):
             return {**ss, "video_crf": 30}
         if i == 2:
             assert h.count("seat_stop") == 0
-            assert h.count("term", "selkies") == 1 and h.count("term", "gateway") == 1
+            # active + warm standby selkies restart on a settings change
+            assert h.count("term", "selkies") == 2 and h.count("term", "gateway") == 1
             return {**ss, "seat_width": 1920}
         return "revoke"
     h = Harness(tmp_path, monkeypatch, script)
@@ -195,4 +196,4 @@ def test_seat_shell_flip_exits_for_restart(tmp_path, monkeypatch):
     h = Harness(tmp_path, monkeypatch, script)
     assert h.run() != 0
     assert h.count("seat_stop") >= 1
-    assert h.count("term", "selkies") == 1 and h.count("term", "gateway") == 1
+    assert h.count("term", "selkies") == 2 and h.count("term", "gateway") == 1   # active + standby
