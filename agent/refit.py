@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 CLOSE_CODE = 4002
-MIN_W, MIN_H, MAX_W, MAX_H = 640, 480, 3840, 2160
+MIN_W, MIN_H, MAX_W, MAX_H = 640, 480, 4096, 2304   # HiDPI browsers send device px
 TOLERANCE_PX = 16
 MIN_INTERVAL_S = 3.0
 SETTLE_S = 0.6          # browser size must hold this long before a refit
@@ -32,7 +32,7 @@ OVERLAY = ("<div id='styx-resizing' style='position:fixed;inset:0;z-index:214748
            "<svg width='96' height='96' viewBox='0 0 24 24' fill='none' stroke='#fff' "
            "stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' "
            "style='filter:drop-shadow(0 4px 14px rgba(0,0,0,.35))'>"
-           "<path d='M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1' pathLength='1' style='animation-delay:0.00s'/><path d='M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1' pathLength='1' style='animation-delay:0.12s'/><path d='M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1' pathLength='1' style='animation-delay:0.24s'/></svg>Resizing…<style>#styx-resizing path{stroke-dasharray:1;"
+           "<path d='M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1' pathLength='1' style='animation-delay:0.00s'/><path d='M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1' pathLength='1' style='animation-delay:0.12s'/><path d='M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1' pathLength='1' style='animation-delay:0.24s'/></svg><span>Resizing…</span><style>#styx-resizing path{stroke-dasharray:1;"
            "stroke-dashoffset:1;animation:styx-draw 1.6s ease-in-out infinite}"
            "@keyframes styx-draw{0%{stroke-dashoffset:1;opacity:0}15%{opacity:1}"
            "45%,75%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}"
@@ -43,22 +43,38 @@ OVERLAY = ("<div id='styx-resizing' style='position:fixed;inset:0;z-index:214748
 WAIT_JS = ("function styxWait(){fetch(location.href,{cache:'no-store'}).then(function(r)"
            "{if(r.ok&&!r.headers.get('X-Styx-Hold'))location.reload();else throw 0})"
            ".catch(function(){setTimeout(styxWait,400)})}")
+# Last decoded frame, snapshotted before the refit close and kept across the
+# reload (sessionStorage), so the viewer sees a frozen desktop + pill instead
+# of a splash. WebGL canvases without preserveDrawingBuffer read back black:
+# a mostly-black snapshot is dropped and the splash is used instead.
+FREEZE_JS = ("function styxFreeze(){try{var c=document.querySelector('canvas,video');"
+             "if(!c)return;var k=document.createElement('canvas');k.width=c.videoWidth||c.width;"
+             "k.height=c.videoHeight||c.height;var g=k.getContext('2d');g.drawImage(c,0,0);"
+             "var d=g.getImageData(0,0,Math.min(k.width,64),Math.min(k.height,64)).data,s=0;"
+             "for(var i=0;i<d.length;i+=4)s+=d[i]+d[i+1]+d[i+2];if(s<d.length*4)return;"
+             "sessionStorage.setItem('styx-frame',k.toDataURL('image/jpeg',0.7))}catch(e){}}"
+             "function styxBg(){try{var f=sessionStorage.getItem('styx-frame');"
+             "if(!f)return;var o=document.getElementById('styx-resizing');"
+             "o.style.background='#000 url('+f+') center/contain no-repeat';"
+             "o.querySelector('svg').style.display='none';var t=o.querySelector('span');"
+             "t.style.cssText='position:fixed;bottom:24px;padding:8px 16px;border-radius:999px;"
+             "background:rgba(12,23,48,.85);backdrop-filter:blur(6px)'}catch(e){}}")
 
 # The gateway sends MARKER, then closes: show the overlay at once, wait for the
 # seat on the close (any code), keep the overlay across the single reload
 # (sessionStorage flag; drawn before <body> exists) and lift it 0.8 s after the
 # first video frame (audio packets are tiny; selkies resets right after it
-# connects). 15 s safety timeout.
+# connects). 30 s safety timeout (a seat rebuild + selkies start can take ~10 s).
 RELOAD_JS = (
     '<script id="styx-refit">(function(){var W=window.WebSocket,K="styx-resizing";'
-    + WAIT_JS +
+    + WAIT_JS + FREEZE_JS +
     "function show(){if(!document.getElementById(K))(document.body||"
-    'document.documentElement).insertAdjacentHTML("beforeend","' + OVERLAY + '")}'
-    "function hide(){try{sessionStorage.removeItem(K)}catch(e){}"
+    'document.documentElement).insertAdjacentHTML("beforeend","' + OVERLAY + '");styxBg()}'
+    "function hide(){try{sessionStorage.removeItem(K);sessionStorage.removeItem('styx-frame')}catch(e){}"
     "var o=document.getElementById(K);if(o)o.remove()}"
-    "function arm(){try{sessionStorage.setItem(K,'1')}catch(e){}show()}"
+    "function arm(){styxFreeze();try{sessionStorage.setItem(K,'1')}catch(e){}show()}"
     "var on=false;try{on=sessionStorage.getItem(K)==='1'}catch(e){}"
-    "if(on){show();setTimeout(hide,15000)}"
+    "if(on){show();setTimeout(hide,30000)}"
     "function S(u,p){var s=p===undefined?new W(u):new W(u,p),refit=false;"
     "s.addEventListener('message',function(e){var d=e.data;"
     "if(d==='" + MARKER + "'){refit=true;arm();return}"
@@ -72,7 +88,7 @@ RELOAD_JS = (
 # instance-unavailable page, which bounces the viewer to the portal.
 HOLD_HTML = ('<!doctype html><html><head><title>Resizing desktop</title></head>'
              '<body id="styx-hold" style="margin:0;background:#0c1730">' + OVERLAY +
-             '<script>' + WAIT_JS + 'styxWait()</script></body></html>')
+             '<script>' + WAIT_JS + FREEZE_JS + 'styxBg();styxWait()</script></body></html>')
 
 
 def clamp(w: int, h: int) -> tuple[int, int]:
@@ -151,3 +167,20 @@ def inject_reload(html: str, enabled: bool) -> str:
     if not enabled or "</head>" not in html:
         return html
     return html.replace("</head>", RELOAD_JS + "</head>", 1)
+
+
+class SizeOwner:
+    """The first connected viewer owns the seat size; later viewers scale to fit
+    (they can take over later via the portal). Released when the owner leaves,
+    so the next viewer to resize claims it."""
+    def __init__(self):
+        self.owner = None
+
+    def claim(self, cid) -> bool:
+        if self.owner is None:
+            self.owner = cid
+        return self.owner == cid
+
+    def release(self, cid) -> None:
+        if self.owner == cid:
+            self.owner = None

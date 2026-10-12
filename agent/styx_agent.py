@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-AGENT_VERSION = "0.6.13"
+AGENT_VERSION = "0.6.15"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -383,7 +383,7 @@ def run(cfg: dict) -> int:
         if req:
             if gseat.alive():
                 print(f"refit: rebuilding seat monitor at {req[0]}x{req[1]}", flush=True)
-                _terminate(procs["selkies"])
+                _terminate(procs["selkies"], timeout=2)
                 procs["selkies"] = None
                 if not gseat.refit(*req):
                     last_error = f"refit to {req[0]}x{req[1]} failed — kept previous size"

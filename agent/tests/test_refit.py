@@ -7,7 +7,7 @@ import refit  # noqa: E402
 
 def test_clamp_bounds_and_even():
     assert refit.clamp(320, 200) == (640, 480)
-    assert refit.clamp(7680, 4320) == (3840, 2160)
+    assert refit.clamp(7680, 4320) == (4096, 2304)
     assert refit.clamp(2553, 1295) == (2552, 1294)
 
 
@@ -91,3 +91,18 @@ def test_wait_for_request_stops_early(tmp_path):
     assert refit.wait_for_request(tmp_path / "r", 30, sleep=lambda s: t.update(now=t["now"] + s),
                                   clock=lambda: t["now"], stop=lambda: True) is None
     assert t["now"] == 0.0
+
+
+def test_shim_freezes_last_frame_and_hold_shows_it():
+    out = refit.inject_reload("<html><head></head><body></body></html>", True)
+    assert "styxFreeze()" in out and "styx-frame" in out and "setTimeout(hide,30000)" in out
+    assert "styxBg()" in refit.HOLD_HTML and "<span>Resizing…</span>" in refit.OVERLAY
+
+
+def test_size_owner_first_viewer_wins_until_it_leaves():
+    o = refit.SizeOwner()
+    assert o.claim("a") and not o.claim("b") and o.claim("a")
+    o.release("b")
+    assert o.owner == "a"
+    o.release("a")
+    assert o.claim("b")
