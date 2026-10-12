@@ -183,7 +183,18 @@ def create_app(user: str, password: str,
                state_file: str = "", idle_timeout_s: int = 0,
                idle_lead_s: int = 60, idle_enabled: bool = False,
                seat_dir: str = "") -> web.Application:
-    UPSTREAM = f"http://127.0.0.1:{upstream_port}"
+    # The supervisor can promote a warm standby selkies on a refit: the live
+    # port is then in <seat_dir>/selkies-port, re-read per request.
+    port_file = os.path.join(seat_dir, "selkies-port") if seat_dir else ""
+
+    def live_port() -> int:
+        try:
+            return int(open(port_file).read().strip())
+        except (OSError, ValueError):
+            return upstream_port
+
+    def upstream() -> str:
+        return f"http://127.0.0.1:{live_port()}"
     HOP = {"host", "connection", "keep-alive", "transfer-encoding", "upgrade",
            "authorization", "origin", "content-length", "accept-encoding"}
 
@@ -268,7 +279,7 @@ def create_app(user: str, password: str,
         async with aiohttp.ClientSession() as session:
             try:
                 ws_client = await session.ws_connect(
-                    f"ws://127.0.0.1:{upstream_port}/api/websockets"
+                    f"ws://127.0.0.1:{live_port()}/api/websockets"
                     + (f"?{qs}" if qs else ""),
                     max_msg_size=0)
             except aiohttp.ClientError:
@@ -372,7 +383,7 @@ def create_app(user: str, password: str,
             return hold
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as s, \
-                    s.get(UPSTREAM + "/", allow_redirects=False) as r:
+                    s.get(upstream() + "/", allow_redirects=False) as r:
                 if r.status != 200:
                     hdr = {"Location": r.headers["Location"]} if "Location" in r.headers else {}
                     return web.Response(status=r.status, body=await r.read(), headers=hdr)
@@ -406,7 +417,7 @@ def create_app(user: str, password: str,
         headers.extend((k, v) for k, v in request.headers.items()
                        if k.lower() not in HOP)
         body = await request.read() if request.body_exists else None
-        url = yarl.URL(UPSTREAM + raw_path_qs, encoded=True)
+        url = yarl.URL(upstream() + raw_path_qs, encoded=True)
         resp = None
         try:
             async with aiohttp.ClientSession(
