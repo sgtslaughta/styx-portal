@@ -16,6 +16,7 @@ import os
 import signal
 import subprocess
 import sys
+import time
 
 import dbus
 import dbus.bus
@@ -43,7 +44,7 @@ sessions = {}
 
 
 def log(*a):
-    print("[seat-portal]", *a, flush=True)
+    print("[seat-portal]", time.strftime("%H:%M:%S") + f".{int(time.time()*1000)%1000:03d}", *a, flush=True)
 
 
 def parse_size(arg: str) -> tuple[int, int]:
@@ -61,7 +62,7 @@ class Session(dbus.service.Object):
     def __init__(self, handle):
         super().__init__(bus, handle)
         self.handle = str(handle)
-        self.rd = self.rd_path = self.stream_path = self.clip = None
+        self.rd = self.rd_path = self.stream_path = self.clip = self.sc = None
         self.devices = 3
         self.want_screen = True
 
@@ -81,6 +82,24 @@ class Session(dbus.service.Object):
     @dbus.service.signal(SESS_IFACE)
     def Closed(self):
         pass
+
+    def lost(self):
+        """Mutter ended the session under us: tell the client and forget it."""
+        if self.handle not in sessions:
+            return
+        log("session lost (Mutter closed it)", self.handle)
+        if self.clip is not None:
+            self.clip.stop()
+        for m in (self.sc, self.rd):      # tear the Mutter side down: its PipeWire
+            try:                          # node must die, not just pause
+                if m is not None:
+                    m.Stop()
+            except dbus.DBusException as e:
+                log("stop failed:", e)
+        self.sc = self.rd = None
+        sessions.pop(self.handle, None)
+        self.Closed()
+        self.remove_from_connection()
 
 
 class Portal(dbus.service.Object):
@@ -106,13 +125,20 @@ class Portal(dbus.service.Object):
                 s.rd_path = _mutter("RemoteDesktop", "/org/gnome/Mutter/RemoteDesktop",
                                     "RemoteDesktop").CreateSession()
                 s.rd = _mutter("RemoteDesktop", s.rd_path, "RemoteDesktop.Session")
+                # Mutter closes the monitor stream (and with it this session) when
+                # the monitor changes resolution. Relay that to the portal client so
+                # pixelflux drops the dead stream and re-creates its session.
+                bus.add_signal_receiver(lambda: s.lost(), "Closed",
+                                        M + "RemoteDesktop.Session", path=s.rd_path)
             if s.want_screen:
                 sid = dbus.Interface(bus.get_object(M + "RemoteDesktop", s.rd_path),
                                      dbus.PROPERTIES_IFACE).Get(
                     M + "RemoteDesktop.Session", "SessionId")
                 scp = _mutter("ScreenCast", "/org/gnome/Mutter/ScreenCast",
                               "ScreenCast").CreateSession({"remote-desktop-session-id": sid})
-                sc = _mutter("ScreenCast", scp, "ScreenCast.Session")
+                sc = s.sc = _mutter("ScreenCast", scp, "ScreenCast.Session")
+                bus.add_signal_receiver(lambda: s.lost(), "Closed",
+                                        M + "ScreenCast.Session", path=scp)
                 s.stream_path = sc.RecordMonitor("", {"cursor-mode": dbus.UInt32(EMBEDDED)})
                 sobj = bus.get_object(M + "ScreenCast", s.stream_path)
 
@@ -365,13 +391,30 @@ class Monitor:
         self.sess.Start()
 
     def _added(self, node):
+        self.node = int(node)
         self.pipe = Gst.parse_launch(
             f"pipewiresrc path={int(node)} always-copy=true ! "
-            f"video/x-raw,width={self.w},height={self.h},max-framerate=60/1 ! "
+            f"capsfilter name=cf caps=video/x-raw,width={self.w},height={self.h},max-framerate=60/1 ! "
             "fakesink sync=false")
         self.pipe.set_state(Gst.State.PLAYING)
         self.playing = True
         log("virtual monitor stream", int(node), f"{self.w}x{self.h}")
+
+    def resize(self, w, h):
+        """In-place resize: pipewiresrc negotiates its format only at connect, so
+        a fresh consumer on the same node makes Mutter renegotiate
+        (notify_params_updated -> meta_virtual_monitor_set_mode) and resize the
+        SAME virtual monitor (~100 ms, windows reflow, no monitor removal).
+        Mutter then closes every RecordMonitor stream of the old size, which
+        pixelflux never recovers from: the agent restarts selkies."""
+        self.w, self.h = w, h
+        self.pipe.set_state(Gst.State.NULL)
+        self.pipe = Gst.parse_launch(
+            f"pipewiresrc path={self.node} always-copy=true ! "
+            f"capsfilter name=cf caps=video/x-raw,width={w},height={h},max-framerate=60/1 ! "
+            "fakesink sync=false")
+        self.pipe.set_state(Gst.State.PLAYING)
+        log("resize: reconnected consumer at", f"{w}x{h}")
 
     def is_current(self) -> bool:
         dc = _mutter("DisplayConfig", "/org/gnome/Mutter/DisplayConfig", "DisplayConfig")
@@ -444,6 +487,7 @@ def main(argv) -> int:
             if ready:
                 _write_ready(ready, f"{w}x{h}")
             log("ready", f"{w}x{h}")
+            GLib.timeout_add(100, watch_resize)
             return False
         st["tries"] += 1
         if st["tries"] >= LIVE_TRIES:
@@ -451,6 +495,32 @@ def main(argv) -> int:
             st["rc"] = 1
             loop.quit()
             return False
+        return True
+
+    rq = {"path": os.path.join(os.path.dirname(ready), "seat-resize-request") if ready else "",
+          "pending": None, "tries": 0}
+
+    def watch_resize():
+        """<runtime>/seat-resize-request = WxH -> in-place resize; the ready
+        file follows once Mutter reports the new mode current (seat_gnome
+        resize_live waits on it)."""
+        if rq["pending"] is None:
+            try:
+                size = parse_size(open(rq["path"]).read().strip())
+            except (OSError, ValueError, IndexError):
+                return True
+            os.unlink(rq["path"])
+            rq["pending"], rq["tries"] = size, 0
+            mon.resize(*size)
+            return True
+        rq["tries"] += 1
+        if mon.is_current():
+            _write_ready(ready, f"{mon.w}x{mon.h}")
+            log("resized live", f"{mon.w}x{mon.h}", f"after {rq['tries']*100} ms")
+            rq["pending"] = None
+        elif rq["tries"] >= LIVE_TRIES * 2:
+            log("resize never became current", f"{mon.w}x{mon.h}")
+            rq["pending"] = None
         return True
 
     def on_term():

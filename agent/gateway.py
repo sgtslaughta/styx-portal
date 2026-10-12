@@ -327,6 +327,9 @@ def create_app(user: str, password: str,
                                           last_refit["ts"], time.time())
                     if target is None or ws_server.closed:
                         return
+                    if isinstance(target, float):      # too soon: keep the size, retry later
+                        resize["timer"] = asyncio.get_running_loop().call_later(target, fire_refit)
+                        return
                     last_refit["ts"] = time.time()
                     refit.request(refit_file, *target)
                     asyncio.ensure_future(announce_and_close())
