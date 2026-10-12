@@ -206,6 +206,7 @@ def create_app(user: str, password: str,
     size_file = os.path.join(seat_dir, "seat-size") if seat_dir else ""
     refit_file = os.path.join(seat_dir, "refit-request") if seat_dir else ""
     last_refit = {"ts": float("-inf")}
+    size_owner = refit.SizeOwner()
 
     def _write_state():
         if not state_file:
@@ -335,16 +336,19 @@ def create_app(user: str, password: str,
                     await ws_server.close(code=refit.CLOSE_CODE, message=b"refit")
 
                 def on_client(data) -> bool:
-                    """Input tracking + settle-then-refit. Refit-bound sizes are
-                    swallowed: selkies would restart capture at them (black)."""
+                    """Input tracking + settle-then-refit. Every seat `r,` is
+                    swallowed: selkies cannot resize a GNOME host (it would only
+                    restart capture / log "resize refused"); the agent refits
+                    instead, and only for the size owner."""
                     mark_input(data)
                     req = refit.parse_resize(data) if seat_dir else None
                     if not req:
                         return False
-                    resize["size"] = req
-                    resize["timer"] and resize["timer"].cancel()
-                    resize["timer"] = asyncio.get_running_loop().call_later(refit.SETTLE_S, fire_refit)
-                    return refit.differs(req, refit.read_size(size_file))
+                    if size_owner.claim(id(ws_server)):
+                        resize["size"] = req
+                        resize["timer"] and resize["timer"].cancel()
+                        resize["timer"] = asyncio.get_running_loop().call_later(refit.SETTLE_S, fire_refit)
+                    return True
 
                 await asyncio.gather(pump(ws_server, ws_client, on_activity=on_client),
                                      pump(ws_client, ws_server, on_binary=mark_frame),
@@ -353,6 +357,7 @@ def create_app(user: str, password: str,
                 resize["timer"] and resize["timer"].cancel()
             finally:
                 conns["n"] -= 1
+                size_owner.release(id(ws_server))
                 _write_state()
                 await ws_client.close()
         return ws_server
