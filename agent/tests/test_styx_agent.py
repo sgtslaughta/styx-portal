@@ -272,3 +272,23 @@ def test_uninstall_removes_prev(monkeypatch, tmp_path):
     monkeypatch.setattr(styx_agent.subprocess, "run", lambda *a, **k: None)
     assert styx_agent.uninstall(None) == 0
     assert not inst.exists() and not prev.exists()
+
+
+def test_snap_scope_props_pins_caller_and_strips_exec():
+    import pytest
+    import seat_portal
+
+    ok = [("PIDs", [4242]), ("Description", "firefox"), ("Slice", "evil.slice"),
+          ("ExecStart", [["/bin/sh", ["sh", "-c", "id"], False]])]
+    assert seat_portal.snap_scope_props("snap.firefox.firefox-1.scope", ok, [], 4242) == [
+        ("PIDs", [4242]), ("Description", "firefox")]
+    with pytest.raises(ValueError):  # another process of the same uid
+        seat_portal.snap_scope_props("snap.firefox.firefox-1.scope", [("PIDs", [1])], [], 4242)
+    with pytest.raises(ValueError):  # no PIDs at all
+        seat_portal.snap_scope_props("snap.firefox.firefox-1.scope", [], [], 4242)
+    with pytest.raises(ValueError):  # service unit with ExecStart, not a scope
+        seat_portal.snap_scope_props("snap.x.service", ok, [], 4242)
+    with pytest.raises(ValueError):  # not a snap at all
+        seat_portal.snap_scope_props("evil.scope", ok, [], 4242)
+    with pytest.raises(ValueError):  # aux units
+        seat_portal.snap_scope_props("snap.firefox.firefox-1.scope", ok, [("x.service", [])], 4242)
