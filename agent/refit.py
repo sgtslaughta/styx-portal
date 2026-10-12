@@ -2,9 +2,9 @@
 
 The gateway watches the browser's `r,WxH[,display]` messages. Once the size
 has held for SETTLE_S and differs from the live seat size (<install>/seat-size) it writes <install>/refit-request
-and closes the socket with CLOSE_CODE; the agent rebuilds the virtual monitor at
-that size, then clears the request. The injected shim reloads the page; the gateway
-serves HOLD_HTML (which retries) until selkies is back. Pure helpers only."""
+and closes the socket with CLOSE_CODE; the agent resizes the virtual monitor in
+place and restarts selkies, then clears the request. The injected shim reconnects
+transparently (RELOAD_JS); HOLD_HTML covers a full reload. Pure helpers only."""
 import os
 import re
 import time
@@ -14,81 +14,60 @@ CLOSE_CODE = 4002
 MIN_W, MIN_H, MAX_W, MAX_H = 640, 480, 4096, 2304   # HiDPI browsers send device px
 TOLERANCE_PX = 16
 MIN_INTERVAL_S = 3.0
-SETTLE_S = 0.6          # browser size must hold this long before a refit
+SETTLE_S = 0.25         # browser size must hold this long before a refit (client debounces 500 ms first)
 _RESIZE = re.compile(r"r,(\d{1,5})x(\d{1,5})(?:,.*)?")
 _SIZE = re.compile(r"(\d{1,5})x(\d{1,5})")
 
-# Spinner overlay shared by the shim (shown on the 4002 close) and HOLD_HTML,
-# so the viewer sees one continuous "Resizing…" wait. Single quotes only: it is
-# embedded in a JS string.
 MARKER = "styx-refit"   # text frame sent just before the refit close
-# Refit overlay in the portal's connect-splash style (wave glyph from
-# frontend wave-transition.tsx). Single quotes only: embedded in a JS string.
-OVERLAY = ("<div id='styx-resizing' style='position:fixed;inset:0;z-index:2147483647;"
-           "display:flex;flex-direction:column;align-items:center;justify-content:center;"
-           "gap:16px;color:rgba(255,255,255,.9);font:500 14px system-ui,sans-serif;"
-           "letter-spacing:.02em;background:radial-gradient(circle at 50% 45%,"
-           "#14285a,#0c1730 70%)'>"
-           "<svg width='96' height='96' viewBox='0 0 24 24' fill='none' stroke='#fff' "
-           "stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round' "
-           "style='filter:drop-shadow(0 4px 14px rgba(0,0,0,.35))'>"
-           "<path d='M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1' pathLength='1' style='animation-delay:0.00s'/><path d='M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1' pathLength='1' style='animation-delay:0.12s'/><path d='M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1' pathLength='1' style='animation-delay:0.24s'/></svg><span>Resizing…</span><style>#styx-resizing path{stroke-dasharray:1;"
-           "stroke-dashoffset:1;animation:styx-draw 1.6s ease-in-out infinite}"
-           "@keyframes styx-draw{0%{stroke-dashoffset:1;opacity:0}15%{opacity:1}"
-           "45%,75%{stroke-dashoffset:0;opacity:1}100%{stroke-dashoffset:0;opacity:0}}"
-           "</style></div>")
 
-# Poll the page in the background; reload once, when the gateway serves the real
-# page again (not HOLD_HTML, which carries X-Styx-Hold).
-WAIT_JS = ("function styxWait(){fetch(location.href,{cache:'no-store'}).then(function(r)"
-           "{if(r.ok&&!r.headers.get('X-Styx-Hold'))location.reload();else throw 0})"
-           ".catch(function(){setTimeout(styxWait,400)})}")
-# Last decoded frame, snapshotted before the refit close and kept across the
-# reload (sessionStorage), so the viewer sees a frozen desktop + pill instead
-# of a splash. WebGL canvases without preserveDrawingBuffer read back black:
-# a mostly-black snapshot is dropped and the splash is used instead.
-FREEZE_JS = ("function styxFreeze(){try{var c=document.querySelector('canvas,video');"
-             "if(!c)return;var k=document.createElement('canvas');k.width=c.videoWidth||c.width;"
-             "k.height=c.videoHeight||c.height;var g=k.getContext('2d');g.drawImage(c,0,0);"
-             "var d=g.getImageData(0,0,Math.min(k.width,64),Math.min(k.height,64)).data,s=0;"
-             "for(var i=0;i<d.length;i+=4)s+=d[i]+d[i+1]+d[i+2];if(s<d.length*4)return;"
-             "sessionStorage.setItem('styx-frame',k.toDataURL('image/jpeg',0.7))}catch(e){}}"
-             "function styxBg(){try{var f=sessionStorage.getItem('styx-frame');"
-             "if(!f)return;var o=document.getElementById('styx-resizing');"
-             "o.style.background='#000 url('+f+') center/contain no-repeat';"
-             "o.querySelector('svg').style.display='none';var t=o.querySelector('span');"
-             "t.style.cssText='position:fixed;bottom:24px;padding:8px 16px;border-radius:999px;"
-             "background:rgba(12,23,48,.85);backdrop-filter:blur(6px)'}catch(e){}}")
-
-# The gateway sends MARKER, then closes: show the overlay at once, wait for the
-# seat on the close (any code), keep the overlay across the single reload
-# (sessionStorage flag; drawn before <body> exists) and lift it 0.8 s after the
-# first video frame (audio packets are tiny; selkies resets right after it
-# connects). 30 s safety timeout (a seat rebuild + selkies start can take ~10 s).
-RELOAD_JS = (
-    '<script id="styx-refit">(function(){var W=window.WebSocket,K="styx-resizing";'
-    + WAIT_JS + FREEZE_JS +
-    "function show(){if(!document.getElementById(K))(document.body||"
-    'document.documentElement).insertAdjacentHTML("beforeend","' + OVERLAY + '");styxBg()}'
-    "function hide(){try{sessionStorage.removeItem(K);sessionStorage.removeItem('styx-frame')}catch(e){}"
-    "var o=document.getElementById(K);if(o)o.remove()}"
-    "function arm(){styxFreeze();try{sessionStorage.setItem(K,'1')}catch(e){}show()}"
-    "var on=false;try{on=sessionStorage.getItem(K)==='1'}catch(e){}"
-    "if(on){show();setTimeout(hide,30000)}"
-    "function S(u,p){var s=p===undefined?new W(u):new W(u,p),refit=false;"
-    "s.addEventListener('message',function(e){var d=e.data;"
-    "if(d==='" + MARKER + "'){refit=true;arm();return}"
-    "if(on&&typeof d!=='string'&&(d.byteLength||d.size||0)>2000){on=false;"
-    "setTimeout(hide,800)}});"
-    "s.addEventListener('close',function(e){if(!refit&&e.code!==4002)return;arm();"
-    "styxWait()});return s}"
-    "S.prototype=W.prototype;['CONNECTING','OPEN','CLOSING','CLOSED'].forEach("
-    "function(k){S[k]=W[k]});window.WebSocket=S})();</script>")
-# Served with 200 while the seat is rebuilt: any 5xx would be swapped by Traefik's
-# instance-unavailable page, which bounces the viewer to the portal.
+# Transparent reconnect. selkies 2.0 reads its stream socket in a Web Worker
+# by default, so a page-level WebSocket wrapper never sees it and the client
+# itself reacts to the refit close by waiting 5 s and reloading the page. The
+# shim therefore (1) forces the page-thread socket via the client's own
+# `socket_worker` URL switch and (2) replaces window.WebSocket with a proxy
+# that, on the refit marker + close, keeps the app's socket object "open",
+# waits for the gateway to serve the real page again, reconnects, replays the
+# last SETTINGS and START_* commands, and resumes delivering messages. The app
+# never observes a close: the last frame stays on the canvas under a small
+# "Resizing…" pill until the first frame at the new size arrives.
+RELOAD_JS = r"""<script id="styx-refit">(function(){
+var W=window.WebSocket,M='styx-refit',P='styx-resizing',SAFETY=30000;
+try{var q=new URLSearchParams(location.search);if(q.get('socket_worker')!=='false'){q.set('socket_worker','false');history.replaceState(null,'',location.pathname+'?'+q+location.hash)}}catch(e){}
+function pill(on){var el=document.getElementById(P);if(!on){el&&el.remove();return}if(el)return;el=document.createElement('div');el.id=P;el.textContent='Resizing…';
+el.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;padding:8px 16px;border-radius:999px;background:rgba(12,23,48,.85);color:rgba(255,255,255,.9);font:500 14px system-ui,sans-serif;letter-spacing:.02em;backdrop-filter:blur(6px);pointer-events:none';
+(document.body||document.documentElement).appendChild(el)}
+function S(url,proto){this._url=url;this._proto=proto;this._ls={};this._settings=null;this._starts=[];this._refit=false;this._resuming=false;this._bt='blob';this.readyState=0;this.onopen=this.onmessage=this.onerror=this.onclose=null;this._open()}
+S.prototype._open=function(){var self=this,ws=self._proto===undefined?new W(self._url):new W(self._url,self._proto);self._ws=ws;ws.binaryType=self._bt;
+ws.onopen=function(e){self.readyState=1;if(self._resuming)self._resume();else self._emit('open',e)};
+ws.onmessage=function(e){var d=e.data;if(d===M){self._refit=true;pill(true);self._t0=Date.now();console.log('[styx] refit: holding socket');return}
+if(self._waitFrame&&typeof d!=='string'&&(d.byteLength||d.size||0)>2000){self._waitFrame=false;pill(false);console.log('[styx] refit: first frame after '+(Date.now()-self._t0)+' ms')}self._emit('message',e)};
+ws.onclose=function(e){if(self._refit||e.code===4002){self._refit=false;self._wait();return}self.readyState=3;self._emit('close',e)};
+ws.onerror=function(e){if(!self._resuming)self._emit('error',e)}};
+S.prototype._wait=function(){var self=this;self._resuming=true;if(Date.now()-(self._t0||0)>SAFETY){location.reload();return}
+fetch(location.href,{cache:'no-store'}).then(function(r){if(r.ok&&!r.headers.get('X-Styx-Hold'))self._open();else throw 0}).catch(function(){setTimeout(function(){self._wait()},300)})};
+S.prototype._resume=function(){var ws=this._ws;console.log('[styx] refit: reconnected after '+(Date.now()-this._t0)+' ms');if(this._settings)ws.send(this._settings);for(var i=0;i<this._starts.length;i++)ws.send(this._starts[i]);this._resuming=false;this._waitFrame=true;setTimeout(function(){pill(false)},SAFETY)};
+S.prototype.send=function(d){if(typeof d==='string'){if(d.indexOf('SETTINGS,')===0)this._settings=d;else if(d==='START_VIDEO'||d==='START_AUDIO'){if(this._starts.indexOf(d)<0)this._starts.push(d)}else if(d==='STOP_VIDEO'||d==='STOP_AUDIO'){var i=this._starts.indexOf(d.replace('STOP','START'));if(i>=0)this._starts.splice(i,1)}}
+if(this._ws&&this._ws.readyState===1)this._ws.send(d)};
+S.prototype.close=function(c,r){this._refit=false;this._resuming=false;this.readyState=2;this._ws&&this._ws.close(c,r)};
+S.prototype.addEventListener=function(t,f){(this._ls[t]||(this._ls[t]=[])).push(f)};
+S.prototype.removeEventListener=function(t,f){var l=this._ls[t];if(!l)return;var i=l.indexOf(f);i>=0&&l.splice(i,1)};
+S.prototype._emit=function(t,e){var h=this['on'+t];h&&h.call(this,e);var l=this._ls[t]||[];for(var i=0;i<l.length;i++)l[i].call(this,e)};
+Object.defineProperty(S.prototype,'binaryType',{get:function(){return this._bt},set:function(v){this._bt=v;this._ws&&(this._ws.binaryType=v)}});
+Object.defineProperty(S.prototype,'bufferedAmount',{get:function(){return this._ws?this._ws.bufferedAmount:0}});
+Object.defineProperty(S.prototype,'url',{get:function(){return this._url}});
+Object.defineProperty(S.prototype,'protocol',{get:function(){return this._ws?this._ws.protocol:''}});
+Object.defineProperty(S.prototype,'extensions',{get:function(){return this._ws?this._ws.extensions:''}});
+S.CONNECTING=0;S.OPEN=1;S.CLOSING=2;S.CLOSED=3;window.WebSocket=S;window.__styxRefit={pill:pill};
+})();</script>"""
+# Served with 200 while the seat is rebuilt (only reached by a full reload):
+# any 5xx would be swapped by Traefik's instance-unavailable page, which
+# bounces the viewer to the portal.
 HOLD_HTML = ('<!doctype html><html><head><title>Resizing desktop</title></head>'
-             '<body id="styx-hold" style="margin:0;background:#0c1730">' + OVERLAY +
-             '<script>' + WAIT_JS + FREEZE_JS + 'styxBg();styxWait()</script></body></html>')
+             '<body id="styx-hold" style="margin:0;background:#0c1730;color:rgba(255,255,255,.9);'
+             'font:500 14px system-ui,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh">'
+             'Resizing…<script>function styxWait(){fetch(location.href,{cache:\'no-store\'}).then(function(r)'
+             '{if(r.ok&&!r.headers.get(\'X-Styx-Hold\'))location.reload();else throw 0})'
+             '.catch(function(){setTimeout(styxWait,400)})}styxWait()</script></body></html>')
 
 
 def clamp(w: int, h: int) -> tuple[int, int]:
@@ -105,9 +84,13 @@ def parse_resize(msg) -> tuple[int, int] | None:
 
 
 def decide(req, current, last_refit_ts: float, now: float):
-    """Target size for a refit, or None (close enough, or refitted < 3 s ago)."""
-    if not differs(req, current) or now - last_refit_ts < MIN_INTERVAL_S:
+    """Target size for a refit, None when close enough, or a float: seconds to
+    wait because the last refit was < MIN_INTERVAL_S ago (caller re-arms)."""
+    if not differs(req, current):
         return None
+    wait = MIN_INTERVAL_S - (now - last_refit_ts)
+    if wait > 0:
+        return wait
     return clamp(*req)
 
 

@@ -231,6 +231,31 @@ class GnomeSeat:
         self._stop_helper()
         return False
 
+    def resize_live(self, w: int, h: int) -> bool:
+        """Resize the running helper's virtual monitor in place (Mutter keeps
+        the monitor; ~100 ms) instead of restarting it. True once the helper
+        reports the new size live."""
+        if self._helper is None or self._helper.poll() is not None:
+            return False
+        req = Path(self.runtime_dir) / "seat-resize-request"
+        tmp = req.with_suffix(".tmp")
+        tmp.write_text(f"{w}x{h}")
+        os.replace(tmp, req)
+        deadline = time.monotonic() + HELPER_READY_S
+        while time.monotonic() < deadline:
+            if self._helper.poll() is not None:
+                return False
+            try:
+                if self.ready_file.read_text().strip() == f"{w}x{h}":
+                    self.size = (w, h)
+                    refit.write_size(self.size_file, w, h)
+                    return True
+            except OSError:
+                pass
+            time.sleep(0.05)
+        req.unlink(missing_ok=True)
+        return False
+
     def refit(self, w: int, h: int) -> bool:
         """New monitor size = new helper. On failure fall back to the old size so
         the seat is never left monitorless. Caller stops selkies first."""

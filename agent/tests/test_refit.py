@@ -26,8 +26,9 @@ def test_decide_tolerance_and_unknown_current():
 
 
 def test_decide_rate_limited():
-    assert refit.decide((2552, 1294), (1920, 1080), 98, 100) is None      # 2 s after last
+    assert refit.decide((2552, 1294), (1920, 1080), 98, 100) == 1.0       # 2 s after last: wait 1 s
     assert refit.decide((2552, 1294), (1920, 1080), 96, 100) == (2552, 1294)
+    assert refit.decide((1920, 1080), (1920, 1080), 98, 100) is None       # same size: nothing
 
 
 def test_size_file_roundtrip_and_request(tmp_path):
@@ -70,7 +71,8 @@ def test_inject_reload():
     html = "<html><head></head><body></body></html>"
     out = refit.inject_reload(html, True)
     assert 'id="styx-refit"' in out and "4002" in out and "styx-resizing" in out and refit.MARKER in out
-    assert "styx-resizing" in refit.HOLD_HTML and "Resizing" in refit.HOLD_HTML and out.index("styx-refit") < out.index("</head>")
+    assert "socket_worker" in out and "window.WebSocket=S" in out and out.index("styx-refit") < out.index("</head>")
+    assert "Resizing" in refit.HOLD_HTML
     assert refit.inject_reload(html, False) == html
     assert refit.inject_reload("<p>no head</p>", True) == "<p>no head</p>"
 
@@ -93,10 +95,9 @@ def test_wait_for_request_stops_early(tmp_path):
     assert t["now"] == 0.0
 
 
-def test_shim_freezes_last_frame_and_hold_shows_it():
+def test_shim_reconnects_transparently():
     out = refit.inject_reload("<html><head></head><body></body></html>", True)
-    assert "styxFreeze()" in out and "styx-frame" in out and "setTimeout(hide,30000)" in out
-    assert "styxBg()" in refit.HOLD_HTML and "<span>Resizing…</span>" in refit.OVERLAY
+    assert "_resume" in out and "START_VIDEO" in out and "X-Styx-Hold" in out and "location.reload()" in out
 
 
 def test_size_owner_first_viewer_wins_until_it_leaves():

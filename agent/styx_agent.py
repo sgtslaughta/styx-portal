@@ -385,7 +385,7 @@ def run(cfg: dict) -> int:
                 print(f"refit: rebuilding seat monitor at {req[0]}x{req[1]}", flush=True)
                 _terminate(procs["selkies"], timeout=2)
                 procs["selkies"] = None
-                if not gseat.refit(*req):
+                if not (gseat.resize_live(*req) or gseat.refit(*req)):
                     last_error = f"refit to {req[0]}x{req[1]} failed — kept previous size"
                 last_engine_restart = time.monotonic()
             refit.clear_request(refit_req)
