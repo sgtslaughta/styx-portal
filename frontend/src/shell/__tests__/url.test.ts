@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { frameSrc, isFrameBlocked, parseShellPath, shellPathFor } from "../url";
+import { frameAncestorsBlock, frameSrc, isFrameBlocked, isFrameLocationForbidden, parseShellPath, shellPathFor } from "../url";
 describe("parseShellPath", () => {
   it("splits slug and inner", () =>
     expect(parseShellPath("/_styx/app/sonarr/series/1", "?q=1", "#x")).toEqual({ slug: "sonarr", inner: "/series/1?q=1#x" }));
@@ -38,7 +38,6 @@ it("isFrameBlocked", () => {
   expect(isFrameBlocked({ contentWindow: { location: { href: "https://h/sonarr/" } } })).toBe(false);
 });
 
-import { frameAncestorsBlock } from "../url";
 describe("frameAncestorsBlock", () => {
   it.each([
     ["frame-ancestors 'none'", true],
@@ -60,4 +59,17 @@ describe("frameAncestorsBlock", () => {
     ["frame-ancestors http://styx.example", true],
     ["frame-ancestors https://evilstyx.example", true],
   ])("%s -> %s", (csp, want) => { expect(frameAncestorsBlock(csp, "https://styx.example")).toBe(want); });
+});
+
+describe("Styx's own SAMEORIGIN pages are never flagged as blocked", () => {
+  // The 503/403/expired pages carry X-Frame-Options SAMEORIGIN and frame-ancestors 'self'.
+  const csp = "default-src 'self'; frame-ancestors 'self'; base-uri 'self'";
+  it("probe: frame-ancestors 'self' is not a block", () => expect(frameAncestorsBlock(csp, "https://styx.example")).toBe(false));
+  it("probe: the old DENY page would have been", () =>
+    expect(frameAncestorsBlock("default-src 'self'; frame-ancestors 'none'", "https://styx.example")).toBe(true));
+  it("a same-origin error document is readable, so not forbidden", () => {
+    const frame = { contentWindow: { location: { href: "https://styx.example/sonarr/" } } };
+    expect(isFrameLocationForbidden(frame)).toBe(false);
+    expect(isFrameBlocked(frame)).toBe(false);
+  });
 });

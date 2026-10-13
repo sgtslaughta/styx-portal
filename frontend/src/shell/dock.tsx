@@ -74,7 +74,7 @@ export function Dock({ open, onOpenChange, tiles, current, focusSlug, side, tabR
                       return (
                         <m.li key={t.id} custom={i} variants={item}>
                           <a href={shellHref(t)} target="_top" aria-current={active ? "page" : undefined}
-                            className={`flex min-h-12 items-center gap-3 rounded-md border border-transparent px-3 hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? "border-obol-foreground dark:border-obol" : ""}`}>
+                            className={`flex min-h-12 items-center gap-3 rounded-md border px-3 hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? "border-obol-foreground dark:border-obol" : "border-transparent"}`}>
                             <span aria-hidden className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-base leading-none text-primary">{t.icon ?? <Link2 className="h-3.5 w-3.5" />}</span>
                             <span className="flex-1 truncate">{t.name}</span>
                             <span className={`size-2.5 rounded-full ${h.dot}`} aria-hidden />
