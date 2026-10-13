@@ -197,3 +197,17 @@ def test_sniff_reviewer_redos_cases(unit):
     t = time.perf_counter()
     assert ws_icon._sniff(unit * 2000 + b"x") is None
     assert time.perf_counter() - t < 0.2
+
+
+@pytest.mark.parametrize("val", ["url(" + " " * 200000, "url(#" + " " * 200000])
+def test_url_check_is_linear(val):
+    import time
+    t = time.perf_counter()
+    assert ws_icon._bad_url(val) is True
+    assert time.perf_counter() - t < 0.2
+
+
+def test_oversized_attribute_rejected():
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg"><path d="' + b"M0 0 " * 15000 + b'"/></svg>'
+    with pytest.raises(ValueError, match="too long"):
+        ws_icon.validate_icon("image", uri(svg, "image/svg+xml"))

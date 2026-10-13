@@ -15,6 +15,7 @@ from fastapi import Request, Response
 
 MAX_IMAGE_BYTES = 256 * 1024
 MAX_EMOJI_BYTES = 16
+MAX_ATTR_CHARS = 64 * 1024
 PALETTE = ["#2A767C", "#B88A3E", "#4F9A6C", "#B8432A", "#3D5A80", "#6B5B95"]
 SVG_HEADERS = {"Content-Security-Policy":
                "default-src 'none'; style-src 'unsafe-inline'; sandbox"}
@@ -25,8 +26,6 @@ _BAD_TAGS = {"style", "script", "foreignobject", "iframe", "object", "embed", "a
 _ATTR_NS = {"http://www.w3.org/1999/xlink"}
 _IMG_DATA = re.compile(r"^data:image/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]*$")
 _BAD_FUNC = re.compile(r"@import|image-set|src\(|expression\(", re.I)
-_URL = re.compile(r"url\(", re.I)
-_LOCAL_URL = re.compile(r"url\(\s*(['\"]?)\s*#[^)'\"]*\1\s*\)", re.I)
 _XML_NS = "http://www.w3.org/XML/1998/namespace"
 # Editor metadata stripped (not rejected) before validation.
 _EDITOR_NS = ("http://www.inkscape.org/namespaces/inkscape",
@@ -58,9 +57,23 @@ def _strip_editor_metadata(el) -> None:
 
 
 def _bad_url(val: str) -> bool:
-    """True unless every url( is a local #fragment reference."""
-    return bool(_BAD_FUNC.search(val)) or (
-        len(_URL.findall(val)) != len(_LOCAL_URL.findall(val)))
+    """True unless every url( is a local #fragment reference (linear scan)."""
+    if _BAD_FUNC.search(val):
+        return True
+    low, pos = val.lower(), 0
+    while (start := low.find("url(", pos)) >= 0:
+        end = low.find(")", start)
+        if end < 0:
+            return True
+        inner = low[start + 4:end].strip()
+        if len(inner) > 1 and inner[0] in "'\"" and inner[-1] == inner[0]:
+            inner = inner[1:-1].strip()
+        if not inner.startswith("#") or any(c in inner for c in "'\"("):
+            return True
+        pos = end + 1
+    return False
+
+
 _DOCTYPE = re.compile(rb"<!\s*(DOCTYPE|ENTITY)", re.I)
 
 
@@ -128,6 +141,8 @@ def _check_svg(data: bytes) -> bytes:
             if local == "href":
                 if not (val.startswith("#") or (tag == "image" and _IMG_DATA.match(val))):
                     raise ValueError("SVG may not reference external resources")
+            if len(val) > MAX_ATTR_CHARS:
+                raise ValueError("SVG attribute value is too long")
             if "\\" in val:
                 raise ValueError("SVG may not contain escapes")
             if _bad_url(val):
