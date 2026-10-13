@@ -17,6 +17,7 @@ import posixpath
 import socket
 import sys
 import time
+import uuid
 
 import aiohttp
 import refit
@@ -107,10 +108,16 @@ def create_app(user: str, password: str,
     size_owner = refit.SizeOwner()
     viewers = Viewers()     # per styx_vid: sockets, last size/dpi, timers
 
+    async def _send(w, text):
+        try:
+            await w.send_str(text)
+        except (ConnectionResetError, RuntimeError):
+            pass                    # socket died mid-send: nothing to tell it
+
     def send_to(rec, text):
         for w in list(rec.socks):
             if not w.closed:
-                asyncio.ensure_future(w.send_str(text))
+                asyncio.ensure_future(_send(w, text))
 
     def publish_scale(rec):
         """Owner's HiDPI choice -> <install>/seat-scale (the seat helper applies it)."""
@@ -126,8 +133,8 @@ def create_app(user: str, password: str,
         await w.close(code=refit.CLOSE_CODE, message=b"refit")
 
     def fire_refit(rec):
-        if rec.size is None:
-            return
+        if rec.size is None or size_owner.owner != rec.vid:
+            return                  # a stale timer of a previous owner
         target = refit.decide(rec.size, refit.read_size(size_file),
                               last_refit["ts"], time.time())
         if target is None or not any(not w.closed for w in rec.socks):
@@ -152,7 +159,9 @@ def create_app(user: str, password: str,
         size_owner.owner = vid
         send_to(rec, "styx-owner,1")
         if prev in viewers.by_vid:
-            send_to(viewers.by_vid[prev], "styx-owner,0")
+            old = viewers.by_vid[prev]
+            old.timer and old.timer.cancel()
+            send_to(old, "styx-owner,0")
         publish_scale(rec)
         rec.timer and rec.timer.cancel()
         fire_refit(rec)
@@ -225,7 +234,7 @@ def create_app(user: str, password: str,
         return await handler(request)
 
     async def ws_proxy(request):
-        qs, vid = split_vid(request.rel_url.raw_query_string, f"ws{id(request)}")
+        qs, vid = split_vid(request.rel_url.raw_query_string, f"ws{uuid.uuid4().hex}")
         if request.headers.get("Upgrade", "").lower() != "websocket":
             # 2.0 client probes api/websockets over plain HTTP (409 = mode flip)
             return await forward(request, "/api/websockets" + (f"?{qs}" if qs else ""))
@@ -286,6 +295,7 @@ def create_app(user: str, password: str,
                 # client->upstream: input (idle tracking). upstream->client:
                 # video frames are BINARY -> mark_frame disarms the watchdog.
                 rec = viewers.connect(vid, ws_server)
+                rec.vid = vid
 
                 def on_client(data) -> bool:
                     """Input tracking + settle-then-refit. Every seat `r,` is
@@ -315,16 +325,19 @@ def create_app(user: str, password: str,
                         rec.timer = asyncio.get_running_loop().call_later(refit.SETTLE_S, fire_refit, rec)
                     return True
 
+                owner_told = False
                 if seat_dir:
                     # selkies keeps one controller and kills the previous one, so
                     # a controller always owns the size at once; read-only
                     # `role=viewer` sockets only own an unowned seat.
                     if "role=viewer" in qs.split("&") or not size_owner.owner:
                         size_owner.claim(vid)
-                    else:
-                        set_owner(vid)
-                    await ws_server.send_str(
-                        "styx-owner,1" if size_owner.owner == vid else "styx-owner,0")
+                    elif size_owner.owner != vid:
+                        set_owner(vid)      # sends styx-owner,1 to this socket itself
+                        owner_told = True
+                    if not owner_told:
+                        await ws_server.send_str(
+                            "styx-owner,1" if size_owner.owner == vid else "styx-owner,0")
 
                 await asyncio.gather(pump(ws_server, ws_client, on_activity=on_client),
                                      pump(ws_client, ws_server, on_binary=mark_frame),

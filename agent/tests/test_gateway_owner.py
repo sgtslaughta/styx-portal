@@ -9,6 +9,14 @@ aiohttp = pytest.importorskip("aiohttp")
 from .test_gateway import _basic, _refit_pair  # noqa: E402
 
 
+async def _until(cond, timeout=3.0):
+    import asyncio
+    end = asyncio.get_running_loop().time() + timeout
+    while not cond():
+        assert asyncio.get_running_loop().time() < end, "condition not met in time"
+        await asyncio.sleep(0.02)
+
+
 async def _vid_ws(client, vid, hdr, role=None):
     extra = f"&role={role}" if role else ""
     return await client.ws_connect(f"/websocket?styx_vid={vid}&x=1{extra}", headers=hdr)
@@ -90,7 +98,7 @@ async def test_takeover_swaps_owner_refits_and_is_not_forwarded(tmp_path):
         await a.receive()
         await b.receive()
         await b.send_str("r,1280x720,primary")              # swallowed, not owner
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.1)
         assert not (tmp_path / "refit-request").exists()
         await b.send_str("styx-takeover")
         assert (await asyncio.wait_for(b.receive(), 3)).data == "styx-owner,1"
@@ -114,15 +122,14 @@ async def test_owner_settings_dpi_publishes_seat_scale(tmp_path):
         await a.receive()
         await b.receive()
         await b.send_str('SETTINGS,{"scaling_dpi": 192}')
-        await asyncio.sleep(0.2)
+        await asyncio.sleep(0.1)                            # negative: nothing to poll for
         assert not (tmp_path / "seat-scale").exists()       # non-owner: ignored
         await a.send_str("SETTINGS,not json")                # garbage: ignored
         await a.send_str('SETTINGS,{"scaling_dpi": 192}')
-        await asyncio.sleep(0.2)
-        assert (tmp_path / "seat-scale").read_text() == "2"
+        await _until(lambda: (tmp_path / "seat-scale").exists()
+                     and (tmp_path / "seat-scale").read_text() == "2")
         await a.send_str('SETTINGS,{"scaling_dpi": 96}')
-        await asyncio.sleep(0.2)
-        assert (tmp_path / "seat-scale").read_text() == "1"
+        await _until(lambda: (tmp_path / "seat-scale").read_text() == "1")
     finally:
         await client.close()
         await up.close()
@@ -139,6 +146,42 @@ async def test_new_controller_takes_ownership_at_once(tmp_path):
         b = await _vid_ws(client, "B", hdr)                  # controller: no role
         assert (await asyncio.wait_for(b.receive(), 3)).data == "styx-owner,1"
         assert (await asyncio.wait_for(a.receive(), 3)).data == "styx-owner,0"
+    finally:
+        await client.close()
+        await up.close()
+
+
+@pytest.mark.asyncio
+async def test_previous_owners_pending_refit_timer_dies_on_takeover(tmp_path):
+    import asyncio
+    (tmp_path / "seat-size").write_text("1920x1080")
+    up, client = await _refit_pair(tmp_path, [], str(tmp_path))
+    hdr = {"Authorization": _basic("styx", "pw")}
+    try:
+        a = await _vid_ws(client, "A", hdr)
+        assert (await a.receive()).data == "styx-owner,1"
+        await a.send_str("r,1280x720,primary")               # settle timer armed
+        b = await _vid_ws(client, "B", hdr)                  # takes over before it fires
+        assert (await asyncio.wait_for(b.receive(), 3)).data == "styx-owner,1"
+        await asyncio.sleep(0.6)                             # negative: well past SETTLE_S
+        assert not (tmp_path / "refit-request").exists()
+    finally:
+        await client.close()
+        await up.close()
+
+
+@pytest.mark.asyncio
+async def test_new_controller_gets_owner_message_once(tmp_path):
+    import asyncio
+    up, client = await _refit_pair(tmp_path, [], str(tmp_path))
+    hdr = {"Authorization": _basic("styx", "pw")}
+    try:
+        a = await _vid_ws(client, "A", hdr)
+        await a.receive()
+        b = await _vid_ws(client, "B", hdr)
+        assert (await asyncio.wait_for(b.receive(), 3)).data == "styx-owner,1"
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(b.receive(), 0.3)         # no duplicate
     finally:
         await client.close()
         await up.close()
