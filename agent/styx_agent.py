@@ -307,10 +307,12 @@ def run(cfg: dict) -> int:
 
     while not stopping:
         if gseat and not gseat.alive():
-            # Seat died: selkies is captured against a dead portal session.
-            # The next branch restarts it, which brings the seat back first.
+            # Seat died: selkies (and the standby) are captured against a dead
+            # portal session. The next branch restarts, seat first.
             _terminate(procs["selkies"])
             procs["selkies"] = None
+            _terminate(procs["standby"], timeout=0)
+            procs["standby"] = None
         if procs["selkies"] is None or procs["selkies"].poll() is not None:
             if procs["selkies"] is not None:
                 print(f"selkies exited rc={procs['selkies'].returncode}; "
@@ -360,6 +362,8 @@ def run(cfg: dict) -> int:
                 if escalation.record(time.time()):
                     print("watchdog: 3 restarts in 10 min — restarting GNOME "
                           "seat", flush=True)
+                    _terminate(procs["standby"], timeout=0)   # bound to the old seat
+                    procs["standby"] = None
                     gseat.stop()
                     degraded = True
             else:

@@ -26,7 +26,6 @@ STYX_PORTAL = ("[portal]\nDBusName=org.freedesktop.impl.portal.desktop.styx\n"
                "org.freedesktop.impl.portal.RemoteDesktop;\nUseIn=gnome\n")
 PORTALS_CONF = ("[preferred]\ndefault=gnome;gtk;\n"
                 "org.freedesktop.impl.portal.Secret=none;\n"  # no keyring on the seat bus: avoids a 25 s activation timeout
-                
                 "org.freedesktop.impl.portal.ScreenCast=styx;\n"
                 "org.freedesktop.impl.portal.RemoteDesktop=styx;\n")
 _HELPER_DEPS = ("import dbus, gi; gi.require_version('Gst', '1.0'); "
