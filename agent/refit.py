@@ -32,11 +32,11 @@ MARKER = "styx-refit"   # text frame sent just before the refit close
 # START_* commands, and resumes delivering messages. The app never observes a
 # close: the last frame stays on the canvas under a small "Resizing…" pill
 # until the first frame at the new size arrives.
-_PROXY_JS = r"""var W=__WS__,M='styx-refit',SAFETY=30000,PILL=__PILL__,RELOAD=__RELOAD__,LOG=__LOG__,VID=__VID__,OWNER=__OWNER__;
-function S(url,proto){S.last=this;this._url=url;this._proto=proto;this._ls={};this._settings=null;this._starts=[];this._refit=false;this._resuming=false;this._bt='blob';this.readyState=0;this.onopen=this.onmessage=this.onerror=this.onclose=null;this._open()}
+_PROXY_JS = r"""var W=__WS__,M='styx-refit',SAFETY=30000,PILL=__PILL__,RELOAD=__RELOAD__,LOG=__LOG__,VID=__VID__;
+function S(url,proto){this._url=url;this._proto=proto;this._ls={};this._settings=null;this._starts=[];this._refit=false;this._resuming=false;this._bt='blob';this.readyState=0;this.onopen=this.onmessage=this.onerror=this.onclose=null;this._open()}
 S.prototype._open=function(){var self=this,u=self._url+(self._url.indexOf('?')<0?'?':'&')+'styx_vid='+encodeURIComponent(VID),ws=self._proto===undefined?new W(u):new W(u,self._proto);self._ws=ws;ws.binaryType=self._bt;
 ws.onopen=function(e){self.readyState=1;if(self._resuming)self._resume();else self._emit('open',e)};
-ws.onmessage=function(e){var d=e.data;if(typeof d==='string'&&d.indexOf('styx-owner,')===0){OWNER(d==='styx-owner,1');return}if(d===M){self._refit=true;PILL(true);self._t0=Date.now();LOG('[styx] refit: holding socket');return}
+ws.onmessage=function(e){var d=e.data;if(d===M){self._refit=true;PILL(true);self._t0=Date.now();LOG('[styx] refit: holding socket');return}
 if(self._waitFrame&&typeof d!=='string'&&(d.byteLength||d.size||0)>2000){self._waitFrame=false;PILL(false);LOG('[styx] refit: first frame after '+(Date.now()-self._t0)+' ms')}self._emit('message',e)};
 ws.onclose=function(e){if(self._refit||e.code===4002){self._refit=false;self._wait();return}self.readyState=3;self._emit('close',e)};
 ws.onerror=function(e){if(!self._resuming)self._emit('error',e)}};
@@ -69,12 +69,12 @@ _WORKER_SHIM = "(function(){" + _proxy(
     WS="self.WebSocket", PILL="function(on){self.postMessage({type:'styx-pill',on:on})}",
     RELOAD="function(){self.postMessage({type:'styx-reload'})}",
     LOG="function(m){self.postMessage({type:'styx-log',m:m})}",
-    OWNER="function(on){self.postMessage({type:'styx-owner',on:on})}", VID="__VID__",
-    PAGE="__PAGE__", INSTALL="self.WebSocket=S;self.addEventListener('message',function(e){var d=e.data;d&&d.type==='__styx_takeover__'&&S.last&&S.last.send('styx-takeover')})") + "})();\n"
+    VID="__VID__",
+    PAGE="__PAGE__", INSTALL="self.WebSocket=S") + "})();\n"
 
 _PAGE_SHIM = _proxy(
     WS="window.WebSocket", PILL="pill", RELOAD="function(){location.reload()}",
-    LOG="function(m){console.log(m)}", OWNER="owner", VID="vid", PAGE="location.href", INSTALL="window.WebSocket=S")
+    LOG="function(m){console.log(m)}", VID="vid", PAGE="location.href", INSTALL="window.WebSocket=S")
 
 RELOAD_JS = ('<script id="styx-refit">(function(){var P="styx-resizing",WSRC=' + json.dumps(_WORKER_SHIM) + r""";
 try{var q=new URLSearchParams(location.search);if(q.get('socket_worker')==='false'){q.delete('socket_worker');history.replaceState(null,'',location.pathname+(q.toString()?'?'+q:'')+location.hash)}}catch(e){}
@@ -84,19 +84,11 @@ el.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%)
 var vid,nav;try{nav=(performance.getEntriesByType('navigation')[0]||{}).type}catch(e){}
 if(nav==='reload'||nav==='back_forward'){try{vid=sessionStorage.getItem('styx_vid')}catch(e){}}
 if(!vid){try{vid=crypto.randomUUID()}catch(e){vid=Math.random().toString(36).slice(2)+Date.now().toString(36)}try{sessionStorage.setItem('styx_vid',vid)}catch(e){}}
-var TK='styx-takeover',MSG='__styx_takeover__',WL=[],MB=[],MU={};
-function owner(on){var el=document.getElementById(TK);if(on){el&&el.remove();return}if(el)return;el=document.createElement('div');el.id=TK;el.setAttribute('role','status');el.setAttribute('aria-live','polite');
-el.style.cssText='position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:2147483647;display:flex;align-items:center;gap:12px;padding:8px 16px;border-radius:999px;background:rgba(12,23,48,.85);color:rgba(255,255,255,.9);font:500 14px system-ui,sans-serif;letter-spacing:.02em;backdrop-filter:blur(6px);pointer-events:auto';
-var t=document.createElement('span');t.textContent="Viewing at another viewer's size";var b=document.createElement('button');b.type='button';b.textContent='Fit to my window';
-b.style.cssText='font:inherit;padding:4px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.4);background:rgba(255,255,255,.12);color:inherit;cursor:pointer';
-b.onclick=function(){for(var i=0;i<WL.length;i++)WL[i].postMessage({type:MSG});var s=window.WebSocket.last;s&&s.send&&s.send(TK);el.remove()};
-el.appendChild(t);el.appendChild(b);(document.body||document.documentElement).appendChild(el)}
-var B=window.Blob,CO=window.URL.createObjectURL;function SB(parts,opts){var m=parts&&typeof parts[0]==='string'&&parts[0].indexOf('new WebSocket(m.url)')>=0;if(m)parts=[WSRC.replace('__VID__',function(){return JSON.stringify(vid)}).replace('__PAGE__',function(){return JSON.stringify(location.href)})].concat(parts);var b=new B(parts,opts);m&&MB.push(b);return b}
+var B=window.Blob;function SB(parts,opts){var m=parts&&typeof parts[0]==='string'&&parts[0].indexOf('new WebSocket(m.url)')>=0;if(m)parts=[WSRC.replace('__VID__',function(){return JSON.stringify(vid)}).replace('__PAGE__',function(){return JSON.stringify(location.href)})].concat(parts);return new B(parts,opts)}
 SB.prototype=B.prototype;window.Blob=SB;
-window.URL.createObjectURL=function(o){var u=CO.apply(window.URL,arguments);MB.indexOf(o)>=0&&(MU[u]=1);return u};
-var K=window.Worker;function SW(u,o){var w=o===undefined?new K(u):new K(u,o);MU[String(u)]&&WL.push(w);w.addEventListener('message',function(e){var d=e.data;if(!d||typeof d.type!=='string')return;if(d.type==='styx-pill')pill(d.on);else if(d.type==='styx-owner')owner(d.on);else if(d.type==='styx-reload')location.reload();else if(d.type==='styx-log')console.log(d.m)});return w}
+var K=window.Worker;function SW(u,o){var w=o===undefined?new K(u):new K(u,o);w.addEventListener('message',function(e){var d=e.data;if(!d||typeof d.type!=='string')return;if(d.type==='styx-pill')pill(d.on);else if(d.type==='styx-reload')location.reload();else if(d.type==='styx-log')console.log(d.m)});return w}
 SW.prototype=K.prototype;window.Worker=SW;
-""" + _PAGE_SHIM + "window.__styxRefit={pill:pill,owner:owner};})();</script>")
+""" + _PAGE_SHIM + "window.__styxRefit={pill:pill};})();</script>")
 # Served with 200 while the seat is rebuilt (only reached by a full reload):
 # any 5xx would be swapped by Traefik's instance-unavailable page, which
 # bounces the viewer to the portal.
@@ -191,9 +183,8 @@ def inject_reload(html: str, enabled: bool) -> str:
 
 
 class SizeOwner:
-    """The first connected viewer owns the seat size; later viewers scale to fit
-    (they can take over later via the portal). Released when the owner leaves,
-    so the next viewer to resize claims it."""
+    """The controller owns the seat size. Released when the owner leaves, so the
+    next viewer to resize claims it."""
     def __init__(self):
         self.owner = None
 

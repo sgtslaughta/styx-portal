@@ -14,11 +14,11 @@ pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node missi
 
 HARNESS = r"""
 const assert = require('assert'), vm = require('vm');
-const socks = [], calls = [], got = [];
+const socks = [], got = [];
 class FakeWS { constructor(u){this.url=u;this.readyState=0;socks.push(this);
   setTimeout(()=>{this.readyState=1;this.onopen&&this.onopen({})},0)}
   send(){} close(){} push(d){this.onmessage({data:d})} }
-const ctx = {FakeWS, calls, setTimeout, Date, encodeURIComponent, console,
+const ctx = {FakeWS, setTimeout, Date, encodeURIComponent, console,
   fetch: () => Promise.resolve({ok:true, headers:{get:()=>null}})};
 vm.createContext(ctx);
 vm.runInContext(process.argv[2], ctx);
@@ -28,24 +28,21 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   await wait(10);
   const vid = /styx_vid=(\w+)/.exec(socks[0].url);
   assert(vid && socks[0].url.includes('x=1&styx_vid='), socks[0].url);
-  socks[0].push('styx-owner,0');
-  assert.deepStrictEqual(calls, [false]); assert.deepStrictEqual(got, []);
   socks[0].push('hello'); socks[0].push(new Uint8Array(3));
   assert.strictEqual(got.length, 2);
   socks[0].push('styx-refit'); socks[0].onclose({code: 4002});
   await wait(300);
   assert.strictEqual(socks.length, 2);
   assert(socks[1].url.includes('styx_vid=' + vid[1]), socks[1].url);
-  socks[1].push('styx-owner,1');
-  assert.deepStrictEqual(calls, [false, true]); assert.strictEqual(got.length, 2);
+  assert.strictEqual(got.length, 2);
   process.exit(0);
 })().catch(e => { console.error(e); process.exit(1); });
 """
 
 
-def test_proxy_vid_owner_and_reconnect(tmp_path):
+def test_proxy_vid_and_reconnect(tmp_path):
     src = refit._proxy(WS="FakeWS", PILL="function(){}", RELOAD="function(){}", LOG="function(){}",
-                       OWNER="function(on){calls.push(on)}", VID='"abc123"', PAGE='"http://h/"',
+                       VID='"abc123"', PAGE='"http://h/"',
                        INSTALL="this.S=S")
     js = tmp_path / "h.js"
     js.write_text(HARNESS)
@@ -94,22 +91,10 @@ vm.runInContext(body, win);
 const api = win.window.__styxRefit;
 assert(api, 'no __styxRefit');
 assert.strictEqual(store.styx_vid, navType === 'reload' ? 'old' : 'uuid1');
-api.owner(false);
-const t = registry['styx-takeover'];
-assert(t, 'banner missing');
-assert(t.children.some(c => c.textContent === 'Fit to my window'));
-api.owner(true);
-assert(!registry['styx-takeover'], 'banner not removed');
-// Only the blob-built socket worker receives the takeover message.
 const marked = new win.Blob(['new WebSocket(m.url)']);
-const other = new win.Blob(['postMessage(1)']);
-const wm = new win.Worker(win.URL.createObjectURL(marked));
-new win.Worker(win.URL.createObjectURL(other)); new win.Worker('plain.js');
 assert(win.Blob === win.window.Blob && marked.parts[0].includes('self.WebSocket=S'));
-api.owner(false);
-registry['styx-takeover'].children[1].onclick();
-assert.deepStrictEqual(posted.map(p => p[1].type), ['__styx_takeover__']);
-assert.strictEqual(posted[0][0], wm.u);
+assert(marked.parts[0].includes(JSON.stringify(store.styx_vid)), 'vid not injected');
+assert(!('owner' in api) && !registry['styx-takeover']);
 process.exit(0);
 """
 

@@ -1,5 +1,7 @@
 # Seat Panel Controls Implementation Plan
 
+> **Outcome:** The "Fit to my window" takeover (owner banner, `styx-owner`/`styx-takeover` frames, Task 4/5 takeover parts) was built, then removed. selkies 2.0 keeps one controller (a new one kills the previous) and shared `role=viewer` clients never send a size, so the controller always owns the seat size and the banner could never help. Ownership bookkeeping (vid, grace, scale publishing) stays, frame-free.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Every selkies sidebar display control works on the headless GNOME seat; admin stream settings act as defaults with a bitrate cap; non-owner viewers get a "Fit to my window" takeover button.

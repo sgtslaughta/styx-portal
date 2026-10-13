@@ -108,17 +108,6 @@ def create_app(user: str, password: str,
     size_owner = refit.SizeOwner()
     viewers = Viewers()     # per styx_vid: sockets, last size/dpi, timers
 
-    async def _send(w, text):
-        try:
-            await w.send_str(text)
-        except (ConnectionResetError, RuntimeError):
-            pass                    # socket died mid-send: nothing to tell it
-
-    def send_to(rec, text):
-        for w in list(rec.socks):
-            if not w.closed:
-                asyncio.ensure_future(_send(w, text))
-
     def publish_scale(rec):
         """Owner's HiDPI choice -> <install>/seat-scale (the seat helper applies it)."""
         if scale_file and rec.dpi is not None:
@@ -152,16 +141,14 @@ def create_app(user: str, password: str,
                 asyncio.ensure_future(announce_and_close(w))
 
     def set_owner(vid):
-        """Ownership moves to `vid`: tell both sides, publish its scale, refit to its size."""
+        """Ownership moves to `vid`: publish its scale, refit to its size."""
         prev, rec = size_owner.owner, viewers.by_vid.get(vid)
         if rec is None or prev == vid:
             return
         size_owner.owner = vid
-        send_to(rec, "styx-owner,1")
         if prev in viewers.by_vid:
             old = viewers.by_vid[prev]
             old.timer and old.timer.cancel()
-            send_to(old, "styx-owner,0")
         publish_scale(rec)
         rec.timer and rec.timer.cancel()
         fire_refit(rec)
@@ -305,9 +292,6 @@ def create_app(user: str, password: str,
                     mark_input(data)
                     if not seat_dir or not isinstance(data, str):
                         return False
-                    if data == "styx-takeover":
-                        rec.shared or set_owner(vid)
-                        return True
                     if data.startswith("SETTINGS,"):
                         try:
                             rec.dpi = float(json.loads(data[9:]).get("scaling_dpi"))
@@ -327,14 +311,13 @@ def create_app(user: str, password: str,
 
                 # selkies keeps one controller and kills the previous one, so a
                 # controller owns the size at once. Shared (`role=viewer`) sockets
-                # never send `r,` and never own: no owner frames, no banner.
+                # never send `r,` and never own.
                 rec.shared = "role=viewer" in qs.split("&")
                 if seat_dir and not rec.shared:
                     if size_owner.owner and size_owner.owner != vid:
-                        set_owner(vid)      # sends styx-owner,1 to this socket itself
+                        set_owner(vid)
                     else:
                         size_owner.claim(vid)
-                        await ws_server.send_str("styx-owner,1")
 
                 await asyncio.gather(pump(ws_server, ws_client, on_activity=on_client),
                                      pump(ws_client, ws_server, on_binary=mark_frame),
