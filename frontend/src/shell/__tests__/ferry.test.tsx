@@ -142,3 +142,9 @@ it("the edge tab arms the iframe guard on pointer down and releases it on pointe
   fireEvent.pointerUp(window);
   expect(document.body.hasAttribute("data-ferry-drag")).toBe(false);
 });
+it("renders an emoji icon as text, never as an img src", () => {
+  const t = tiles.slice(0, 1).map((x) => ({ ...x, icon: "🎬" }));
+  const { baseElement } = render(<Dock open onOpenChange={() => {}} tiles={t} current="x" focusSlug={null} side="right" />);
+  expect(baseElement.querySelector("img")).toBeNull();
+  expect(screen.getByText("🎬")).toBeInTheDocument();
+});
