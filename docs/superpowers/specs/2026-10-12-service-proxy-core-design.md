@@ -46,7 +46,8 @@ underneath without changing SP1's routing or ACL model.
 - `route_writer.build_routes_config` already emits Host-scoped routers with
   priorities (`/api` 100, workstations 50, frontend 1), shared middlewares
   `ip-ban-gate`, `styx-ratelimit`, and a forwardAuth pattern
-  (`/api/workstations/auth-check`).
+  (`/api/workstations/auth-check`; since moved to
+  `/internal/workstations/auth-check`, §10.1).
 - `docker-proxy` (linuxserver socket-proxy) already allows
   `CONTAINERS=1 NETWORKS=1 POST=1`, enough to list containers and connect
   them to a network.
@@ -205,8 +206,9 @@ port, and suggests a preset by image name match.
 Background task (same shape as `session_monitor`): every 30s, for each
 enabled service with `health_path`, GET `<upstream><health_path>` with a
 5s timeout, honoring `verify_tls`. 2xx/3xx → `healthy`, else `unhealthy`.
-Without `health_path` → `unknown`. Tiles show a dot; unhealthy tiles stay
-clickable.
+Without `health_path` → `unknown`. `docker-local` services use the Docker
+API instead (§10.1), with or without `health_path`. Tiles show a dot;
+unhealthy tiles stay clickable.
 
 ## 8. API surface
 
@@ -281,18 +283,24 @@ Every write triggers `route_writer.write_routes` (extend signature with
   do not, so a proxied app cannot reach Styx's API or the docker
   socket-proxy directly. Updating a service to another container or kind,
   or deleting it, disconnects the old container unless another service row
-  still references it. The backend cannot probe attached containers, so
-  their health shows `unknown` (fallback upstreams are still probed).
+  still references it. The backend cannot probe attached containers over
+  HTTP, so `docker-local` health comes from the Docker API: running =
+  healthy unless a Docker `HEALTHCHECK` says otherwise (`starting` =
+  unknown); stopped or missing = unhealthy; Docker unreachable = unknown.
+  `url` services keep the HTTP `health_path` probe.
 - **Client IP trust.** `CF-Connecting-IP` / `X-Forwarded-For` are honoured
   only when the socket peer is in `TRUSTED_PROXY_CIDRS` (default
   `127.0.0.1/32,::1/128,172.16.0.0/12,192.168.0.0/16`, docker's default
   bridge pools; widen it if `daemon.json` sets other address pools).
   `CF-Connecting-IP` is ignored in `DEPLOY_MODE=direct`, where no Cloudflare
   edge sets it. Rate limits, IP bans and the audit log use this IP.
-- **auth-check** is internal-only (see above). It accepts a valid access
-  token, or, when that is missing/expired, a valid unrevoked refresh token
-  (read-only check, no rotation), so path-mode apps do not bounce to
-  `/login` every 15 minutes.
+- **auth-check** is internal-only (see above), for services
+  (`/internal/services/{slug}/auth-check`) and workstation streams
+  (`/internal/workstations/auth-check`, moved from the public
+  `/api/workstations/auth-check`, which mutated seat occupancy). Both
+  authenticate only via the `styx_proxy` cookie (below). The backend rate
+  limiter skips `/internal/`; Traefik's `styx-ratelimit` already runs
+  before forwardAuth, and per-asset checks would otherwise hit 429.
 - **Routing.** Path rules are `Path(/slug) || PathPrefix(/slug/)`; a slug
   never captures a sibling prefix (`a` vs `/assets`, `son` vs `sonarr`).
   Bypass rules match on segment boundaries against the normalised path;
@@ -305,10 +313,41 @@ Every write triggers `route_writer.write_routes` (extend signature with
   `allowed_groups`; a service whose list becomes empty is disabled (empty
   means "any user"). Unknown group names are rejected (422).
 - **Member listing** returns tile fields only (no upstream or container).
-- **Known limitation: same origin.** Proxied apps share the Styx origin, so
-  browsers send Styx's `access_token`/`refresh_token` cookies to them.
-  Stock Traefik cannot strip individual cookies, so only proxy apps you
-  trust with Styx sessions. A fix is an architectural decision (pending).
+- **Cookie split (same-origin mitigation).** Proxied apps share the Styx
+  origin, and stock Traefik cannot strip individual cookies, so Styx scopes
+  its cookies instead:
+
+  | Cookie | Path | Token type | Accepted by |
+  |---|---|---|---|
+  | `access_token` | `/api` | `access` | API deps only |
+  | `refresh_token` | `/api/auth` | `refresh` | `/api/auth/refresh`, `/logout` |
+  | `styx_proxy` | `/` | `proxy` | forwardAuth `auth-check` only |
+  | `csrf_token` | `/` | (not a credential) | double-submit check |
+
+  All are `HttpOnly` (except CSRF), `Secure` per `COOKIE_SECURE`,
+  `SameSite=Strict`. `styx_proxy` is a JWT of type `proxy` bound to the
+  refresh-token family (`fam` claim); it lives as long as the refresh
+  token, is issued wherever a refresh token is (login, setup, accept-invite,
+  SSO callback, change-password) and rotated on refresh. It is valid only
+  while its family has an unrevoked, unexpired refresh row and the user is
+  active, so logout, refresh-reuse family kill, password change, admin
+  reset/deactivation all kill it. Every issue and logout also expires
+  legacy `Path=/` copies of `access_token`/`refresh_token`.
+
+  *What this protects:* upstream servers no longer receive Styx API tokens
+  (a malicious or compromised upstream cannot log the cookie and replay it
+  against `/api`); a stolen `styx_proxy` cookie cannot call the API (every
+  API dep requires type `access`; `/refresh` requires type `refresh`).
+
+  *What it does not:* JavaScript served by a proxied app runs on the Styx
+  origin. It can issue same-origin `fetch('/api/...')` calls that the
+  browser sends with the user's `/api` cookies, read the CSRF cookie, and
+  so drive the API with the user's full rights. `HttpOnly` stops it reading
+  the tokens, not using them. **Treat every proxied app as trusted code with
+  the viewing user's Styx rights.** Admins should use a non-admin account
+  for daily app use. The UI asks the admin to acknowledge this when adding
+  a service. A full fix needs per-service origins (subdomains), out of
+  scope for SP1.
 
 ## 11. Testing
 

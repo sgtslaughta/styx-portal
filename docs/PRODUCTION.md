@@ -72,7 +72,16 @@ All of the following are already implemented:
 - **Security headers:** CSP, HSTS (direct mode only), X-Frame-Options, X-Content-Type-Options all enforced.
 - **Audit log:** All auth, role, instance, and provider changes are logged to the audit table with timestamp, user, IP, and action. Accessible at `GET /api/audit` (admin).
 - **Trusted proxies:** The backend believes `CF-Connecting-IP` / `X-Forwarded-For` only from peers in `TRUSTED_PROXY_CIDRS` (default `127.0.0.1/32,::1/128,172.16.0.0/12,192.168.0.0/16`, docker's default bridge pools). Widen it only if your docker `daemon.json` uses other address pools. `CF-Connecting-IP` is ignored in direct mode.
-- **Proxied-service network:** Containers exposed as services join the `styx-services` network, shared only with Traefik (not the backend). forwardAuth checks run on `/internal/...`, a path no Traefik router exposes.
+- **Proxied-service network:** Containers exposed as services join the `styx-services` network, shared only with Traefik (not the backend). forwardAuth checks run on `/internal/...`, a path no Traefik router exposes. Service health for these containers comes from the Docker API (container state / `HEALTHCHECK`), not HTTP.
+- **Session cookie split:** `access_token` is scoped to `Path=/api` and `refresh_token` to `Path=/api/auth`, so proxied apps (same origin, other paths) never receive Styx API tokens. Proxied apps and workstation streams are gated by a separate `styx_proxy` cookie (`Path=/`, HttpOnly, SameSite=Strict) holding a `proxy`-type token that the API refuses and that dies with the refresh-token family (logout, password change, reuse detection, user deactivation). Old `Path=/` cookies are expired automatically on next login/refresh.
+
+### Proxied apps are trusted code
+
+The cookie split stops an upstream **server** from capturing and replaying Styx API tokens, and a stolen `styx_proxy` cookie cannot call the API. It does **not** isolate an app's **JavaScript**: a proxied app is served from the Styx origin, so its scripts can call `/api/...` through the user's browser with that user's full Styx rights (the browser attaches the `/api` cookies; `HttpOnly` only prevents reading them).
+
+- Only proxy apps you would trust with the viewing user's Styx account.
+- Admins: use a separate **non-admin** account for day-to-day app use; keep the admin account for administration.
+- Prefer apps from trusted sources and keep them patched; an XSS in a proxied app is an XSS in Styx.
 
 ## Health Monitoring
 
