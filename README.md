@@ -69,6 +69,7 @@ Massive shoutout to LinuxServer.io. I discovered their transition away from Kasm
   - Tested on `Ubuntu 24.04` using `Wayland`
     - Should work on other `Debian` systems
   - No plan for `Windows` or `MacOS` yet, send demand signal if interested
+- Proxied services: put Jellyfin, the *arr stack, Nextcloud etc. behind one hostname with SSO and group access ([docs](docs/SERVICES.md))
 - Basic multi user isolation
 - SSO
   - generic OAuth2 (Authentik/Keycloak/Google)

@@ -12,6 +12,7 @@ nav = [
   { "Quickstart" = "QUICKSTART.md" },
   { "Instances" = "INSTANCES.md" },
   { "Workstations" = "WORKSTATIONS.md" },
+  { "Services" = "SERVICES.md" },
   { "GPU" = "GPU.md" },
   { "Admin" = "ADMIN.md" },
   { "Production" = "PRODUCTION.md" },
