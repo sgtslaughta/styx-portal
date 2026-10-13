@@ -1,4 +1,6 @@
 """Shared look for the few pages the backend renders (spec §7 tokens)."""
+import html
+
 _CSS = """
 :root{--bg:#EDF1EF;--fg:#0F1C22;--muted:#4A5A60;--link:#2A767C;--btn:#2A767C;--btn-fg:#EDF1EF}
 @media (prefers-color-scheme:dark){:root{--bg:#0F1C22;--fg:#EDF1EF;--muted:#9FB0B4;--link:#6FB7BC;--btn:#2A767C}}
@@ -11,6 +13,7 @@ border:0;border-radius:.5rem;padding:.6rem 1rem;cursor:pointer}button:focus-visi
 
 
 def styx_page(title: str, body: str) -> str:
+    """Wrap a page. title is escaped; body must be trusted HTML."""
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'
-            f"<title>{title}</title><style>{_CSS}</style></head><body><main>{body}</main></body></html>")
+            f"<title>{html.escape(title)}</title><style>{_CSS}</style></head><body><main>{body}</main></body></html>")
