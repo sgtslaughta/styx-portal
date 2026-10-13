@@ -27,6 +27,7 @@ backend/           FastAPI application
       service_mounts.py Managed-path plan/apply/job API (admin, consent)
     services/
       docker_manager.py    Docker API wrapper
+      docker_files.py      Container file read/write + probe container (mixin)
       traefik_labels.py    Label generation for Traefik routing
       session_monitor.py   Idle detection background loop
       workstations.py      Subdomain slug, stale-offline detection
