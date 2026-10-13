@@ -42,3 +42,14 @@ def api(cfg: dict, path: str, payload: dict | None = None) -> dict:
     ctx = _ssl_context(cfg) if url.startswith("https") else None
     with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
         return json.loads(resp.read().decode() or "{}")
+
+
+def api_bytes(cfg: dict, path: str) -> tuple[bytes, str, str]:
+    """GET returning (body, content type, etag without quotes)."""
+    url = cfg["server"].rstrip("/") + path
+    req = urllib.request.Request(
+        url, headers={"Authorization": f"Bearer {cfg['agent_token']}"})
+    ctx = _ssl_context(cfg) if url.startswith("https") else None
+    with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
+        ctype = resp.headers.get("Content-Type", "").split(";")[0].strip()
+        return resp.read(), ctype, resp.headers.get("ETag", "").strip('"')

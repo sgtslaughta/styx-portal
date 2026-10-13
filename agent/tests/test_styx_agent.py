@@ -28,7 +28,7 @@ def test_load_config(tmp_path):
 
 
 def test_agent_version_bumped():
-    assert styx_agent.AGENT_VERSION == "0.7.0"
+    assert styx_agent.AGENT_VERSION == "0.8.0"
 
 
 def test_gateway_cmd_secrets_via_env(tmp_path):
@@ -71,7 +71,7 @@ def test_health_payload_reports_mode_and_engine(tmp_path):
     h = styx_agent.health_payload(cfg, selkies_alive=True, gateway_alive=False)
     assert h["mode"] == "seat"
     assert h["engine"] == "pixelflux"
-    assert h["agent_version"] == "0.7.0"
+    assert h["agent_version"] == "0.8.0"
     assert "needs_consent" not in h
     assert h["selkies_alive"] is True and h["gateway_alive"] is False
     assert h["active_connections"] == 0
@@ -184,7 +184,7 @@ def test_run_config_from_0411_is_accepted(tmp_path, monkeypatch):
     monkeypatch.setattr(styx_agent.seat_gnome, "gnome_available", lambda: (True, ""))
     assert styx_agent.pick_seat_shell(cfg) == "gnome"
     p = styx_agent.health_payload(cfg, True, True)
-    assert p["agent_version"] == "0.7.0" and "needs_consent" not in p
+    assert p["agent_version"] == "0.8.0" and "needs_consent" not in p
 
 
 def test_rollback_swaps_dirs(tmp_path, monkeypatch):
@@ -349,3 +349,10 @@ def test_restart_plan():
     now, left = restart_plan(seat, True, True)
     assert now == ("gateway",) and "seat" in left["keys"] and "gateway" not in left["keys"]
     assert restart_plan(None, True, True) == ((), None)
+
+
+def test_gateway_gets_icon_dir():
+    cfg = {"install_dir": "/opt/x", "port": 8443, "selkies_user": "u",
+           "selkies_password": "p", "stream_settings": {}}
+    _, env = styx_agent.build_gateway_cmd(cfg, 18444)
+    assert env["STYX_GW_ICON_DIR"] == "/opt/x"
