@@ -400,6 +400,8 @@ async def test_single_upstream_index_assets_api_and_ws(tmp_path):
             ws = await c.ws_connect(path, headers=h)
             assert (await ws.receive()).data.startswith("styx-owner,")   # seat mode announces ownership
             msg = await ws.receive()
+            while msg.data == "styx-owner,1":                # a fresh controller may be re-announced
+                msg = await ws.receive()
             assert msg.data == b"\x04\x11frame"
             await ws.close()
         assert (await c.get("/assets/app.js")).status == 401  # auth on proxied paths
@@ -833,7 +835,7 @@ async def test_refit_announces_to_every_viewer_and_hands_owner_over(tmp_path):
     hdr = {"Authorization": _basic("styx", "pw")}
     try:
         owner = await client.ws_connect("/websocket", headers=hdr)
-        other = await client.ws_connect("/websocket", headers=hdr)
+        other = await client.ws_connect("/websocket?role=viewer", headers=hdr)
         assert (await owner.receive()).data == "styx-owner,1"
         assert (await other.receive()).data == "styx-owner,0"
         await owner.send_str("r,1920x1080,primary")          # claims, no change
@@ -856,7 +858,7 @@ async def test_refit_announces_to_every_viewer_and_hands_owner_over(tmp_path):
         try:
             await asyncio.sleep(0.5)                         # old viewers' grace lapses
             owner2 = await client.ws_connect("/websocket", headers=hdr)
-            other2 = await client.ws_connect("/websocket", headers=hdr)
+            other2 = await client.ws_connect("/websocket?role=viewer", headers=hdr)
             assert (await owner2.receive()).data == "styx-owner,1"
             assert (await other2.receive()).data == "styx-owner,0"
             await owner2.send_str("r,2552x1294,primary")     # claims, no change
