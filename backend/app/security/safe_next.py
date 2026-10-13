@@ -34,6 +34,9 @@ def safe_next(uri: str | None, *, allow_login: bool = False) -> str | None:
     if "." in segs or ".." in segs:
         return None
     blocked = BLOCKED_FIRST_SEGMENTS - {"login"} if allow_login else BLOCKED_FIRST_SEGMENTS
-    if segs[1].lower() == "_styx" and len(segs) > 3 and segs[2] == "app":
-        return uri  # the shell page (/_styx/app/<slug>/...): where a framed expiry returns to
+    if segs[1].lower() == "_styx" and len(segs) > 3 and segs[2] == "app" and segs[3]:
+        # The shell page (/_styx/app/<slug>/...): where a framed expiry returns to. Its inner
+        # path is loaded in the frame as-is, so it must pass the same rule.
+        tail = uri[len(path):]
+        return uri if safe_next("/" + "/".join(segs[4:]) + tail) else None
     return None if segs[1].lower() in blocked else uri

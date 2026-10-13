@@ -8,6 +8,16 @@ describe("parseShellPath", () => {
     "unsafe inner %s falls back to /", (p) => expect(parseShellPath(p, "", "")?.inner).toBe("/"));
   it("rejects a bad slug", () => expect(parseShellPath("/_styx/app/..%2f/", "", "")).toBeNull());
 });
+describe("frameSrc cookie-root never reaches Styx control paths", () => {
+  it.each(["/_styx/exit", "/api/auth/me", "/API/x", "/internal/strip", "/login", "/logout", "/setup",
+    "/accept-invite?t=1", "/change-password", "/%61pi/x"])("%s falls back to /", (inner) =>
+    expect(frameSrc("cookie-root", "immich", inner)).toBe("/"));
+  it("keeps app paths", () => expect(frameSrc("cookie-root", "immich", "/web/index.html?a=1")).toBe("/web/index.html?a=1"));
+  it("path mode keeps the app's own /api and /login (they live under /<slug>)", () => {
+    expect(frameSrc("path", "sonarr", "/api/v3/x")).toBe("/sonarr/api/v3/x");
+    expect(frameSrc("path", "sonarr", "/login")).toBe("/sonarr/login");
+  });
+});
 it("frameSrc", () => {
   expect(frameSrc("path", "sonarr", "/series")).toBe("/sonarr/series");
   expect(frameSrc("cookie-root", "immich", "/photos")).toBe("/photos");

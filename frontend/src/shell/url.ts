@@ -20,8 +20,17 @@ export function parseShellPath(pathname: string, search: string, hash: string) {
   return { slug, inner: path === raw ? path + search + hash : "/" }; // unsafe path: app root, drop query
 }
 
+// Mirrors backend app/security/safe_next.py BLOCKED_FIRST_SEGMENTS. In cookie-root mode the inner path is
+// loaded at the origin root, so it must never name a Styx control/API path. (Path mode lives under /<slug>.)
+const BLOCKED = new Set(["api", "internal", "_styx", "login", "logout", "setup", "accept-invite", "change-password"]);
+
+function blockedInner(inner: string): boolean {
+  const first = inner.split(/[?#]/, 1)[0]!.split("/")[1] ?? "";
+  try { return BLOCKED.has(decodeURIComponent(first).toLowerCase()); } catch { return true; }
+}
+
 export const frameSrc = (mode: Mode, slug: string, inner: string) =>
-  mode === "path" ? `/${slug}${inner}` : inner;
+  mode === "path" ? `/${slug}${inner}` : blockedInner(inner) ? "/" : inner;
 
 export function shellPathFor(mode: Mode, slug: string,
                              loc: { pathname: string; search: string; hash: string }): string | null {
