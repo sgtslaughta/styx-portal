@@ -284,7 +284,7 @@ The selkies sidebar display controls work on the seat:
 - **UI scaling / HiDPI:** switches the seat between GNOME scale 1 and 2 without restarting the stream.
 - **Ownership:** the first viewer owns the size. Other viewers see the desktop letterboxed at the owner's size until they press **Fit to my window**. If the owner closes the tab, the newest viewer takes over after ~5 s.
 - **Admin defaults:** the workstation's stream settings (framerate, CRF, etc.) are defaults that viewers can change from the panel. Bitrate is a ceiling: the admin value is the default and the maximum; viewers may lower it (floor 1000 kbps). Codec and CPU encode are locked.
-- **Applying changes:** admin changes apply the next time nobody is connected, so they never kick an active session.
+- **Applying changes:** admin changes apply when nobody is connected, so they never kick an active session. The exception is idle-timeout changes, which apply at once (connected viewers reconnect). A viewer that reconnects after a resize already gets the new stream settings.
 
 ### Upgrade and rollback
 

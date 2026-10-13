@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-AGENT_VERSION = "0.6.15"
+AGENT_VERSION = "0.7.0"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -42,7 +42,7 @@ from seat_gnome import Escalation, pick_seat_shell  # noqa: E402
 from agent_procs import (  # noqa: E402
     FRAME_START_TIMEOUT_S, _restart_engine, _terminate,
     _check, build_gateway_cmd, drop_clients, settings_restart_keys,  # noqa: F401
-    viewers_connected, merge_pending, must_apply_now)
+    viewers_connected, merge_pending, must_apply_now, restart_plan)
 
 
 def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool,
@@ -254,13 +254,15 @@ def run(cfg: dict) -> int:
                 print("seat_shell changed; restarting agent", flush=True)
                 exit_code = 1
                 break
-            for key in pending["keys"]:
+            keys_now, pending = restart_plan(
+                pending, apply_now, viewers_connected(gw_state_path(cfg)))
+            for key in keys_now:
                 if key in procs:
                     _terminate(procs[key])
                     procs[key] = None
-            if "seat" in pending["keys"] and gseat:
+            if "seat" in keys_now and gseat:
                 gseat.stop()
-            pending, apply_now = None, False
+            apply_now = False
         if gseat and not gseat.alive():
             # Seat died: selkies (and the standby) are captured against a dead
             # portal session. The next branch restarts, seat first.

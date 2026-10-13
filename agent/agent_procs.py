@@ -105,6 +105,20 @@ def must_apply_now(old_ss: dict, new_ss: dict) -> bool:
     return any(old_ss.get(k) != new_ss.get(k) for k in IMMEDIATE_KEYS)
 
 
+def restart_plan(pending: dict | None, apply_now: bool, viewers: bool) -> tuple[tuple, dict | None]:
+    """(keys to restart now, pending left over). Nobody connected: everything.
+    Viewers but a security change: only the gateway (it alone reads the idle
+    config from its launch env); the rest keeps waiting for the last viewer."""
+    if not pending:
+        return (), None
+    if not viewers:
+        return tuple(pending["keys"]), None
+    if not apply_now:
+        return (), pending
+    rest = tuple(k for k in pending["keys"] if k != "gateway")
+    return ("gateway",), ({"old": pending["old"], "keys": rest} if rest else None)
+
+
 def merge_pending(pending: dict | None, old_ss: dict, new_ss: dict) -> dict:
     """Fold a settings push into a deferred restart: keep the earliest old
     settings, union the restart keys."""

@@ -28,7 +28,7 @@ def test_load_config(tmp_path):
 
 
 def test_agent_version_bumped():
-    assert styx_agent.AGENT_VERSION == "0.6.15"
+    assert styx_agent.AGENT_VERSION == "0.7.0"
 
 
 def test_gateway_cmd_secrets_via_env(tmp_path):
@@ -71,7 +71,7 @@ def test_health_payload_reports_mode_and_engine(tmp_path):
     h = styx_agent.health_payload(cfg, selkies_alive=True, gateway_alive=False)
     assert h["mode"] == "seat"
     assert h["engine"] == "pixelflux"
-    assert h["agent_version"] == "0.6.15"
+    assert h["agent_version"] == "0.7.0"
     assert "needs_consent" not in h
     assert h["selkies_alive"] is True and h["gateway_alive"] is False
     assert h["active_connections"] == 0
@@ -184,7 +184,7 @@ def test_run_config_from_0411_is_accepted(tmp_path, monkeypatch):
     monkeypatch.setattr(styx_agent.seat_gnome, "gnome_available", lambda: (True, ""))
     assert styx_agent.pick_seat_shell(cfg) == "gnome"
     p = styx_agent.health_payload(cfg, True, True)
-    assert p["agent_version"] == "0.6.15" and "needs_consent" not in p
+    assert p["agent_version"] == "0.7.0" and "needs_consent" not in p
 
 
 def test_rollback_swaps_dirs(tmp_path, monkeypatch):
@@ -333,3 +333,19 @@ def test_idle_timeout_changes_apply_immediately():
     assert must_apply_now({"idle_timeout_s": 900}, {"idle_timeout_s": 600})
     assert must_apply_now({}, {"idle_timeout_enabled": True})
     assert not must_apply_now({"video_crf": 25}, {"video_crf": 30})
+
+
+def test_restart_plan():
+    from agent_procs import merge_pending, restart_plan
+    idle = merge_pending(None, {}, {"idle_timeout_s": 5})
+    now, left = restart_plan(idle, True, True)       # idle change, viewers: gateway only
+    assert now == ("gateway",) and left["keys"] == ("selkies", "standby", "shell", "clipboard")
+    assert restart_plan(left, False, True) == ((), left)   # rest waits
+    now, left = restart_plan(left, False, False)     # last viewer gone: the rest
+    assert now == ("selkies", "standby", "shell", "clipboard") and left is None
+    now, left = restart_plan(idle, True, False)      # nobody connected: everything
+    assert now == idle["keys"] and left is None
+    seat = merge_pending(None, {}, {"seat_width": 1920, "idle_timeout_s": 5})
+    now, left = restart_plan(seat, True, True)
+    assert now == ("gateway",) and "seat" in left["keys"] and "gateway" not in left["keys"]
+    assert restart_plan(None, True, True) == ((), None)
