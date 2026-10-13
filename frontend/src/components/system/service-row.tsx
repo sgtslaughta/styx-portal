@@ -40,7 +40,7 @@ function badges(s: ProxiedService): { key: string; label: string; cls?: string; 
 }
 
 const MOUNT_CHIP = {
-  done: { label: "Base path set", cls: "border-obol/60 text-obol-foreground" },
+  done: { label: "Base path set", cls: "border-success/60 text-success-foreground" },
   rolled_back: { label: "Rolled back", cls: "border-destructive/40 text-destructive" },
   failed: { label: "Needs attention", cls: "border-destructive/40 text-destructive" },
 } as const;

@@ -30,7 +30,7 @@ it("adopted container asks for consent with the change table", async () => {
 it("rollback shows reason, log and both recoveries", async () => {
   vi.mocked(api.mountPlan).mockResolvedValue({ method: "config_file", changes: CH, needs_consent: false, reason: null });
   vi.mocked(api.mountLatest).mockResolvedValue({ id: "j", state: "rolled_back", changes: CH, backup_dir: "/b",
-    log_excerpt: "boom", created_at: "", finished_at: "", steps: [{ id: "verify", label: "Check it answers", state: "failed", detail: "No answer" }] });
+    log_excerpt: "boom", created_at: "", finished_at: "", steps: [{ id: "verify", label: "Check the app responds", state: "failed", detail: "No answer" }] });
   wrap(<ServiceMount service={svc} />);
   expect(await screen.findByText(/Styx put its settings back/)).toBeInTheDocument();
   expect(screen.getByText("boom")).toBeInTheDocument();
@@ -111,4 +111,17 @@ it("job going straight to done after apply refetches the plan and drops the Set 
   fireEvent.click(await screen.findByRole("button", { name: "Set base path to /sonarr" }));
   expect(await screen.findByText(/Base path set\. Sonarr answers at \/sonarr/)).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Set base path to /sonarr" })).toBeNull();
+});
+
+it("consent dialog has a stacked list for small widths", async () => {
+  vi.mocked(api.mountPlan).mockResolvedValue({ method: "config_file", changes: CH, needs_consent: true, reason: null });
+  vi.mocked(api.mountLatest).mockRejectedValue(notFound);
+  wrap(<ServiceMount service={svc} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Set base path to /sonarr" }));
+  const dlg = await screen.findByRole("dialog");
+  const list = dlg.querySelector("dl");
+  expect(list).not.toBeNull();
+  expect(list).toHaveClass("sm:hidden");
+  expect(list).toHaveTextContent("(not set)");
+  expect(dlg.querySelector("table")).toHaveClass("hidden", "sm:table");
 });

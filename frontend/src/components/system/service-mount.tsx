@@ -10,6 +10,10 @@ import { MountConsentDialog } from "./mount-consent-dialog";
 export const ACTIVE = ["pending", "running"];
 export const pollWhile = (state?: string) => (ACTIVE.includes(state ?? "") ? 1000 : false);
 
+/** Backup detail is a long host path: show the timestamp folder, keep the full path as a tooltip. */
+const shortSteps = (steps: MountJob["steps"]) => steps.map((s) =>
+  s.id === "backup" && s.detail?.includes("/") ? { ...s, detail: s.detail.split("/").filter(Boolean).slice(-1)[0], title: s.detail } : s);
+
 export function ServiceMount({ service, onChanged }: { service: ProxiedService; onChanged?: (svc: ProxiedService) => void }) {
   const { id, name, slug } = service;
   const qc = useQueryClient();
@@ -42,6 +46,10 @@ export function ServiceMount({ service, onChanged }: { service: ProxiedService; 
   });
 
   const jobState = job.data?.state;
+  const outcomeRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (jobState === "rolled_back" || jobState === "failed") outcomeRef.current?.focus();
+  }, [jobState]);
   const seen = useRef<string | null>(null);
   const jobKey = job.data ? `${job.data.id}:${job.data.state}` : null;
   useEffect(() => {
@@ -63,15 +71,15 @@ export function ServiceMount({ service, onChanged }: { service: ProxiedService; 
 
   const setBtn = <Button size="sm" onClick={start} disabled={apply.isPending}>{`Set base path to /${slug}`}</Button>;
   const verified = (
-    <p className="flex items-center gap-2 text-sm"><Check className="h-4 w-4 rounded-full ring-2 ring-obol text-obol-foreground" />Base path is set to /{slug}</p>
+    <p className="flex items-center gap-2 text-sm"><Check className="h-4 w-4 rounded-full ring-2 ring-success text-success-foreground" />Base path is set to /{slug}</p>
   );
 
   let body: React.ReactNode;
-  if (running) body = <Stepper steps={j.steps} />;
+  if (running) body = <Stepper steps={shortSteps(j.steps)} />;
   else if (j?.state === "rolled_back") body = (
     <>
-      <Stepper steps={j.steps} />
-      <p className="text-sm text-destructive">Couldn't switch {name} to /{slug}, so Styx put its settings back.</p>
+      <Stepper steps={shortSteps(j.steps)} />
+      <p ref={outcomeRef} role="alert" tabIndex={-1} className="text-sm text-destructive outline-none">Couldn't switch {name} to /{slug}, so Styx put its settings back.</p>
       {j.log_excerpt && (
         <details className="text-sm"><summary className="cursor-pointer">App log</summary>
           <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted p-2 text-xs">{j.log_excerpt}</pre>
@@ -85,7 +93,7 @@ export function ServiceMount({ service, onChanged }: { service: ProxiedService; 
   );
   else if (j?.state === "failed") body = (
     <>
-      <p className="text-sm text-destructive">The change failed and Styx couldn't put the old settings back. Your backup is in {j.backup_dir}.</p>
+      <p ref={outcomeRef} role="alert" tabIndex={-1} className="text-sm text-destructive outline-none">The change failed and Styx couldn't put the old settings back. Your backup is in {j.backup_dir}.</p>
       {retry}
     </>
   );
@@ -94,15 +102,15 @@ export function ServiceMount({ service, onChanged }: { service: ProxiedService; 
   );
   else if (p.changes.length > 0) body = (
     <>
-      {j?.state === "done" && <Stepper steps={j.steps} />}
+      {j?.state === "done" && <Stepper steps={shortSteps(j.steps)} />}
       {setBtn}
     </>
   );
   else body = (
     <>
-      {j?.state === "done" && <Stepper steps={j.steps} />}
+      {j?.state === "done" && <Stepper steps={shortSteps(j.steps)} />}
       {j?.state === "done"
-        ? <p className="text-sm text-obol-foreground">Base path set. {name} answers at /{slug}.</p>
+        ? <p className="text-sm text-success-foreground">Base path set. {name} answers at /{slug}.</p>
         : verified}
     </>
   );
