@@ -244,15 +244,15 @@ def _seat_cmd(tmp_path, monkeypatch, ss, seat=None, mode="seat"):
     return engine.build_selkies_cmd(cfg, 1, seat)[0]
 
 
-def test_bitrate_locked_server_side(tmp_path, monkeypatch):
-    """Stale 1.x client storage sends video_bitrate=8 (meant Mbps); 2.0 reads
-    kbps and clamps to 100 kbps -> blurry stream. Lock it server-side."""
-    cmd = _seat_cmd(tmp_path, monkeypatch, {})
-    assert "--video-bitrate=16000-16000" in cmd
+def test_bitrate_is_viewer_adjustable_ceiling(tmp_path, monkeypatch):
+    """Admin bitrate is the default AND the ceiling; viewers may lower it.
+    Floor is min(1000, kbps) so a stale 1.x value of 8 (Mbps) cannot mean 8 kbps."""
     cmd = _seat_cmd(tmp_path, monkeypatch, {"video_bitrate_kbps": 20000})
-    assert "--video-bitrate=20000-20000" in cmd
-    cmd = _seat_cmd(tmp_path, monkeypatch, {"video_bitrate_kbps": "junk"})
-    assert "--video-bitrate=16000-16000" in cmd
+    assert "--video-bitrate=20000,1000-20000" in cmd
+    cmd = _seat_cmd(tmp_path, monkeypatch, {})
+    assert "--video-bitrate=16000,1000-16000" in cmd
+    cmd = _seat_cmd(tmp_path, monkeypatch, {"video_bitrate_kbps": 800})
+    assert "--video-bitrate=800,800-800" in cmd
 
 
 def test_gnome_seat_always_disables_client_cursor(tmp_path, monkeypatch):

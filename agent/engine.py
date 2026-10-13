@@ -325,10 +325,11 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
     streaming = s.get("video_streaming_mode", s.get("h264_streaming_mode"))
     # 2.0 defaults streaming mode ON; keep today's default (off) unless asked.
     env["SELKIES_VIDEO_STREAMING_MODE"] = "true" if streaming is True else "false"
-    # Locked server-side: stale 1.x client storage sends video_bitrate=8 (Mbps
-    # there), which 2.0 reads as kbps and clamps to 100 kbps -> blurry stream.
+    # Admin bitrate is the default AND the ceiling; viewers may lower it. Floor
+    # 1000 kbps: stale 1.x storage sends 8 (Mbps) which would otherwise mean 8 kbps.
     kbps = _int_in(s.get("video_bitrate_kbps"), 500, 200000) or 16000
-    cmd.append(f"--video-bitrate={kbps}-{kbps}")
+    lo = min(1000, kbps)
+    cmd.append(f"--video-bitrate={kbps},{lo}-{kbps}")
     # Caps compression under motion so screen text stays legible.
     cmd.append("--video-max-qp=28")
     env["SELKIES_USE_PAINT_OVER_QUALITY"] = (
