@@ -58,11 +58,12 @@ export function useFrameSync(
     const started = Date.now();
     // In some builds the refused frame just stays about:blank (same-origin): ask the app's own headers once.
     let ticks = 0;
+    const abort = new AbortController();
     const block = () => { first = false; window.clearInterval(poll); setBlocked(true); };
     const probe = () => {
       const src = frame.getAttribute("src");
       if (!src) return;
-      fetch(src, { credentials: "same-origin" }).then((r) => {
+      fetch(src, { credentials: "same-origin", signal: abort.signal }).then((r) => {
         void r.body?.cancel();
         if (first && frameAncestorsBlock(r.headers.get("content-security-policy"))) block();
       }).catch(() => { /* offline or refused: the load event path still applies */ });
@@ -75,6 +76,7 @@ export function useFrameSync(
     const onLoad = () => { window.clearInterval(poll); attach(); };
     frame.addEventListener("load", onLoad);
     return () => {
+      abort.abort();
       window.clearInterval(poll);
       frame.removeEventListener("load", onLoad);
       const p = patched as Patched | null;

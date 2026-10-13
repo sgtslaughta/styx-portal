@@ -48,9 +48,19 @@ export function isFrameLocationForbidden(frame: { contentWindow: { location: { h
 }
 
 /** True when a Content-Security-Policy forbids framing by Styx's own origin (no 'self' or * in frame-ancestors). */
-export function frameAncestorsBlock(csp: string | null): boolean {
-  const dir = csp?.split(";").map((d) => d.trim()).find((d) => d.toLowerCase().startsWith("frame-ancestors"));
-  if (!dir) return false;
-  const sources = dir.split(/\s+/).slice(1).map((x) => x.toLowerCase());
-  return !sources.includes("'self'") && !sources.includes("*");
+export function frameAncestorsBlock(csp: string | null, origin = window.location.origin): boolean {
+  const self = new URL(origin);
+  const allows = (src: string) => {
+    if (src === "'self'" || src === "*" || src === self.protocol) return true;
+    const m = /^(?:([a-z][a-z0-9+.-]*):\/\/)?(\*\.)?([^/:]+)(?::(\d+|\*))?\/?$/.exec(src);
+    if (!m || (m[1] && `${m[1]}:` !== self.protocol)) return false;
+    const host = self.hostname;
+    const hostOk = m[2] ? host.endsWith(`.${m[3]}`) : host === m[3];
+    return hostOk && (!m[4] || m[4] === "*" || m[4] === (self.port || (self.protocol === "https:" ? "443" : "80")));
+  };
+  // Headers.get joins repeated CSP headers with ", "; any one policy can refuse the frame.
+  return (csp ?? "").split(",").some((policy) => {
+    const dir = policy.split(";").map((d) => d.trim()).find((d) => /^frame-ancestors(\s|$)/i.test(d));
+    return !!dir && !dir.split(/\s+/).slice(1).map((x) => x.toLowerCase()).some(allows);
+  });
 }

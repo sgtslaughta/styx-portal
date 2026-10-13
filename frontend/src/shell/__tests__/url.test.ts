@@ -37,5 +37,17 @@ describe("frameAncestorsBlock", () => {
     ["frame-ancestors *", false],
     ["default-src 'self'", false],
     [null, false],
-  ])("%s -> %s", (csp, want) => { expect(frameAncestorsBlock(csp)).toBe(want); });
+    // Headers.get joins repeated CSP headers with ", "; any one policy can refuse
+    ["frame-ancestors 'self', frame-ancestors 'none'", true],
+    ["default-src 'self', frame-ancestors 'none'", true],
+    ["frame-ancestors 'none', default-src 'self'", true],
+    // sources naming Styx's own origin allow it
+    ["frame-ancestors https://styx.example", false],
+    ["frame-ancestors https://styx.example/", false],
+    ["frame-ancestors https:", false],
+    ["frame-ancestors styx.example", false],
+    ["frame-ancestors https://*.example", false],
+    ["frame-ancestors http://styx.example", true],
+    ["frame-ancestors https://evilstyx.example", true],
+  ])("%s -> %s", (csp, want) => { expect(frameAncestorsBlock(csp, "https://styx.example")).toBe(want); });
 });
