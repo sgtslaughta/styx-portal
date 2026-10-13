@@ -314,8 +314,7 @@ Every write triggers `route_writer.write_routes` (extend signature with
   means "any user"). Unknown group names are rejected (422).
 - **Member listing** returns tile fields only (no upstream or container).
 - **Cookie split (same-origin mitigation).** Proxied apps share the Styx
-  origin, and stock Traefik cannot strip individual cookies, so Styx scopes
-  its cookies instead:
+  origin, so Styx scopes its cookies:
 
   | Cookie | Path | Token type | Accepted by |
   |---|---|---|---|
@@ -334,13 +333,36 @@ Every write triggers `route_writer.write_routes` (extend signature with
   reset/deactivation all kill it. Every issue and logout also expires
   legacy `Path=/` copies of `access_token`/`refresh_token`.
 
-  *What this protects:* upstream servers no longer receive Styx API tokens
-  (a malicious or compromised upstream cannot log the cookie and replay it
-  against `/api`); a stolen `styx_proxy` cookie cannot call the API (every
-  API dep requires type `access`; `/refresh` requires type `refresh`).
+- **Cookie strip (2026-10-13).** Path scoping alone still let the browser
+  send `styx_proxy`, `csrf_token` and `styx_svc` (all `Path=/`) to every
+  upstream, and a replayed `styx_proxy` opens the user's other services and
+  `/w/` desktops. **Styx strips its cookies from every proxied request;
+  upstream servers never see Styx credentials.** Every forwardAuth endpoint
+  returns, on 2xx, a `Cookie` response header equal to the request's Cookie
+  minus `styx_proxy`, `access_token`, `refresh_token`, `csrf_token` and
+  `styx_svc` (split on `;`, other pairs kept verbatim and in order), and
+  every upstream forwardAuth middleware lists `Cookie` in
+  `authResponseHeaders`. Traefik v3 (`pkg/middlewares/auth/forward.go`)
+  always deletes each listed request header, then copies the auth
+  response's values if present; Styx sends an empty value when nothing is
+  left, so the upstream gets an empty `Cookie:` line. Coverage:
+  `svc-auth-{slug}` (sso, incl. the bypass success path),
+  `svc-strip-{slug}` → `/internal/services/{slug}/strip` (app-native: no
+  auth, always 200), `ws-forward-auth` (`/w/`), and `styx-cookie-strip` →
+  `/internal/strip` on `/i/` instance and extra-port routers. Not covered:
+  `ip-ban-gate` (it guards the Styx API, which needs its cookies; no
+  response headers). Routing still works: Traefik matches the `styx_svc`
+  rule before middlewares run.
 
-  *What it does not:* JavaScript served by a proxied app runs on the Styx
-  origin. It can issue same-origin `fetch('/api/...')` calls that the
+  *What this protects:* upstream servers never receive Styx credentials
+  (a malicious or compromised upstream cannot log a cookie and replay it
+  against `/api`, other services or workstation streams); a stolen
+  `styx_proxy` cookie cannot call the API (every API dep requires type
+  `access`; `/refresh` requires type `refresh`).
+
+  *What it does not:* JavaScript served by a proxied app is still
+  same-origin. It cannot read HttpOnly cookies, but it can call the API
+  via the browser: it can issue same-origin `fetch('/api/...')` calls that the
   browser sends with the user's `/api` cookies, read the CSRF cookie, and
   so drive the API with the user's full rights. `HttpOnly` stops it reading
   the tokens, not using them. **Treat every proxied app as trusted code with
