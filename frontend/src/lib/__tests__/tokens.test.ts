@@ -13,4 +13,11 @@ describe("Styx tokens", () => {
     for (const hex of Object.values(TOKENS.light)) expect(root).toContain(hex.toLowerCase());
     for (const hex of Object.values(TOKENS.dark)) expect(dark).toContain(hex.toLowerCase());
   });
+  it("light auth form keeps Current primary", () => {
+    const css = readFileSync("src/styles/globals.css", "utf8").toLowerCase();
+    const form = /(?<!\.dark )\.styx-auth-form\s*\{[^}]*\}/.exec(css)![0];
+    expect(form).toContain(TOKENS.light.primary.toLowerCase());
+    expect(form).toContain(TOKENS.light.primaryForeground.toLowerCase());
+    expect(form).not.toContain(TOKENS.dark.primary.toLowerCase());
+  });
 });
