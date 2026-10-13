@@ -253,7 +253,7 @@ function SessionRow({
                         ev.type === "error" ? "text-destructive" :
                         ev.type === "started" ? "text-emerald-400" :
                         ev.type === "stopped" ? "text-muted-foreground" :
-                        "text-blue-400"
+                        "text-primary"
                       )}>
                         {ev.type}
                       </span>
@@ -283,7 +283,7 @@ function ActionBtn({
 }) {
   const colors = {
     emerald: "text-emerald-400 hover:bg-emerald-500/15",
-    blue: "text-blue-400 hover:bg-blue-500/15",
+    blue: "text-primary hover:bg-primary/15",
     warning: "text-warning hover:bg-warning/15",
     destructive: "text-destructive hover:bg-destructive/15",
   };

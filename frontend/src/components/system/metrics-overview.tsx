@@ -16,7 +16,7 @@ function EventRow({ event }: { event: { type: string; instance: string; time: st
     started: "text-emerald-400",
     stopped: "text-muted-foreground",
     error: "text-destructive",
-    restarted: "text-blue-400",
+    restarted: "text-primary",
     paused: "text-warning",
     created: "text-purple-400",
   };

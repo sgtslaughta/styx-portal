@@ -50,14 +50,14 @@ function specsFor(ws: Workstation): Spec[] {
   out.push({ icon: Monitor, color: "text-cyan-400", label: "Session",
     value: `${ws.display_server}${os.mode ? ` (${os.mode})` : ""}` });
   if (ws.lan_ip)
-    out.push({ icon: Network, color: "text-blue-400", label: "Address",
+    out.push({ icon: Network, color: "text-primary", label: "Address",
       value: `${ws.lan_ip}:${ws.port}` });
   if (ws.agent_version)
     out.push({ icon: Tag,
       color: ws.agent_outdated ? "text-amber-400" : "text-fuchsia-400",
       label: "Agent",
       value: `v${ws.agent_version}${ws.agent_outdated ? " · outdated" : ""}` });
-  out.push({ icon: Clock, color: "text-zinc-400", label: "Last seen",
+  out.push({ icon: Clock, color: "text-muted-foreground", label: "Last seen",
     value: fmtSeen(ws.last_heartbeat) });
   if (ws.in_use)
     out.push({ icon: User, color: "text-amber-400", label: "In use by",

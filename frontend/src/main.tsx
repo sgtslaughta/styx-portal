@@ -13,6 +13,7 @@ import { ChangePasswordPage } from "@/pages/ChangePasswordPage";
 import { SetupWizard } from "@/pages/SetupWizard";
 import { AcceptInvitePage } from "@/pages/AcceptInvitePage";
 import { ConnectingPage } from "@/pages/ConnectingPage";
+import "@fontsource-variable/commissioner/flar.css";
 import "./styles/globals.css";
 
 /** Toaster that follows the app theme by mirroring the `.dark` class on <html>

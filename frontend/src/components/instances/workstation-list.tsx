@@ -48,7 +48,7 @@ type Led = { color: string; pulse: boolean; label: string };
 
 function ledFor(ws: Workstation): Led {
   if (ws.status === "revoked") return { color: "bg-rose-500", pulse: false, label: "Revoked" };
-  if (ws.status !== "online")  return { color: "bg-zinc-500", pulse: false, label: "Offline" };
+  if (ws.status !== "online")  return { color: "bg-muted-foreground", pulse: false, label: "Offline" };
   if (ws.last_error)           return { color: "bg-rose-400", pulse: true,  label: "Error" };
   if (ws.in_use)               return { color: "bg-amber-400", pulse: true, label: ws.in_use_self ? "Connected (you)" : `In use by ${ws.in_use_by ?? "someone"}` };
   return { color: "bg-emerald-400", pulse: true, label: "Online" };

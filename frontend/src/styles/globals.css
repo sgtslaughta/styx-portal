@@ -4,25 +4,28 @@
 
 /* Runtime CSS variables — these change with .dark class */
 :root {
-  --background: oklch(0.985 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(0.97 0.002 265);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(0.97 0.002 265);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.55 0.17 255);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.93 0.006 265);
-  --secondary-foreground: oklch(0.2 0 0);
-  --muted: oklch(0.93 0.006 265);
-  --muted-foreground: oklch(0.45 0.015 265);
-  --accent: oklch(0.93 0.006 265);
-  --accent-foreground: oklch(0.2 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.82 0.012 265);
-  --input: oklch(0.82 0.012 265);
-  --ring: oklch(0.55 0.17 255);
-  --success: oklch(0.55 0.2 162.48);
+  --background: #EDF1EF;
+  --foreground: #0F1C22;
+  --card: #F7F9F8;
+  --card-foreground: #0F1C22;
+  --popover: #F7F9F8;
+  --popover-foreground: #0F1C22;
+  --primary: #2A767C;
+  --primary-foreground: #F7F9F8;
+  --secondary: #DFE6E3;
+  --secondary-foreground: #0F1C22;
+  --muted: #DFE6E3;
+  --muted-foreground: #4A5A60;
+  --accent: #DFE6E3;
+  --accent-foreground: #0F1C22;
+  --destructive: #B8432A;
+  --border: #C9D3D0;
+  --input: #C9D3D0;
+  --ring: #2A767C;
+  --success: #4F9A6C;
+  --success-foreground: #3A7A53;
+  --obol: #B88A3E;
+  --obol-foreground: #86601F;
   --warning: oklch(0.65 0.18 86.047);
   --idle: oklch(0.65 0.18 86.047);
   --chart-1: oklch(0.55 0.17 255);
@@ -32,25 +35,28 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.178 0.005 265);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.178 0.005 265);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.61 0.17 255);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.269 0.006 265);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0.006 265);
-  --muted-foreground: oklch(0.708 0.015 265);
-  --accent: oklch(0.269 0.006 265);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.353 0.013 265);
-  --input: oklch(0.353 0.013 265);
-  --ring: oklch(0.61 0.17 255);
-  --success: oklch(0.696 0.17 162.48);
+  --background: #0F1C22;
+  --foreground: #EDF1EF;
+  --card: #15262D;
+  --card-foreground: #EDF1EF;
+  --popover: #15262D;
+  --popover-foreground: #EDF1EF;
+  --primary: #2A767C;
+  --primary-foreground: #EDF1EF;
+  --secondary: #1D3139;
+  --secondary-foreground: #EDF1EF;
+  --muted: #1D3139;
+  --muted-foreground: #9FB0B4;
+  --accent: #1D3139;
+  --accent-foreground: #EDF1EF;
+  --destructive: #E07A5F;
+  --border: #2A4049;
+  --input: #2A4049;
+  --ring: #6FB7BC;
+  --success: #4F9A6C;
+  --success-foreground: #7CC49A;
+  --obol: #B88A3E;
+  --obol-foreground: #D2A657;
   --warning: oklch(0.795 0.184 86.047);
   --idle: oklch(0.795 0.184 86.047);
   --chart-1: oklch(0.65 0.17 255);
@@ -80,6 +86,10 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-obol: var(--obol);
+  --color-obol-foreground: var(--obol-foreground);
+  --font-sans: "Commissioner Variable", ui-sans-serif, system-ui, sans-serif;
   --color-warning: var(--warning);
   --color-idle: var(--idle);
   --color-chart-1: var(--chart-1);
@@ -87,6 +97,12 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --radius: 0.5rem;
+}
+
+@layer base {
+  html { font-size: 15px; }
+  body { line-height: 1.55; }
+  h1, h2, h3 { font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; font-variation-settings: "FLAR" 40; }
 }
 
 /* Styx Portal login brand panel — theme-aware, animated "river current" */
@@ -148,22 +164,22 @@
 
 /* ── Styx Portal dashboard theming (immersive depth) ───────────────── */
 :root {
-  --surface-gradient: radial-gradient(120% 140% at 10% 0%, #eef3fb 0%, #e7ecf4 60%);
-  --card-gradient: linear-gradient(160deg, #ffffff, #eef3fb);
-  --card-border-color: #c8d5e8;
-  --card-glow: 0 1px 3px rgba(40, 90, 200, 0.08), 0 8px 20px -14px rgba(40, 90, 200, 0.35);
-  --brand-accent: #2f6fe0;
-  --motif-color: rgba(40, 90, 200, 0.05);
-  --header-gradient: linear-gradient(90deg, #e9eff8, #eef3fb);
+  --surface-gradient: radial-gradient(120% 140% at 10% 0%, #F7F9F8 0%, #EDF1EF 60%);
+  --card-gradient: linear-gradient(160deg, #F7F9F8, #EDF1EF);
+  --card-border-color: #C9D3D0;
+  --card-glow: 0 1px 3px rgba(42, 118, 124, 0.08), 0 8px 20px -14px rgba(42, 118, 124, 0.35);
+  --brand-accent: #2A767C;
+  --motif-color: rgba(42, 118, 124, 0.06);
+  --header-gradient: linear-gradient(90deg, #EDF1EF, #F7F9F8);
 }
 .dark {
-  --surface-gradient: radial-gradient(120% 140% at 10% 0%, #0c1322 0%, #0a0e17 60%);
-  --card-gradient: linear-gradient(160deg, #121d30, #0d1420);
-  --card-border-color: #213050;
-  --card-glow: 0 1px 0 rgba(90, 150, 255, 0.08) inset, 0 6px 18px -10px rgba(40, 90, 200, 0.5);
-  --brand-accent: #5b9bff;
-  --motif-color: rgba(70, 140, 255, 0.06);
-  --header-gradient: radial-gradient(120% 180% at 10% 50%, #0c1830 0%, #0a0f1a 60%);
+  --surface-gradient: radial-gradient(120% 140% at 10% 0%, #15262D 0%, #0F1C22 60%);
+  --card-gradient: linear-gradient(160deg, #15262D, #0F1C22);
+  --card-border-color: #2A4049;
+  --card-glow: 0 1px 0 rgba(111, 183, 188, 0.08) inset, 0 6px 18px -10px rgba(42, 118, 124, 0.5);
+  --brand-accent: #6FB7BC;
+  --motif-color: rgba(111, 183, 188, 0.06);
+  --header-gradient: radial-gradient(120% 180% at 10% 50%, #1D3139 0%, #0F1C22 60%);
 }
 
 .styx-app-bg { background: var(--surface-gradient); }
@@ -196,46 +212,46 @@
    light design tokens locally so inputs/buttons using semantic tokens stay light
    even when <html> carries the .dark class (e.g. a dark dashboard preference). */
 .styx-auth-form {
-  --background: oklch(0.985 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(0.97 0.002 265);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(0.97 0.002 265);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.55 0.17 255);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.93 0.006 265);
-  --secondary-foreground: oklch(0.2 0 0);
-  --muted: oklch(0.93 0.006 265);
-  --muted-foreground: oklch(0.45 0.015 265);
-  --accent: oklch(0.93 0.006 265);
-  --accent-foreground: oklch(0.2 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.87 0.008 265);
-  --input: oklch(0.87 0.008 265);
-  --ring: oklch(0.55 0.17 255);
-  background: #f7f8fa;
+  --background: #EDF1EF;
+  --foreground: #0F1C22;
+  --card: #F7F9F8;
+  --card-foreground: #0F1C22;
+  --popover: #F7F9F8;
+  --popover-foreground: #0F1C22;
+  --primary: #2A767C;
+  --primary-foreground: #F7F9F8;
+  --secondary: #DFE6E3;
+  --secondary-foreground: #0F1C22;
+  --muted: #DFE6E3;
+  --muted-foreground: #4A5A60;
+  --accent: #DFE6E3;
+  --accent-foreground: #0F1C22;
+  --destructive: #B8432A;
+  --border: #C9D3D0;
+  --input: #C9D3D0;
+  --ring: #2A767C;
+  background: #F7F9F8;
   color: var(--foreground);
 }
 /* Dark theme: form column follows dark mode (light tokens above are light-only) */
 .dark .styx-auth-form {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.178 0.005 265);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.178 0.005 265);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.61 0.17 255);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.269 0.006 265);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0.006 265);
-  --muted-foreground: oklch(0.708 0.015 265);
-  --accent: oklch(0.269 0.006 265);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.353 0.013 265);
-  --input: oklch(0.353 0.013 265);
-  --ring: oklch(0.61 0.17 255);
-  background: #0e1320;
+  --background: #0F1C22;
+  --foreground: #EDF1EF;
+  --card: #15262D;
+  --card-foreground: #EDF1EF;
+  --popover: #15262D;
+  --popover-foreground: #EDF1EF;
+  --primary: #2A767C;
+  --primary-foreground: #EDF1EF;
+  --secondary: #1D3139;
+  --secondary-foreground: #EDF1EF;
+  --muted: #1D3139;
+  --muted-foreground: #9FB0B4;
+  --accent: #1D3139;
+  --accent-foreground: #EDF1EF;
+  --destructive: #E07A5F;
+  --border: #2A4049;
+  --input: #2A4049;
+  --ring: #6FB7BC;
+  background: #0F1C22;
 }
