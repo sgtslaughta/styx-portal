@@ -41,7 +41,7 @@ logger = logging.getLogger("styx-portal")
 _settings = Settings()
 
 _CSRF_EXEMPT = {"/api/auth/login", "/api/auth/setup"}
-_CSRF_EXEMPT_PREFIXES = ("/api/enroll/", "/api/agent/", "/_styx/open/")
+_CSRF_EXEMPT_PREFIXES = ("/api/enroll/", "/api/agent/")
 
 
 class CSRFMiddleware(BaseHTTPMiddleware):

@@ -61,22 +61,29 @@ async def test_open_same_origin_sets_cookie_and_redirects(admin_client, session)
     assert r2.headers["location"].endswith("/") and "/_styx/app" not in r2.headers["location"]
 
 
-async def test_open_cross_site_shows_confirm(admin_client, session):
-    await _svc(session, slug="immich", name="Im<g>", mount_mode="cookie-root")
-    r = await admin_client.get("/_styx/open/immich", headers={"sec-fetch-site": "cross-site"})
-    assert r.status_code == 200 and "<form" in r.text and "Im&lt;g&gt;" in r.text
-    assert "styx_svc" not in r.headers.get("set-cookie", "")
+@pytest.mark.parametrize("h", [{"sec-fetch-site": "cross-site"}, {"sec-fetch-site": "same-site"}, {}])
+async def test_open_cross_site_or_missing_header_shows_confirm_unauthenticated(client, h):
+    r = await client.get("/_styx/open/immich", headers=h)
+    assert r.status_code == 200 and 'href="/_styx/open/immich"' in r.text
+    assert "set-cookie" not in r.headers
 
 
-async def test_open_confirm_post_requires_csrf(admin_client, session):
+async def test_open_confirm_rejects_invalid_slug(client):
+    assert (await client.get("/_styx/open/<b>x", headers={})).status_code == 404
+
+
+async def test_open_anonymous_same_origin_clears_focus_via_exit(client, session):
     await _svc(session, slug="immich", mount_mode="cookie-root")
-    h = {"x-csrf-token": admin_client.cookies.get("csrf_token")}  # passes middleware only
-    assert (await admin_client.post("/_styx/open/immich", headers=h)).status_code == 403
-    r = await admin_client.post("/_styx/open/immich", data={"csrf_token": "wrong"}, headers=h)
-    assert r.status_code == 403
-    r = await admin_client.post("/_styx/open/immich", data={"csrf_token": admin_client.cookies.get("csrf_token")},
-                                follow_redirects=False)
-    assert r.status_code == 302 and "styx_svc=immich" in r.headers["set-cookie"]
+    r = await client.get("/_styx/open/immich", headers={"sec-fetch-site": "same-origin",
+                                                       "accept": "text/html", "sec-fetch-mode": "navigate"},
+                         follow_redirects=False)
+    assert r.status_code == 302 and "/_styx/exit?next=" in r.headers["location"]
+    assert "/_styx/open" not in r.headers["location"]
+
+
+def test_bypass_fragment_before_query_no_crash():
+    rules = [{"path_prefix": "/j/", "required_query": "api_key"}]
+    assert bypass_matches(rules, "/j/x#?api_key=1", {}) is False
 
 
 async def test_focus_reports_cookie(admin_client):
