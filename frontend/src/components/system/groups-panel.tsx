@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Trash2, UsersRound } from "lucide-react";
+import { Plus, Trash2, UsersRound } from "lucide-react";
 import { api, type Group, type ProxiedService } from "@/api/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -62,14 +63,14 @@ export function GroupsPanel() {
   return (
     <div className="space-y-6">
       <Card className="styx-card">
-        <CardHeader className="pb-4">
+        <CardHeader>
           <div className="flex items-center gap-3">
             <div className="rounded-lg bg-primary/10 p-2">
               <UsersRound className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <CardTitle>Groups</CardTitle>
-              <CardDescription>Groups decide which users may open a proxied service</CardDescription>
+              <CardTitle>Access groups</CardTitle>
+              <CardDescription>Restrict a service to a group, then add users to that group from Users.</CardDescription>
             </div>
           </div>
         </CardHeader>
@@ -78,18 +79,18 @@ export function GroupsPanel() {
             className="flex flex-wrap items-end gap-3"
             onSubmit={(e) => { e.preventDefault(); if (name.trim()) void create(); }}
           >
-            <div className="space-y-1.5">
+            <div className="w-full space-y-1.5 sm:w-56">
               <Label htmlFor="group-name">Group name</Label>
               <Input id="group-name" value={name} maxLength={64} autoComplete="off"
                      placeholder="media" onChange={(e) => setName(e.target.value)} />
             </div>
-            <div className="min-w-48 flex-1 space-y-1.5">
+            <div className="w-full flex-1 space-y-1.5 sm:w-auto sm:min-w-48">
               <Label htmlFor="group-desc">Description (optional)</Label>
               <Input id="group-desc" value={desc} maxLength={255} autoComplete="off"
                      onChange={(e) => setDesc(e.target.value)} />
             </div>
-            <Button type="submit" size="sm" aria-label="Add group" disabled={!name.trim() || adding}>
-              {adding ? "Adding..." : "Add"}
+            <Button type="submit" aria-label="Add group" className="w-full sm:w-auto" disabled={!name.trim() || adding}>
+              <Plus className="h-4 w-4" /> {adding ? "Adding..." : "Add group"}
             </Button>
           </form>
 
@@ -101,24 +102,30 @@ export function GroupsPanel() {
           ) : groups === null ? (
             <p className="text-sm text-muted-foreground">Loading groups...</p>
           ) : groups.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 rounded-lg border border-border px-4 py-8">
-              <UsersRound className="h-8 w-8 text-muted-foreground/40" />
-              <span className="text-sm text-muted-foreground">No groups yet</span>
+            <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border px-4 py-8 text-center">
+              <UsersRound className="h-8 w-8 text-muted-foreground/50" />
+              <p className="text-sm font-medium">No groups yet</p>
+              <p className="max-w-sm text-sm text-muted-foreground">
+                Without groups, every logged-in user can open every service. Create one above to restrict access.
+              </p>
             </div>
           ) : (
             <ul className="space-y-2">
               {groups.map((g) => (
-                <li key={g.id} className="flex items-center justify-between rounded-lg border border-border bg-surface p-3">
+                <li key={g.id} className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 p-3">
                   <div className="min-w-0">
-                    <span className="font-medium">{g.name}</span>
-                    <span className="ml-2 rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                      {g.member_count} {g.member_count === 1 ? "member" : "members"}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate font-medium">{g.name}</span>
+                      <Badge variant="secondary">
+                        {g.member_count} {g.member_count === 1 ? "member" : "members"}
+                      </Badge>
+                    </div>
                     {g.description && (
-                      <p className="truncate text-xs text-muted-foreground">{g.description}</p>
+                      <p className="truncate text-xs text-muted-foreground" title={g.description}>{g.description}</p>
                     )}
                   </div>
-                  <Button variant="destructive" size="sm" title="Delete group"
+                  <Button variant="ghost" size="icon-sm" title="Delete group"
+                          className="shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                           aria-label={`Delete ${g.name}`} onClick={() => setTarget(g)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>

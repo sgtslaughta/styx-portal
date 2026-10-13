@@ -64,15 +64,22 @@ export function UserGroupsDialog({ userId, username, open, onOpenChange }: Props
         ) : groups === null ? (
           <p className="text-sm text-muted-foreground">Loading groups...</p>
         ) : groups.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No groups defined yet. Create one in Administration, Groups.</p>
+          <p className="rounded-md border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
+            No groups yet. Create one under Administration, Groups.
+          </p>
         ) : (
-          <fieldset className="max-h-72 space-y-2 overflow-y-auto text-sm">
+          <fieldset className="max-h-72 space-y-1.5 overflow-y-auto text-sm">
             <legend className="sr-only">Groups</legend>
             {groups.map((g) => (
-              <label key={g.id} className="flex items-center gap-2">
+              <label key={g.id}
+                     className="flex cursor-pointer items-start gap-2.5 rounded-md border border-border px-3 py-2 transition-colors hover:bg-accent has-[:checked]:border-primary/50 has-[:checked]:bg-primary/10">
                 <input type="checkbox" checked={selected.has(g.id)}
+                       className="mt-0.5 h-4 w-4 shrink-0 accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                        onChange={(e) => toggle(g.id, e.target.checked)} />
-                {g.name}
+                <span className="min-w-0">
+                  <span className="block font-medium">{g.name}</span>
+                  {g.description && <span className="block truncate text-xs text-muted-foreground">{g.description}</span>}
+                </span>
               </label>
             ))}
           </fieldset>
