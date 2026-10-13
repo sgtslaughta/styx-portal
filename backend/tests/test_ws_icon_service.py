@@ -175,3 +175,17 @@ def test_auto_badge_uses_first_grapheme():
     assert "\U0001F469‍\U0001F4BB".encode() in body and b"lab" not in body
     body, _ = ws_icon.render_icon(None, "éclair", "i")
     assert "É".encode() in body or "É".encode() in body
+
+
+def test_sniff_prolog_scan_is_linear():
+    import time
+    t = time.perf_counter()
+    assert ws_icon._sniff(b"<!--" * 4096) is None
+    assert ws_icon._sniff(b"<?xml " * 2700) is None
+    assert time.perf_counter() - t < 0.2
+
+
+def test_sniff_prolog_comment_then_svg():
+    data = b'\xef\xbb\xbf <?xml version="1.0"?>\n<!-- a -->\n <!-- b -->\n<svg xmlns="x"/>'
+    assert ws_icon._sniff(data) == "image/svg+xml"
+    assert ws_icon._sniff(b"<!DOCTYPE svg>") == "image/svg+xml"

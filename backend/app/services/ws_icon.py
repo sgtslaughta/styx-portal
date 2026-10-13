@@ -64,8 +64,22 @@ def _bad_url(val: str) -> bool:
 _DOCTYPE = re.compile(rb"<!\s*(DOCTYPE|ENTITY)", re.I)
 
 
-_SVG_START = re.compile(rb"^(\xef\xbb\xbf)?\s*(<\?xml.*?\?>\s*|<!--.*?-->\s*)*(<svg|<!doctype)",
-                        re.I | re.S)
+def _looks_like_svg(data: bytes) -> bool:
+    """Linear scan past BOM, XML declaration and comments (no regex backtracking)."""
+    head = data[:16384].removeprefix(b"\xef\xbb\xbf")
+    for _ in range(64):
+        head = head.lstrip(b" \t\r\n")
+        if head.startswith(b"<?xml"):
+            end, skip = head.find(b"?>"), 2
+        elif head.startswith(b"<!--"):
+            end, skip = head.find(b"-->"), 3
+        else:
+            break
+        if end < 0:
+            return False
+        head = head[end + skip:]
+    head = head[:9].lower()
+    return head.startswith(b"<svg") or head.startswith(b"<!doctype")
 
 
 def _sniff(data: bytes) -> str | None:
@@ -75,7 +89,7 @@ def _sniff(data: bytes) -> str | None:
         return "image/x-icon"
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "image/webp"
-    if _SVG_START.match(data[:16384]):
+    if _looks_like_svg(data):
         return "image/svg+xml"
     return None
 
