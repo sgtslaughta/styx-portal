@@ -11,7 +11,7 @@ on the home page for the services their groups allow.
   (each preset shows the exact setting). Works in browsers and mobile apps. The Traefik
   rule is `Path(/slug) || PathPrefix(/slug/)`, so a slug never captures a sibling prefix
   (`son` does not match `/sonarr`).
-- **Cookie root**: for apps with no base-URL support. Clicking the tile sets a routing
+- **Cookie root** (shown as **Focus** in the UI): for apps with no base-URL support. Clicking the tile sets a routing
   cookie (`styx_svc`) and the app takes over `/` for that browser, including `/login`.
   One cookie-root service at a time; mobile apps cannot use this mode. To get back to
   Styx, open `https://<host>/_styx/exit`.
@@ -70,7 +70,9 @@ Unhealthy tiles stay clickable.
 
 ## Presets
 
-Defined in `templates/services/*.json` and seeded on startup.
+Defined in `templates/services/*.json` and seeded on startup. Sonarr, Radarr, Prowlarr,
+Lidarr and Jellyfin are configured by Styx (see above); the base URL column is what Styx
+sets, or what you set by hand for the rest.
 
 | preset | mount | auth | base URL setting |
 |---|---|---|---|
@@ -78,12 +80,174 @@ Defined in `templates/services/*.json` and seeded on startup.
 | Radarr | path | sso-with-bypass (`/radarr/api` + `X-Api-Key`) | URL Base = `/radarr` |
 | Prowlarr | path | sso-with-bypass (`/prowlarr/api` + `X-Api-Key`) | URL Base = `/prowlarr` |
 | Lidarr | path | sso-with-bypass (`/lidarr/api` + `X-Api-Key`) | URL Base = `/lidarr` |
-| Jellyfin | path | sso-with-bypass (`/jellyfin/` + `Authorization`) | Dashboard → Networking → Base URL = `/jellyfin` |
+| Jellyfin | path | sso; **Allow native apps** adds the bypass rules above | set by Styx (Dashboard → Networking → Base URL = `/jellyfin`) |
 | Nextcloud | path | sso | `config.php`: `overwritewebroot` = `/nextcloud`, `overwrite.cli.url` = `https://<host>/nextcloud` |
 | GitLab | path | sso | `gitlab.rb`: `external_url 'https://<host>/gitlab'`, then reconfigure. CLI git over HTTPS will not pass SSO; use SSH remotes |
 | Audiobookshelf | cookie-root | sso-with-bypass (`/api/` + `Authorization`) | none (no subpath support) |
 | Unraid | cookie-root | sso, verify TLS off | none (self-signed certificate) |
+| Home Assistant | cookie-root | sso | none (runs at the root only) |
+| Immich | cookie-root | sso | none (runs at the root only) |
 | Generic HTTP | path | sso | set the app's base URL to `/<slug>`, or use cookie-root |
+
+## How apps are mounted
+
+Every service has a mount mode. The preset picks it; admins can change it under
+**Advanced** in the service form.
+
+| Mode | URL | Who sets the app's base path | Examples |
+|---|---|---|---|
+| Path, configured by Styx | `https://<host>/<slug>` | Styx writes it into the app's settings file | Sonarr, Radarr, Lidarr, Prowlarr, Jellyfin |
+| Path, set by you | `https://<host>/<slug>` | You, in the app (the preset shows where) | Nextcloud, GitLab, Generic HTTP, anything added by URL |
+| Focus | `https://<host>/` (the app takes over the root) | Nothing to set, the app needs no base path | Home Assistant, Immich, Audiobookshelf, Unraid |
+
+The service form shows the choice as a line under **Access**, for example
+"Path /sonarr, configured by Styx", "Path /nextcloud, set the app's base path
+yourself" or "Focus: opens on its own". Styx can only configure docker-local
+services whose preset has a `subpath` block. In the database, focus is still
+`cookie-root`.
+
+## Letting Styx configure an app
+
+For a docker-local service in path mode, the drawer has a **Base path** section.
+It shows one of:
+
+- **Set base path to /\<slug\>**: the app's setting differs from the slug.
+- "Base path is set to /\<slug\>": nothing to do.
+- A reason and no button: Styx can't reach the settings file (for example it sits on a
+  tmpfs mount). You can set the base path yourself or pick a preset.
+
+Pressing the button runs a job with four steps: **Back up settings**, **Apply base
+path**, **Restart app**, **Check it answers**. The stepper updates while it runs.
+
+![Consent dialog](assets/services-consent.png)
+
+### Consent
+
+If Styx created the container (it carries the `styx.managed=true` label), the job starts
+at once. For any other container, such as one added with "Add from container", Styx asks
+first. The dialog "Change \<app\>'s settings?" lists every change as file, setting,
+now and after, and says that the app restarts (about 30 seconds). Choose **Restart
+\<app\> and apply** to continue or **Cancel**. Without consent the API answers 409.
+Consent is written to the audit log with the admin and the change list.
+
+### Backups and rollback
+
+Before writing, Styx copies the settings file to
+`data/mount-backups/<service-id>/<UTC timestamp>/<file name>` in the backend data volume
+(`/app/data/mount-backups` in the container). The last 5 backups per service are kept.
+`<service-id>` is the service's internal id, not its slug.
+
+After the restart, Styx checks that the app answers at its new path for up to 90
+seconds. The check runs from a short-lived `busybox` container on the services network
+(`MOUNT_PROBE_IMAGE`, default `busybox:1.36`), because the backend is not on that
+network. If the change, restart or check fails, Styx restores the backup, restarts the
+app and checks the old path. The job then ends as rolled back and the drawer shows:
+
+- the reason and the app's last log lines under **App log**;
+- **Try again**, which re-runs the job;
+- **Use focus mode instead**, which switches the service to focus mode.
+
+If the rollback fails too, the drawer says so and gives the backup folder. A backend
+restart during a job marks the job failed and keeps the backup.
+
+Special cases:
+
+- A settings file that is a single-file bind mount can't be replaced. The job fails with
+  "This settings file is mounted on its own, so Styx can't replace it" and nothing is
+  written or restored. Mount the file's folder instead, or set the base path by hand.
+- Jellyfin only writes its network settings after you save them once. If Styx can't find
+  the file, open Jellyfin, go to Dashboard › Networking, click Save, then try again.
+- Switching a service to focus or manual later does not undo the app's base path. Styx
+  has no revert button.
+
+### Restoring a backup by hand
+
+```bash
+docker exec styx-backend ls /app/data/mount-backups/<service-id>/
+docker cp styx-backend:/app/data/mount-backups/<service-id>/<timestamp>/config.xml .
+docker cp config.xml <app-container>:/config/config.xml   # path the consent dialog showed
+docker restart <app-container>
+```
+
+Use the container names from `docker ps`. The file name inside a backup folder is the
+settings file's name, for example `config.xml` or `network.xml`.
+
+## Focus apps
+
+Home Assistant, Immich and other root-only apps run in focus mode.
+
+- Opening a focus app sets a routing cookie and the app takes over `/` for that
+  browser. Only one focus app is active per browser; opening another replaces it.
+  Other browsers and devices are not affected.
+- Tiles for focus apps say "Opens on its own". The active one shows **Exit**.
+- Open links go through `/_styx/open/<slug>`. If the request is not clearly from Styx
+  itself (a cross-site link, or a browser that sends no `Sec-Fetch-Site`), Styx shows an
+  "Open app?" confirm page instead of switching, so another site can't change your
+  focused app.
+- Leaving: the dock's **Home** and **Exit focus**, or open `/_styx/exit` (optionally
+  `?next=<path>`). Both clear the cookie.
+- Before a focus app loads in the shell, Styx unregisters service workers registered
+  for `/`, so the previous app's worker can't answer for the new one. Opening an app
+  also clears the browser cache for the site (`Clear-Site-Data: "cache"`); logins kept
+  in local storage survive.
+- Stale tabs: while a focus app is active, reloading `/` in another Styx tab shows the
+  focus app, not Styx. Use Home or `/_styx/exit` to get back.
+
+## The Styx shell and dock
+
+Home tiles open `/_styx/app/<slug>/`. The shell is a full-window frame around the app,
+served from the same origin, plus a small dock. Address and page title follow the app,
+so reloads and deep links work. Services with **Open without overlay** (Advanced) skip
+the shell and open the bare app.
+
+![The shell with the dock open](assets/shell-dock.png)
+
+- **Edge tab**: a handle on the screen edge. Click or tap it to open the dock. Drag it
+  anywhere along the edge; it snaps to the left or right side and remembers its place on
+  that device. It fades when idle.
+- **Alt+Shift+S** toggles the dock, also while focus is inside the app. **Esc** closes
+  it, also when typed inside the app.
+- The dock lists your apps with health dots; the current one is ringed. Picking an app
+  switches to it. The actions are **Home**, **Pop out** (the bare app in a new tab) and,
+  for a focus app, **Exit focus**.
+- Some apps refuse to be framed (a `frame-ancestors` policy). The shell detects this
+  and shows "\<app\> can't run inside Styx" with **Open \<app\> on its own**. Turn on
+  **Open without overlay** for that service so its tile skips the shell.
+- Styx forces `X-Frame-Options: SAMEORIGIN` on service routes, so other sites can't
+  frame your apps.
+
+## Native apps
+
+A browser can sign in through Styx, but a phone app can't. **Allow native apps** (service
+form, **Access**, presets that support it) switches the service to `sso-with-bypass` with
+the preset's rules. For Jellyfin a request skips Styx login when its path starts with
+`/jellyfin/` and it has one of:
+
+- an `Authorization` header starting with `MediaBrowser`;
+- an `X-Emby-Authorization` header starting with `MediaBrowser`;
+- an `X-Emby-Token` or `X-MediaBrowser-Token` header;
+- an `api_key` query parameter (used by cast and stream URLs).
+
+The risk: Jellyfin's own login is exposed to the internet. Anyone who can guess
+a header can reach it, and only Jellyfin's credentials and Styx rate limits and IP bans
+protect it. It is off by default and the form shows a red callout when it is on.
+
+To test with the Jellyfin app, enter `https://<domain>/jellyfin` as the server address
+after Styx has set the base path. Turn the option off and sign-in should fail.
+
+## Pass identity
+
+**Pass identity** (service form, **Access**, off by default) sends the signed-in user to
+the app as `X-Styx-User`, `X-Styx-Email` and `X-Styx-Groups`. Without it the app
+receives none of them. Copies sent by clients are always removed. Only turn it on for
+apps that use these headers to sign people in:
+
+- Grafana: `[auth.proxy]` with `enabled = true`, `header_name = X-Styx-User`,
+  `header_property = username`, `auto_sign_up = true`.
+- Paperless-ngx: `PAPERLESS_ENABLE_HTTP_REMOTE_USER=true` and
+  `PAPERLESS_HTTP_REMOTE_USER_HEADER_NAME=HTTP_X_STYX_USER`.
+
+An app that trusts these headers must not be reachable except through Styx.
 
 ## Security model
 
@@ -93,7 +257,15 @@ Read this section before exposing anything.
 - Rate limiting and IP banning (`styx-ratelimit`, `ip-ban-gate`) apply to every service route.
 - Identity headers (`X-Styx-*`, `X-authentik-*`) are stripped from client requests.
 - **Bypass rules are the only unauthenticated surface** (see above), plus `app-native`
-  services, where Styx does no authentication at all.
+  services, where Styx does no authentication at all. **Allow native apps** is a set of
+  bypass rules and is off by default.
+- **Mount changes need consent and are audited.** Styx writes into a container only
+  through the Docker archive API, only to paths the preset declares, and asks an admin
+  first for containers it didn't create. Each apply is logged with the change list. A
+  backup is taken first and restored on failure.
+- **Frames are same-origin only.** `X-Frame-Options: SAMEORIGIN` is forced on service
+  routes.
+- **Identity is opt-in.** `X-Styx-*` headers reach an app only with **Pass identity**.
 - **Verify upstream TLS off** means traffic between Styx and that host can be intercepted
   on your LAN. Use it only for self-signed appliances such as Unraid.
 - The cookie-root routing cookie is a selector, not a credential: access is checked on

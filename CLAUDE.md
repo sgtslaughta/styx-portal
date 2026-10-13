@@ -40,6 +40,9 @@ backend/           FastAPI application
   security/
     page_style.py      Styx-styled HTML pages (title escaped; body trusted)
   tests/           pytest test suite
+frontend/          React app (Vite)
+  src/shell/       Styx shell: framed app, edge tab, dock (second build, shell.html)
+e2e/               Playwright full-stack suite (real Sonarr/Jellyfin, shell, screenshots)
 docker-compose.yml Infrastructure services
 traefik/           Traefik static config
 templates/         Default JSON templates (seeded on first run); services/ = proxy presets
