@@ -76,6 +76,7 @@ _PAGE_SHIM = _proxy(
     LOG="function(m){console.log(m)}", PAGE="location.href", INSTALL="window.WebSocket=S")
 
 RELOAD_JS = ('<script id="styx-refit">(function(){var P="styx-resizing",WSRC=' + json.dumps(_WORKER_SHIM) + r""";
+try{var q=new URLSearchParams(location.search);if(q.get('socket_worker')==='false'){q.delete('socket_worker');history.replaceState(null,'',location.pathname+(q.toString()?'?'+q:'')+location.hash)}}catch(e){}
 function pill(on){var el=document.getElementById(P);if(!on){el&&el.remove();return}if(el)return;el=document.createElement('div');el.id=P;el.textContent='Resizing…';
 el.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;padding:8px 16px;border-radius:999px;background:rgba(12,23,48,.85);color:rgba(255,255,255,.9);font:500 14px system-ui,sans-serif;letter-spacing:.02em;backdrop-filter:blur(6px);pointer-events:none';
 (document.body||document.documentElement).appendChild(el)}
