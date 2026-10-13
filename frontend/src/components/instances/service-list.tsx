@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
-import { Link2, X } from "lucide-react";
+import { Info, Link2, X } from "lucide-react";
 import { toast } from "sonner";
 import { api, type ProxiedService, type ServiceTile } from "@/api/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
 
 const TIP_KEY = "styx.serviceTipDismissed";
-const TIP = "Tip: open apps with a non-admin account — proxied apps run with your Styx rights.";
+const TIP = "Open apps with a non-admin account: proxied apps run with your Styx rights.";
 const tileCls =
-  "flex w-full items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left text-sm " +
+  "flex w-full items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2 text-left text-sm " +
   "transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 
 /** Admins receive the full model (health_status); members get tiles (up). */
@@ -31,7 +31,9 @@ function Tile({ s }: { s: ServiceTile }) {
   const h = HEALTH(s.up);
   const body = (
     <>
-      <span className="text-lg leading-none" aria-hidden>{s.icon ?? <Link2 className="h-4 w-4" />}</span>
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-base leading-none text-primary" aria-hidden>
+        {s.icon ?? <Link2 className="h-3.5 w-3.5" />}
+      </span>
       <span className="min-w-0 flex-1 truncate font-medium">{s.name}</span>
       <span className="flex items-center gap-1.5">
         <span className={cn("h-2 w-2 shrink-0 rounded-full", h.dot)} aria-hidden />
@@ -89,10 +91,11 @@ export function ServiceList({ onOpenSettings }: { onOpenSettings?: () => void })
     <section className="mb-4 space-y-2" aria-label="Services">
       <h3 className="text-sm font-medium text-muted-foreground">Services</h3>
       {isAdmin && !tipHidden && (
-        <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1.5 text-xs text-muted-foreground">
+        <div className="flex items-start gap-2 rounded-md border border-border bg-muted/40 px-2.5 py-2 text-xs text-muted-foreground">
+          <Info className="mt-px h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
           <p className="min-w-0 flex-1">{TIP}</p>
           <button type="button" aria-label="Dismiss tip" onClick={dismiss}
-            className="rounded p-0.5 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
+            className="-m-0.5 rounded p-0.5 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
