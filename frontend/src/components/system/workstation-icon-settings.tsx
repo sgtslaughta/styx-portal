@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api, type Workstation } from "@/api/client";
 import { Button } from "@/components/ui/button";
+import { WorkstationIcon } from "@/components/system/workstation-icon";
 import { cn } from "@/lib/utils";
 
 type Kind = Workstation["icon_kind"];
@@ -14,9 +15,9 @@ const MODES: { key: Kind; label: string }[] = [
 ];
 
 function graphemes(s: string): number {
-  // Segmenter is missing from the configured TS lib; present in all supported browsers.
-  const Seg = (Intl as unknown as { Segmenter: new () => { segment(s: string): Iterable<unknown> } }).Segmenter;
-  return [...new Seg().segment(s)].length;
+  // Segmenter is missing from the configured TS lib and some older browsers; fall back to code points.
+  const Seg = (Intl as unknown as { Segmenter?: new () => { segment(s: string): Iterable<unknown> } }).Segmenter;
+  return Seg ? [...new Seg().segment(s)].length : [...s].length;
 }
 
 export function emojiError(s: string): string | null {
@@ -32,18 +33,22 @@ export function WorkstationIconSettings({ ws, onSaved }: { ws: Workstation; onSa
   const [image, setImage] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const pickId = useRef(0);
+
+  useEffect(() => {
+    setMode(ws.icon_kind);
+  }, [ws.icon_kind, ws.icon_etag]);
 
   const emojiErr = mode === "emoji" && emoji ? emojiError(emoji) : null;
-  const canSave =
-    !saving &&
-    (mode === "auto" ? ws.icon_kind !== "auto"
-      : mode === "emoji" ? emojiError(emoji) === null
-      : image !== null);
+  const canSave = !saving && (mode === "emoji" ? emojiError(emoji) === null : image !== null);
 
   const send = async (kind: Kind, value?: string) => {
     setSaving(true);
     try {
       await api.setWorkstationIcon(ws.id, kind, value);
+      setEmoji("");
+      setImage(null);
+      setFileError(null);
       onSaved();
     } catch (e) {
       toast.error((e as Error).message);
@@ -54,13 +59,11 @@ export function WorkstationIconSettings({ ws, onSaved }: { ws: Workstation; onSa
 
   const reset = async () => {
     setMode("auto");
-    setEmoji("");
-    setImage(null);
-    setFileError(null);
     await send("auto");
   };
 
   const pick = (file: File | undefined) => {
+    const id = ++pickId.current;
     setFileError(null);
     setImage(null);
     if (!file) return;
@@ -69,7 +72,12 @@ export function WorkstationIconSettings({ ws, onSaved }: { ws: Workstation; onSa
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => setImage(String(reader.result));
+    reader.onload = () => {
+      if (id === pickId.current) setImage(String(reader.result));
+    };
+    reader.onerror = () => {
+      if (id === pickId.current) setFileError("Couldn't read that file.");
+    };
     reader.readAsDataURL(file);
   };
 
@@ -78,6 +86,9 @@ export function WorkstationIconSettings({ ws, onSaved }: { ws: Workstation; onSa
 
   return (
     <div className="space-y-2 text-sm">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        Current icon <WorkstationIcon ws={ws} />
+      </div>
       <div className="flex flex-wrap items-center gap-3">
         <span className="text-muted-foreground">Icon</span>
         <div role="group" aria-label="Icon type" className="flex overflow-hidden rounded-md border border-border text-xs">
@@ -103,6 +114,9 @@ export function WorkstationIconSettings({ ws, onSaved }: { ws: Workstation; onSa
             aria-label="Emoji"
             value={emoji}
             onChange={(e) => setEmoji(e.target.value)}
+            maxLength={16}
+            aria-invalid={emojiErr ? true : undefined}
+            aria-describedby={emojiErr ? "icon-error" : undefined}
             placeholder="🖥️"
             className="w-16 rounded border border-border bg-surface px-1 py-0.5 text-center"
           />
@@ -122,16 +136,18 @@ export function WorkstationIconSettings({ ws, onSaved }: { ws: Workstation; onSa
             {image && <img src={image} alt="" data-testid="icon-preview" className="h-6 w-6 rounded-md" />}
           </>
         )}
-        <Button size="sm" onClick={save} disabled={!canSave}>
-          Save icon
-        </Button>
+        {mode !== "auto" && (
+          <Button size="sm" onClick={save} disabled={!canSave}>
+            Save icon
+          </Button>
+        )}
         {ws.icon_kind !== "auto" && (
           <Button size="sm" variant="secondary" onClick={reset} disabled={saving}>
             Reset to auto
           </Button>
         )}
       </div>
-      {(emojiErr || fileError) && <p role="alert" className="text-xs text-rose-400">{emojiErr ?? fileError}</p>}
+      {(emojiErr || fileError) && <p id="icon-error" role="alert" className="text-xs text-rose-400">{emojiErr ?? fileError}</p>}
     </div>
   );
 }
