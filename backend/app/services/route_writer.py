@@ -226,6 +226,9 @@ def build_routes_config(instances: list[dict], domain: str,
 
     # Host-agnostic LAN routers (IP / LAN hostname access via websecure).
     # api beats frontend on /api; ws-*-lan above (prio 50) beats frontend on /w.
+    # Proxied services (spec §2: "No LAN bypass") are only routed on the public
+    # Host() routers. api-lan is deliberately NOT gated by the cookie-root
+    # takeover: LAN-IP access always reaches the Styx portal, never a service.
     if lan_serving:
         config["http"]["routers"]["api-lan"] = _lan_router(
             "PathPrefix(`/api`)", "api", 100, ["ip-ban-gate", "styx-ratelimit"])

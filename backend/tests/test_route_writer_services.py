@@ -85,3 +85,22 @@ def test_no_services_no_service_middlewares():
     cfg = build_routes_config([], "example.com", "tunnel")
     assert "styx-strip-identity" not in cfg["http"]["middlewares"]
     assert "styx-exit" not in cfg["http"]["routers"]
+
+
+def test_services_not_reachable_via_lan_ip(tmp_path, monkeypatch):
+    """Spec §2 'No LAN bypass': services and cookie-root takeover are public-Host only.
+
+    api-lan / frontend-lan stay ungated and no service router is host-agnostic.
+    """
+    from app.services import route_writer
+    monkeypatch.setattr(route_writer._settings, "LAN_CERT_DIR", str(tmp_path))
+    (tmp_path / "lan.crt").write_text("c")
+    (tmp_path / "lan.key").write_text("k")
+    cfg = build_routes_config([], "example.com", "tunnel", services=[
+        _svc(), _svc(slug="unraid", mount_mode="cookie-root")])
+    routers = cfg["http"]["routers"]
+    assert routers["api-lan"]["rule"] == "PathPrefix(`/api`)"
+    assert "svc-sonarr-lan" not in routers and "svc-unraid-lan" not in routers
+    for name, r in routers.items():
+        if name.startswith("svc-"):
+            assert r["rule"].startswith("Host(`example.com`)")

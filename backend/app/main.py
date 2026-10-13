@@ -142,11 +142,19 @@ async def lifespan(app: FastAPI):
     metrics_task = asyncio.create_task(_metrics_collection_loop())
     screenshot_task = asyncio.create_task(_screenshot_capture_loop())
     health_task = asyncio.create_task(_health_sample_loop())
+    svc_health_task = asyncio.create_task(_service_health_loop())
     yield
     task.cancel()
     metrics_task.cancel()
     screenshot_task.cancel()
     health_task.cancel()
+    svc_health_task.cancel()
+    await asyncio.gather(svc_health_task, return_exceptions=True)
+
+
+async def _service_health_loop():
+    from app.services.service_health import health_loop
+    await health_loop(async_session)
 
 
 async def _metrics_collection_loop():
