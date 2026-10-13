@@ -138,6 +138,7 @@ AGENT_UPDATE_FILES = [
     ("agent.py", "styx_agent.py"),
     ("engine.py", "engine.py"),
     ("gateway.py", "gateway.py"),
+    ("gateway_html.py", "gateway_html.py"),
     ("seat_gnome.py", "seat_gnome.py"),
     ("seat_labwc.py", "seat_labwc.py"),
     ("health.py", "health.py"),
