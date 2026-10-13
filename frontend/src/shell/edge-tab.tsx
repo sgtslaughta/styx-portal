@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { animate, m, useMotionValue } from "framer-motion";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { animate, m, useMotionValue, useReducedMotion } from "framer-motion";
 import { spring } from "@/lib/motion";
 import { clampY, readPos, snapSide, writePos, type FerryPos } from "./ferry-pos";
 
@@ -11,7 +11,9 @@ const target = (p: FerryPos) => ({
 });
 
 /** The draggable handle on the viewport edge. Snaps to left/right and remembers where it was left. */
-export function EdgeTab({ onOpen }: { onOpen: () => void }) {
+export function EdgeTab({ onOpen, open = false, tabRef }:
+  { onOpen: () => void; open?: boolean; tabRef?: RefObject<HTMLButtonElement | null> }) {
+  const reduce = useReducedMotion();
   const [pos, setPos] = useState(readPos);
   const [idle, setIdle] = useState(false);
   const bounds = useRef<HTMLDivElement>(null);
@@ -26,7 +28,7 @@ export function EdgeTab({ onOpen }: { onOpen: () => void }) {
     timer.current = window.setTimeout(() => setIdle(true), 3000);
   };
   useEffect(() => { wake(); return () => window.clearTimeout(timer.current); }, []);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const place = () => { const t = target(pos); x.set(t.x); y.set(t.y); };
     place();
     window.addEventListener("resize", place);
@@ -38,7 +40,7 @@ export function EdgeTab({ onOpen }: { onOpen: () => void }) {
     <>
       <div ref={bounds} aria-hidden className="pointer-events-none fixed inset-0" />
       <m.button
-        type="button"
+        ref={tabRef} type="button" aria-haspopup="dialog" aria-expanded={open}
         aria-label="Open the Styx menu (Alt+Shift+S)"
         drag dragConstraints={bounds} dragElastic={0.1} dragMomentum={false}
         style={{ x, y, width: SIZE_X, height: SIZE_Y }}
@@ -51,6 +53,7 @@ export function EdgeTab({ onOpen }: { onOpen: () => void }) {
           writePos(next);
           setPos(next);
           const t = target(next);
+          if (reduce) { x.set(t.x); y.set(t.y); return; }
           void animate(x, t.x, spring);
           void animate(y, t.y, spring);
         }}

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { toTile } from "@/lib/service-tiles";
@@ -19,6 +19,7 @@ export function ShellApp() {
     refetchInterval: 30_000,
   });
   const { data: focus } = useQuery({ queryKey: ["service-focus"], queryFn: () => api.serviceFocus() });
+  const tabRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [side, setSide] = useState(() => readPos().side);
   const [frameEl, setFrameEl] = useState<HTMLIFrameElement | null>(null);
@@ -40,8 +41,8 @@ export function ShellApp() {
       <MotionConfig reducedMotion="user">
         <div className="h-dvh w-screen">
           <Frame key={tile.slug} tile={tile} inner={target.inner} onTitle={onTitle} onFrame={setFrameEl} />
-          <EdgeTab onOpen={toggle} />
-          <Dock open={open} onOpenChange={setOpen} tiles={tiles} current={tile.slug} focusSlug={focus?.slug ?? null} side={side} />
+          <EdgeTab onOpen={toggle} open={open} tabRef={tabRef} />
+          <Dock open={open} onOpenChange={setOpen} tiles={tiles} current={tile.slug} focusSlug={focus?.slug ?? null} side={side} tabRef={tabRef} />
         </div>
       </MotionConfig>
     </LazyMotion>

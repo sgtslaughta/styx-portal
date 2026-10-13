@@ -44,3 +44,10 @@ it("does not reload the frame or re-patch on re-render with equal tiles", async 
   expect(win.history.pushState).toBe(wrapper);
   expect(win.removeEventListener).not.toHaveBeenCalled();
 });
+
+it("clicking the edge tab opens the dock", async () => {
+  listServiceTiles.mockImplementation(() => Promise.resolve(mk()));
+  const { findByRole } = setup();
+  fireEvent.click(await findByRole("button", { name: /open the styx menu/i }));
+  expect(await findByRole("dialog")).toBeTruthy();
+});

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-const isHotkey = (e: KeyboardEvent) => e.altKey && e.shiftKey && e.code === "KeyS";
+const isHotkey = (e: KeyboardEvent) => e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === "KeyS";
 
 /** Alt+Shift+S on each target window. `frame` re-attaches on every load (the framed document is replaced). */
 export function useHotkey(targets: () => (Window | null)[], onToggle: () => void, frame?: HTMLIFrameElement | null) {
