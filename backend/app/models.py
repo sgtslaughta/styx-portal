@@ -362,6 +362,7 @@ class MountJob(SQLModel, table=True):
     steps: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
     changes: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
     backup_dir: str | None = None
+    changed: bool = False         # True once a write to the container may have landed
     log_excerpt: str | None = None
     created_at: datetime = Field(default_factory=_now)
     finished_at: datetime | None = None

@@ -110,6 +110,7 @@ async def _run_migrations(conn):
         ("users", "failed_count", "INTEGER DEFAULT 0"),
         ("service_presets", "subpath", "JSON"),
         ("proxied_services", "mount_managed", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("mount_jobs", "changed", "BOOLEAN NOT NULL DEFAULT 0"),
         ("proxied_services", "pass_identity", "BOOLEAN NOT NULL DEFAULT 0"),
         ("proxied_services", "frame_ok", "BOOLEAN NOT NULL DEFAULT 1"),
         ("users", "locked_until", "TIMESTAMP"),
@@ -190,7 +191,8 @@ async def seed_service_presets(session: AsyncSession, presets_dir: str):
         if existing is None:
             session.add(ServicePreset(**data))
             continue
-        for k, v in data.items():
+        # Rebuild every field: a key the file dropped must not survive from an older seed.
+        for k, v in ServicePreset(**data).model_dump().items():
             setattr(existing, k, v)
         session.add(existing)
     await session.commit()

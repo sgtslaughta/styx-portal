@@ -119,3 +119,12 @@ def test_restart_container_uses_30s_timeout(dm_client):
     c = _container(client)
     dm.restart_container("sonarr")
     c.restart.assert_called_once_with(timeout=30)
+
+
+def test_read_file_truncated_tar_is_value_error(dm_client):
+    dm, client = dm_client
+    good = _tar("c.xml", b"x" * 2000)
+    container = _container(client)
+    container.get_archive.return_value = (iter([good[:700]]), {})
+    with pytest.raises(ValueError):
+        dm.read_file("c", "/c.xml")

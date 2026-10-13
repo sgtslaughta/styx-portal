@@ -53,17 +53,19 @@ async def test_verify_fail_rolls_back(session, tmp_path, monkeypatch, factory):
     await run_job(job.id, svc.id, PLAN, d, factory, http_get=get, verify_path="/sonarr/ping",
                   old_verify_path="/ping")
     await session.refresh(job)
-    assert job.state == "rolled_back" and job.log_excerpt == "boom"
+    assert job.state == "rolled_back" and job.changed is True
+    assert job.log_excerpt == "boom"
     assert d.write_file.call_args.args[2] == XML          # original restored
     assert d.restart_container.call_count == 2
 
 
-async def test_rollback_failure_marks_failed(session, tmp_path, monkeypatch, factory):
+async def test_restored_but_old_path_silent_is_rolled_back_with_note(session, tmp_path, monkeypatch, factory):
     svc, job, d = await _setup(session, tmp_path, monkeypatch)
     async def down(url): return 503
     await run_job(job.id, svc.id, PLAN, d, factory, http_get=down)
     await session.refresh(job)
-    assert job.state == "failed" and job.backup_dir
+    assert job.state == "rolled_back" and job.backup_dir and job.changed is True
+    assert "restored" in job.log_excerpt.lower() and "didn't answer" in job.log_excerpt
 
 
 async def test_read_failure_ends_failed(session, tmp_path, monkeypatch, factory):
@@ -201,3 +203,45 @@ async def test_bind_mounted_file_fails_without_restore(session, tmp_path, monkey
     assert job.state == "failed" and "mounted on its own" in job.steps[1]["detail"]
     assert d.write_file.call_count == 1 and d.restart_container.call_count == 0
     assert "Rollback" not in (job.log_excerpt or "")
+    assert job.changed is False
+
+
+async def test_read_failure_changed_false(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    d.read_file.side_effect = RuntimeError("docker down")
+    await run_job(job.id, svc.id, PLAN, d, factory)
+    await session.refresh(job)
+    assert job.state == "failed" and job.changed is False
+
+
+async def test_rollback_error_sets_changed_true_and_failed(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    d.write_file.side_effect = [None, RuntimeError("disk gone")]
+    async def down(url): return 503
+    await run_job(job.id, svc.id, PLAN, d, factory, http_get=down)
+    await session.refresh(job)
+    assert job.state == "failed" and job.changed is True and "Rollback failed" in job.log_excerpt
+
+
+async def test_backup_dirs_never_collide_in_one_second(session, tmp_path, monkeypatch, factory):
+    from datetime import datetime as real
+    class Fixed(real):
+        @classmethod
+        def now(cls, tz=None): return real(2026, 1, 1, 0, 0, 0, tzinfo=tz)
+    monkeypatch.setattr("app.services.mount_jobs.datetime", Fixed)
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    async def ok(url): return 200
+    for _ in range(2):
+        j = MountJob(service_id=svc.id)
+        session.add(j)
+        await session.commit()
+        await run_job(j.id, svc.id, PLAN, d, factory, http_get=ok)
+    assert len([p for p in (tmp_path / svc.id).iterdir() if p.is_dir()]) == 2
+
+
+async def test_sweep_note_warns_file_may_hold_new_value(session):
+    session.add(MountJob(service_id="s", state="running", backup_dir="/b"))
+    await session.commit()
+    await sweep_interrupted(session)
+    j = (await session.exec(select(MountJob))).first()
+    assert "restore from the backup" in j.log_excerpt and "/b" in j.log_excerpt

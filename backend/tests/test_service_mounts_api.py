@@ -72,8 +72,36 @@ async def test_latest_job(admin_client, session, dk):
     await admin_client.post(f"/api/services/{s.id}/mount/apply", json={"consent": True})
     j = (await admin_client.get(f"/api/services/{s.id}/mount/jobs/latest")).json()
     assert j["state"] == "pending" and j["changes"][0]["new"] == "/sonarr"
+    assert j["changed"] is False
 
 
 async def test_member_forbidden(member_client, session, dk):
     s = await _svc(session)
     assert (await member_client.post(f"/api/services/{s.id}/mount/plan")).status_code == 403
+
+
+async def test_concurrent_applies_start_one_job(admin_client, session, dk):
+    import asyncio
+    s = await _svc(session)
+    body = {"consent": True}
+    rs = await asyncio.gather(*[admin_client.post(f"/api/services/{s.id}/mount/apply", json=body)
+                                for _ in range(4)])
+    assert sorted(r.status_code for r in rs) == [202, 409, 409, 409] and len(dk[1]) == 1
+
+
+async def test_apply_rejects_changes_that_moved_since_review(admin_client, session, dk):
+    s = await _svc(session)
+    seen = (await admin_client.post(f"/api/services/{s.id}/mount/plan")).json()["changes"]
+    dk[0].read_file.return_value = (b"<Config><UrlBase>/other</UrlBase></Config>", tarfile.TarInfo("c"))
+    r = await admin_client.post(f"/api/services/{s.id}/mount/apply",
+                                json={"consent": True, "changes": seen})
+    assert r.status_code == 409 and "Review again" in r.json()["detail"]
+    assert dk[1] == []
+
+
+async def test_apply_accepts_matching_changes(admin_client, session, dk):
+    s = await _svc(session)
+    seen = (await admin_client.post(f"/api/services/{s.id}/mount/plan")).json()["changes"]
+    r = await admin_client.post(f"/api/services/{s.id}/mount/apply",
+                                json={"consent": True, "changes": seen})
+    assert r.status_code == 202

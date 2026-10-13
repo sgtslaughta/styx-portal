@@ -438,6 +438,7 @@ def test_probe_http_runs_hardened_container_and_parses_status(mock_docker):
     assert args[1] == ["wget", "-q", "-S", "-O", "/dev/null", "-T", "5", "http://sonarr:8989/sonarr/ping"]
     assert kw["network"] == "styx-services" and kw["read_only"] is True
     assert kw["cap_drop"] == ["ALL"] and kw["mem_limit"] == "32m"
+    assert kw["user"] == "65534:65534"
     assert kw["pids_limit"] == 32 and kw["security_opt"] == ["no-new-privileges"]
     assert kw["labels"] == {"styx.probe": "true"} and kw["extra_hosts"] == {"h": "host-gateway"}
     c.remove.assert_called_once_with(force=True)

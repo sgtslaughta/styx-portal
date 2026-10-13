@@ -48,9 +48,9 @@ class ContainerFilesMixin:
         raw = _join_capped(stream)
         try:
             tf = tarfile.open(fileobj=io.BytesIO(raw))
+            members = tf.getmembers()
         except tarfile.TarError as e:
             raise ValueError(f"malformed archive for {path}") from e
-        members = tf.getmembers()
         if len(members) != 1 or not members[0].isreg():
             return None
         info = members[0]
@@ -86,7 +86,7 @@ class ContainerFilesMixin:
                 self._client.images.pull(image)
             c = self._client.containers.create(
                 image, ["wget", "-q", "-S", "-O", "/dev/null", "-T", str(timeout_s), url],
-                network=network, read_only=True, cap_drop=["ALL"], mem_limit="32m", pids_limit=32,
+                network=network, read_only=True, user="65534:65534", cap_drop=["ALL"], mem_limit="32m", pids_limit=32,
                 security_opt=["no-new-privileges"], labels={"styx.probe": "true"},
                 extra_hosts=extra_hosts)
             c.start()

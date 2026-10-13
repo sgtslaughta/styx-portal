@@ -18,10 +18,13 @@ from app.services.mount_jobs import plan_mount, run_job
 logger = logging.getLogger("styx-portal")
 router = APIRouter()
 _tasks: set[asyncio.Task] = set()
+# Single uvicorn worker: one lock per service makes check-running / plan / insert atomic.
+_apply_locks: dict[str, asyncio.Lock] = {}
 
 
 class ApplyBody(BaseModel):
     consent: bool = False
+    changes: list[dict] | None = None   # what the admin reviewed; apply refuses if the file moved
 
 
 def _log_failure(t: asyncio.Task) -> None:
@@ -56,23 +59,26 @@ async def mount_apply(sid: str, body: ApplyBody, request: Request,
                       admin: User = Depends(require_admin),
                       session: AsyncSession = Depends(get_session),
                       docker: DockerManager = Depends(get_docker_manager)):
-    running = (await session.exec(select(MountJob).where(
-        MountJob.service_id == sid, MountJob.state.in_(["pending", "running"])))).first()
-    if running:
-        raise HTTPException(409, "A change is already running for this service")
-    svc, preset, p = await _plan(session, sid, docker)
-    if p.method is None or not p.path:
-        raise HTTPException(409, p.reason or "Nothing to apply")
-    if p.needs_consent and not body.consent:
-        raise HTTPException(409, "This container wasn't created by Styx. Confirm the change first.")
-    verify = ((preset.subpath or {}).get("verify_path") or "/{slug}").format(slug=svc.slug)
-    old = (preset.health_path or "/").removeprefix(f"/{svc.slug}") or "/"
-    job = MountJob(service_id=sid, changes=p.changes)
-    session.add(job)
-    await audit_request(session, request, "service.mount_apply", user_id=admin.id,
-                        resource=sid,
-                        detail={"service": svc.slug, "changes": p.changes, "consent": body.consent})
-    await session.commit()
+    async with _apply_locks.setdefault(sid, asyncio.Lock()):
+        running = (await session.exec(select(MountJob).where(
+            MountJob.service_id == sid, MountJob.state.in_(["pending", "running"])))).first()
+        if running:
+            raise HTTPException(409, "A change is already running for this service")
+        svc, preset, p = await _plan(session, sid, docker)
+        if p.method is None or not p.path:
+            raise HTTPException(409, p.reason or "Nothing to apply")
+        if p.needs_consent and not body.consent:
+            raise HTTPException(409, "This container wasn't created by Styx. Confirm the change first.")
+        if body.changes is not None and body.changes != p.changes:
+            raise HTTPException(409, "The settings changed since you reviewed them. Review again.")
+        verify = ((preset.subpath or {}).get("verify_path") or "/{slug}").format(slug=svc.slug)
+        old = (preset.health_path or "/").removeprefix(f"/{svc.slug}") or "/"
+        job = MountJob(service_id=sid, changes=p.changes)
+        session.add(job)
+        await audit_request(session, request, "service.mount_apply", user_id=admin.id,
+                            resource=sid,
+                            detail={"service": svc.slug, "changes": p.changes, "consent": body.consent})
+        await session.commit()
     _start(job.id, sid, p, docker, async_session, verify_path=verify, old_verify_path=old)
     return {"job_id": job.id}
 
@@ -85,5 +91,5 @@ async def mount_latest(sid: str, admin: User = Depends(require_admin),
     if job is None:
         raise HTTPException(404, "No changes yet")
     return {"id": job.id, "state": job.state, "steps": job.steps, "changes": job.changes,
-            "backup_dir": job.backup_dir, "log_excerpt": job.log_excerpt,
+            "backup_dir": job.backup_dir, "changed": job.changed, "log_excerpt": job.log_excerpt,
             "created_at": _iso(job.created_at), "finished_at": _iso(job.finished_at)}

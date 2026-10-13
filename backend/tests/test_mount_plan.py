@@ -80,3 +80,12 @@ def test_jellyfin_preset_has_hint():
     from pathlib import Path
     data = json.loads((Path(__file__).parents[2] / "templates/services/jellyfin.json").read_text())
     assert "Save once" in data["subpath"]["missing_hint"]
+
+
+def test_read_file_errors_become_a_reason_not_a_500():
+    import docker.errors
+    for err in (ValueError("too big"), docker.errors.APIError("boom")):
+        d = _docker({})
+        d.read_file.side_effect = err
+        p = plan_mount(_svc(), _preset(), d)
+        assert p.method is None and "couldn't read" in p.reason

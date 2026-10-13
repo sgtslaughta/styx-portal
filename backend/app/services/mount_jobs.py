@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from docker.errors import APIError
 from sqlmodel import select
 
 from app.config import Settings
@@ -38,7 +39,11 @@ def plan_mount(svc: ProxiedService, preset: ServicePreset | None, docker) -> Mou
     new = f"/{svc.slug}"
     for m in methods:
         for path in m["paths"]:
-            got = docker.read_file(svc.container, path)
+            try:
+                got = docker.read_file(svc.container, path)
+            except (ValueError, APIError) as err:
+                return MountPlan(needs_consent=needs_consent,
+                                 reason=f"Styx couldn't read {preset.name}'s settings file: {err}")
             if got is None:
                 continue
             try:
@@ -164,8 +169,13 @@ async def run_job(job_id, svc_id, plan, docker, session_factory, http_get=None,
             raise FileNotFoundError(f"{path} not found in the container")
         original, info = got
         svc_dir = Path(_settings.MOUNT_BACKUP_DIR) / svc_id
-        bdir = svc_dir / datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        bdir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        bdir = svc_dir / stamp
+        for n in range(2, 100):  # same-second jobs must not share (and overwrite) a backup
+            if not bdir.exists():
+                break
+            bdir = svc_dir / f"{stamp}-{n}"
+        bdir.mkdir(parents=True)
         (bdir / Path(path).name).write_bytes(original)
         _prune(svc_dir)
     except Exception as e:  # noqa: BLE001 - nothing changed yet, just fail the job
@@ -179,11 +189,13 @@ async def run_job(job_id, svc_id, plan, docker, session_factory, http_get=None,
     try:
         new_text, _ = edit_config(original.decode("utf-8"), plan.fmt, plan.key, plan.changes[0]["new"])
         written = True  # from here on a failed write may have partly landed
+        await save(changed=True)
         try:
             await asyncio.to_thread(docker.write_file, c, path, new_text.encode("utf-8"), info)
         except Exception as e:  # noqa: BLE001
             if "device or resource busy" in str(e).lower():
                 written = False  # a lone bind-mounted file can't be replaced; nothing changed
+                await save(changed=False)
                 raise _BindMounted(BIND_DETAIL) from e
             raise
         mark("apply", "done")
@@ -217,9 +229,11 @@ async def run_job(job_id, svc_id, plan, docker, session_factory, http_get=None,
         await asyncio.to_thread(docker.write_file, c, path, original, info)
         await asyncio.to_thread(docker.restart_container, c)
         res = await _verify(get, base + (old_verify_path or "/"))
-        ok = res != "down"
-        if res == "probe":
-            logs = f"{logs}\nRestored the old settings but couldn't confirm the app answers ({PROBE_DETAIL}).".strip()
+        ok = True  # the old file is back; whether the app answers again is a note, not a failure
+        if res != "ok":
+            why = (f"couldn't confirm the app answers ({PROBE_DETAIL})" if res == "probe"
+                   else f"the app didn't answer at {old_verify_path or '/'} after {VERIFY_BUDGET_S}s")
+            logs = f"{logs}\nRestored the old settings, but {why}.".strip()
             await save(log_excerpt=logs)
     except Exception as e:  # noqa: BLE001
         logger.exception("mount job %s rollback failed", job_id)
@@ -233,7 +247,9 @@ async def sweep_interrupted(session) -> int:
     rows = (await session.exec(select(MountJob).where(MountJob.state.in_(["pending", "running"])))).all()
     for j in rows:
         j.state = "failed"
-        j.log_excerpt = f"Interrupted - backup kept at {j.backup_dir}"
+        where = f" (backup: {j.backup_dir})" if j.backup_dir else ""
+        j.log_excerpt = ("Interrupted. The settings file may hold the new value: restore from the "
+                         f"backup if the app is down{where}.")
         j.finished_at = datetime.now(timezone.utc)
         session.add(j)
     await session.commit()
