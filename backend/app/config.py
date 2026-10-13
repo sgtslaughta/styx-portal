@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     TRAEFIK_DYNAMIC_DIR: str = "/app/traefik-dynamic"
     AUTHENTIK_MIDDLEWARE: str = "authentik@file"
     DEPLOY_MODE: str = "tunnel"   # tunnel | direct
+    # Direct peers whose CF-Connecting-IP / X-Forwarded-For are believed
+    # (Traefik). Default: loopback + docker's default bridge pools
+    # (172.17-31.x, 192.168.x). Add yours if daemon.json sets other pools.
+    TRUSTED_PROXY_CIDRS: str = "127.0.0.1/32,::1/128,172.16.0.0/12,192.168.0.0/16"
     JWT_SECRET: str = ""
     ACCESS_TTL: int = 900          # 15 minutes
     REFRESH_TTL: int = 604800      # 7 days

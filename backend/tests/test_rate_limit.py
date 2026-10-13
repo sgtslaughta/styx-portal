@@ -1,3 +1,4 @@
+import pytest
 from app.middleware.rate_limit import SlidingWindow, client_ip_from_headers, is_strict_auth
 
 
@@ -43,7 +44,7 @@ def test_keys_isolated():
 
 
 class _FakeReq:
-    def __init__(self, headers, host="10.0.0.1"):
+    def __init__(self, headers, host="172.18.0.5"):  # traefik on a compose bridge
         self.headers = headers
         self.client = type("C", (), {"host": host})()
 
@@ -60,7 +61,33 @@ def test_falls_back_to_first_xff():
 
 def test_falls_back_to_client_host():
     req = _FakeReq({})
-    assert client_ip_from_headers(req) == "10.0.0.1"
+    assert client_ip_from_headers(req) == "172.18.0.5"
+
+
+@pytest.mark.parametrize("peer", ["203.0.113.50", "10.9.9.9", "testclient", "2001:db8::1"])
+def test_untrusted_peer_headers_ignored(peer):
+    req = _FakeReq({"cf-connecting-ip": "1.2.3.4", "x-forwarded-for": "5.6.7.8"}, host=peer)
+    assert client_ip_from_headers(req) == peer
+
+
+def test_trusted_proxy_cidrs_configurable(monkeypatch):
+    from app.middleware import rate_limit
+    monkeypatch.setattr(rate_limit._settings, "TRUSTED_PROXY_CIDRS", "10.0.0.0/8")
+    assert client_ip_from_headers(_FakeReq({"x-forwarded-for": "5.6.7.8"}, host="10.1.1.1")) == "5.6.7.8"
+    assert client_ip_from_headers(_FakeReq({"x-forwarded-for": "5.6.7.8"})) == "172.18.0.5"
+
+
+def test_cf_header_ignored_in_direct_mode(monkeypatch):
+    """Direct mode has no Cloudflare in front: CF-Connecting-IP is client-controlled."""
+    from app.middleware import rate_limit
+    monkeypatch.setattr(rate_limit._settings, "DEPLOY_MODE", "direct")
+    req = _FakeReq({"cf-connecting-ip": "1.2.3.4", "x-forwarded-for": "198.51.100.1"})
+    assert client_ip_from_headers(req) == "198.51.100.1"
+
+
+def test_default_trusts_loopback_and_compose_bridges():
+    for host in ("127.0.0.1", "::1", "172.17.0.2", "172.31.255.1", "192.168.16.3"):
+        assert client_ip_from_headers(_FakeReq({"x-forwarded-for": "5.6.7.8"}, host=host)) == "5.6.7.8"
 
 
 def test_ban_check_is_exempt():
