@@ -59,6 +59,22 @@ def network_name(ref: str) -> str | None:
     return json.loads(body)["Name"] if code == 200 else None
 
 
+def probe_create_ok(d: dict) -> bool:
+    """The create body must be exactly the hardened mount-probe shape."""
+    h = d.get("HostConfig") or {}
+    nets = (d.get("NetworkingConfig") or {}).get("EndpointsConfig") or {}
+    return (d.get("Image") == PROBE_IMAGE
+            and (d.get("Labels") or {}).get("styx.probe") == "true"
+            and h.get("NetworkMode") == NETWORK
+            and set(nets) <= {NETWORK}
+            and not h.get("Privileged")
+            and not (h.get("Binds") or h.get("Mounts") or h.get("Devices") or h.get("CapAdd"))
+            and not (h.get("PidMode") or h.get("IpcMode") or h.get("UsernsMode") or h.get("UTSMode"))
+            and h.get("ReadonlyRootfs") is True
+            and h.get("CapDrop") == ["ALL"]
+            and (d.get("Cmd") or [""])[0] == "wget")
+
+
 class Handler(socketserver.StreamRequestHandler):
     def reply(self, code: int, msg: str) -> None:
         body = json.dumps({"message": msg}).encode()
@@ -128,18 +144,16 @@ class Handler(socketserver.StreamRequestHandler):
         if m and ((method == "DELETE" and not m.group(2)) or (method == "POST" and m.group(2))):
             cid = urllib.parse.unquote(m.group(1))
             info = None if "/" in cid else inspect(cid)
-            if not info or info["Config"]["Labels"].get("styx.probe") != "true":
-                return 403, "e2e shim: not a probe container"
+            if (not info or info["Config"]["Labels"].get("styx.probe") != "true"
+                    or set(info["NetworkSettings"]["Networks"]) - {NETWORK}
+                    or NETWORK not in info["NetworkSettings"]["Networks"]):
+                return 403, "e2e shim: not a probe container on the e2e services network"
             return target, body
         if method != "POST":
             return 403, f"e2e shim: {method} not allowed"
         if path == "/containers/create":
-            data = json.loads(body or b"{}")
-            if (data.get("Image") != PROBE_IMAGE
-                    or (data.get("Labels") or {}).get("styx.probe") != "true"
-                    or (data.get("HostConfig") or {}).get("NetworkMode") != NETWORK):
-                return 403, "e2e shim: only the mount probe container may be created"
-            return target, body
+            return (target, body) if probe_create_ok(json.loads(body or b"{}")) else (
+                403, "e2e shim: only the mount probe container may be created")
         if path == "/images/create":
             q = urllib.parse.parse_qs(url.query)
             ref = q.get("fromImage", [""])[0] + ":" + q.get("tag", [""])[0]
