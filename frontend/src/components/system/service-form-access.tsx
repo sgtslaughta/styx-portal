@@ -21,14 +21,18 @@ type Props = {
 
 function mountLine(f: ProxiedServiceInput, preset?: ServicePreset) {
   if (f.mount_mode === "cookie-root") return "Focus: opens on its own";
-  if (preset?.subpath) return `Path /${f.slug}, configured by Styx`;
-  return `Path /${f.slug}, set the app's base path yourself`;
+  if (preset?.subpath) return `Path /${f.slug || "your-slug"}, configured by Styx`;
+  return `Path /${f.slug || "your-slug"}, set the app's base path yourself`;
 }
 
 export function AccessSection({ f, set, preset, groups, errors }: Props) {
   const [advanced, setAdvanced] = useState(false);
   const native = f.auth_mode === "sso-with-bypass";
   const hasRules = (preset?.bypass_rules.length ?? 0) > 0;
+  const switchShown = !!preset && hasRules;
+  const bypassErrors = Object.keys(errors).some((k) => k.startsWith("bypass"));
+  const showAdvanced = advanced || bypassErrors || (native && !switchShown);
+  const showEditor = native && showAdvanced;
   const manual = f.mount_mode === "path" && !preset?.subpath;
   return (
     <Section title="Access" hint="How the app is mounted and who can open it.">
@@ -48,8 +52,11 @@ export function AccessSection({ f, set, preset, groups, errors }: Props) {
             }} />
         </SwitchRow>
       )}
-      {native && hasRules && preset && (
-        <RiskCallout title="Native apps skip Styx login">{RISK.nativeApps.replace("Jellyfin", preset.name)}</RiskCallout>
+      {native && !(showEditor && f.bypass_rules.length > 0) && (
+        <RiskCallout title="Some requests skip Styx login">
+          {preset && switchShown ? RISK.nativeApps.replace("Jellyfin", preset.name)
+            : "Some requests skip Styx login (bypass rules in Advanced). The app's own login is exposed to the internet."}
+        </RiskCallout>
       )}
       <SwitchRow id="pass-identity" label="Pass identity" hint="Send the signed-in user to the app.">
         <Switch id="pass-identity" aria-label="Pass identity" checked={f.pass_identity}
@@ -58,8 +65,8 @@ export function AccessSection({ f, set, preset, groups, errors }: Props) {
       {f.pass_identity && <RiskCallout tone="warning" title="App sees who is signed in">{RISK.passIdentity}</RiskCallout>}
       {f.auth_mode === "app-native" && <RiskCallout title="No Styx login">{RISK.appNative}</RiskCallout>}
 
-      <details className="space-y-3" open={advanced}>
-        <summary className="cursor-pointer text-sm font-medium" onClick={(e) => { e.preventDefault(); setAdvanced((a) => !a); }}>Advanced</summary>
+      <details className="space-y-3" open={showAdvanced}>
+        <summary className="cursor-pointer text-sm font-medium" onClick={(e) => { e.preventDefault(); setAdvanced(!showAdvanced); }}>Advanced</summary>
         <div className="mt-3 space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <Field id="mount" label="Mount mode">
@@ -78,7 +85,7 @@ export function AccessSection({ f, set, preset, groups, errors }: Props) {
               </select>
             </Field>
           </div>
-          {native && advanced && <BypassRulesEditor rules={f.bypass_rules} errors={errors} onChange={(r) => set("bypass_rules", r)} />}
+          {showEditor && <BypassRulesEditor rules={f.bypass_rules} errors={errors} onChange={(r) => set("bypass_rules", r)} />}
           <SwitchRow id="no-overlay" label="Open without overlay" hint="Open the app full page instead of inside the Styx frame.">
             <Switch id="no-overlay" aria-label="Open without overlay" checked={!f.frame_ok}
               onCheckedChange={(v) => set("frame_ok", !v)} />

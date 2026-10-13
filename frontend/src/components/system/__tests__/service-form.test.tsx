@@ -253,4 +253,34 @@ describe("ServiceForm same-origin acknowledgement", () => {
     expect(screen.getByLabelText(ACK)).not.toBeChecked();
     expect(save()).toBeDisabled();
   });
+
+  test("native apps on then off drops bypass rules on submit", () => {
+    const onSubmit = setup();
+    change("Preset", "sonarr");
+    change("Upstream URL", "http://10.0.0.1:80");
+    const sw = () => screen.getByRole("switch", { name: /allow native apps/i });
+    expect(sw()).toBeChecked(); // sonarr preset starts with bypass on
+    fireEvent.click(sw()); fireEvent.click(sw()); fireEvent.click(sw());
+    fireEvent.click(save());
+    expect(onSubmit.mock.calls[0]?.[0]).toMatchObject({ auth_mode: "sso", bypass_rules: [] });
+  });
+
+  test("existing bypass service opens Advanced unchanged with its risk visible", () => {
+    const rules = [{ path_prefix: "/x/api", required_header: null }];
+    render(<ServiceForm presets={[]} groups={[]} initial={{ ...existing, auth_mode: "sso-with-bypass", bypass_rules: rules }}
+      onSubmit={vi.fn()} onCancel={() => {}} />);
+    expect(screen.getByLabelText("Bypass path prefix")).toHaveValue("/x/api");
+    expect(screen.getAllByRole("alert").filter((a) => /WITHOUT Styx login/.test(a.textContent ?? ""))).toHaveLength(1);
+  });
+
+  test("bypass with no rules and no preset still shows a danger callout", () => {
+    render(<ServiceForm presets={[]} groups={[]} initial={{ ...existing, auth_mode: "sso-with-bypass", bypass_rules: [] }}
+      onSubmit={vi.fn()} onCancel={() => {}} />);
+    expect(screen.getAllByRole("alert").filter((a) => /exposed to the internet/.test(a.textContent ?? ""))).toHaveLength(1);
+  });
+
+  test("empty slug shows a placeholder in the mount line", () => {
+    setup();
+    expect(screen.getByText("Path /your-slug, set the app's base path yourself")).toBeInTheDocument();
+  });
 });
