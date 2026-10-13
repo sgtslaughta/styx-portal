@@ -140,6 +140,7 @@ AGENT_UPDATE_FILES = [
     ("gateway.py", "gateway.py"),
     ("gateway_html.py", "gateway_html.py"),
     ("agent_procs.py", "agent_procs.py"),
+    ("seat_systemd.py", "seat_systemd.py"),
     ("seat_gnome.py", "seat_gnome.py"),
     ("seat_labwc.py", "seat_labwc.py"),
     ("health.py", "health.py"),
