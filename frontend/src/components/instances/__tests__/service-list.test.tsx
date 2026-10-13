@@ -81,7 +81,7 @@ describe("ServiceList", () => {
     listServiceTiles.mockResolvedValue([]);
     const open = vi.fn();
     renderList({ onOpenSettings: open });
-    fireEvent.click(await screen.findByRole("button", { name: /settings → services/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /services in settings/i }));
     expect(open).toHaveBeenCalled();
   });
 
