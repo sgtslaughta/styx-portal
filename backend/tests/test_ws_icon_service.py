@@ -171,10 +171,10 @@ def test_svg_sniffed_after_declaration_and_long_comment():
 
 
 def test_auto_badge_uses_first_grapheme():
-    body, _ = ws_icon.render_icon(None, "\U0001F469‍\U0001F4BB lab", "i")
-    assert "\U0001F469‍\U0001F4BB".encode() in body and b"lab" not in body
-    body, _ = ws_icon.render_icon(None, "éclair", "i")
-    assert "É".encode() in body or "É".encode() in body
+    body, _ = ws_icon.render_icon(None, "\U0001F469\u200d\U0001F4BB lab", "i")
+    assert "\U0001F469\u200d\U0001F4BB".encode() in body and b"lab" not in body
+    body, _ = ws_icon.render_icon(None, "e\u0301clair", "i")
+    assert "E\u0301".encode() in body   # base + combining mark kept together
 
 
 def test_sniff_prolog_scan_is_linear():
