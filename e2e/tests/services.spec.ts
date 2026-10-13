@@ -1,7 +1,7 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import {
   ADMIN, MEMBER, OUTSIDER, STYX_COOKIES, apiCall, eventually, getNoRedirect, headerLines,
-  isWhoami, openSettings, uiLogin,
+  isWhoami, openSettings, uiLogin, updateService,
 } from "./helpers";
 import { captureAll } from "./screens";
 
@@ -28,17 +28,6 @@ async function invite(page: Page, browser: Browser, u: { username: string; passw
   await expect(s.page).toHaveURL(/\/$/);
   await expect(s.page.getByText(u.username, { exact: true })).toBeVisible();
   return s;
-}
-
-type Svc = Record<string, unknown> & { id: string; slug: string };
-
-/** PUT replaces every field: GET the service, merge the patch, PUT it back. */
-async function updateService(ctx: BrowserContext, slug: string, patch: Record<string, unknown>) {
-  const all: Svc[] = await apiCall(ctx, "GET", "/api/services");
-  const { id, slug: _slug, ...cur } = all.find((x) => x.slug === slug)!;
-  const writable = Object.fromEntries(Object.entries(cur).filter(([k]) =>
-    !["health_status", "health_checked_at", "mount_managed", "upstream_fallback", "created_at", "updated_at"].includes(k)));
-  return apiCall(ctx, "PUT", `/api/services/${id}`, { ...writable, ...patch });
 }
 
 const echo = async (p: Page, path: string) => {

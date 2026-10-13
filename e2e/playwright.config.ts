@@ -18,5 +18,6 @@ export default defineConfig({
   projects: [
     { name: "services", testMatch: "services.spec.ts" },
     { name: "mounts", testMatch: "mounts.spec.ts", dependencies: ["services"] },
+    { name: "shell", testMatch: "shell.spec.ts", dependencies: ["mounts"] },
   ],
 });

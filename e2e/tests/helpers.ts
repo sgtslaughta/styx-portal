@@ -100,3 +100,25 @@ curl -sSf -XPOST $U/System/Configuration/network -H "X-Emby-Token: $T" -H "$J" -
     throw new Error(`jellyfin seeding failed: ${err.stderr?.toString() || err.message}`);
   }
 }
+
+export type Svc = Record<string, unknown> & { id: string; slug: string };
+
+/** PUT replaces every field: GET the service, merge the patch, PUT it back. */
+export async function updateService(ctx: BrowserContext, slug: string, patch: Record<string, unknown>) {
+  const all: Svc[] = await apiCall(ctx, "GET", "/api/services");
+  const { id, slug: _slug, ...cur } = all.find((x) => x.slug === slug)!;
+  const writable = Object.fromEntries(Object.entries(cur).filter(([k]) =>
+    !["health_status", "health_checked_at", "mount_managed", "upstream_fallback", "created_at", "updated_at"].includes(k)));
+  return apiCall(ctx, "PUT", `/api/services/${id}`, { ...writable, ...patch });
+}
+
+/** Create a service through the API, or update it when the slug already exists (re-runnable). */
+export async function ensureService(ctx: BrowserContext, svc: Record<string, unknown> & { slug: string }) {
+  const all: Svc[] = await apiCall(ctx, "GET", "/api/services");
+  if (all.some((x) => x.slug === svc.slug)) { const { slug, ...rest } = svc; return updateService(ctx, slug, rest); }
+  return apiCall(ctx, "POST", "/api/services", {
+    icon: null, kind: "docker-local", container_port: 80, mount_mode: "path", auth_mode: "sso", bypass_rules: [],
+    allowed_groups: ["media"], verify_tls: true, health_path: null, preset_id: null, enabled: true,
+    pass_identity: false, frame_ok: true, acknowledged_origin: true, ...svc,
+  });
+}
