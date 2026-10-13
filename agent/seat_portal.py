@@ -28,6 +28,7 @@ gi.require_version("Gst", "1.0")
 from gi.repository import GLib, Gst  # noqa: E402
 
 from seat_clipboard import ClipboardServer  # noqa: E402
+from seat_scale import apply_scale, read_scale  # noqa: E402
 import seat_systemd  # noqa: E402
 from seat_systemd import SD_NAME, SystemdStub, snap_scope_props  # noqa: E402, F401
 
@@ -404,6 +405,7 @@ def main(argv) -> int:
                 _write_ready(ready, f"{w}x{h}")
             log("ready", f"{w}x{h}")
             GLib.timeout_add(25, watch_resize)
+            GLib.timeout_add(250, watch_scale)
             return False
         st["tries"] += 1
         if st["tries"] >= LIVE_TRIES:
@@ -415,6 +417,20 @@ def main(argv) -> int:
 
     rq = {"path": os.path.join(os.path.dirname(ready), "seat-resize-request") if ready else "",
           "pending": None, "tries": 0}
+
+    sc = {"path": os.environ.get("STYX_SEAT_SCALE_FILE", ""), "mtime": None, "first": True}
+
+    def watch_scale():
+        """<install>/seat-scale = 1|2 -> logical scale; applied at startup, on
+        file change and after each resize."""
+        try:
+            m = os.stat(sc["path"]).st_mtime_ns if sc["path"] else -1
+        except OSError:
+            m = -1
+        if m != sc["mtime"] or sc["first"]:
+            sc["mtime"], sc["first"] = m, False
+            apply_scale(bus, read_scale(sc["path"]) if sc["path"] else 1, log)
+        return True
 
     def watch_resize():
         """<runtime>/seat-resize-request = WxH -> in-place resize; the ready
@@ -433,6 +449,7 @@ def main(argv) -> int:
         if mon.is_current():
             _write_ready(ready, f"{mon.w}x{mon.h}")
             log("resized live", f"{mon.w}x{mon.h}", f"after {rq['tries']*25} ms")
+            sc["mtime"] = None      # a resize can reset the scale: re-apply
             rq["pending"] = None
         elif rq["tries"] >= LIVE_TRIES * 8:        # 10 s at 25 ms
             log("resize never became current", f"{mon.w}x{mon.h}")

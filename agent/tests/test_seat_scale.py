@@ -26,3 +26,19 @@ def test_write_scale_roundtrip_atomic(tmp_path):
     seat_scale.write_scale(p, 1)
     assert seat_scale.read_scale(p) == 1
     assert not (tmp_path / "seat-scale.tmp").exists()
+
+
+_MON = ('Meta-0', 'MetaVendor', 'Virtual remote monitor', '0x000001')
+
+
+def _state(scales=(1.0, 2.0), cur=1.0):
+    return (5, [(_MON, [('2560x1252@60.000', 2560, 1252, 60.0, 1.0, list(scales),
+                         {'is-current': True, 'is-preferred': True})], {})],
+            [(0, 0, cur, 0, True, [_MON], {})], {'layout-mode': 2})
+
+
+def test_monitors_config():
+    assert seat_scale.monitors_config(_state(), 2) == (
+        5, 1, [(0, 0, 2.0, 0, True, [('Meta-0', '2560x1252@60.000', {})])], {})
+    assert seat_scale.monitors_config(_state(), 1) is None
+    assert seat_scale.monitors_config(_state(scales=(1.0,)), 2) is None
