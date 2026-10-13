@@ -119,4 +119,20 @@ describe("WorkstationIconSettings", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save icon" }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Not a valid PNG."));
   });
+
+  test("error ids are distinct per row", () => {
+    render(<>
+      <WorkstationIconSettings ws={ws({ id: "a" })} onSaved={vi.fn()} />
+      <WorkstationIconSettings ws={ws({ id: "b" })} onSaved={vi.fn()} />
+    </>);
+    const inputs = [];
+    for (const b of screen.getAllByRole("button", { name: "Emoji" })) {
+      fireEvent.click(b);
+    }
+    for (const i of screen.getAllByLabelText("Emoji")) {
+      fireEvent.change(i, { target: { value: "ab" } });
+      inputs.push(i.getAttribute("aria-describedby"));
+    }
+    expect(inputs).toEqual(["icon-error-a", "icon-error-b"]);
+  });
 });
