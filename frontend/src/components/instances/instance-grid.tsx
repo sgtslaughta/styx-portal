@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { LayoutGrid, List, Maximize2, Filter, Play, Square, Pause, Trash2, CheckSquare, X } from "lucide-react";
+import { ArrowRight, LayoutGrid, List, Maximize2, Filter, Play, Square, Pause, Trash2, CheckSquare, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchSortBar } from "@/components/common/search-sort-bar";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
@@ -182,7 +182,7 @@ export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", stiffness: 300, damping: 25 }} className="flex flex-col items-center justify-center py-20 text-center">
         <p className="mb-1 text-lg font-medium text-foreground">No instances yet</p>
         <p className="mb-4 text-sm text-muted-foreground">Browse the template gallery to launch one.</p>
-        <button onClick={onLaunch} className="text-sm font-medium text-primary hover:underline">Go to template gallery &rarr;</button>
+        <button onClick={onLaunch} className="text-sm font-medium text-primary hover:underline">Go to template gallery<ArrowRight className="ml-1 inline size-3.5" aria-hidden /></button>
       </motion.div>
     );
   }
@@ -229,7 +229,7 @@ export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: 
           </button>
         )}
 
-        <span className="text-[10px] text-muted-foreground tabular-nums">
+        <span className="text-xs text-muted-foreground tabular-nums">
           {processed.length}/{instances.length}
         </span>
       </SearchSortBar>

@@ -177,6 +177,7 @@
 
 /* ── Styx Portal dashboard theming (immersive depth) ───────────────── */
 :root {
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234A5A60' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   --surface-gradient: radial-gradient(120% 140% at 10% 0%, #F7F9F8 0%, #EDF1EF 60%);
   --card-gradient: linear-gradient(160deg, #F7F9F8, #EDF1EF);
   --card-border-color: #C9D3D0;
@@ -186,6 +187,7 @@
   --header-gradient: linear-gradient(90deg, #EDF1EF, #F7F9F8);
 }
 .dark {
+  --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239FB0B4' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   --surface-gradient: radial-gradient(120% 140% at 10% 0%, #15262D 0%, #0F1C22 60%);
   --card-gradient: linear-gradient(160deg, #15262D, #0F1C22);
   --card-border-color: #2A4049;
@@ -283,3 +285,6 @@ body[data-ferry-drag] iframe { pointer-events: none; }
 
 /* Set on <html> for two frames while the theme flips so controls don't tween colours. */
 .no-transitions *, .no-transitions *::before, .no-transitions *::after { transition: none !important; }
+
+/* Native selects: inset chevron instead of the browser one flush against the border. */
+select:not([multiple]) { appearance: none; background-image: var(--select-chevron); background-repeat: no-repeat; background-position: right .75rem center; background-size: 1rem; padding-right: 2.25rem; }

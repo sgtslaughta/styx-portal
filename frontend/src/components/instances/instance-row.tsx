@@ -55,10 +55,10 @@ export function InstanceRow({ instance, icon, onSelect }: InstanceRowProps) {
       </div>
 
       {/* Subdomain */}
-      <span className="text-[10px] font-mono text-muted-foreground truncate w-28 shrink-0 hidden md:block">{instance.subdomain}</span>
+      <span className="text-xs font-mono text-muted-foreground truncate w-28 shrink-0 hidden md:block">{instance.subdomain}</span>
 
       {/* Uptime */}
-      <span className="text-[10px] text-muted-foreground w-16 shrink-0 hidden lg:block">
+      <span className="text-xs tabular-nums text-muted-foreground w-16 shrink-0 hidden lg:block">
         {uptimeSeconds != null ? `↑${formatDuration(uptimeSeconds)}` : "—"}
       </span>
 

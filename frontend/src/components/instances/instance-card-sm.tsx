@@ -54,7 +54,7 @@ export function InstanceCardSm({ instance, icon, onSelect }: Props) {
           <div className="flex items-center gap-2 mt-0.5">
             <StatusBadge status={instance.status} />
             {uptimeSeconds != null && (
-              <span className="text-[10px] text-muted-foreground">↑{formatDuration(uptimeSeconds)}</span>
+              <span className="text-xs text-muted-foreground">↑{formatDuration(uptimeSeconds)}</span>
             )}
           </div>
         </div>
