@@ -9,8 +9,9 @@ aiohttp = pytest.importorskip("aiohttp")
 from .test_gateway import _basic, _refit_pair  # noqa: E402
 
 
-async def _vid_ws(client, vid, hdr):
-    return await client.ws_connect(f"/websocket?styx_vid={vid}&x=1", headers=hdr)
+async def _vid_ws(client, vid, hdr, role=None):
+    extra = f"&role={role}" if role else ""
+    return await client.ws_connect(f"/websocket?styx_vid={vid}&x=1{extra}", headers=hdr)
 
 
 @pytest.mark.asyncio
@@ -36,10 +37,10 @@ async def test_vid_stripped_upstream_and_owner_messages(tmp_path):
     hdr = {"Authorization": _basic("styx", "pw")}
     try:
         a = await _vid_ws(client, "A", hdr)
-        b = await _vid_ws(client, "B", hdr)
+        b = await _vid_ws(client, "B", hdr, role="viewer")
         assert (await a.receive()).data == "styx-owner,1"
         assert (await b.receive()).data == "styx-owner,0"
-        assert seen == ["x=1", "x=1"]
+        assert seen == ["x=1", "x=1&role=viewer"]
     finally:
         await client.close()
         await up.close()
@@ -55,7 +56,7 @@ async def test_owner_reconnect_within_grace_keeps_ownership_then_leaves_for_good
     gateway.OWNER_GRACE_S = 0.4
     try:
         a = await _vid_ws(client, "A", hdr)
-        b = await _vid_ws(client, "B", hdr)
+        b = await _vid_ws(client, "B", hdr, role="viewer")
         assert (await a.receive()).data == "styx-owner,1"
         assert (await b.receive()).data == "styx-owner,0"
         await b.send_str("r,1280x720,primary")
@@ -85,7 +86,7 @@ async def test_takeover_swaps_owner_refits_and_is_not_forwarded(tmp_path):
     hdr = {"Authorization": _basic("styx", "pw")}
     try:
         a = await _vid_ws(client, "A", hdr)
-        b = await _vid_ws(client, "B", hdr)
+        b = await _vid_ws(client, "B", hdr, role="viewer")
         await a.receive()
         await b.receive()
         await b.send_str("r,1280x720,primary")              # swallowed, not owner
@@ -109,7 +110,7 @@ async def test_owner_settings_dpi_publishes_seat_scale(tmp_path):
     hdr = {"Authorization": _basic("styx", "pw")}
     try:
         a = await _vid_ws(client, "A", hdr)
-        b = await _vid_ws(client, "B", hdr)
+        b = await _vid_ws(client, "B", hdr, role="viewer")
         await a.receive()
         await b.receive()
         await b.send_str('SETTINGS,{"scaling_dpi": 192}')
@@ -122,6 +123,22 @@ async def test_owner_settings_dpi_publishes_seat_scale(tmp_path):
         await a.send_str('SETTINGS,{"scaling_dpi": 96}')
         await asyncio.sleep(0.2)
         assert (tmp_path / "seat-scale").read_text() == "1"
+    finally:
+        await client.close()
+        await up.close()
+
+
+@pytest.mark.asyncio
+async def test_new_controller_takes_ownership_at_once(tmp_path):
+    import asyncio
+    up, client = await _refit_pair(tmp_path, [], str(tmp_path))
+    hdr = {"Authorization": _basic("styx", "pw")}
+    try:
+        a = await _vid_ws(client, "A", hdr)
+        assert (await a.receive()).data == "styx-owner,1"
+        b = await _vid_ws(client, "B", hdr)                  # controller: no role
+        assert (await asyncio.wait_for(b.receive(), 3)).data == "styx-owner,1"
+        assert (await asyncio.wait_for(a.receive(), 3)).data == "styx-owner,0"
     finally:
         await client.close()
         await up.close()

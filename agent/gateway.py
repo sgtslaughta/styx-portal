@@ -316,7 +316,13 @@ def create_app(user: str, password: str,
                     return True
 
                 if seat_dir:
-                    size_owner.claim(vid)     # first viewer owns the size
+                    # selkies keeps one controller and kills the previous one, so
+                    # a controller always owns the size at once; read-only
+                    # `role=viewer` sockets only own an unowned seat.
+                    if "role=viewer" in qs.split("&") or not size_owner.owner:
+                        size_owner.claim(vid)
+                    else:
+                        set_owner(vid)
                     await ws_server.send_str(
                         "styx-owner,1" if size_owner.owner == vid else "styx-owner,0")
 
