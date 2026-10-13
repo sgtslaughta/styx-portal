@@ -160,3 +160,46 @@ async def test_exit_clears_focus_cookie(member_client):
     r = await member_client.get("/_styx/exit", follow_redirects=False)
     assert r.status_code == 302 and r.headers["location"] == "/"
     assert "styx_svc=;" in r.headers["set-cookie"] or 'styx_svc=""' in r.headers["set-cookie"]
+
+
+def _frame(uri, **h):
+    return _fwd(uri, **{"sec-fetch-dest": "iframe", **h})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("dest", ["iframe", "frame"])
+async def test_framed_expiry_gets_sameorigin_page_with_top_link(client, session, dest):
+    await _svc(session, auth_mode="sso", bypass_rules=[])
+    h = _fwd("/sonarr/series?page=2", **{"sec-fetch-dest": dest})
+    r = await client.get("/internal/services/sonarr/auth-check", headers=h)
+    assert r.status_code == 401 and r.headers["content-type"].startswith("text/html")
+    assert r.headers["X-Frame-Options"] == "SAMEORIGIN"
+    assert "frame-ancestors 'self'" in r.headers["Content-Security-Policy"]
+    assert "<script" not in r.text and "Your session expired" in r.text
+    assert 'target="_top"' in r.text
+    assert 'href="/login?next=%2F_styx%2Fapp%2Fsonarr%2Fseries%3Fpage%3D2"' in r.text
+
+
+@pytest.mark.asyncio
+async def test_framed_expiry_cookie_root_maps_into_shell_and_clears_focus(client, session):
+    await _svc(session, slug="immich", mount_mode="cookie-root", auth_mode="sso", bypass_rules=[])
+    r = await client.get("/internal/services/immich/auth-check", headers=_frame("/photos"))
+    assert r.status_code == 401
+    nxt = "%2Flogin%3Fnext%3D%252F_styx%252Fapp%252Fimmich%252Fphotos"
+    assert f'href="/_styx/exit?next={nxt}"' in r.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("uri", ["//evil.com", "/\\evil.com", "https://evil.com", "/a/%2e%2e/b"])
+async def test_framed_expiry_next_is_sanitized(client, session, uri):
+    await _svc(session, auth_mode="sso", bypass_rules=[])
+    r = await client.get("/internal/services/sonarr/auth-check", headers=_frame(uri))
+    assert r.status_code == 401
+    assert "evil" not in r.text and 'href="/login"' in r.text
+
+
+@pytest.mark.asyncio
+async def test_unframed_expiry_still_redirects(client, session):
+    await _svc(session, auth_mode="sso", bypass_rules=[])
+    r = await client.get("/internal/services/sonarr/auth-check", headers=_fwd("/sonarr/"))
+    assert r.status_code == 302

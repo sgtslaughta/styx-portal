@@ -2,6 +2,7 @@
 from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse
 
+from app.middleware.security_headers import SAMEORIGIN_HEADERS
 from app.security.page_style import styx_page
 
 _NO_ACCESS_HTML = styx_page(
@@ -20,4 +21,4 @@ def no_access(request: Request, detail: str = "No access") -> HTMLResponse:
     The page is static: nothing from the request is echoed."""
     if not is_navigation(request):
         raise HTTPException(403, detail)
-    return HTMLResponse(_NO_ACCESS_HTML, status_code=403, headers={"Cache-Control": "no-store"})
+    return HTMLResponse(_NO_ACCESS_HTML, status_code=403, headers={"Cache-Control": "no-store", **SAMEORIGIN_HEADERS})

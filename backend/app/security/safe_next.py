@@ -34,4 +34,6 @@ def safe_next(uri: str | None, *, allow_login: bool = False) -> str | None:
     if "." in segs or ".." in segs:
         return None
     blocked = BLOCKED_FIRST_SEGMENTS - {"login"} if allow_login else BLOCKED_FIRST_SEGMENTS
+    if segs[1].lower() == "_styx" and len(segs) > 3 and segs[2] == "app":
+        return uri  # the shell page (/_styx/app/<slug>/...): where a framed expiry returns to
     return None if segs[1].lower() in blocked else uri

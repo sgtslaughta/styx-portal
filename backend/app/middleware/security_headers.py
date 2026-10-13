@@ -12,10 +12,16 @@ _CSP = (
 )
 
 
+# Styx's own error/notice pages are shown inside the shell's iframe (a stopped
+# app, no access, expired session). Same-origin framing has no clickjack surface.
+SAMEORIGIN_HEADERS = {"X-Frame-Options": "SAMEORIGIN",
+                      "Content-Security-Policy": _CSP.replace("frame-ancestors 'none'", "frame-ancestors 'self'")}
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         resp = await call_next(request)
-        resp.headers["X-Frame-Options"] = "DENY"
+        resp.headers.setdefault("X-Frame-Options", "DENY")
         resp.headers["X-Content-Type-Options"] = "nosniff"
         resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         resp.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"

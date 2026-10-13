@@ -17,6 +17,7 @@ from app.routers.workstations import _redirect_host
 from app.config import Settings
 from app.security.cookies import clean_cookie_header
 from app.security.page_style import styx_page
+from app.middleware.security_headers import SAMEORIGIN_HEADERS
 from app.security.nav import is_navigation, no_access
 from app.security.deps import get_current_user, proxy_user_or_none
 from app.security.safe_next import safe_next
@@ -90,21 +91,48 @@ async def user_may_open(session: AsyncSession, user: User, svc: ProxiedService) 
     return bool(set(names) & set(svc.allowed_groups))
 
 
-def login_redirect(request: Request, uri: str | None, cookie_root: bool = False):
+def _shell_path(slug: str, uri: str | None, cookie_root: bool) -> str | None:
+    """Where /_styx/app/ would show `uri` for this service (mirrors shellPathFor)."""
+    if not uri or not uri.startswith("/"):
+        return None
+    if not cookie_root and uri != f"/{slug}" and not uri.startswith((f"/{slug}/", f"/{slug}?")):
+        return None
+    return f"/_styx/app{uri}" if not cookie_root else f"/_styx/app/{slug}{uri}"
+
+
+def _expired_frame_page(login: str) -> HTMLResponse:
+    # No inline script (CSP script-src 'self'): a plain link that breaks out of the frame.
+    body = ("<h1>Your session expired</h1><p>Sign in again to keep using this app.</p>"
+            f'<div class="actions"><a class="btn" target="_top" href="{html.escape(login)}">Sign in</a></div>')
+    return HTMLResponse(styx_page("Session expired", body), status_code=401,
+                        headers={"Cache-Control": "no-store", **SAMEORIGIN_HEADERS})
+
+
+def login_redirect(request: Request, uri: str | None, cookie_root: bool = False,
+                   shell_slug: str | None = None):
     """forwardAuth denial for an anonymous request: 302 to /login (next= only
-    when safe_next allows it) for navigations, 401 for XHR/websocket."""
+    when safe_next allows it) for navigations, 401 for XHR/websocket. A navigation
+    inside the shell's frame (shell_slug set) gets a small page instead, because
+    /login cannot be framed: its link opens /login?next=<shell path> in the top window."""
     if not is_navigation(request):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated")
     proto = request.headers.get("x-forwarded-proto", "https")
     if proto not in ("http", "https"):
         proto = "https"
+    framed = shell_slug is not None and request.headers.get("sec-fetch-dest") in ("iframe", "frame")
     login = "/login"
-    if safe_next(uri):
+    if framed:
+        nxt = _shell_path(shell_slug, uri, cookie_root)
+        if nxt and safe_next(nxt):
+            login += f"?next={quote(nxt, safe='')}"
+    elif safe_next(uri):
         login += f"?next={quote(uri, safe='/?=&')}"
     if cookie_root:
         # While styx_svc is set, /login itself routes to the service: clear the
         # cookie first or the browser loops between the app and auth-check.
         login = f"/_styx/exit?next={quote(login, safe='')}"
+    if framed:
+        return _expired_frame_page(login)
     return RedirectResponse(f"{proto}://{_redirect_host(request)}{login}", status_code=302)
 
 
@@ -119,7 +147,7 @@ async def auth_check(slug: str, request: Request,
         return Response(status_code=200, headers=clean_cookie_header(request))
     user = await proxy_user_or_none(request, session)
     if user is None:
-        return login_redirect(request, uri, svc.mount_mode == "cookie-root")
+        return login_redirect(request, uri, svc.mount_mode == "cookie-root", svc.slug)
     if not await user_may_open(session, user, svc):
         return no_access(request, "No access to this service")
     hdrs = clean_cookie_header(request)
@@ -186,7 +214,7 @@ async def open_service(slug: str, request: Request,
         if not SERVICE_SLUG_RE.match(slug):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown service")
         return HTMLResponse(styx_page("Open app?", _CONFIRM_BODY.format(slug=html.escape(slug))),
-                            headers={"Cache-Control": "no-store"})
+                            headers={"Cache-Control": "no-store", **SAMEORIGIN_HEADERS})
     svc, deny = await _open_target(slug, request, session)
     return deny or _focus_response(svc)
 
@@ -199,4 +227,4 @@ _UNAVAILABLE_HTML = styx_page(
 
 @pages_router.get("/service-unavailable", include_in_schema=False)
 async def service_unavailable():
-    return HTMLResponse(_UNAVAILABLE_HTML, status_code=503)
+    return HTMLResponse(_UNAVAILABLE_HTML, status_code=503, headers=SAMEORIGIN_HEADERS)
