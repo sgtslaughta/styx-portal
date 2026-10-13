@@ -42,7 +42,7 @@ from seat_gnome import Escalation, pick_seat_shell  # noqa: E402
 from agent_procs import (  # noqa: E402
     FRAME_START_TIMEOUT_S, _restart_engine, _terminate,
     _check, build_gateway_cmd, drop_clients, settings_restart_keys,  # noqa: F401
-    viewers_connected, merge_pending)
+    viewers_connected, merge_pending, must_apply_now)
 
 
 def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool,
@@ -245,8 +245,9 @@ def run(cfg: dict) -> int:
 
     pending = None       # deferred settings-push restart (see merge_pending)
     pending_exit = False
+    apply_now = False    # security setting changed: restart even with viewers
     while not stopping:
-        if (pending or pending_exit) and not viewers_connected(gw_state_path(cfg)):
+        if (pending or pending_exit) and (apply_now or not viewers_connected(gw_state_path(cfg))):
             if pending_exit:
                 # Shell is chosen once per process; systemd (Restart=always)
                 # brings the agent back up on the new one.
@@ -259,7 +260,7 @@ def run(cfg: dict) -> int:
                     procs[key] = None
             if "seat" in pending["keys"] and gseat:
                 gseat.stop()
-            pending = None
+            pending, apply_now = None, False
         if gseat and not gseat.alive():
             # Seat died: selkies (and the standby) are captured against a dead
             # portal session. The next branch restarts, seat first.
@@ -353,7 +354,8 @@ def run(cfg: dict) -> int:
                 if pick_seat_shell(cfg) != shell_kind:
                     pending_exit = True
                 pending = merge_pending(pending, old_ss, hb["stream_settings"])
-                if viewers_connected(gw_state_path(cfg)):
+                apply_now = apply_now or must_apply_now(old_ss, hb["stream_settings"])
+                if not apply_now and viewers_connected(gw_state_path(cfg)):
                     print("settings changed; applying when the last viewer "
                           "disconnects", flush=True)
                 continue
