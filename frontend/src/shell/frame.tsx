@@ -30,8 +30,11 @@ export function Card({ title, text, href, action, onAction }:
   );
 }
 
-export function Frame({ tile, inner, onTitle }: { tile: ServiceTile; inner: string; onTitle: (t: string) => void }) {
+type FrameProps = { tile: ServiceTile; inner: string; onTitle: (t: string) => void; onFrame?: (el: HTMLIFrameElement | null) => void };
+
+export function Frame({ tile, inner, onTitle, onFrame }: FrameProps) {
   const [el, setEl] = useState<HTMLIFrameElement | null>(null);
+  const setRef = useCallback((n: HTMLIFrameElement | null) => { setEl(n); onFrame?.(n); }, [onFrame]);
   const [ready, setReady] = useState(tile.mount_mode !== "cookie-root");
   useEffect(() => {
     if (tile.mount_mode === "cookie-root") void clearRootWorkers().then(() => setReady(true));
@@ -47,5 +50,5 @@ export function Frame({ tile, inner, onTitle }: { tile: ServiceTile; inner: stri
       text="This app blocks being shown inside another page." href={src} action={`Open ${tile.name} on its own`} />;
   }
   if (!ready) return null;
-  return <iframe ref={setEl} title={tile.name} src={src} className="h-full w-full border-0" allow={ALLOW} />;
+  return <iframe ref={setRef} title={tile.name} src={src} className="h-full w-full border-0" allow={ALLOW} />;
 }

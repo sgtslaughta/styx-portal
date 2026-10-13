@@ -3,7 +3,7 @@ import { fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 const listServiceTiles = vi.fn();
-vi.mock("@/api/client", () => ({ api: { listServiceTiles: () => listServiceTiles() } }));
+vi.mock("@/api/client", () => ({ api: { listServiceTiles: () => listServiceTiles(), serviceFocus: () => Promise.resolve({ slug: null }) } }));
 import { ShellApp } from "../shell-app";
 
 const mk = () => [{ id: "1", slug: "sonarr", name: "Sonarr", icon: null, mount_mode: "path", enabled: true, up: true, frame_ok: true }];

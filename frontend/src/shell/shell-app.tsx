@@ -2,7 +2,12 @@ import { useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { toTile } from "@/lib/service-tiles";
+import { LazyMotion, MotionConfig, domAnimation } from "framer-motion";
+import { Dock } from "./dock";
+import { EdgeTab } from "./edge-tab";
+import { readPos } from "./ferry-pos";
 import { Card, Frame } from "./frame";
+import { useHotkey } from "./use-hotkey";
 import { parseShellPath } from "./url";
 
 export function ShellApp() {
@@ -11,7 +16,14 @@ export function ShellApp() {
   const { data: tiles, isPending, error, refetch } = useQuery({
     queryKey: ["service-tiles"],
     queryFn: async () => (await api.listServiceTiles()).map(toTile),
+    refetchInterval: 30_000,
   });
+  const { data: focus } = useQuery({ queryKey: ["service-focus"], queryFn: () => api.serviceFocus() });
+  const [open, setOpen] = useState(false);
+  const [side, setSide] = useState(() => readPos().side);
+  const [frameEl, setFrameEl] = useState<HTMLIFrameElement | null>(null);
+  const toggle = useCallback(() => { setSide(readPos().side); setOpen((o) => !o); }, []);
+  useHotkey(() => [window, frameEl?.contentWindow ?? null], toggle, frameEl);
   const onTitle = useCallback((t: string) => { if (t) document.title = t; }, []);
   if (isPending) return null;
   if (error && !tiles) {
@@ -24,8 +36,14 @@ export function ShellApp() {
       href="/_styx/exit?next=/" action="Go home" />;
   }
   return (
-    <div className="h-dvh w-screen">
-      <Frame key={tile.slug} tile={tile} inner={target.inner} onTitle={onTitle} />
-    </div>
+    <LazyMotion features={domAnimation}>
+      <MotionConfig reducedMotion="user">
+        <div className="h-dvh w-screen">
+          <Frame key={tile.slug} tile={tile} inner={target.inner} onTitle={onTitle} onFrame={setFrameEl} />
+          <EdgeTab onOpen={toggle} />
+          <Dock open={open} onOpenChange={setOpen} tiles={tiles} current={tile.slug} focusSlug={focus?.slug ?? null} side={side} />
+        </div>
+      </MotionConfig>
+    </LazyMotion>
   );
 }
