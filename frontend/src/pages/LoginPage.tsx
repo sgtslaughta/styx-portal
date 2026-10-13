@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, Navigate } from "react-router";
 import { toast } from "sonner";
 import { api } from "@/api/client";
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { LoginBrandPanel } from "@/components/auth/LoginBrandPanel";
 import { friendlyLoginError } from "@/lib/auth-errors";
+import { safeNext } from "@/lib/safe-next";
 import { KeyRound, Loader2 } from "lucide-react";
 
 export function LoginPage() {
@@ -17,7 +18,21 @@ export function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [providers, setProviders] = useState<{ name: string; display_label: string; icon_url: string | null }[]>([]);
   const nav = useNavigate();
-  const { refresh, setupRequired, loading } = useAuth();
+  const { refresh, setupRequired, loading, user } = useAuth();
+
+  // SameSite=Strict: a cross-site link to /sonarr/ lands here with
+  // ?next=/sonarr/ even when the session is valid. Already signed in → mint a
+  // fresh styx_proxy (refresh) and follow next at once (full navigation:
+  // /sonarr/, /w/, /i/ are Traefik routes, not SPA). Refresh failing = stay.
+  const loggingIn = useRef(false); // submit() handles next/must_change_pw itself
+  useEffect(() => {
+    if (loading || !user || loggingIn.current) return;
+    const target = safeNext(new URLSearchParams(window.location.search).get("next"));
+    if (!target) return;
+    api.refreshSession()
+      .then(() => window.location.replace(target))
+      .catch(() => {});
+  }, [loading, user]);
 
   useEffect(() => {
     api.oauthProviders().then(setProviders).catch(() => {});
@@ -51,6 +66,7 @@ export function LoginPage() {
     e.preventDefault();
     setErr("");
     setSubmitting(true);
+    loggingIn.current = true;
     try {
       const result = await api.login({ username, password });
       if (result.must_change_pw) {
@@ -59,26 +75,16 @@ export function LoginPage() {
         return;
       }
       await refresh();
-      // Forward-auth redirects land here with ?next=/w/{sub}/ — return the
-      // user to the stream they asked for. Only follow same-origin /w/ paths
-      // (URL() catches tricks like /\evil.com, which browsers treat as //).
-      const next = new URLSearchParams(window.location.search).get("next");
-      let target = "";
-      if (next) {
-        try {
-          const parsed = new URL(next, window.location.origin);
-          if (parsed.origin === window.location.origin &&
-              /^\/w\/[a-z0-9-]+\//.test(parsed.pathname)) {
-            target = parsed.pathname;
-          }
-        } catch { /* malformed next — ignore */ }
-      }
+      // Forward-auth redirects land here with ?next=/w/{sub}/ or /{slug}/ —
+      // return the user there. safeNext allows same-site paths only.
+      const target = safeNext(new URLSearchParams(window.location.search).get("next"));
       if (target) {
-        window.location.href = target; // /w/ paths are Traefik routes, not SPA
+        window.location.href = target; // Traefik routes, not SPA
       } else {
         nav("/");
       }
     } catch (e) {
+      loggingIn.current = false;
       setErr(friendlyLoginError((e as Error).message));
     } finally {
       setSubmitting(false);
