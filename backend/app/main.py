@@ -23,6 +23,7 @@ from app.routers import oauth as oauth_router
 from app.routers import oauth_admin as oauth_admin_router
 from app.routers import audit as audit_router
 from app.routers import workstations as workstations_router
+from app.routers import instance_auth as instance_auth_router
 from app.routers import enroll as enroll_router
 from app.routers import agent as agent_router
 from app.routers import system_settings as system_settings_router
@@ -300,6 +301,8 @@ app.include_router(groups_router.users_router, prefix="/api/users", tags=["group
 app.include_router(services_router.router, prefix="/api/services", tags=["services"])
 app.include_router(services_auth_router.router, prefix="/api/services", tags=["services"])
 app.include_router(services_auth_router.internal_router, prefix="/internal", tags=["services"])
+app.include_router(instance_auth_router.internal_router, prefix="/internal/instances",
+                   tags=["instances"])
 app.include_router(services_auth_router.exit_router, prefix="/_styx", tags=["services"])
 app.include_router(services_auth_router.pages_router, prefix="/api", tags=["services"])
 

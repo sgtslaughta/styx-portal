@@ -115,7 +115,7 @@ async def auth_check(slug: str, request: Request,
 @internal_router.get("/strip")
 @internal_router.get("/services/{slug}/strip")
 async def strip_cookies(request: Request, slug: str | None = None):
-    """Strip-only forwardAuth (app-native services, /i/ instances): no auth,
+    """Strip-only forwardAuth (app-native services): no auth,
     always 200 with the Cookie header minus Styx cookies."""
     return Response(status_code=200, headers=clean_cookie_header(request))
 

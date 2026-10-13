@@ -58,11 +58,12 @@ def build_routes_config(instances: list[dict], domain: str,
             }
         },
     }
-    # Replaces the Cookie header with one minus Styx cookies (no auth): instance
-    # containers never see Styx credentials. Only emitted when instances exist.
+    # Instance desktops (and their extra ports): Styx login + owner-or-admin,
+    # and the Cookie header comes back minus Styx cookies so containers never
+    # see Styx credentials. Only emitted when instances exist.
     if instances:
-        middlewares["styx-cookie-strip"] = {"forwardAuth": {
-            "address": "http://backend:8000/internal/strip",
+        middlewares["instance-forward-auth"] = {"forwardAuth": {
+            "address": "http://backend:8000/internal/instances/auth-check",
             "authResponseHeaders": ["Cookie"]}}
     config: dict = {
         "http": {
@@ -136,7 +137,7 @@ def build_routes_config(instances: list[dict], domain: str,
 
         config["http"]["routers"][inst_id] = {
             "rule": f"Host(`{domain}`) && PathPrefix(`/i/{subdomain}`)",
-            "middlewares": ["instance-unavailable-errors", "styx-cookie-strip", strip_mw],
+            "middlewares": ["instance-unavailable-errors", "instance-forward-auth", strip_mw],
             "service": inst_id,
             "priority": 50,
             **primary_transport,
@@ -163,7 +164,7 @@ def build_routes_config(instances: list[dict], domain: str,
                 rule = f"PathPrefix(`/i/{subdomain}/p/{slug}`)"
 
             # Prepare middlewares: error handling + strip-prefix if needed
-            ep_middlewares = ["instance-unavailable-errors", "styx-cookie-strip"]
+            ep_middlewares = ["instance-unavailable-errors", "instance-forward-auth"]
 
             if ep.get("strip_prefix", True):
                 if deploy_mode == "direct":

@@ -142,22 +142,23 @@ def test_every_upstream_forward_auth_rewrites_cookie():
     # ip-ban-gate guards the Styx API itself (needs its cookies), no response headers
     fas.pop("ip-ban-gate")
     assert {"svc-auth-sonarr", "svc-auth-bz", "svc-strip-plex", "svc-strip-unraid",
-            "ws-forward-auth", "styx-cookie-strip"} <= set(fas)
+            "ws-forward-auth", "instance-forward-auth"} <= set(fas)
     for name, fa in fas.items():
         assert "Cookie" in fa["authResponseHeaders"], name
     assert mws["svc-auth-sonarr"]["forwardAuth"]["authResponseHeaders"] == [
         "X-Styx-User", "X-Styx-Groups", "Cookie"]
     assert mws["svc-strip-plex"]["forwardAuth"]["address"] == \
         "http://backend:8000/internal/services/plex/strip"
-    assert mws["styx-cookie-strip"]["forwardAuth"]["address"] == "http://backend:8000/internal/strip"
+    assert mws["instance-forward-auth"]["forwardAuth"]["address"] == \
+        "http://backend:8000/internal/instances/auth-check"
 
 
 def test_every_proxied_router_strips_cookies():
     routers = _all_cfg()["http"]["routers"]
     expect = {"svc-sonarr": "svc-auth-sonarr", "svc-bz": "svc-auth-bz",
               "svc-plex": "svc-strip-plex", "svc-unraid": "svc-strip-unraid",
-              "ws-w1": "ws-forward-auth", "i1": "styx-cookie-strip",
-              "i1-p-web": "styx-cookie-strip"}
+              "ws-w1": "ws-forward-auth", "i1": "instance-forward-auth",
+              "i1-p-web": "instance-forward-auth"}
     for rid, mw in expect.items():
         assert mw in routers[rid]["middlewares"], rid
     # every non-Styx upstream router is covered
