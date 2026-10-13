@@ -30,6 +30,18 @@ async function invite(page: Page, browser: Browser, u: { username: string; passw
   return s;
 }
 
+type Svc = Record<string, unknown> & { id: string; slug: string };
+const SVC_FIELDS = ["name", "icon", "kind", "upstream_url", "container", "container_port", "mount_mode", "auth_mode",
+  "bypass_rules", "allowed_groups", "verify_tls", "health_path", "preset_id", "enabled", "frame_ok"];
+
+/** PUT replaces every field, so resend the current ones with the overrides applied. */
+async function updateService(ctx: BrowserContext, slug: string, patch: Record<string, unknown>) {
+  const all: Svc[] = await apiCall(ctx, "GET", "/api/services");
+  const cur = all.find((s) => s.slug === slug)!;
+  const body = Object.fromEntries(SVC_FIELDS.map((k) => [k, cur[k]]));
+  return apiCall(ctx, "PUT", `/api/services/${cur.id}`, { ...body, ...patch });
+}
+
 const echo = async (p: Page, path: string) => {
   const res = await p.request.get(path);
   return { status: res.status(), body: await res.text() };
@@ -93,6 +105,7 @@ test("b. admin adds a path-mode SSO service from a discovered container", async 
   await form.locator("#name").fill("Whoami");
   await form.locator("#slug").fill("whoami");
 
+  await form.getByText("Advanced", { exact: true }).click();
   // Every risk callout from spec §9 renders for its trigger.
   await expect(form.getByRole("alert").filter({ hasText: "Proxied apps share Styx's origin" })).toBeVisible();
   await form.locator("#mount").selectOption("cookie-root");
@@ -127,16 +140,24 @@ test("c. member opens the tile; upstream sees identity headers but no Styx cooki
   const p = member.page;
   await member.ctx.addCookies([{ name: "app_pref", value: "keep-me", url: "http://127.0.0.1:18080" }]);
   await p.goto("/");
+  // Identity headers are opt-in per service.
+  await updateService(admin.ctx, "whoami", { pass_identity: true });
+  const plain = await apiCall(admin.ctx, "POST", "/api/services", {
+    name: "Plain", slug: "plain", kind: "url", upstream_url: "http://whoami-url:80", mount_mode: "path", auth_mode: "sso",
+    allowed_groups: ["media"],
+  });
   const tile = p.getByRole("link", { name: "Open Whoami" });
   await expect(tile).toBeVisible();
-  await expect(tile).toHaveAttribute("href", "/whoami/");
+  await expect(tile).toHaveAttribute("href", "/_styx/app/whoami/");
   const cookieNames = (await member.ctx.cookies()).map((c) => c.name);
   expect(cookieNames).toEqual(expect.arrayContaining(["styx_proxy", "csrf_token", "app_pref"]));
 
   await tile.click();
-  await p.waitForURL(/\/whoami\/$/);
-  const body = await p.locator("body").innerText();
-  expect(isWhoami(body)).toBe(true);
+  await p.waitForURL(/\/_styx\/app\/whoami\/$/);
+  // The shell renders the app in an iframe.
+  const app = p.frameLocator("iframe");
+  await eventually(async () => expect(isWhoami(await app.locator("body").innerText())).toBe(true));
+  const body = await app.locator("body").innerText();
   expect(body).toMatch(/^GET \/whoami\/ HTTP/m);
   const cookies = headerLines(body, "Cookie").join("; ");
   for (const name of STYX_COOKIES) expect(cookies).not.toContain(`${name}=`);
@@ -152,6 +173,14 @@ test("c. member opens the tile; upstream sees identity headers but no Styx cooki
   expect(headerLines(sb, "X-Styx-User")).toEqual([MEMBER.username]);
   expect(headerLines(sb, "X-Styx-Groups")).toEqual(["media"]);
   expect(headerLines(sb, "X-Authentik-Username").filter(Boolean)).toEqual([]);
+
+  // A service without pass_identity gets no identity headers at all.
+  const sl = (plain as Svc).slug;
+  await eventually(async () => expect(isWhoami((await echo(p, `/${sl}/`)).body)).toBe(true));
+  const pb = (await echo(p, `/${sl}/`)).body;
+  expect(headerLines(pb, "X-Styx-User")).toEqual([]);
+  expect(headerLines(pb, "X-Styx-Groups")).toEqual([]);
+  await apiCall(admin.ctx, "DELETE", `/api/services/${(plain as Svc).id}`);
 });
 
 test("d. non-member: no tile, direct access denied", async () => {
@@ -218,6 +247,7 @@ test("h. cookie-root service: enter, takeover, Styx API via X-Styx-Client, exit"
   await form.locator("#name").fill("Echo Root");
   await form.locator("#slug").fill("echoroot");
   await form.locator("#upstream").fill("http://whoami-url:80");
+  await form.getByText("Advanced", { exact: true }).click();
   await form.locator("#mount").selectOption("cookie-root");
   await form.getByLabel("media", { exact: true }).check();
   await form.locator("#ack-origin").check();
@@ -229,14 +259,19 @@ test("h. cookie-root service: enter, takeover, Styx API via X-Styx-Client, exit"
     expect(r.ok()).toBe(true);
   });
 
+  await updateService(admin.ctx, "echoroot", { pass_identity: true });
+
   const m = member.page;
-  await m.goto("/");
-  await Promise.all([m.waitForURL("http://127.0.0.1:18080/"), m.getByRole("button", { name: "Open Echo Root" }).click()]);
+  // Focus open: same-origin navigation sets styx_svc, then lands in the shell.
+  await m.goto("/_styx/open/echoroot");
+  await expect(m).toHaveURL("http://127.0.0.1:18080/_styx/app/echoroot/");
+  const app = m.frameLocator("iframe");
+  // Traefik may not have loaded the new cookie-root router yet: reload the shell until it answers.
   await eventually(async () => {
     await m.reload();
-    expect(isWhoami(await m.locator("body").innerText())).toBe(true);
+    expect(isWhoami(await app.locator("body").innerText({ timeout: 3000 }))).toBe(true);
   });
-  const body = await m.locator("body").innerText();
+  const body = await app.locator("body").innerText();
   expect(body).toContain("Name: whoami-url");
   for (const name of STYX_COOKIES) expect(headerLines(body, "Cookie").join(";")).not.toContain(`${name}=`);
   expect(headerLines(body, "X-Styx-User")).toEqual([MEMBER.username]);
@@ -261,6 +296,7 @@ test("i. bypass rule: only the exact prefix on a segment boundary skips login", 
   await openSettings(p, "Services");
   await p.getByRole("button", { name: "Edit Whoami" }).click();
   const form = p.getByRole("dialog").filter({ has: p.locator("#ack-origin") });
+  await form.getByText("Advanced", { exact: true }).click();
   await form.locator("#auth").selectOption("sso-with-bypass");
   await form.getByRole("button", { name: "Add bypass rule" }).click();
   await form.getByLabel("Bypass path prefix").fill("/whoami/api");
@@ -299,7 +335,7 @@ test("j. disabling a service denies members within one route refresh", async () 
   await eventually(async () => expect(isWhoami((await echo(member.page, "/whoami/")).body)).toBe(false), 10_000);
   test.info().annotations.push({ type: "deny-latency-ms", description: String(Date.now() - t0) });
   await member.page.goto("/");
-  await expect(member.page.getByRole("button", { name: "Open Echo Root" })).toBeVisible();
+  await expect(member.page.getByRole("link", { name: "Open Echo Root" })).toHaveAttribute("href", "/_styx/open/echoroot");
   await expect(member.page.getByRole("link", { name: "Open Whoami" })).toHaveCount(0);
   // The bypass prefix dies with the service too.
   expect(isWhoami((await echo(member.page, "/whoami/api/x")).body)).toBe(false);

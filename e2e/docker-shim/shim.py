@@ -9,7 +9,8 @@ compose project:
   container list, which is narrowed to containers labelled discoverable;
 - the only writes allowed are network create/connect/disconnect on the e2e
   services network, for containers of the e2e project; `styx-traefik` in a
-  connect/disconnect body is rewritten to the e2e Traefik container.
+  connect/disconnect body is rewritten to the e2e Traefik container; plus
+  PUT archive / POST restart on e2e-project containers.
 """
 import json
 import os
@@ -86,7 +87,7 @@ class Handler(socketserver.StreamRequestHandler):
         up = socket.socket(socket.AF_UNIX)
         up.connect(SOCK)
         req = [f"{method} {target} HTTP/1.1", *headers, "Connection: close"]
-        if body or method == "POST":
+        if body or method in ("POST", "PUT"):
             req.append(f"Content-Length: {len(body)}")
         up.sendall(("\r\n".join(req) + "\r\n\r\n").encode() + body)
         while chunk := up.recv(65536):
@@ -106,6 +107,12 @@ class Handler(socketserver.StreamRequestHandler):
                 flt["label"] = [*labels, LABEL]
                 q["filters"] = [json.dumps(flt)]
                 target = url.path + "?" + urllib.parse.urlencode(q, doseq=True)
+            return target, body
+        m = re.fullmatch(r"/containers/([^/]+)/(archive|restart)", path)
+        if m and ((method == "PUT" and m.group(2) == "archive") or (method == "POST" and m.group(2) == "restart")):
+            info = inspect(urllib.parse.unquote(m.group(1)))
+            if not info or info["Config"]["Labels"].get("com.docker.compose.project") != PROJECT:
+                return 403, "e2e shim: container outside the e2e project"
             return target, body
         if method != "POST":
             return 403, f"e2e shim: {method} not allowed"
