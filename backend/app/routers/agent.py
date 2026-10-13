@@ -13,6 +13,7 @@ from app.config import Settings
 from app.database import get_session
 from app.models import Workstation, WorkstationAccess
 from app.schemas import WorkstationHeartbeatRequest, WorkstationHeartbeatResponse
+from app.services import ws_icon
 from app.services.audit import audit_request
 from app.services.workstations import sha256_hex
 from app.services.settings_store import settings as _sys_settings
@@ -106,7 +107,13 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
     return WorkstationHeartbeatResponse(
         state="ok", stream_settings=effective_ss,
         heartbeat_interval_s=_settings.WORKSTATION_HEARTBEAT_S,
-        disconnect_clients=disconnect)
+        disconnect_clients=disconnect,
+        icon_etag=ws_icon.icon_etag(ws.icon, ws.name, ws.id))
+
+
+@router.get("/icon")
+async def icon(request: Request, ws: Workstation = Depends(get_agent_workstation)):
+    return ws_icon.icon_response(request, ws.icon, ws.name, ws.id)
 
 
 @router.post("/deregister")
