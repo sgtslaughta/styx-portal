@@ -65,7 +65,7 @@ export function Header() {
         <CountChip count={errored} label="error" dotClass="bg-destructive" />
       </div>
       {user && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 max-sm:ml-auto">
           <span className="text-sm text-muted-foreground max-sm:hidden">{user.username}</span>
           <button onClick={() => logout()} className="inline-flex min-h-9 max-sm:min-h-11 items-center rounded-md px-1 text-sm underline underline-offset-2 hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">Log out</button>
         </div>
