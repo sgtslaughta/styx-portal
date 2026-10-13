@@ -70,7 +70,7 @@ _WORKER_SHIM = "(function(){" + _proxy(
     RELOAD="function(){self.postMessage({type:'styx-reload'})}",
     LOG="function(m){self.postMessage({type:'styx-log',m:m})}",
     OWNER="function(on){self.postMessage({type:'styx-owner',on:on})}", VID="__VID__",
-    PAGE="__PAGE__", INSTALL="self.WebSocket=S;self.addEventListener('message',function(e){var d=e.data;d&&d.type==='styx-takeover'&&S.last&&S.last.send('styx-takeover')})") + "})();\n"
+    PAGE="__PAGE__", INSTALL="self.WebSocket=S;self.addEventListener('message',function(e){var d=e.data;d&&d.type==='__styx_takeover__'&&S.last&&S.last.send('styx-takeover')})") + "})();\n"
 
 _PAGE_SHIM = _proxy(
     WS="window.WebSocket", PILL="pill", RELOAD="function(){location.reload()}",
@@ -81,18 +81,20 @@ try{var q=new URLSearchParams(location.search);if(q.get('socket_worker')==='fals
 function pill(on){var el=document.getElementById(P);if(!on){el&&el.remove();return}if(el)return;el=document.createElement('div');el.id=P;el.textContent='Resizing…';
 el.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;padding:8px 16px;border-radius:999px;background:rgba(12,23,48,.85);color:rgba(255,255,255,.9);font:500 14px system-ui,sans-serif;letter-spacing:.02em;backdrop-filter:blur(6px);pointer-events:none';
 (document.body||document.documentElement).appendChild(el)}
-var vid;try{vid=sessionStorage.getItem('styx_vid')}catch(e){}
+var vid,nav;try{nav=(performance.getEntriesByType('navigation')[0]||{}).type}catch(e){}
+if(nav==='reload'||nav==='back_forward'){try{vid=sessionStorage.getItem('styx_vid')}catch(e){}}
 if(!vid){try{vid=crypto.randomUUID()}catch(e){vid=Math.random().toString(36).slice(2)+Date.now().toString(36)}try{sessionStorage.setItem('styx_vid',vid)}catch(e){}}
-var TK='styx-takeover',WL=[];
+var TK='styx-takeover',MSG='__styx_takeover__',WL=[],MB=[],MU={};
 function owner(on){var el=document.getElementById(TK);if(on){el&&el.remove();return}if(el)return;el=document.createElement('div');el.id=TK;el.setAttribute('role','status');el.setAttribute('aria-live','polite');
 el.style.cssText='position:fixed;left:50%;top:16px;transform:translateX(-50%);z-index:2147483647;display:flex;align-items:center;gap:12px;padding:8px 16px;border-radius:999px;background:rgba(12,23,48,.85);color:rgba(255,255,255,.9);font:500 14px system-ui,sans-serif;letter-spacing:.02em;backdrop-filter:blur(6px);pointer-events:auto';
 var t=document.createElement('span');t.textContent="Viewing at another viewer's size";var b=document.createElement('button');b.type='button';b.textContent='Fit to my window';
 b.style.cssText='font:inherit;padding:4px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.4);background:rgba(255,255,255,.12);color:inherit;cursor:pointer';
-b.onclick=function(){for(var i=0;i<WL.length;i++)WL[i].postMessage({type:TK});var s=window.WebSocket.last;s&&s.send&&s.send(TK);el.remove()};
+b.onclick=function(){for(var i=0;i<WL.length;i++)WL[i].postMessage({type:MSG});var s=window.WebSocket.last;s&&s.send&&s.send(TK);el.remove()};
 el.appendChild(t);el.appendChild(b);(document.body||document.documentElement).appendChild(el)}
-var B=window.Blob;function SB(parts,opts){if(parts&&typeof parts[0]==='string'&&parts[0].indexOf('new WebSocket(m.url)')>=0)parts=[WSRC.replace('__PAGE__',JSON.stringify(location.href)).replace('__VID__',JSON.stringify(vid))].concat(parts);return new B(parts,opts)}
+var B=window.Blob,CO=window.URL.createObjectURL;function SB(parts,opts){var m=parts&&typeof parts[0]==='string'&&parts[0].indexOf('new WebSocket(m.url)')>=0;if(m)parts=[WSRC.replace('__VID__',function(){return JSON.stringify(vid)}).replace('__PAGE__',function(){return JSON.stringify(location.href)})].concat(parts);var b=new B(parts,opts);m&&MB.push(b);return b}
 SB.prototype=B.prototype;window.Blob=SB;
-var K=window.Worker;function SW(u,o){var w=o===undefined?new K(u):new K(u,o);WL.push(w);w.addEventListener('message',function(e){var d=e.data;if(!d||typeof d.type!=='string')return;if(d.type==='styx-pill')pill(d.on);else if(d.type==='styx-owner')owner(d.on);else if(d.type==='styx-reload')location.reload();else if(d.type==='styx-log')console.log(d.m)});return w}
+window.URL.createObjectURL=function(o){var u=CO.apply(window.URL,arguments);MB.indexOf(o)>=0&&(MU[u]=1);return u};
+var K=window.Worker;function SW(u,o){var w=o===undefined?new K(u):new K(u,o);MU[String(u)]&&WL.push(w);w.addEventListener('message',function(e){var d=e.data;if(!d||typeof d.type!=='string')return;if(d.type==='styx-pill')pill(d.on);else if(d.type==='styx-owner')owner(d.on);else if(d.type==='styx-reload')location.reload();else if(d.type==='styx-log')console.log(d.m)});return w}
 SW.prototype=K.prototype;window.Worker=SW;
 """ + _PAGE_SHIM + "window.__styxRefit={pill:pill,owner:owner};})();</script>")
 # Served with 200 while the seat is rebuilt (only reached by a full reload):

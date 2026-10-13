@@ -51,3 +51,72 @@ def test_proxy_vid_owner_and_reconnect(tmp_path):
     js.write_text(HARNESS)
     r = subprocess.run(["node", str(js), src], capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, r.stderr
+
+
+def test_worker_shim_is_valid_js(tmp_path):
+    src = refit._WORKER_SHIM.replace("__PAGE__", '"http://h/"').replace("__VID__", '"abc"')
+    js = tmp_path / "worker.js"
+    js.write_text(src)
+    r = subprocess.run(["node", "--check", str(js)], capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
+
+
+PAGE_HARNESS = r"""
+const assert = require('assert'), vm = require('vm');
+const [html, navType] = process.argv.slice(2);
+const body = html.slice(html.indexOf('>') + 1, html.lastIndexOf('</script>'));
+const registry = {}, store = {}, posted = [], workers = [];
+function el() {
+  const e = {children: [], style: {}, attrs: {}, textContent: '', id: '',
+    setAttribute(k, v) { this.attrs[k] = v },
+    appendChild(c) { this.children.push(c); if (c.id) registry[c.id] = c; return c },
+    remove() { delete registry[this.id] }};
+  return e;
+}
+class FakeBlob { constructor(parts, opts) { this.parts = parts; this.opts = opts } }
+class FakeWorker { constructor(u) { this.u = u; this.ls = {}; workers.push(this) }
+  addEventListener(t, f) { this.ls[t] = f } postMessage(m) { posted.push([this.u, m]) } }
+class FakeWS {}
+let n = 0;
+const win = {
+  document: {getElementById: id => registry[id] || null, createElement: el, body: el(), documentElement: el()},
+  sessionStorage: {getItem: k => store[k] ?? null, setItem: (k, v) => { store[k] = v }},
+  performance: {getEntriesByType: () => [{type: navType}]},
+  location: {search: '?socket_worker=false', href: 'http://h/p', pathname: '/p', hash: '', reload() {}},
+  history: {replaceState() {}}, URLSearchParams, Blob: FakeBlob, Worker: FakeWorker, WebSocket: FakeWS,
+  crypto: {randomUUID: () => 'uuid' + (++n)}, console, setTimeout, Date, encodeURIComponent, fetch() {},
+  URL: {createObjectURL: b => 'blob:' + (b.parts[0].length)},
+};
+win.window = win; win.document.body.appendChild = win.document.body.appendChild;
+vm.createContext(win);
+store.styx_vid = 'old';
+vm.runInContext(body, win);
+const api = win.window.__styxRefit;
+assert(api, 'no __styxRefit');
+assert.strictEqual(store.styx_vid, navType === 'reload' ? 'old' : 'uuid1');
+api.owner(false);
+const t = registry['styx-takeover'];
+assert(t, 'banner missing');
+assert(t.children.some(c => c.textContent === 'Fit to my window'));
+api.owner(true);
+assert(!registry['styx-takeover'], 'banner not removed');
+// Only the blob-built socket worker receives the takeover message.
+const marked = new win.Blob(['new WebSocket(m.url)']);
+const other = new win.Blob(['postMessage(1)']);
+const wm = new win.Worker(win.URL.createObjectURL(marked));
+new win.Worker(win.URL.createObjectURL(other)); new win.Worker('plain.js');
+assert(win.Blob === win.window.Blob && marked.parts[0].includes('self.WebSocket=S'));
+api.owner(false);
+registry['styx-takeover'].children[1].onclick();
+assert.deepStrictEqual(posted.map(p => p[1].type), ['__styx_takeover__']);
+assert.strictEqual(posted[0][0], wm.u);
+process.exit(0);
+"""
+
+
+@pytest.mark.parametrize("nav", ["reload", "navigate"])
+def test_page_shim_runs_in_vm(tmp_path, nav):
+    js = tmp_path / "page.js"
+    js.write_text(PAGE_HARNESS)
+    r = subprocess.run(["node", str(js), refit.RELOAD_JS, nav], capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
