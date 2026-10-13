@@ -80,6 +80,7 @@ Massive shoutout to LinuxServer.io. I discovered their transition away from Kasm
   - GitHub OAuth
 
 ![Styx consent dialog before changing an app's settings](docs/assets/services-consent.png)
+
 ![An app open in the Styx shell with the dock](docs/assets/shell-dock.png)
 
 ## Quickstart

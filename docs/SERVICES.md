@@ -80,7 +80,7 @@ sets, or what you set by hand for the rest.
 | Radarr | path | sso-with-bypass (`/radarr/api` + `X-Api-Key`) | URL Base = `/radarr` |
 | Prowlarr | path | sso-with-bypass (`/prowlarr/api` + `X-Api-Key`) | URL Base = `/prowlarr` |
 | Lidarr | path | sso-with-bypass (`/lidarr/api` + `X-Api-Key`) | URL Base = `/lidarr` |
-| Jellyfin | path | sso; **Allow native apps** adds the bypass rules above | set by Styx (Dashboard → Networking → Base URL = `/jellyfin`) |
+| Jellyfin | path | sso; **Allow native apps** adds the bypass rules in [Native apps](#native-apps) | set by Styx (Dashboard → Networking → Base URL = `/jellyfin`) |
 | Nextcloud | path | sso | `config.php`: `overwritewebroot` = `/nextcloud`, `overwrite.cli.url` = `https://<host>/nextcloud` |
 | GitLab | path | sso | `gitlab.rb`: `external_url 'https://<host>/gitlab'`, then reconfigure. CLI git over HTTPS will not pass SSO; use SSH remotes |
 | Audiobookshelf | cookie-root | sso-with-bypass (`/api/` + `Authorization`) | none (no subpath support) |
