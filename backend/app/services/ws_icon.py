@@ -38,13 +38,13 @@ def _sniff(data: bytes) -> str | None:
 
 
 def _check_svg(data: bytes) -> None:
-    """No defusedxml dependency: reject DTD/entities up front, then walk the
+    """No defusedxml dependency (B314 nosec below): reject DTD/entities up front, then walk the
     tree refusing active content and any non-local reference."""
     if _DOCTYPE.search(data) or b"<?xml-stylesheet" in data.lower():
         raise ValueError("SVG may not contain a DOCTYPE or entities")
     try:
         data.decode("utf-8")
-        root = ET.fromstring(data)  # nosec B314 - DOCTYPE/ENTITY rejected above
+        root = ET.fromstring(data)  # nosec B314
     except (ET.ParseError, UnicodeDecodeError):
         raise ValueError("Image is not valid SVG")
     if root.tag not in (f"{_SVG_NS}svg", "svg"):
