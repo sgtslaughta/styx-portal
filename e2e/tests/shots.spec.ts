@@ -93,7 +93,7 @@ test("focus confirm page", async () => {
     await each(async (_w, t, file) => {
       await setTheme(p, t);
       await p.goto("/_styx/open/shotfocus?confirm");
-      await expect(p.getByRole("link", { name: "Open shotfocus" })).toBeVisible();
+      await expect(p.getByRole("link", { name: "Open app" })).toBeVisible();
       await p.screenshot({ path: file("focus-confirm") });
     });
   } finally { await p.unroute("**/_styx/open/shotfocus?confirm"); }
@@ -150,11 +150,11 @@ test("service drawer: consent, running, rolled back (waits for the job to finish
   await d.getByRole("button", { name: "Set base path to /shotsapp" }).click();
   await consent().getByRole("button", { name: "Restart Shot app and apply" }).click();
   const region = d.getByRole("region", { name: "Base path" });
-  await expect(region.getByText(/^Check it answers/)).toBeVisible({ timeout: 60_000 });
+  await expect(region.getByText(/^Check the app responds/)).toBeVisible({ timeout: 60_000 });
   await each(async (_w, t, file) => {
     await setTheme(p, t);
     await p.evaluate((v) => document.documentElement.classList.toggle("dark", v === "dark"), t);
-    await expect(region.getByText(/^Check it answers/)).toBeVisible();
+    await expect(region.getByText(/^Check the app responds/)).toBeVisible();
     await p.screenshot({ path: file("drawer-running") });
   });
 

@@ -59,7 +59,7 @@ def plan_mount(svc: ProxiedService, preset: ServicePreset | None, docker) -> Mou
 
 
 STEPS = [("backup", "Back up settings"), ("apply", "Apply base path"),
-         ("restart", "Restart app"), ("verify", "Check it answers")]
+         ("restart", "Restart app"), ("verify", "Check the app responds")]
 VERIFY_BUDGET_S = 90
 VERIFY_INTERVAL_S = 2
 KEEP_BACKUPS = 5

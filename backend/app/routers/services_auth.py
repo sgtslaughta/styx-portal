@@ -167,8 +167,8 @@ async def exit_service(next: str = "/"):
 
 
 _CONFIRM_BODY = (
-    "<h1>Open app?</h1><p>A link from another site wants to open an app in Styx.</p>"
-    '<p><a href="/_styx/open/{slug}">Open {slug}</a></p><p><a href="/">Stay in Styx</a></p>')
+    "<h1>Open app?</h1><p>A link from another site wants to open <code>/{slug}</code> in Styx.</p>"
+    '<div class="actions"><a class="btn" href="/_styx/open/{slug}">Open app</a><a href="/">Stay in Styx</a></div>')
 
 
 def _focus_response(svc: ProxiedService) -> RedirectResponse:

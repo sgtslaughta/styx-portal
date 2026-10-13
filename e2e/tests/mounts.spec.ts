@@ -91,7 +91,7 @@ test("m1 sonarr: adopted container, consent, managed base path", async () => {
 
   const section = drawer.getByRole("region", { name: "Base path" });
   await expect(section.getByText("Base path set. Sonarr answers at /sonarr.")).toBeVisible({ timeout: 120_000 });
-  for (const step of ["Back up settings", "Apply base path", "Restart app", "Check it answers"])
+  for (const step of ["Back up settings", "Apply base path", "Restart app", "Check the app responds"])
     await expect(section.getByText(new RegExp(`^${step}\\s*\\(Done\\)`))).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/mount-done-sonarr.png` });
   await eventually(async () => expect((await page.request.get("/sonarr/ping")).status()).toBe(200), 60_000);
@@ -172,7 +172,7 @@ test("m4 rollback: broken app gets its settings back", async () => {
   const { drawer } = await applyViaUi("Broken app", "brokenapp", "brokenapp");
   const section = drawer.getByRole("region", { name: "Base path" });
   await expect(section.getByText(/Styx put its settings back/)).toBeVisible({ timeout: 150_000 });
-  await expect(section.getByText(/^Check it answers\s*\(Failed\)/)).toBeVisible();
+  await expect(section.getByText(/^Check the app responds\s*\(Failed\)/)).toBeVisible();
   await section.getByText("App log").click();
   await expect(section.locator("pre")).not.toBeEmpty();
   await expect(section.getByRole("button", { name: "Try again" })).toBeVisible();

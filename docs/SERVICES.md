@@ -117,7 +117,7 @@ It shows one of:
   tmpfs mount). You can set the base path yourself or pick a preset.
 
 Pressing the button runs a job with four steps: **Back up settings**, **Apply base
-path**, **Restart app**, **Check it answers**. The stepper updates while it runs.
+path**, **Restart app**, **Check the app responds**. The stepper updates while it runs.
 
 ![Consent dialog](assets/services-consent.png)
 
@@ -179,7 +179,7 @@ Home Assistant, Immich and other root-only apps run in focus mode.
 - Opening a focus app sets a routing cookie and the app takes over `/` for that
   browser. Only one focus app is active per browser; opening another replaces it.
   Other browsers and devices are not affected.
-- Tiles for focus apps say "Opens on its own". The active one shows **Exit**.
+- Tiles for focus apps say "Opens full screen". The active one shows **Exit**.
 - Open links go through `/_styx/open/<slug>`. If the request is not clearly from Styx
   itself (a cross-site link, or a browser that sends no `Sec-Fetch-Site`), Styx shows an
   "Open app?" confirm page instead of switching, so another site can't change your

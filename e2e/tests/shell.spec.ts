@@ -185,7 +185,7 @@ test("s3 focus swap clears root service workers; exit clears styx_svc", async ()
 
   await homeWhileFocused(p);
   await expect(p.getByRole("link", { name: "Exit Focusapp Two" })).toBeVisible();
-  await expect(p.getByRole("link", { name: "Open Focusapp Two" })).toContainText(/Opens on its own/);
+  await expect(p.getByRole("link", { name: "Open Focusapp Two" })).toContainText(/Opens full screen/);
   await expect(p.getByRole("link", { name: "Open Focusapp Two" })).toHaveAttribute("aria-current", "true");
   await expect(p.getByRole("link", { name: "Open Focusapp", exact: true })).not.toHaveAttribute("aria-current");
   await p.getByRole("link", { name: "Exit Focusapp Two" }).click();
@@ -202,7 +202,7 @@ test("s4 cross-site open needs a click and sets no cookie", async () => {
   expect(r.status()).toBe(200);
   expect(r.headers()["set-cookie"] ?? "").not.toContain("styx_svc");
   const html = await r.text();
-  expect(html).toMatch(/Open focusapp/i);
+  expect(html).toMatch(/Open app/i);
   expect(html).not.toMatch(/<form/i);
   expect(html).toContain('href="/_styx/open/focusapp"');
   expect((await member.ctx.cookies()).some((c) => c.name === "styx_svc")).toBe(false);
@@ -213,7 +213,7 @@ test("s4 cross-site open needs a click and sets no cookie", async () => {
   await p.route("**/_styx/open/focusapp?confirm", (rt) => rt.fulfill({ status: 200, contentType: "text/html", body: html }));
   await p.goto("/_styx/open/focusapp?confirm");
   await p.unroute("**/_styx/open/focusapp?confirm");
-  await p.getByRole("link", { name: "Open focusapp" }).click();
+  await p.getByRole("link", { name: "Open app" }).click();
   await expect(p).toHaveURL(/\/_styx\/app\/focusapp\/$/);
   await p.goto("/_styx/exit?next=/");
 });
