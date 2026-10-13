@@ -39,3 +39,11 @@ def require_owner_or_admin(owner_id: str | None, user: User) -> None:
         return
     if owner_id != user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not the owner")
+
+
+async def session_user_or_none(request: Request, session: AsyncSession) -> User | None:
+    """Same checks as get_current_user, but None instead of 401 (forwardAuth use)."""
+    try:
+        return await get_current_user(request, session)
+    except HTTPException:
+        return None
