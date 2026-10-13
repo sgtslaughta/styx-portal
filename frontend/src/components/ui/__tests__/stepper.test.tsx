@@ -5,7 +5,7 @@ const steps = [
   { id: "a", label: "Back up settings", state: "done" as const },
   { id: "b", label: "Apply base path", state: "active" as const, percent: 40, detail: "Writing config.xml" },
   { id: "c", label: "Restart app", state: "failed" as const, detail: "Timed out" },
-  { id: "d", label: "Check it answers", state: "skipped" as const },
+  { id: "d", label: "Check the app responds", state: "skipped" as const },
 ];
 it("renders an ordered list with states", () => {
   render(<Stepper steps={steps} />);

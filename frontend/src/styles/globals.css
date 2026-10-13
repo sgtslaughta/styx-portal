@@ -20,7 +20,7 @@
   --accent-foreground: #0F1C22;
   --destructive: #B8432A;
   --border: #C9D3D0;
-  --input: #C9D3D0;
+  --input: #728286;
   --ring: #2A767C;
   --success: #4F9A6C;
   --success-foreground: #3A7A53;
@@ -52,7 +52,7 @@
   --accent-foreground: #EDF1EF;
   --destructive: #E07A5F;
   --border: #2A4049;
-  --input: #2A4049;
+  --input: #627B82;
   --ring: #6FB7BC;
   --success: #4F9A6C;
   --success-foreground: #7CC49A;
@@ -100,9 +100,12 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --radius: 0.5rem;
+  --text-xs: 0.8rem;
+  --text-xs--line-height: 1.5;
 }
 
 @layer base {
+  *, ::before, ::after, ::backdrop { border-color: var(--color-border); }
   html { font-size: 15px; }
   body { line-height: 1.55; }
   h1, h2, h3 { font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; font-variation-settings: "FLAR" 40; }
@@ -233,7 +236,7 @@
   --accent-foreground: #0F1C22;
   --destructive: #B8432A;
   --border: #C9D3D0;
-  --input: #C9D3D0;
+  --input: #728286;
   --ring: #2A767C;
   --success-foreground: #3A7A53;
   --obol-foreground: #86601F;
@@ -258,7 +261,7 @@
   --accent-foreground: #EDF1EF;
   --destructive: #E07A5F;
   --border: #2A4049;
-  --input: #2A4049;
+  --input: #627B82;
   --ring: #6FB7BC;
   --success-foreground: #7CC49A;
   --obol-foreground: #D2A657;

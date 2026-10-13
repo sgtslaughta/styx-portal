@@ -2,7 +2,7 @@ import { Check, Circle, Loader2, Minus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type StepItem = { id: string; label: string;
-  state: "pending" | "active" | "done" | "failed" | "skipped"; detail?: string | null; percent?: number | null };
+  state: "pending" | "active" | "done" | "failed" | "skipped"; detail?: string | null; percent?: number | null; title?: string };
 
 const ICON = {
   pending: <Circle className="h-4 w-4 text-muted-foreground" />,
@@ -21,7 +21,7 @@ export function Stepper({ steps, className }: { steps: StepItem[]; className?: s
         <li key={s.id} aria-current={s.state === "active" ? "step" : undefined} className="flex gap-3">
           <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-full border",
             s.state === "done" ? "border-success/50" : s.state === "failed" ? "border-destructive/60"
-              : s.state === "active" ? "border-primary" : "border-border")}>
+              : s.state === "active" ? "border-primary" : "border-input")}>
             {s.state === "pending" ? <span className="text-xs text-muted-foreground">{i + 1}</span> : ICON[s.state]}
           </span>
           <div className="min-w-0 flex-1 pt-0.5">
@@ -37,7 +37,7 @@ export function Stepper({ steps, className }: { steps: StepItem[]; className?: s
                 <div className="h-full bg-primary transition-[width] motion-reduce:transition-none" style={{ width: `${s.percent}%` }} />
               </div>
             )}
-            {s.detail && <p className={cn("mt-1 break-words text-xs", s.state === "failed" ? "text-destructive" : "text-muted-foreground")}>{s.detail}</p>}
+            {s.detail && <p title={s.title} className={cn("mt-1 text-xs", s.title ? "truncate" : "break-words", s.state === "failed" ? "text-destructive" : "text-muted-foreground")}>{s.detail}</p>}
           </div>
         </li>
       ))}
