@@ -18,8 +18,10 @@ import socket
 import sys
 import time
 import uuid
+from pathlib import Path
 
 import aiohttp
+import favicon
 import refit
 import seat_scale
 import yarl
@@ -32,6 +34,7 @@ from gateway_html import (  # noqa: F401  (re-exported for tests)
     inject_cursor_hide,
     inject_idle_watchdog,
     inject_title,
+    inject_favicon,
     is_activity,
 )
 
@@ -69,7 +72,7 @@ def create_app(user: str, password: str,
                upstream_port: int, files_dir: str = "",
                state_file: str = "", idle_timeout_s: int = 0,
                idle_lead_s: int = 60, idle_enabled: bool = False,
-               seat_dir: str = "") -> web.Application:
+               seat_dir: str = "", icon_dir: str = "") -> web.Application:
     # The supervisor can promote a warm standby selkies on a refit: the live
     # port is then in <seat_dir>/selkies-port, re-read per request.
     port_file = os.path.join(seat_dir, "selkies-port") if seat_dir else ""
@@ -352,10 +355,20 @@ def create_app(user: str, password: str,
         except asyncio.TimeoutError:
             return web.Response(status=504, text="stream backend timed out")
         html = inject_title(html, socket.gethostname())
+        icon = favicon.read(Path(icon_dir)) if icon_dir else None
+        if icon:
+            html = inject_favicon(html, icon[2])
         html = inject_idle_watchdog(html, idle_timeout_s, idle_lead_s, idle_enabled)
         html = inject_cursor_hide(html, bool(seat_dir))
         html = refit.inject_reload(html, bool(seat_dir))
         return web.Response(text=html, content_type="text/html")
+
+    async def styx_favicon(_request):
+        icon = favicon.read(Path(icon_dir)) if icon_dir else None
+        if not icon:
+            return web.Response(status=404)
+        return web.Response(body=icon[0], content_type=icon[1], headers={
+            "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff"})
 
     def _relative_location(request, loc):
         """Absolute-path redirects would escape a /w/<slug> prefix; make them
@@ -446,6 +459,7 @@ def create_app(user: str, password: str,
     for path in ("/api/websockets", "/websockets", "/websocket"):
         app.router.add_get(path, ws_proxy)
     app.router.add_get("/", index)
+    app.router.add_get("/styx-favicon", styx_favicon)
     if files_dir and os.path.isdir(files_dir):
         app.router.add_get("/files", files)
         app.router.add_get("/files/{path:.*}", files)
@@ -464,10 +478,11 @@ def main() -> None:
     idle_lead_s = int(os.environ.get("STYX_GW_IDLE_WARN_S", "60") or "60")
     idle_enabled = os.environ.get("STYX_GW_IDLE_ENABLED", "") == "1"
     seat_dir = os.environ.get("STYX_GW_SEAT_DIR", "")
+    icon_dir = os.environ.get("STYX_GW_ICON_DIR", "")
     web.run_app(create_app(user, password, upstream_port, files_dir,
                            state_file=state_file, idle_timeout_s=idle_timeout_s,
                            idle_lead_s=idle_lead_s, idle_enabled=idle_enabled,
-                           seat_dir=seat_dir),
+                           seat_dir=seat_dir, icon_dir=icon_dir),
                 host="0.0.0.0", port=listen_port)
 
 

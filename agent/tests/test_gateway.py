@@ -887,3 +887,35 @@ async def test_live_port_file_overrides_upstream(tmp_path):
         await up.close()
     assert "SETTINGS,{}" in received
 
+
+
+@pytest.mark.asyncio
+async def test_styx_favicon_served_and_injected(tmp_path):
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+    upstream = web.Application()
+    upstream.router.add_get("/", lambda r: web.Response(
+        text="<html><head><title>x</title></head><body></body></html>",
+        content_type="text/html"))
+    up = TestClient(TestServer(upstream))
+    await up.start_server()
+    auth = {"Authorization": _basic("styx", "pw")}
+    client = TestClient(TestServer(gateway.create_app(
+        "styx", "pw", upstream_port=up.server.port, icon_dir=str(tmp_path))))
+    await client.start_server()
+    try:
+        assert (await client.get("/styx-favicon", headers=auth)).status == 404
+        assert "styx-favicon" not in await (await client.get("/", headers=auth)).text()
+        (tmp_path / "favicon").write_bytes(b"\x89PNGxx")
+        (tmp_path / "favicon.type").write_text("image/png")
+        (tmp_path / "favicon.etag").write_text("abc123")
+        r = await client.get("/styx-favicon", headers=auth)
+        assert r.status == 200 and await r.read() == b"\x89PNGxx"
+        assert r.headers["Content-Type"] == "image/png"
+        assert r.headers["Cache-Control"] == "no-cache"
+        assert r.headers["X-Content-Type-Options"] == "nosniff"
+        assert (await client.get("/styx-favicon")).status == 401
+        assert "/styx-favicon?v=abc123" in await (await client.get("/", headers=auth)).text()
+    finally:
+        await client.close()
+        await up.close()

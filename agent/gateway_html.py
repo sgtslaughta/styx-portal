@@ -93,6 +93,30 @@ def inject_idle_watchdog(html: str, timeout_s: int, lead_s: int,
     return script + html
 
 
+def inject_favicon(html: str, etag: str) -> str:
+    """Replace the selkies tab icon with the workstation icon (/styx-favicon).
+    Selkies sets its own <link rel=icon>, so remove those and re-assert ours
+    when the head mutates. ponytail: observer + 2s poll backstop; ceiling is
+    one querySelectorAll per 2s. `etag` goes through json.dumps with '<'
+    escaped, so it cannot close the script tag."""
+    href = json.dumps("/styx-favicon?v=" + etag).replace("<", "\\u003c")
+    script = ("<script>(function(){var h=%s;"
+              "function fix(){if(!document.head)return;var ok=false,l=document.querySelectorAll("
+              "'link[rel~=\"icon\"],link[rel~=\"apple-touch-icon\"]');"
+              "l.forEach(function(e){if(e.getAttribute('href')===h&&!ok){ok=true;}"
+              "else e.remove();});"
+              "if(!ok){var n=document.createElement('link');n.rel='icon';"
+              "n.href=h;document.head.appendChild(n);}}"
+              "fix();setInterval(fix,2000);"
+              "try{new MutationObserver(fix).observe(document.head,"
+              "{childList:true,subtree:true,attributes:true,"
+              "attributeFilter:['href','rel']});}catch(e){}"
+              "})();</script>") % href
+    if "</head>" in html:
+        return html.replace("</head>", script + "</head>", 1)
+    return script + html
+
+
 CURSOR_HIDE_CSS = ("<style id=\"styx-cursor\">video,canvas,#videoContainer,"
                    "#overlayInput{cursor:none !important}"
                    # selkies 2.0 client-drawn cursor: an id-less fixed canvas
