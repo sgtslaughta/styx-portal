@@ -1,5 +1,6 @@
 """Managed base path endpoints (spec 3.2, 9). Admin only."""
 import asyncio
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -14,6 +15,7 @@ from app.services.audit import audit_request
 from app.services.docker_manager import DockerManager
 from app.services.mount_jobs import plan_mount, run_job
 
+logger = logging.getLogger("styx-portal")
 router = APIRouter()
 _tasks: set[asyncio.Task] = set()
 
@@ -22,10 +24,16 @@ class ApplyBody(BaseModel):
     consent: bool = False
 
 
+def _log_failure(t: asyncio.Task) -> None:
+    if not t.cancelled() and t.exception():
+        logger.error("mount job crashed", exc_info=t.exception())
+
+
 def _start(*args, **kw) -> None:
     t = asyncio.create_task(run_job(*args, **kw))
     _tasks.add(t)
     t.add_done_callback(_tasks.discard)
+    t.add_done_callback(_log_failure)
 
 
 async def _plan(session, sid, docker):
@@ -57,14 +65,14 @@ async def mount_apply(sid: str, body: ApplyBody, request: Request,
         raise HTTPException(409, p.reason or "Nothing to apply")
     if p.needs_consent and not body.consent:
         raise HTTPException(409, "This container wasn't created by Styx. Confirm the change first.")
+    verify = ((preset.subpath or {}).get("verify_path") or "/{slug}").format(slug=svc.slug)
+    old = (preset.health_path or "/").removeprefix(f"/{svc.slug}") or "/"
     job = MountJob(service_id=sid, changes=p.changes)
     session.add(job)
     await audit_request(session, request, "service.mount_apply", user_id=admin.id,
                         resource=sid,
                         detail={"service": svc.slug, "changes": p.changes, "consent": body.consent})
     await session.commit()
-    verify = ((preset.subpath or {}).get("verify_path") or "/{slug}").format(slug=svc.slug)
-    old = (preset.health_path or "/").removeprefix(f"/{svc.slug}") or "/"
     _start(job.id, sid, p, docker, async_session, verify_path=verify, old_verify_path=old)
     return {"job_id": job.id}
 

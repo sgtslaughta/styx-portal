@@ -98,3 +98,69 @@ async def test_sweep_marks_running_failed(session):
     assert await sweep_interrupted(session) == 1
     j = (await session.exec(select(MountJob))).first()
     assert j.state == "failed" and "Interrupted" in j.log_excerpt and "/b" in j.log_excerpt
+
+
+async def test_sweep_clears_pending(session):
+    session.add(MountJob(service_id="s", state="pending"))
+    await session.commit()
+    assert await sweep_interrupted(session) == 1
+
+
+async def test_service_deleted_before_run_fails(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    await session.delete(svc)
+    await session.commit()
+    await run_job(job.id, svc.id, PLAN, d, factory)
+    await session.refresh(job)
+    assert job.state == "failed" and job.steps[0]["detail"]
+
+
+async def test_read_none_fails(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    d.read_file.return_value = None
+    await run_job(job.id, svc.id, PLAN, d, factory)
+    await session.refresh(job)
+    assert job.state == "failed" and d.write_file.call_count == 0
+
+
+async def test_logs_raise_still_restores(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    d.container_logs.side_effect = RuntimeError("no logs")
+
+    async def get(url):
+        return 404 if url.endswith("/sonarr") else 200
+    await run_job(job.id, svc.id, PLAN, d, factory, http_get=get)
+    await session.refresh(job)
+    assert job.state == "rolled_back" and d.write_file.call_args.args[2] == XML
+
+
+async def test_rollback_error_recorded(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    d.restart_container.side_effect = [None, RuntimeError("daemon gone")]
+
+    async def down(url):
+        return 503
+    await run_job(job.id, svc.id, PLAN, d, factory, http_get=down)
+    await session.refresh(job)
+    assert job.state == "failed"
+    assert "Rollback failed: daemon gone" in job.log_excerpt and job.backup_dir in job.log_excerpt
+
+
+async def test_edit_error_fails_without_restore(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    d.read_file.return_value = (b"not xml <<", tarfile.TarInfo("config.xml"))
+    await run_job(job.id, svc.id, PLAN, d, factory)
+    await session.refresh(job)
+    assert job.state == "failed"
+    assert d.write_file.call_count == 0 and d.restart_container.call_count == 0
+
+
+async def test_write_raises_restores(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    d.write_file.side_effect = [OSError("disk"), None]
+
+    async def ok(url):
+        return 200
+    await run_job(job.id, svc.id, PLAN, d, factory, http_get=ok)
+    await session.refresh(job)
+    assert job.state == "rolled_back" and d.write_file.call_count == 2

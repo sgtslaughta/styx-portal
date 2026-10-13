@@ -1,5 +1,6 @@
 """Managed base path: plan + apply job (spec §3.1, §3.2)."""
 import asyncio
+import logging
 import shutil
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -13,6 +14,7 @@ from app.models import MountJob, ProxiedService, ServicePreset, upstream_base
 from app.services.mount_edit import edit_config, read_config
 
 _settings = Settings()
+logger = logging.getLogger("styx-portal")
 
 
 @dataclass
@@ -122,17 +124,23 @@ async def run_job(job_id, svc_id, plan, docker, session_factory, http_get=None,
             if x["state"] == "active":
                 x["state"], x["detail"] = "failed", str(err)
 
-    async with session_factory() as s:
-        svc = await s.get(ProxiedService, svc_id)
-    base = upstream_base(svc)
-    verify_path = verify_path or f"/{svc.slug}"
-    if not plan.changes:
-        for i, _ in STEPS:
-            mark(i, "skipped")
-        await save("done", changes=[])
-        await _set_managed(session_factory, svc_id)
+    try:
+        async with session_factory() as s:
+            svc = await s.get(ProxiedService, svc_id)
+        base = upstream_base(svc)
+        verify_path = verify_path or f"/{svc.slug}"
+        if not plan.changes:
+            for i, _ in STEPS:
+                mark(i, "skipped")
+            await save("done", changes=[])
+            await _set_managed(session_factory, svc_id)
+            return
+        await save("running", changes=plan.changes)
+    except Exception as e:  # noqa: BLE001 - never leave the job pending
+        logger.exception("mount job %s pre-flight failed", job_id)
+        steps[0]["state"], steps[0]["detail"] = "failed", str(e)
+        await save("failed")
         return
-    await save("running", changes=plan.changes)
     c, path = svc.container, plan.path
     bdir = None
     mark("backup", "active")
@@ -154,8 +162,10 @@ async def run_job(job_id, svc_id, plan, docker, session_factory, http_get=None,
     mark("backup", "done", str(bdir))
     mark("apply", "active")
     await save(backup_dir=str(bdir))
+    written = False
     try:
         new_text, _ = edit_config(original.decode("utf-8"), plan.fmt, plan.key, plan.changes[0]["new"])
+        written = True  # from here on a failed write may have partly landed
         await asyncio.to_thread(docker.write_file, c, path, new_text.encode("utf-8"), info)
         mark("apply", "done")
         mark("restart", "active")
@@ -172,19 +182,28 @@ async def run_job(job_id, svc_id, plan, docker, session_factory, http_get=None,
         mark("verify", "failed", f"No answer at {verify_path} after {VERIFY_BUDGET_S}s")
     except Exception as e:  # noqa: BLE001 - any failure triggers rollback
         fail_active(e)
-    logs = await asyncio.to_thread(docker.container_logs, c, 20)
+    if not written:
+        await save("failed")
+        return
+    try:
+        logs = await asyncio.to_thread(docker.container_logs, c, 20)
+    except Exception:  # noqa: BLE001 - logs are best effort, rollback is not
+        logs = ""
     await save(log_excerpt=logs)
     try:
         await asyncio.to_thread(docker.write_file, c, path, original, info)
         await asyncio.to_thread(docker.restart_container, c)
         ok = await _verify(get, base + (old_verify_path or "/"))
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        logger.exception("mount job %s rollback failed", job_id)
+        logs = f"{logs}\nRollback failed: {e}. Backup at {bdir}".strip()
+        await save(log_excerpt=logs)
         ok = False
     await save("rolled_back" if ok else "failed")
 
 
 async def sweep_interrupted(session) -> int:
-    rows = (await session.exec(select(MountJob).where(MountJob.state == "running"))).all()
+    rows = (await session.exec(select(MountJob).where(MountJob.state.in_(["pending", "running"])))).all()
     for j in rows:
         j.state = "failed"
         j.log_excerpt = f"Interrupted - backup kept at {j.backup_dir}"
