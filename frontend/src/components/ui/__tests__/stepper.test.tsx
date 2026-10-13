@@ -16,3 +16,8 @@ it("renders an ordered list with states", () => {
   expect(screen.getByText("Timed out")).toBeInTheDocument();
   expect(items[0]).toHaveTextContent(/done/i);
 });
+it("shows the percent as text and aria-valuetext while active", () => {
+  render(<Stepper steps={steps} />);
+  expect(screen.getByText("40%")).toBeInTheDocument();
+  expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuetext", "40%");
+});

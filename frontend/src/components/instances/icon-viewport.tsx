@@ -34,7 +34,7 @@ export function IconViewport({ instance, icon, pull }: IconViewportProps) {
   const iconContent = instance.status === "pulling" ? (
     <div className="z-10 w-[min(18rem,80%)] rounded-lg bg-card/90 p-4 text-base leading-normal text-card-foreground">
       <Stepper steps={[
-        { id: "pull", label: "Download image", state: "active", percent: pull?.percent, detail: pull?.detail },
+        { id: "pull", label: "Download image", state: "active", percent: pull?.percent, detail: pull?.detail ?? "Pulling image" },
         { id: "start", label: "Start", state: "pending" },
       ]} />
     </div>

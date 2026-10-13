@@ -26,12 +26,12 @@
   --success-foreground: #3A7A53;
   --obol: #B88A3E;
   --obol-foreground: #86601F;
-  --warning: oklch(0.65 0.18 86.047);
-  --idle: oklch(0.65 0.18 86.047);
-  --chart-1: oklch(0.55 0.17 255);
-  --chart-2: oklch(0.55 0.2 300);
-  --chart-3: oklch(0.6 0.13 180);
-  --chart-4: oklch(0.65 0.18 50);
+  --warning: #A87A2A;
+  --idle: #A87A2A;
+  --chart-1: #2A767C;
+  --chart-2: #B88A3E;
+  --chart-3: #6B8F5E;
+  --chart-4: #C4623F;
 }
 
 .dark {
@@ -57,12 +57,12 @@
   --success-foreground: #7CC49A;
   --obol: #B88A3E;
   --obol-foreground: #D2A657;
-  --warning: oklch(0.795 0.184 86.047);
-  --idle: oklch(0.795 0.184 86.047);
-  --chart-1: oklch(0.65 0.17 255);
-  --chart-2: oklch(0.66 0.2 300);
-  --chart-3: oklch(0.72 0.13 180);
-  --chart-4: oklch(0.75 0.18 50);
+  --warning: #D2A657;
+  --idle: #D2A657;
+  --chart-1: #6FB7BC;
+  --chart-2: #D2A657;
+  --chart-3: #8DB87E;
+  --chart-4: #E07A5F;
 }
 
 /* Wire Tailwind theme to runtime vars */
@@ -110,24 +110,26 @@
   position: relative;
   overflow: hidden;
   isolation: isolate; /* keeps z:-1 line layers above this panel's background */
-  /* Light theme: smooth off-white (lower-left) -> dark slate grey-blue (upper-right) */
-  background: linear-gradient(to top right, #faf8f3 0%, #5a6685 55%, #2c3650 100%);
-  color: #1a2847;
-  --brand-fg: #1a2847;
-  --brand-fg-muted: #44506e;
-  --brand-ripple-r: 30;
-  --brand-ripple-g: 58;
-  --brand-ripple-b: 138;
+  /* Light theme: Mist -> pale Water, faint Current glow */
+  background: radial-gradient(60% 50% at 80% 15%, rgba(42, 118, 124, 0.25), transparent 70%),
+    linear-gradient(to top right, #EDF1EF 0%, #BFD6D6 60%, #9CC1C3 100%);
+  color: #0F1C22;
+  --brand-fg: #0F1C22;
+  --brand-fg-muted: #2F4A52;
+  --brand-ripple-r: 42;
+  --brand-ripple-g: 118;
+  --brand-ripple-b: 124;
 }
-/* Dark theme: smooth deep navy (lower-left) -> dark slate grey-blue (upper-right) */
+/* Dark theme: Water with a faint Current glow */
 .dark .styx-brand {
-  background: linear-gradient(to top right, #04081a 0%, #1c2238 55%, #38425e 100%);
-  color: #fff;
-  --brand-fg: #fff;
-  --brand-fg-muted: rgba(255, 255, 255, 0.6);
-  --brand-ripple-r: 34;
-  --brand-ripple-g: 211;
-  --brand-ripple-b: 238;
+  background: radial-gradient(60% 50% at 80% 15%, rgba(111, 183, 188, 0.18), transparent 70%),
+    linear-gradient(to top right, #0F1C22 0%, #16323A 100%);
+  color: #EDF1EF;
+  --brand-fg: #EDF1EF;
+  --brand-fg-muted: #9FB0B4;
+  --brand-ripple-r: 111;
+  --brand-ripple-g: 183;
+  --brand-ripple-b: 188;
 }
 .styx-brand::before,
 .styx-brand::after {

@@ -37,7 +37,7 @@ function Tile({ s, focused }: { s: ServiceTile; focused: boolean }) {
       </a>
       {focused && (
         <a href="/_styx/exit?next=/" aria-label={`Exit ${s.name}`}
-          className="mr-2 shrink-0 rounded px-2 py-1 text-xs font-medium text-obol-foreground underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring">
+          className="mr-2 inline-flex min-h-11 shrink-0 items-center rounded px-3 py-1 text-xs sm:min-h-0 sm:px-2 font-medium text-obol-foreground underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring">
           Exit
         </a>
       )}
@@ -68,7 +68,7 @@ export function ServiceList({ onOpenSettings }: { onOpenSettings?: () => void })
     return (
       <p className="mb-4 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
         No services yet. Add one in <button type="button" onClick={onOpenSettings}
-          className="underline underline-offset-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">Settings → Services</button>.
+          className="underline underline-offset-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">Services in Settings</button>.
       </p>
     );
   }

@@ -45,6 +45,8 @@ describe("ServiceList", () => {
     expect(screen.getByText("Opens on its own")).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: "Exit Immich" })).toHaveAttribute("href", "/_styx/exit?next=/");
     expect(screen.queryByRole("link", { name: "Exit Sonarr" })).toBeNull();
+    expect(screen.getByRole("link", { name: "Exit Immich" }).parentElement).toHaveClass("ring-obol");
+    expect(screen.getByRole("link", { name: "Exit Immich" })).toHaveClass("min-h-11");
   });
 
   test("frame_ok false path tile opens directly; unknown focus slug marks nothing", async () => {
