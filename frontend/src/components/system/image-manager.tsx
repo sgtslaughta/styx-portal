@@ -118,8 +118,8 @@ export function ImageManager() {
       {/* Warning */}
       {images && images.length > 0 && (
         <div className="flex items-start gap-2 rounded-lg border border-warning/20 bg-warning/5 px-3 py-2">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning-foreground/60" />
-          <p className="text-[11px] text-warning-foreground/80">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+          <p className="text-[11px] text-warning-foreground">
             Images in use by instances cannot be removed. Destroy all instances using an image first.
           </p>
         </div>

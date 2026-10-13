@@ -284,7 +284,7 @@ function ActionBtn({
   const colors = {
     success: "text-success-foreground hover:bg-success/15",
     blue: "text-primary hover:bg-primary/15",
-    warning: "text-warning-foreground hover:bg-warning/15",
+    warning: "text-warning hover:bg-warning/15",
     destructive: "text-destructive hover:bg-destructive/15",
   };
   return (

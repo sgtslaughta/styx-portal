@@ -186,7 +186,7 @@ function LogLine({ line, lineNum, query }: { line: string; lineNum: number; quer
     <div className={cn(
       "flex gap-2 py-px hover:bg-muted/30 rounded-sm transition-colors",
       isError && "bg-destructive/10",
-      isWarn && "bg-warning/10"
+      isWarn && "bg-warning/8"
     )}>
       <span className="text-muted-foreground/40 select-none w-8 text-right shrink-0 tabular-nums">
         {lineNum}
@@ -201,7 +201,7 @@ function LogLine({ line, lineNum, query }: { line: string; lineNum: number; quer
             const [match, ...rest] = part.split("<<<ENDMARK>>>");
             return (
               <span key={i}>
-                <mark className="bg-warning/30 text-warning-foreground rounded-sm px-0.5">{match}</mark>
+                <mark className="bg-warning/20 text-foreground rounded-sm px-0.5">{match}</mark>
                 {rest.join("")}
               </span>
             );

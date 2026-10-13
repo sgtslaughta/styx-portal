@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { TOKENS, TEXT_PAIRS, contrast } from "@/styles/tokens";
 
@@ -31,5 +31,15 @@ describe("Styx tokens", () => {
     expect(form).toContain(TOKENS.light.primary.toLowerCase());
     expect(form).toContain(TOKENS.light.primaryForeground.toLowerCase());
     expect(form).not.toContain(TOKENS.dark.primary.toLowerCase());
+  });
+});
+
+describe("warning text", () => {
+  it("never uses an opacity variant of text-warning-foreground in src", () => {
+    const walk = (d: string): string[] => readdirSync(d, { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? (e.name === "__tests__" ? [] : walk(`${d}/${e.name}`)) : [`${d}/${e.name}`]);
+    const bad = walk("src").filter((f) => /\.(tsx?|css)$/.test(f))
+      .filter((f) => /text-warning-foreground\//.test(readFileSync(f, "utf8")));
+    expect(bad).toEqual([]);
   });
 });
