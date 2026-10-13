@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     SERVICE_PRESETS_DIR: str = "/app/templates/services"
     SCREENSHOT_CACHE_DIR: str = "/app/data/screenshots"
     SCREENSHOT_INTERVAL_SECONDS: int = 30
+    MOUNT_BACKUP_DIR: str = "./data/mount-backups"
     TRAEFIK_DYNAMIC_DIR: str = "/app/traefik-dynamic"
     AUTHENTIK_MIDDLEWARE: str = "authentik@file"
     DEPLOY_MODE: str = "tunnel"   # tunnel | direct

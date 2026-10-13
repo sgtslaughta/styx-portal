@@ -1,0 +1,100 @@
+import tarfile
+from unittest.mock import MagicMock
+import pytest
+from sqlmodel import select
+from app.models import MountJob, ProxiedService
+from app.services.mount_jobs import MountPlan, run_job, sweep_interrupted
+
+XML = b"<Config><UrlBase></UrlBase></Config>"
+PLAN = MountPlan("config_file", "/config/config.xml", "xml", "/Config/UrlBase",
+                 [{"target": "/config/config.xml", "key": "/Config/UrlBase", "old": "", "new": "/sonarr"}], True)
+
+
+@pytest.fixture
+def factory(session):
+    class F:
+        async def __aenter__(self): return session
+        async def __aexit__(self, *a): return False
+    return lambda: F()
+
+
+async def _setup(session, tmp_path, monkeypatch):
+    monkeypatch.setattr("app.services.mount_jobs._settings.MOUNT_BACKUP_DIR", str(tmp_path))
+    monkeypatch.setattr("app.services.mount_jobs.VERIFY_BUDGET_S", 0.2)
+    monkeypatch.setattr("app.services.mount_jobs.VERIFY_INTERVAL_S", 0.05)
+    svc = ProxiedService(slug="sonarr", name="Sonarr", kind="docker-local", container="sonarr",
+                         container_port=8989, preset_id="sonarr")
+    job = MountJob(service_id=svc.id)
+    session.add_all([svc, job])
+    await session.commit()
+    d = MagicMock()
+    d.read_file.return_value = (XML, tarfile.TarInfo("config.xml"))
+    d.container_logs.return_value = "boom"
+    return svc, job, d
+
+
+async def test_happy_path(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    async def ok(url): return 200
+    await run_job(job.id, svc.id, PLAN, d, factory, http_get=ok)
+    await session.refresh(job)
+    await session.refresh(svc)
+    assert job.state == "done" and [s["state"] for s in job.steps] == ["done"] * 4
+    assert b"/sonarr" in d.write_file.call_args.args[2]
+    assert (tmp_path / svc.id).is_dir() and svc.mount_managed is True
+
+
+async def test_verify_fail_rolls_back(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    calls = []
+    async def get(url):
+        calls.append(url)
+        return 404 if url.endswith("/sonarr/ping") else 200
+    await run_job(job.id, svc.id, PLAN, d, factory, http_get=get, verify_path="/sonarr/ping",
+                  old_verify_path="/ping")
+    await session.refresh(job)
+    assert job.state == "rolled_back" and job.log_excerpt == "boom"
+    assert d.write_file.call_args.args[2] == XML          # original restored
+    assert d.restart_container.call_count == 2
+
+
+async def test_rollback_failure_marks_failed(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    async def down(url): return 503
+    await run_job(job.id, svc.id, PLAN, d, factory, http_get=down)
+    await session.refresh(job)
+    assert job.state == "failed" and job.backup_dir
+
+
+async def test_read_failure_ends_failed(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    d.read_file.side_effect = tarfile.ReadError("bad archive")
+    await run_job(job.id, svc.id, PLAN, d, factory)
+    await session.refresh(job)
+    assert job.state == "failed" and job.finished_at
+    assert job.steps[0]["state"] == "failed" and "bad archive" in job.steps[0]["detail"]
+    assert d.write_file.call_count == 0 and d.restart_container.call_count == 0
+
+
+async def test_no_changes_finishes_without_restart(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    await run_job(job.id, svc.id, MountPlan("config_file", "/c", "xml", "/C/U", [], True), d, factory)
+    await session.refresh(job)
+    assert job.state == "done" and d.restart_container.call_count == 0
+
+
+async def test_keeps_last_five_backups(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    for i in range(6):
+        (tmp_path / svc.id / f"2026010{i}T000000Z").mkdir(parents=True)
+    async def ok(url): return 200
+    await run_job(job.id, svc.id, PLAN, d, factory, http_get=ok)
+    assert len(list((tmp_path / svc.id).iterdir())) == 5
+
+
+async def test_sweep_marks_running_failed(session):
+    session.add(MountJob(service_id="s", state="running", backup_dir="/b"))
+    await session.commit()
+    assert await sweep_interrupted(session) == 1
+    j = (await session.exec(select(MountJob))).first()
+    assert j.state == "failed" and "Interrupted" in j.log_excerpt and "/b" in j.log_excerpt
