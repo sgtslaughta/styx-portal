@@ -88,7 +88,8 @@ _EXEMPT_PATHS = frozenset({"/api/auth/ban-check"})
 
 
 def is_rate_limit_exempt(path: str) -> bool:
-    return path in _EXEMPT_PATHS
+    # /internal/: forwardAuth targets, already rate-limited by Traefik upstream.
+    return path in _EXEMPT_PATHS or path.startswith("/internal/")
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):

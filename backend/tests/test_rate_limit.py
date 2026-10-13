@@ -103,3 +103,13 @@ def test_middleware_reads_live_spec():
     assert w1.limit == 3 and w1.window == 60
     assert mw._window_for("3/60") is w1
     assert mw._window_for("9/60").limit == 9
+
+
+def test_internal_forwardauth_paths_are_exempt():
+    """Traefik's styx-ratelimit already runs before forwardAuth; per-asset
+    auth-checks would otherwise exhaust the backend bucket and 429."""
+    from app.middleware.rate_limit import is_rate_limit_exempt
+    assert is_rate_limit_exempt("/internal/services/sonarr/auth-check") is True
+    assert is_rate_limit_exempt("/internal/workstations/auth-check") is True
+    assert is_rate_limit_exempt("/internalx") is False
+    assert is_rate_limit_exempt("/api/internal/x") is False
