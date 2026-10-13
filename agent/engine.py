@@ -333,11 +333,12 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
     cmd.append("--video-max-qp=28")
     env["SELKIES_USE_PAINT_OVER_QUALITY"] = (
         "false" if s.get("use_paint_over_quality") is False else "true")
-    # 4:4:4 chroma by default: 4:2:0 halves colour resolution and desktop text
-    # reads soft. Initial value only; a client whose decoder lacks 4:4:4 falls
-    # back to 4:2:0 by itself, and the panel can switch it off per browser.
+    # 4:4:4 chroma is opt-in: crisp text, but no AMD/Intel VA-API driver
+    # encodes H.264 4:4:4, so selkies drops to software x264 (bigger frames,
+    # CPU) — on the EliteMini that starved audio. Initial value only; the
+    # panel can still switch it per browser.
     env["SELKIES_VIDEO_FULLCOLOR"] = (
-        "false" if s.get("video_fullcolor") is False else "true")
+        "true" if s.get("video_fullcolor") is True else "false")
     pcrf = _int_in(s.get("video_paintover_crf", s.get("h264_paintover_crf")), 5, 50)
     env["SELKIES_VIDEO_PAINTOVER_CRF"] = str(12 if pcrf is None else pcrf)
 

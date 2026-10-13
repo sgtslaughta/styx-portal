@@ -27,7 +27,7 @@ export function WorkstationStreamSettings({
     ss.use_paint_over_quality !== false
   );
   const [fullColor, setFullColor] = useState<boolean>(
-    ss.video_fullcolor !== false
+    ss.video_fullcolor === true
   );
   const [saving, setSaving] = useState(false);
 
@@ -122,7 +122,7 @@ export function WorkstationStreamSettings({
           </label>
           <label
             className="flex items-center gap-1.5"
-            title="4:4:4 chroma: full colour resolution for crisp text (about double the bitrate of 4:2:0). Browsers without a 4:4:4 decoder fall back automatically."
+            title="4:4:4 chroma for crisp text. Warning: VA-API GPUs cannot encode H.264 4:4:4, so this switches to software x264 (more CPU, larger frames) and can make audio stutter on slow uplinks."
           >
             <input
               type="checkbox"
