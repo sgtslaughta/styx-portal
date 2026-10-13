@@ -71,7 +71,7 @@ it("click opens the dock; Esc returns focus to the tab", async () => {
   await waitFor(() => expect(document.activeElement).toBe(tab));
 });
 it("arc offset is capped at 12px for long lists", () => {
-  const many: ServiceTile[] = Array.from({ length: 30 }, (_, i) => ({ ...tiles[0], id: `t${i}`, slug: `s${i}`, name: `App ${i}` }));
+  const many: ServiceTile[] = Array.from({ length: 30 }, (_, i): ServiceTile => ({ ...(tiles[0] as ServiceTile), id: `t${i}`, slug: `s${i}`, name: `App ${i}` }));
   const { container } = render(<Dock open onOpenChange={() => {}} tiles={many} current="s0" focusSlug={null} side="right" />);
   void container;
   return waitFor(() => {
