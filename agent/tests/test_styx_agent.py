@@ -326,3 +326,10 @@ def test_merge_pending_seat_change_in_either_push():
     assert "seat" not in q["keys"]
     q = styx_agent.merge_pending(q, {"idle_timeout_s": 5}, wide)
     assert "seat" in q["keys"]
+
+
+def test_idle_timeout_changes_apply_immediately():
+    from agent_procs import must_apply_now
+    assert must_apply_now({"idle_timeout_s": 900}, {"idle_timeout_s": 600})
+    assert must_apply_now({}, {"idle_timeout_enabled": True})
+    assert not must_apply_now({"video_crf": 25}, {"video_crf": 30})

@@ -96,6 +96,15 @@ def viewers_connected(state_path) -> bool:
     return isinstance(n, int) and n > 0
 
 
+# Security settings never wait for viewers to leave: an admin enabling the
+# idle timeout must not be outlasted by the very session it targets.
+IMMEDIATE_KEYS = ("idle_timeout_s", "idle_warn_lead_s", "idle_timeout_enabled")
+
+
+def must_apply_now(old_ss: dict, new_ss: dict) -> bool:
+    return any(old_ss.get(k) != new_ss.get(k) for k in IMMEDIATE_KEYS)
+
+
 def merge_pending(pending: dict | None, old_ss: dict, new_ss: dict) -> dict:
     """Fold a settings push into a deferred restart: keep the earliest old
     settings, union the restart keys."""
