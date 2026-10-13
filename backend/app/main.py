@@ -27,6 +27,7 @@ from app.routers import enroll as enroll_router
 from app.routers import agent as agent_router
 from app.routers import system_settings as system_settings_router
 from app.routers import groups as groups_router
+from app.routers import services as services_router
 from app.routers import services_auth as services_auth_router
 from app.security.deps import get_current_user, require_admin
 from app.services.docker_manager import DockerManager
@@ -286,6 +287,7 @@ app.include_router(agent_router.router, prefix="/api/agent", tags=["agent"])
 app.include_router(system_settings_router.router, prefix="/api/system-settings", tags=["system-settings"])
 app.include_router(groups_router.router, prefix="/api/groups", tags=["groups"])
 app.include_router(groups_router.users_router, prefix="/api/users", tags=["groups"])
+app.include_router(services_router.router, prefix="/api/services", tags=["services"])
 app.include_router(services_auth_router.router, prefix="/api/services", tags=["services"])
 app.include_router(services_auth_router.exit_router, prefix="/_styx", tags=["services"])
 app.include_router(services_auth_router.pages_router, prefix="/api", tags=["services"])

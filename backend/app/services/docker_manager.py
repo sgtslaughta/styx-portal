@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 
@@ -6,6 +7,8 @@ import docker.errors
 from docker.types import DeviceRequest, Ulimit
 
 from app.config import Settings
+
+logger = logging.getLogger("styx-portal")
 
 TRAEFIK_CONTAINER = "styx-traefik"
 
@@ -304,6 +307,48 @@ class DockerManager:
             net.remove()
         except docker.errors.APIError:
             pass  # still has containers — leave it
+
+    def connect_to_network(self, container: str, network: str | None = None) -> bool:
+        """Attach a container to the styx network so Traefik can reach it. False on failure."""
+        try:
+            net = self._client.networks.get(network or self._network_name)
+            net.connect(container)
+            return True
+        except docker.errors.NotFound:
+            return False
+        except docker.errors.APIError as e:
+            if "already exists" in str(e).lower():
+                return True
+            logger.warning("network connect failed for %s: %s", container, e)
+            return False
+
+    def disconnect_from_network(self, container: str, network: str | None = None) -> None:
+        try:
+            self._client.networks.get(network or self._network_name).disconnect(container)
+        except docker.errors.DockerException:
+            pass
+
+    def list_containers(self) -> list[dict]:
+        """Running containers not managed by Styx and not part of the Styx compose stack."""
+        own_project = None
+        try:
+            own_project = self._client.containers.get(TRAEFIK_CONTAINER).labels.get(
+                "com.docker.compose.project")
+        except docker.errors.DockerException:
+            pass
+        out = []
+        for c in self._client.containers.list():
+            labels = c.labels or {}
+            if labels.get("styx-portal.managed") == "true":
+                continue
+            if own_project and labels.get("com.docker.compose.project") == own_project:
+                continue
+            ports = sorted({int(p.split("/")[0]) for p in
+                            (c.attrs.get("Config", {}).get("ExposedPorts") or {})})
+            nets = list((c.attrs.get("NetworkSettings", {}).get("Networks") or {}).keys())
+            image = c.image.tags[0] if c.image.tags else str(c.image.id)
+            out.append({"name": c.name, "image": image, "ports": ports, "networks": nets})
+        return out
 
     def ping(self) -> bool:
         try:

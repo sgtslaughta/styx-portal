@@ -384,6 +384,7 @@ RESERVED_SERVICE_SLUGS = {
     "if", "application", "outpost.goauthentik.io", "static", "media", "flows", "ws",
     "-", ".well-known", "source",
 }
+CONTAINER_NAME_RE = r"^[a-zA-Z0-9][a-zA-Z0-9_.-]*$"
 MOUNT_MODES = {"path", "cookie-root"}
 AUTH_MODES = {"sso", "sso-with-bypass", "app-native"}
 SERVICE_KINDS = {"url", "docker-local"}
@@ -406,7 +407,7 @@ class _ServiceFields(BaseModel):
     icon: str | None = Field(default=None, max_length=255)
     kind: str = "url"
     upstream_url: str | None = None
-    container: str | None = Field(default=None, max_length=255)
+    container: str | None = Field(default=None, max_length=255, pattern=CONTAINER_NAME_RE)
     container_port: int | None = Field(default=None, ge=1, le=65535)
     mount_mode: str = "path"
     auth_mode: str = "sso"
@@ -443,8 +444,9 @@ class _ServiceFields(BaseModel):
     def _url(cls, v):
         if v is None:
             return v
-        if not re.match(r"^https?://[^\s/]+", v):
-            raise ValueError("upstream_url must start with http:// or https://")
+        # http(s) only; "@" is barred from the authority part (no credentials/userinfo)
+        if not re.fullmatch(r"https?://[^\s/@]+(/\S*)?", v) or re.search(r"[\x00-\x20\x7f]", v):
+            raise ValueError("upstream_url must be http(s)://host[:port][/path], no credentials")
         return v.rstrip("/")
 
     @field_validator("health_path")
