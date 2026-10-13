@@ -129,7 +129,9 @@ Focus = SP1 cookie-root (SP1 §4.2) plus:
     user's focused app. No POST and no CSRF form: `styx_proxy` is
     `SameSite=Strict`, so the link click is same-origin and carries the cookie.
   - Response carries `Clear-Site-Data: "cache"` (not `"storage"`: app logins
-    in localStorage survive).
+    in localStorage survive). It stays despite wiping the origin's HTTP cache on
+    each focus switch: it is what drops stale cached assets of the previous focus
+    app, and the cost is only a re-fetch of Styx's own assets.
 - The shell unregisters service workers registered at scope `/` before loading
   a focus app (same-origin `navigator.serviceWorker.getRegistrations()`),
   because the previous focus app's SW would otherwise answer for `/`.

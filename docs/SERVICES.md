@@ -140,7 +140,9 @@ Before writing, Styx copies the settings file to
 After the restart, Styx checks that the app answers at its new path for up to 90
 seconds. The check runs from a short-lived `busybox` container on the services network
 (`MOUNT_PROBE_IMAGE`, default `busybox:1.36`), because the backend is not on that
-network. If the change, restart or check fails, Styx restores the backup, restarts the
+network. The probe runs as an unprivileged user with no capabilities; pin
+`MOUNT_PROBE_IMAGE` to a digest (`busybox@sha256:...`) so a moved tag can't change what runs.
+If the change, restart or check fails, Styx restores the backup, restarts the
 app and checks the old path. The job then ends as rolled back and the drawer shows:
 
 - the reason and the app's last log lines under **App log**;
