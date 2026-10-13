@@ -262,7 +262,7 @@ if [[ "$UPGRADE" == 1 ]]; then
 fi
 mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$UNIT_DIR" "$INSTALL_DIR/logs"
 for pair in "agent.py styx_agent.py" "engine.py engine.py" \
-            "gateway.py gateway.py" "seat_gnome.py seat_gnome.py" \
+            "gateway.py gateway.py" "gateway_html.py gateway_html.py" "seat_gnome.py seat_gnome.py" \
             "seat_labwc.py seat_labwc.py" "health.py health.py" \
             "refit.py refit.py" "seat_portal.py seat_portal.py" "seat_clipboard.py seat_clipboard.py" "portal_api.py portal_api.py" \
             "clipboard_bridge.py clipboard_bridge.py" "uninstall uninstall.sh"; do
