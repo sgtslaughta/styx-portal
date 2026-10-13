@@ -28,13 +28,39 @@ describe("WorkstationIcon", () => {
 });
 
 describe("WorkstationIconSettings", () => {
-  test("auto mode saves auto when currently custom", async () => {
-    const onSaved = vi.fn();
-    render(<WorkstationIconSettings ws={ws({ icon_kind: "emoji" })} onSaved={onSaved} />);
+  test("auto mode has no Save button; shows current icon", () => {
+    const { container } = render(<WorkstationIconSettings ws={ws({ icon_kind: "emoji" })} onSaved={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Auto" }));
+    expect(screen.queryByRole("button", { name: "Save icon" })).toBeNull();
+    expect(container.querySelector("img")!.getAttribute("src")).toBe("/api/workstations/w1/icon?v=abc123");
+  });
+
+  test("mode follows icon_kind and src follows icon_etag", () => {
+    const { container, rerender } = render(<WorkstationIconSettings ws={ws()} onSaved={vi.fn()} />);
+    rerender(<WorkstationIconSettings ws={ws({ icon_kind: "emoji", icon_etag: "zzz" })} onSaved={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Emoji" })).toHaveAttribute("aria-pressed", "true");
+    expect(container.querySelector("img")!.getAttribute("src")).toBe("/api/workstations/w1/icon?v=zzz");
+  });
+
+  test("clears local emoji after save", async () => {
+    render(<WorkstationIconSettings ws={ws()} onSaved={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Emoji" }));
+    fireEvent.change(screen.getByLabelText("Emoji"), { target: { value: "🚀" } });
     fireEvent.click(screen.getByRole("button", { name: "Save icon" }));
-    await waitFor(() => expect(set).toHaveBeenCalledWith("w1", "auto", undefined));
-    expect(onSaved).toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByLabelText("Emoji")).toHaveValue(""));
+  });
+
+  test("works without Intl.Segmenter", () => {
+    const orig = (Intl as any).Segmenter;
+    delete (Intl as any).Segmenter;
+    try {
+      render(<WorkstationIconSettings ws={ws()} onSaved={vi.fn()} />);
+      fireEvent.click(screen.getByRole("button", { name: "Emoji" }));
+      fireEvent.change(screen.getByLabelText("Emoji"), { target: { value: "ab" } });
+      expect(screen.getByRole("alert").textContent).toBe("Use a single emoji.");
+    } finally {
+      (Intl as any).Segmenter = orig;
+    }
   });
 
   test("emoji mode saves a single emoji", async () => {
