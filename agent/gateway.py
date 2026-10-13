@@ -20,9 +20,11 @@ import time
 
 import aiohttp
 import refit
+import seat_scale
 import yarl
 from aiohttp import web
 from multidict import CIMultiDict
+from viewers import Viewers, split_vid
 from gateway_html import (  # noqa: F401  (re-exported for tests)
     CURSOR_HIDE_CSS,
     VIS_GRACE_MS,
@@ -41,6 +43,11 @@ from gateway_html import (  # noqa: F401  (re-exported for tests)
 # normal input->frame round trip on a loaded host. ponytail: bump if a slow
 # link ever trips it mid-session.
 STALL_REARM_S = 2.0
+
+# A viewer that lost its last socket keeps ownership this long: a refit closes
+# every socket at once and the owner returns with the same styx_vid.
+OWNER_GRACE_S = 5.0
+REFIT_HOLD_S = 30.0     # no handoff this soon after a refit (clients are reconnecting)
 
 # Proxied downloads may run arbitrarily long: no total cap, only connect/idle.
 PROXY_TIMEOUT = aiohttp.ClientTimeout(total=None, sock_connect=10)
@@ -96,8 +103,74 @@ def create_app(user: str, password: str,
     size_file = os.path.join(seat_dir, "seat-size") if seat_dir else ""
     refit_file = os.path.join(seat_dir, "refit-request") if seat_dir else ""
     last_refit = {"ts": float("-inf")}
+    scale_file = os.path.join(seat_dir, "seat-scale") if seat_dir else ""
     size_owner = refit.SizeOwner()
-    viewers = {}     # ws id -> (fire_refit, announce_and_close) per connection
+    viewers = Viewers()     # per styx_vid: sockets, last size/dpi, timers
+
+    def send_to(rec, text):
+        for w in list(rec.socks):
+            if not w.closed:
+                asyncio.ensure_future(w.send_str(text))
+
+    def publish_scale(rec):
+        """Owner's HiDPI choice -> <install>/seat-scale (the seat helper applies it)."""
+        if scale_file and rec.dpi is not None:
+            want = seat_scale.scale_for_dpi(rec.dpi)
+            if want != seat_scale.read_scale(scale_file):
+                seat_scale.write_scale(scale_file, want)
+
+    async def announce_and_close(w):
+        if w.closed:
+            return
+        await w.send_str(refit.MARKER)   # shim shows the pill
+        await w.close(code=refit.CLOSE_CODE, message=b"refit")
+
+    def fire_refit(rec):
+        if rec.size is None:
+            return
+        target = refit.decide(rec.size, refit.read_size(size_file),
+                              last_refit["ts"], time.time())
+        if target is None or not any(not w.closed for w in rec.socks):
+            return
+        if isinstance(target, float):      # too soon: keep the size, retry later
+            rec.timer = asyncio.get_running_loop().call_later(target, fire_refit, rec)
+            return
+        last_refit["ts"] = time.time()
+        refit.request(refit_file, *target)
+        # Every viewer's upstream socket dies with the old selkies: announce to
+        # all so each shim holds and reconnects instead of surfacing a plain
+        # close (selkies' client reloads on it).
+        for r in viewers.live():
+            for w in list(r.socks):
+                asyncio.ensure_future(announce_and_close(w))
+
+    def set_owner(vid):
+        """Ownership moves to `vid`: tell both sides, publish its scale, refit to its size."""
+        prev, rec = size_owner.owner, viewers.by_vid.get(vid)
+        if rec is None or prev == vid:
+            return
+        size_owner.owner = vid
+        send_to(rec, "styx-owner,1")
+        if prev in viewers.by_vid:
+            send_to(viewers.by_vid[prev], "styx-owner,0")
+        publish_scale(rec)
+        rec.timer and rec.timer.cancel()
+        fire_refit(rec)
+
+    def expire(vid):
+        """Grace over for a viewer with no socket: forget it; hand the size to the newest."""
+        rec = viewers.by_vid.get(vid)
+        if rec is None or rec.socks:
+            return
+        if time.time() - last_refit["ts"] < REFIT_HOLD_S:   # refit reconnect still in flight
+            rec.gone = asyncio.get_running_loop().call_later(OWNER_GRACE_S, expire, vid)
+            return
+        viewers.drop(vid)
+        if size_owner.owner == vid:
+            size_owner.release(vid)
+            nxt = viewers.newest()
+            if nxt is not None:
+                set_owner(nxt)
 
     def _write_state():
         if not state_file:
@@ -152,7 +225,7 @@ def create_app(user: str, password: str,
         return await handler(request)
 
     async def ws_proxy(request):
-        qs = request.rel_url.raw_query_string
+        qs, vid = split_vid(request.rel_url.raw_query_string, f"ws{id(request)}")
         if request.headers.get("Upgrade", "").lower() != "websocket":
             # 2.0 client probes api/websockets over plain HTTP (409 = mode flip)
             return await forward(request, "/api/websockets" + (f"?{qs}" if qs else ""))
@@ -172,6 +245,7 @@ def create_app(user: str, password: str,
                 stream["starve_start"] = now
                 stream["last_frame"] = now
             _write_state()
+            rec = None
             try:
                 # compress=False: frames are H264 — permessage-deflate would
                 # re-DEFLATE every frame in Python for no gain.
@@ -211,31 +285,7 @@ def create_app(user: str, password: str,
 
                 # client->upstream: input (idle tracking). upstream->client:
                 # video frames are BINARY -> mark_frame disarms the watchdog.
-                resize = {"size": None, "timer": None}
-
-                def fire_refit():
-                    if resize["size"] is None:
-                        return
-                    target = refit.decide(resize["size"], refit.read_size(size_file),
-                                          last_refit["ts"], time.time())
-                    if target is None or ws_server.closed:
-                        return
-                    if isinstance(target, float):      # too soon: keep the size, retry later
-                        resize["timer"] = asyncio.get_running_loop().call_later(target, fire_refit)
-                        return
-                    last_refit["ts"] = time.time()
-                    refit.request(refit_file, *target)
-                    # Every viewer's upstream socket dies with the old selkies:
-                    # announce to all so each shim holds and reconnects instead
-                    # of surfacing a plain close (selkies' client reloads on it).
-                    for _fire, announce in list(viewers.values()):
-                        asyncio.ensure_future(announce())
-
-                async def announce_and_close():
-                    if ws_server.closed:
-                        return
-                    await ws_server.send_str(refit.MARKER)   # shim shows the pill
-                    await ws_server.close(code=refit.CLOSE_CODE, message=b"refit")
+                rec = viewers.connect(vid, ws_server)
 
                 def on_client(data) -> bool:
                     """Input tracking + settle-then-refit. Every seat `r,` is
@@ -243,32 +293,43 @@ def create_app(user: str, password: str,
                     restart capture / log "resize refused"); the agent refits
                     instead, and only for the size owner."""
                     mark_input(data)
-                    req = refit.parse_resize(data) if seat_dir else None
+                    if not seat_dir or not isinstance(data, str):
+                        return False
+                    if data == "styx-takeover":
+                        set_owner(vid)
+                        return True
+                    if data.startswith("SETTINGS,"):
+                        try:
+                            rec.dpi = float(json.loads(data[9:]).get("scaling_dpi"))
+                        except (ValueError, TypeError, AttributeError):
+                            return False
+                        if size_owner.owner == vid:
+                            publish_scale(rec)
+                        return False
+                    req = refit.parse_resize(data)
                     if not req:
                         return False
-                    resize["size"] = req
-                    if size_owner.claim(id(ws_server)):
-                        resize["timer"] and resize["timer"].cancel()
-                        resize["timer"] = asyncio.get_running_loop().call_later(refit.SETTLE_S, fire_refit)
+                    rec.size = req
+                    if size_owner.claim(vid):
+                        rec.timer and rec.timer.cancel()
+                        rec.timer = asyncio.get_running_loop().call_later(refit.SETTLE_S, fire_refit, rec)
                     return True
 
-                viewers[id(ws_server)] = (fire_refit, announce_and_close)
+                if seat_dir:
+                    size_owner.claim(vid)     # first viewer owns the size
+                    await ws_server.send_str(
+                        "styx-owner,1" if size_owner.owner == vid else "styx-owner,0")
 
                 await asyncio.gather(pump(ws_server, ws_client, on_activity=on_client),
                                      pump(ws_client, ws_server, on_binary=mark_frame),
                                      idle_closer(),
                                      return_exceptions=True)
-                resize["timer"] and resize["timer"].cancel()
             finally:
                 conns["n"] -= 1
-                viewers.pop(id(ws_server), None)
-                size_owner.release(id(ws_server))
-                # Owner left: the newest remaining viewer takes over and the
-                # seat follows its last reported size right away.
-                if size_owner.owner is None and viewers:
-                    nxt = next(reversed(viewers))
-                    size_owner.claim(nxt)
-                    viewers[nxt][0]()
+                if rec and viewers.disconnect(vid, ws_server):
+                    rec.timer and rec.timer.cancel()
+                    # Not released at once: a refit reconnect brings the same vid back.
+                    rec.gone = asyncio.get_running_loop().call_later(OWNER_GRACE_S, expire, vid)
                 _write_state()
                 await ws_client.close()
         return ws_server
