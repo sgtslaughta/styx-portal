@@ -21,6 +21,9 @@ backend/           FastAPI application
       workstations.py   Workstation admin CRUD + token minting
       enroll.py    Public enrollment API (register, script/artifact serving)
       agent.py     Agent-facing API (heartbeat, deregister)
+      groups.py    Group CRUD + per-user membership
+      services.py  Proxied services CRUD, presets, docker discovery
+      services_auth.py  forwardAuth (/internal), cookie-root enter/exit
     services/
       docker_manager.py    Docker API wrapper
       traefik_labels.py    Label generation for Traefik routing
@@ -28,10 +31,12 @@ backend/           FastAPI application
       workstations.py      Subdomain slug, stale-offline detection
       artifacts.py         Selkies tarball cache + download
       route_writer.py      Traefik dynamic config (extended for workstation routes)
+      service_routes.py    Traefik routers/middlewares for proxied services
+      service_health.py    Proxied service health loop (HTTP / docker state)
   tests/           pytest test suite
 docker-compose.yml Infrastructure services
 traefik/           Traefik static config
-templates/         Default JSON templates (seeded on first run)
+templates/         Default JSON templates (seeded on first run); services/ = proxy presets
 plans/             Original requirements and implementation plans
 ```
 
