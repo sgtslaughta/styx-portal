@@ -259,3 +259,19 @@ async def test_new_agent_files_are_served(client):
     for f in NEW_FILES + ("clipboard_bridge.py",):
         assert (await client.get(f"/api/enroll/{f}")).status_code == 200, f
     assert (await client.get("/api/enroll/selkies_launcher.py")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_every_served_file_matches_agent_dir(client):
+    from app.routers.enroll import _SERVED, _agent_dir
+    for name, local in _SERVED.items():
+        r = await client.get(f"/api/enroll/{name}")
+        assert r.status_code == 200, name
+        assert r.text == (_agent_dir() / local).read_text(), name
+
+
+@pytest.mark.asyncio
+async def test_unknown_enroll_file_404(client):
+    for p in ("nope.py", "../etc/passwd", "..%2Fetc%2Fpasswd", "enroll.sh"):
+        r = await client.get(f"/api/enroll/{p}")
+        assert r.status_code == 404, p
