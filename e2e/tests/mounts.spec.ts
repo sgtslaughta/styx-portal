@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { expect, request, test, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
-import { ADMIN, SHOTS, STYX_COOKIES, apiCall, eventually, jellyfinToken, openSettings, uiLogin } from "./helpers";
+import { ADMIN, SHOTS, STYX_COOKIES, apiCall, eventually, jellyfinSeedNetworkXml, jellyfinToken, openSettings, uiLogin } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -99,7 +99,8 @@ test("m2 jellyfin: managed base path", async () => {
   test.setTimeout(420_000);
   await addFromContainer("styx-e2e-jellyfin-1", "jellyfin", "Jellyfin", "jellyfin");
   const id = await serviceId("jellyfin");
-  // network.xml only exists after Jellyfin's first boot completes.
+  // network.xml only exists once Jellyfin has saved network settings.
+  await expect(async () => { jellyfinSeedNetworkXml(); }).toPass({ timeout: 120_000, intervals: [3000] });
   await expect.poll(async () => (await apiCall(ctx, "POST", `/api/services/${id}/mount/plan`)).method,
     { timeout: 180_000, intervals: [3000] }).toBe("config_file");
 
@@ -129,10 +130,11 @@ test.describe("m3 jellyfin native client", () => {
     await drawer.getByLabel("Allow native apps").click();
     await expect(drawer.getByText(/exposed to the internet/).first()).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/mount-native-on.png` });
+    await drawer.locator("#ack-origin").check();
     await drawer.getByRole("button", { name: "Save" }).click();
     await expect(drawer).toBeHidden();
 
-    // Wait for Traefik to load the bypass routers, then complete the wizard with no Styx cookies.
+    // Wait for Traefik to load the bypass routers; sign in with no Styx cookies (wizard was done in m2).
     let token = "";
     await eventually(async () => { token = await jellyfinToken(anon, `${BASE}/jellyfin`); expect(token).toBeTruthy(); }, 60_000);
 

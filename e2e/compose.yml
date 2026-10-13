@@ -157,7 +157,10 @@ services:
   # config.xml exists, but /brokenapp/ping never answers -> rollback
   brokenapp:
     image: nginx:1.27-alpine
-    volumes: ["./apps/brokenapp/config.xml:/config/config.xml"]
+    # a file bind mount cannot be replaced through the archive API ("device or resource busy"),
+    # so /config is a volume seeded at start
+    volumes: ["/config"]
+    command: ["sh", "-c", "echo '<Config><UrlBase></UrlBase></Config>' > /config/config.xml && exec nginx -g 'daemon off;'"]
     labels:
       styx-e2e.discoverable: "true"
     networks: [apps]
