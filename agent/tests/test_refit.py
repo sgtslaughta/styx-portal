@@ -109,3 +109,8 @@ def test_size_owner_first_viewer_wins_until_it_leaves():
     assert o.owner == "a"
     o.release("a")
     assert o.claim("b")
+
+
+def test_reload_js_has_takeover_banner():
+    assert "styx-takeover" in refit.RELOAD_JS and "Fit to my window" in refit.RELOAD_JS
+    assert "styx_vid" in refit.RELOAD_JS
