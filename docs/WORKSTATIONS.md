@@ -168,7 +168,7 @@ Use the venv interpreter — the system `python3` lacks the agent's audio/displa
 Each workstation has an icon on its home tile, in the admin list and on the browser tab of the streamed desktop.
 
 - **Where:** admin > Workstations > **Icon**.
-- **Auto** (default): a rounded badge with the first letter of the name, in a colour picked from the workstation id.
+- **Auto** (default): a rounded badge with the first character of the name, in a colour picked from the workstation id.
 - **Emoji:** a single emoji.
 - **Image:** PNG, SVG, ICO or WebP, up to 256 KB.
 - **SVG rules:** use a plain or optimized SVG. `<style>`, scripts, animation and external references are rejected. Editor metadata (Inkscape, Sodipodi, RDF) is stripped automatically; for anything else, export as plain SVG.
