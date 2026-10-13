@@ -15,6 +15,9 @@ from app.security.deps import get_current_user, session_user_or_none
 from app.services.service_routes import COOKIE_NAME
 
 router = APIRouter()
+# Mounted at /internal: no Traefik router matches it, so only Traefik's
+# forwardAuth (backend:8000 on the docker network) can reach auth-check.
+internal_router = APIRouter()
 exit_router = APIRouter()
 pages_router = APIRouter()
 
@@ -63,7 +66,7 @@ def _login_redirect(request: Request, uri: str, cookie_root: bool = False):
     return RedirectResponse(f"{proto}://{_redirect_host(request)}{login}", status_code=302)
 
 
-@router.get("/{slug}/auth-check")
+@internal_router.get("/services/{slug}/auth-check")
 async def auth_check(slug: str, request: Request,
                      session: AsyncSession = Depends(get_session)):
     svc = await get_service_by_slug(session, slug)

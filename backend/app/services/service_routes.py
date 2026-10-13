@@ -6,7 +6,8 @@ Mounted on the single Styx hostname. `path` services get Path(/slug) || PathPref
 """
 
 COOKIE_NAME = "styx_svc"
-AUTH_CHECK = "http://backend:8000/api/services/{slug}/auth-check"
+# /internal is never routed by Traefik (see test_auth_check_is_internal_and_unrouted).
+AUTH_CHECK = "http://backend:8000/internal/services/{slug}/auth-check"
 IDENTITY_HEADERS = ["X-Styx-User", "X-Styx-Groups", "X-authentik-username",
                     "X-authentik-groups", "X-authentik-email", "X-authentik-uid"]
 BASE_MW = ["ip-ban-gate", "styx-ratelimit", "styx-strip-identity", "service-unavailable-errors"]

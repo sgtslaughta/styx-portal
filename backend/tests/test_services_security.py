@@ -5,7 +5,7 @@ import pytest
 
 from app.models import ProxiedService
 
-AUTH = "/api/services/{slug}/auth-check"
+AUTH = "/internal/services/{slug}/auth-check"
 
 
 async def _svc(session, **kw):
@@ -123,3 +123,12 @@ async def test_refresh_fallback_keeps_group_acl(member_client, session):
     member_client.cookies.delete("access_token")
     r = await member_client.get(AUTH.format(slug="sonarr"), headers=_fwd("/sonarr/"))
     assert r.status_code == 403
+
+
+# --- D: auth-check is not under the public /api prefix ---
+
+@pytest.mark.asyncio
+async def test_auth_check_not_served_under_api(member_client, session):
+    await _svc(session)
+    r = await member_client.get("/api/services/sonarr/auth-check", headers=_fwd("/sonarr/"))
+    assert r.status_code in (404, 405)

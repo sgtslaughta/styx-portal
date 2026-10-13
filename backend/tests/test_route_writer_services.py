@@ -17,7 +17,7 @@ def test_path_mode_router():
     for mw in ("ip-ban-gate", "styx-ratelimit", "styx-strip-identity", "svc-auth-sonarr"):
         assert mw in r["middlewares"]
     fa = cfg["http"]["middlewares"]["svc-auth-sonarr"]["forwardAuth"]
-    assert fa["address"] == "http://backend:8000/api/services/sonarr/auth-check"
+    assert fa["address"] == "http://backend:8000/internal/services/sonarr/auth-check"
     assert fa["authResponseHeaders"] == ["X-Styx-User", "X-Styx-Groups"]
     assert cfg["http"]["services"]["svc-sonarr"]["loadBalancer"]["servers"] == [
         {"url": "http://192.168.1.10:8989"}]
@@ -137,3 +137,23 @@ def test_prefix_slugs_are_disjoint():
         assert _path_matches(sonarr, p) and not _path_matches(son, p)
     for p in ("/son", "/son/x"):
         assert _path_matches(son, p) and not _path_matches(sonarr, p)
+
+
+def test_auth_check_is_internal_and_unrouted(tmp_path, monkeypatch):
+    """forwardAuth targets /internal, and no public/LAN router sends /internal to the backend."""
+    from app.services import route_writer
+    monkeypatch.setattr(route_writer._settings, "LAN_CERT_DIR", str(tmp_path))
+    (tmp_path / "lan.crt").write_text("c")
+    (tmp_path / "lan.key").write_text("k")
+    inst = {"id": "i1", "subdomain": "d1", "port": 3001, "protocol": "https",
+            "tls_skip_verify": True, "extra_ports": []}
+    ws = {"id": "w1", "subdomain": "ws1", "lan_ip": "10.0.0.9", "port": 8443, "protocol": "https"}
+    cfg = build_routes_config([inst], "example.com", "tunnel", workstations=[ws], services=[
+        _svc(), _svc(slug="unraid", mount_mode="cookie-root")])
+    fa = cfg["http"]["middlewares"]["svc-auth-sonarr"]["forwardAuth"]
+    assert fa["address"] == "http://backend:8000/internal/services/sonarr/auth-check"
+    for name, r in cfg["http"]["routers"].items():
+        if r["service"] != "api":
+            continue
+        assert "Path" in r["rule"], name  # every backend router is path-scoped
+        assert not _path_matches(r["rule"], "/internal/services/sonarr/auth-check"), name

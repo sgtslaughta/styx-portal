@@ -22,7 +22,7 @@ def _fwd(uri, **h):
 @pytest.mark.asyncio
 async def test_anonymous_navigation_redirects_to_login(client, session):
     await _svc(session)
-    r = await client.get("/api/services/sonarr/auth-check", headers=_fwd("/sonarr/"))
+    r = await client.get("/internal/services/sonarr/auth-check", headers=_fwd("/sonarr/"))
     assert r.status_code == 302
     assert r.headers["location"] == "https://localhost/login?next=/sonarr/"
 
@@ -30,7 +30,7 @@ async def test_anonymous_navigation_redirects_to_login(client, session):
 @pytest.mark.asyncio
 async def test_anonymous_xhr_401(client, session):
     await _svc(session)
-    r = await client.get("/api/services/sonarr/auth-check",
+    r = await client.get("/internal/services/sonarr/auth-check",
                     headers={"x-forwarded-uri": "/sonarr/x", "accept": "application/json"})
     assert r.status_code == 401
 
@@ -38,17 +38,17 @@ async def test_anonymous_xhr_401(client, session):
 @pytest.mark.asyncio
 async def test_bypass_with_header_allows_anonymous(client, session):
     await _svc(session)
-    r = await client.get("/api/services/sonarr/auth-check",
+    r = await client.get("/internal/services/sonarr/auth-check",
                     headers=_fwd("/sonarr/api/v3/series?x=1", **{"X-Api-Key": "k"}))
     assert r.status_code == 200
-    r = await client.get("/api/services/sonarr/auth-check", headers=_fwd("/sonarr/api/v3/series"))
+    r = await client.get("/internal/services/sonarr/auth-check", headers=_fwd("/sonarr/api/v3/series"))
     assert r.status_code == 302
 
 
 @pytest.mark.asyncio
 async def test_member_allowed_when_no_groups_required(member_client, session):
     await _svc(session)
-    r = await member_client.get("/api/services/sonarr/auth-check", headers=_fwd("/sonarr/"))
+    r = await member_client.get("/internal/services/sonarr/auth-check", headers=_fwd("/sonarr/"))
     assert r.status_code == 200
     assert r.headers["x-styx-user"] == "member"
 
@@ -56,7 +56,7 @@ async def test_member_allowed_when_no_groups_required(member_client, session):
 @pytest.mark.asyncio
 async def test_member_denied_then_allowed_by_group(member_client, session):
     await _svc(session, allowed_groups=["media"])
-    r = await member_client.get("/api/services/sonarr/auth-check", headers=_fwd("/sonarr/"))
+    r = await member_client.get("/internal/services/sonarr/auth-check", headers=_fwd("/sonarr/"))
     assert r.status_code == 403
     g = Group(name="media")
     session.add(g)
@@ -64,7 +64,7 @@ async def test_member_denied_then_allowed_by_group(member_client, session):
     user = (await session.exec(select(User).where(User.username == "member"))).first()
     session.add(UserGroup(user_id=user.id, group_id=g.id))
     await session.commit()
-    r = await member_client.get("/api/services/sonarr/auth-check", headers=_fwd("/sonarr/"))
+    r = await member_client.get("/internal/services/sonarr/auth-check", headers=_fwd("/sonarr/"))
     assert r.status_code == 200
     assert r.headers["x-styx-groups"] == "media"
 
@@ -72,16 +72,16 @@ async def test_member_denied_then_allowed_by_group(member_client, session):
 @pytest.mark.asyncio
 async def test_admin_always_allowed(admin_client, session):
     await _svc(session, allowed_groups=["nobody"])
-    r = await admin_client.get("/api/services/sonarr/auth-check", headers=_fwd("/sonarr/"))
+    r = await admin_client.get("/internal/services/sonarr/auth-check", headers=_fwd("/sonarr/"))
     assert r.status_code == 200
 
 
 @pytest.mark.asyncio
 async def test_disabled_or_unknown_404(admin_client, session):
     await _svc(session, enabled=False)
-    r = await admin_client.get("/api/services/sonarr/auth-check", headers=_fwd("/sonarr/"))
+    r = await admin_client.get("/internal/services/sonarr/auth-check", headers=_fwd("/sonarr/"))
     assert r.status_code == 404
-    r = await admin_client.get("/api/services/nope/auth-check", headers=_fwd("/nope/"))
+    r = await admin_client.get("/internal/services/nope/auth-check", headers=_fwd("/nope/"))
     assert r.status_code == 404
 
 
@@ -123,7 +123,7 @@ async def test_unavailable_page(client):
 @pytest.mark.asyncio
 async def test_anonymous_denied_when_group_required(client, session):
     await _svc(session, allowed_groups=["media"])
-    r = await client.get("/api/services/sonarr/auth-check", headers=_fwd("/sonarr/"))
+    r = await client.get("/internal/services/sonarr/auth-check", headers=_fwd("/sonarr/"))
     assert r.status_code == 302
 
 
@@ -138,7 +138,7 @@ async def test_anonymous_enter_denied(client, session):
 @pytest.mark.asyncio
 async def test_bypass_ignored_unless_sso_with_bypass(client, session):
     await _svc(session, auth_mode="sso")
-    r = await client.get("/api/services/sonarr/auth-check",
+    r = await client.get("/internal/services/sonarr/auth-check",
                          headers=_fwd("/sonarr/api/v3", **{"X-Api-Key": "k"}))
     assert r.status_code == 302
 
@@ -157,7 +157,7 @@ async def test_disabled_service_denied_for_anonymous_and_enter(member_client, se
                                  "/a\\b", "evil.com", "/x\r\nSet-Cookie: a=b"])
 async def test_login_redirect_never_open(client, session, uri):
     await _svc(session)
-    r = await client.get("/api/services/sonarr/auth-check", headers=_fwd(uri))
+    r = await client.get("/internal/services/sonarr/auth-check", headers=_fwd(uri))
     assert r.status_code == 302
     loc = r.headers["location"]
     assert loc.startswith("https://localhost/login")
@@ -169,7 +169,7 @@ async def test_login_redirect_ignores_untrusted_forwarded_host(client, session):
     await _svc(session)
     h = _fwd("/sonarr/")
     h["x-forwarded-host"] = "evil.com"
-    r = await client.get("/api/services/sonarr/auth-check", headers=h)
+    r = await client.get("/internal/services/sonarr/auth-check", headers=h)
     assert "evil.com" not in r.headers["location"]
 
 
@@ -195,14 +195,14 @@ async def test_cookie_cannot_select_other_service(member_client, session):
     await _svc(session, slug="secret", allowed_groups=["ops"], auth_mode="sso", bypass_rules=[])
     await _svc(session, slug="open", auth_mode="sso", bypass_rules=[])
     member_client.cookies.set("styx_svc", "secret")
-    r = await member_client.get("/api/services/secret/auth-check", headers=_fwd("/secret/"))
+    r = await member_client.get("/internal/services/secret/auth-check", headers=_fwd("/secret/"))
     assert r.status_code == 403
-    r = await member_client.get("/api/services/open/auth-check", headers=_fwd("/x"))
+    r = await member_client.get("/internal/services/open/auth-check", headers=_fwd("/x"))
     assert r.status_code == 200
 
 
 @pytest.mark.asyncio
 async def test_bypass_root_prefix_accepted_pinned(client, session):
     await _svc(session, bypass_rules=[{"path_prefix": "/"}])
-    r = await client.get("/api/services/sonarr/auth-check", headers=_fwd("/sonarr/anything"))
+    r = await client.get("/internal/services/sonarr/auth-check", headers=_fwd("/sonarr/anything"))
     assert r.status_code == 200

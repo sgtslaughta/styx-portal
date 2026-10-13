@@ -297,6 +297,7 @@ app.include_router(groups_router.router, prefix="/api/groups", tags=["groups"])
 app.include_router(groups_router.users_router, prefix="/api/users", tags=["groups"])
 app.include_router(services_router.router, prefix="/api/services", tags=["services"])
 app.include_router(services_auth_router.router, prefix="/api/services", tags=["services"])
+app.include_router(services_auth_router.internal_router, prefix="/internal", tags=["services"])
 app.include_router(services_auth_router.exit_router, prefix="/_styx", tags=["services"])
 app.include_router(services_auth_router.pages_router, prefix="/api", tags=["services"])
 

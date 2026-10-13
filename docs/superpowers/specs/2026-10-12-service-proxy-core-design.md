@@ -144,7 +144,7 @@ All service routers are `Host(<domain>) && ...`, get `ip-ban-gate` and
 ### 4.3 Middlewares per service
 
 - `svc-auth-<slug>`: forwardAuth to
-  `http://backend:8000/api/services/<slug>/auth-check`, `trustForwardHeader`
+  `http://backend:8000/internal/services/<slug>/auth-check`, `trustForwardHeader`
   false, `authResponseHeaders: [X-Styx-User, X-Styx-Groups]`.
 - `styx-strip-identity` (shared): headers middleware
   that deletes client-supplied `X-Styx-*` and `X-authentik-*` request
@@ -174,7 +174,7 @@ ws - .well-known source` (and the `api/v3` prefix is covered by `api`).
 
 ## 5. Auth-check endpoint
 
-`GET /api/services/{slug}/auth-check` — called by Traefik forwardAuth with
+`GET /internal/services/{slug}/auth-check` (no Traefik router matches `/internal`) — called by Traefik forwardAuth with
 `X-Forwarded-Uri`, `X-Forwarded-Method`, and the original cookies/headers.
 
 Order:
@@ -223,7 +223,7 @@ Admin-only unless noted. All mutations write `audit_log`.
 | GET | `/api/services/presets` | seeded presets |
 | POST | `/api/services/{slug}/enter` | any user; cookie-root entry, checks ACL first |
 | GET | `/_styx/exit` | any; clears cookie |
-| GET | `/api/services/{slug}/auth-check` | Traefik only (internal network), §5 |
+| GET | `/internal/services/{slug}/auth-check` | Traefik only (internal network), §5 |
 | GET | `/api/groups`, POST, PUT, DELETE | groups CRUD |
 | GET, PUT | `/api/users/{id}/groups` | read / set memberships |
 
