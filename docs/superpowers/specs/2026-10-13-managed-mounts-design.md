@@ -223,9 +223,9 @@ Focus = SP1 cookie-root (SP1 §4.2) plus:
 |-------|-----|-----|
 | Water | `#0F1C22` | dark background; light-mode foreground |
 | Mist | `#EDF1EF` | light background; dark-mode foreground |
-| Current | `#2C7A80` | primary (replaces shadcn blue); 4.6:1 on Mist |
+| Current | `#2A767C` | primary (replaces shadcn blue); 4.63:1 on Mist |
 | Obol | `#B88A3E` | active/focused/verified only (rings, fills); text variant `#86601F` in light mode |
-| Ember | `#C2462C` | destructive, rollback |
+| Ember | `#B8432A` | destructive, rollback; 4.76:1 on Mist |
 | Reed | `#4F9A6C` | healthy, done |
 
 - Surfaces/borders/muted derive from Water/Mist mixes; all pairs used for text
@@ -266,6 +266,7 @@ Focus = SP1 cookie-root (SP1 §4.2) plus:
 | POST | `/api/services/{id}/mount/plan` | admin; change list + method + `needs_consent` |
 | POST | `/api/services/{id}/mount/apply` | admin; body `{consent: bool}`; 202 `{job_id}`; 409 running/no consent |
 | GET | `/api/services/{id}/mount/jobs/latest` | admin; job with steps |
+| GET | `/api/services/focus` | user; `{slug}` of the active focus app (cookie is HttpOnly) |
 | GET | `/_styx/open/{slug}` | user; §4 |
 | POST | `/_styx/open/{slug}` | user; confirm-page submit, CSRF |
 
