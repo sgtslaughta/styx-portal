@@ -1,7 +1,7 @@
 import re
 import ipaddress
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
 SUBDOMAIN_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
@@ -274,6 +274,13 @@ class WorkstationOut(BaseModel):
     in_use: bool = False
     in_use_by: str | None = None     # username, never id
     in_use_self: bool = False
+    icon_kind: str = "auto"          # auto | emoji | image
+    icon_etag: str = ""              # cache-buster for /{id}/icon?v=
+
+
+class WorkstationIconUpdate(BaseModel):
+    kind: Literal["auto", "emoji", "image"]
+    value: str | None = Field(default=None, max_length=400_000)
 
 
 class EnrollTokenOut(BaseModel):
@@ -347,6 +354,8 @@ class WorkstationHeartbeatResponse(BaseModel):
     # One-shot: when True the agent restarts its gateway, dropping live stream
     # clients (set by logout-with-active-session teardown).
     disconnect_clients: bool = False
+    # Hash of the workstation icon; the agent re-fetches /api/agent/icon on change.
+    icon_etag: str = ""
 
 
 class WorkstationUpdate(BaseModel):
