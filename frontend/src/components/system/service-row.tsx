@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { fetchLatestMount } from "./service-mount";
 
-const DOT = { healthy: "bg-success", unhealthy: "bg-destructive", unknown: "bg-muted-foreground/50" } as const;
+const DOT = { healthy: "bg-success", unhealthy: "bg-transparent ring-2 ring-inset ring-destructive", unknown: "bg-transparent ring-1 ring-inset ring-muted-foreground" } as const;
 
 function ago(iso: string | null): string {
   if (!iso) return "never checked";
@@ -61,15 +61,15 @@ export function ServiceRow({ s, busy, onToggle, onEdit, onDelete }: {
         <TooltipTrigger asChild>
           <span tabIndex={0} role="img" aria-label={`Health: ${s.health_status}`}
             className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-ring">
-            <span className={cn("h-2.5 w-2.5 rounded-full", DOT[s.health_status])} />
+            <span className={cn("size-2.5 rounded-full", DOT[s.health_status])} />
           </span>
         </TooltipTrigger>
         <TooltipContent>{label}, {ago(s.health_checked_at)}</TooltipContent>
       </Tooltip>
       <div className={cn("min-w-0 flex-1", !s.enabled && "opacity-60")}>
-        <div className="flex flex-wrap items-baseline gap-x-2">
-          <span className="truncate font-medium">{s.icon ? `${s.icon} ` : ""}{s.name}</span>
-          <code className="text-xs text-muted-foreground">/{s.slug}</code>
+        <div className="flex min-w-0 items-baseline gap-x-2">
+          <span className="min-w-0 truncate font-medium">{s.icon ? `${s.icon} ` : ""}{s.name}</span>
+          <code className="shrink-0 text-xs text-muted-foreground">/{s.slug}</code>
           {!s.enabled && <span className="text-xs text-muted-foreground">Disabled</span>}
         </div>
         <p className="truncate font-mono text-xs text-muted-foreground" title={target ?? undefined}>{target}</p>

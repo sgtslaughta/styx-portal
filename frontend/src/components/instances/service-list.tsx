@@ -11,7 +11,7 @@ const TIP_KEY = "styx.serviceTipDismissed";
 const TIP = "Open apps with a non-admin account: proxied apps run with your Styx rights.";
 const tileCls =
   "flex min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-border bg-card px-3 min-h-12 py-2 text-left text-sm " +
-  "transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
+  "transition-colors hover:bg-accent outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 function readDismissed(): boolean {
   try { return localStorage.getItem(TIP_KEY) === "1"; } catch { return false; }
@@ -31,8 +31,8 @@ function Tile({ s, focused }: { s: ServiceTile; focused: boolean }) {
           <span className="block truncate font-medium">{s.name}</span>
           {s.mount_mode === "cookie-root" && <span className="block text-xs text-muted-foreground">Opens full screen</span>}
         </span>
-        <span className="flex items-center gap-1.5">
-          <span className={cn("h-2 w-2 shrink-0 rounded-full", h.dot)} aria-hidden />
+        <span className="flex items-center gap-1.5" title={h.label}>
+          <span className={cn("size-2.5 shrink-0 rounded-full", h.dot)} aria-hidden />
           <span className="sr-only">{h.label}</span>
         </span>
       </a>

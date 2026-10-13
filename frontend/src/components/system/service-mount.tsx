@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Check, ChevronRight } from "lucide-react";
+import { AlertTriangle, Check, ChevronRight } from "lucide-react";
 import { api, type MountJob, type ProxiedService } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Stepper } from "@/components/ui/stepper";
@@ -69,7 +69,10 @@ export function ServiceMount({ service, onChanged }: { service: ProxiedService; 
 
   if (!enabled) return null;
   if (plan.isError) return (
-    <p className="text-sm text-muted-foreground">Couldn't check {name}'s settings. {(plan.error as Error).message}</p>
+    <div className="space-y-2" role="alert">
+      <p className="flex items-start gap-2 text-sm text-destructive"><AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />Couldn't check {name}'s settings. {(plan.error as Error).message}</p>
+      <Button size="sm" variant="outline" onClick={() => void plan.refetch()}>Check again</Button>
+    </div>
   );
   if (!plan.data || job.isLoading) return null;
   const p = plan.data;

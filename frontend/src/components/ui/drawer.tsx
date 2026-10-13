@@ -25,7 +25,7 @@ function DrawerOverlay({ className, ...props }: React.ComponentProps<typeof Dial
 }
 
 const drawerVariants = cva(
-  "fixed z-50 flex flex-col bg-background dark:bg-card shadow-lg data-[state=open]:animate-in data-[state=closed]:animate-out",
+  "fixed z-50 flex flex-col bg-background dark:bg-card shadow-lg outline-none data-[state=open]:animate-in data-[state=closed]:animate-out",
   {
     variants: {
       side: {
@@ -44,6 +44,7 @@ function DrawerContent({
   children,
   side = "right",
   showCloseButton = true,
+  onOpenAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> &
   VariantProps<typeof drawerVariants> & { showCloseButton?: boolean }) {
@@ -53,6 +54,7 @@ function DrawerContent({
       <DialogPrimitive.Content
         data-slot="drawer-content"
         className={cn(drawerVariants({ side }), className)}
+        onOpenAutoFocus={onOpenAutoFocus ?? ((e) => { e.preventDefault(); (e.currentTarget as HTMLElement).focus(); })}
         {...props}
       >
         {children}

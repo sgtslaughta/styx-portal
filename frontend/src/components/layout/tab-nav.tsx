@@ -18,8 +18,9 @@ export function TabNav({ activeTab, onTabChange }: TabNavProps) {
         <button
           key={tab.id}
           onClick={() => onTabChange(tab.id)}
+          aria-current={activeTab === tab.id ? "page" : undefined}
           className={cn(
-            "my-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition-colors",
+            "my-1.5 rounded-lg px-4 py-1.5 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:my-0 max-sm:min-h-11",
             "hover:text-foreground",
             activeTab === tab.id
               ? "bg-card text-foreground shadow-[inset_0_0_0_1px_var(--card-border-color)]"

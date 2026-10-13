@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { shellHref, toTile } from "../service-tiles";
+import { HEALTH, shellHref, toTile } from "../service-tiles";
 import type { ServiceTile } from "@/api/client";
 
 const t = (o: Partial<ServiceTile> = {}): ServiceTile => ({
@@ -19,4 +19,12 @@ describe("toTile", () => {
     expect(toTile({ ...t(), health_status: "unhealthy" } as never).up).toBe(false));
   it("keeps frame_ok", () =>
     expect(toTile({ ...t(), frame_ok: false, health_status: "healthy" } as never).frame_ok).toBe(false));
+});
+describe("HEALTH", () => {
+  it("down and unknown carry a hollow-ring shape, not just a colour", () => {
+    expect(HEALTH(false).dot).toContain("ring-inset");
+    expect(HEALTH(null).dot).toContain("ring-inset");
+    expect(HEALTH(true).dot).not.toContain("ring");
+  });
+  it("healthy status is also the filled one", () => expect(HEALTH(true).dot).toBe("bg-success"));
 });

@@ -28,7 +28,7 @@ export function SettingsLayout() {
       <div className="min-w-0 flex-1 md:pl-0">
         {/* Mobile section selector (horizontal scrollable) */}
         <div className="mb-4 -mx-6 md:hidden">
-          <div className="flex gap-2 overflow-x-auto px-6 pb-3 sm:overflow-x-visible">
+          <div className="flex snap-x gap-2 overflow-x-auto scroll-px-6 px-6 pb-3 [scrollbar-width:none] [mask-image:linear-gradient(to_right,transparent,#000_24px,#000_calc(100%-24px),transparent)]">
             {sections.map((s) => {
               const Icon = s.icon;
               const isActive = s.id === activeId;
@@ -39,7 +39,8 @@ export function SettingsLayout() {
                   variant="outline"
                   size="sm"
                   aria-current={isActive ? "page" : undefined}
-                  className={cn("flex shrink-0 items-center gap-1.5 whitespace-nowrap", isActive && "border-primary/40 bg-primary/15 text-foreground dark:border-primary/40 dark:bg-primary/15")}
+                  ref={(el) => { if (isActive) el?.scrollIntoView?.({ inline: "nearest", block: "nearest" }); }}
+                  className={cn("flex shrink-0 snap-start items-center gap-1.5 whitespace-nowrap", isActive && "border-primary/40 bg-primary/15 text-foreground dark:border-primary/40 dark:bg-primary/15")}
                 >
                   <Icon className="h-4 w-4" />
                   {s.label}

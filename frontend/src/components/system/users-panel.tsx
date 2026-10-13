@@ -176,14 +176,14 @@ export function UsersPanel() {
             </div>
           )}
 
-          <div className="border border-border rounded-lg overflow-hidden">
+          <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full text-sm">
               <thead className="border-b border-border bg-muted/40">
                 <tr>
                   <th className="px-4 py-3 text-left font-semibold text-sm">Username</th>
-                  <th className="px-4 py-3 text-left font-semibold text-sm">Role</th>
+                  <th className="px-4 py-3 text-left font-semibold text-sm max-sm:hidden">Role</th>
                   <th className="px-4 py-3 text-left font-semibold text-sm">Status</th>
-                  <th className="px-4 py-3 text-left font-semibold text-sm">Last login</th>
+                  <th className="px-4 py-3 text-left font-semibold text-sm max-sm:hidden">Last login</th>
                   <th className="px-4 py-3 text-right font-semibold text-sm">Actions</th>
                 </tr>
               </thead>
@@ -203,7 +203,7 @@ export function UsersPanel() {
                     return (
                       <tr key={u.id} className="border-b border-border hover:bg-muted/30 transition-colors">
                         <td className="px-4 py-3 font-medium">{u.username}</td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 max-sm:hidden">
                           <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
                             {u.role}
                           </span>
@@ -230,10 +230,10 @@ export function UsersPanel() {
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground">
+                        <td className="whitespace-nowrap px-4 py-3 text-xs tabular-nums text-muted-foreground max-sm:hidden">
                           {formatRelativeTime(u.last_login)}
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="whitespace-nowrap px-4 py-3 text-right">
                           {isLocked && (
                             <Button
                               variant="ghost"

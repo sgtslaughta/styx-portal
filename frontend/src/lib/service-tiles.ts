@@ -12,8 +12,8 @@ export function toTile(s: ServiceTile | ProxiedService): ServiceTile {
 
 export const HEALTH = (up: boolean | null) =>
   up === true ? { dot: "bg-success", label: "Healthy" }
-    : up === false ? { dot: "bg-destructive", label: "Unreachable" }
-    : { dot: "bg-muted-foreground/50", label: "Status unknown" };
+    : up === false ? { dot: "bg-transparent ring-2 ring-inset ring-destructive", label: "Unreachable" }
+    : { dot: "bg-transparent ring-1 ring-inset ring-muted-foreground", label: "Status unknown" };
 
 /** Where a tile opens. Focus apps always go through /_styx/open (sets the cookie, then redirects). */
 export function shellHref(t: ServiceTile): string {

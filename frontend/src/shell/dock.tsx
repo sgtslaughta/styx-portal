@@ -85,7 +85,7 @@ export function Dock({ open, onOpenChange, tiles, current, focusSlug, side, tabR
                     })}
                   </m.ul>
                 )}
-                <div className="flex flex-wrap gap-1 border-t border-border pt-3">
+                <div className="flex flex-wrap gap-1 border-t border-border px-2 pt-3">
                   <a href="/_styx/exit?next=/" target="_top" className={ACTION}><House className="mr-2 size-4" aria-hidden />Home</a>
                   {cur && <a href={frameSrc(cur.mount_mode, cur.slug, "/")} target="_blank" rel="noopener" className={ACTION}><ExternalLink className="mr-2 size-4" aria-hidden />Pop out</a>}
                   {focusSlug === current && <a href="/_styx/exit?next=/" target="_top" className={ACTION}><LogOut className="mr-2 size-4" aria-hidden />Exit focus</a>}

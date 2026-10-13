@@ -152,10 +152,17 @@ export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: 
   const hasSelection = selected.size > 0;
 
   if (isLoading) {
+    if (dense) {
+      return (
+        <div className="space-y-2">
+          {[1, 2, 3].map((i) => <div key={i} className="h-14 animate-pulse rounded-lg bg-muted" />)}
+        </div>
+      );
+    }
     return (
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="aspect-[4/3] rounded-xl bg-card animate-pulse" />
+          <div key={i} className="aspect-[4/3] rounded-xl bg-muted animate-pulse" />
         ))}
       </div>
     );

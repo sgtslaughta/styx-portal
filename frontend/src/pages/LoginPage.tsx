@@ -117,7 +117,7 @@ export function LoginPage() {
                 <a
                   key={p.name}
                   href={api.oauthStartUrl(p.name)}
-                  className="flex w-full items-center justify-center gap-2 rounded-md border border-border bg-background p-2.5 text-sm font-medium hover:bg-accent"
+                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-border bg-background p-2.5 text-sm font-medium hover:bg-accent outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {p.icon_url
                     ? <img src={p.icon_url} alt="" className="h-5 w-5 object-contain" />
