@@ -309,6 +309,33 @@ Every write triggers `route_writer.write_routes` (extend signature with
 - **Cookie-root login** redirects via `/_styx/exit?next=/login?next=...`
   because `/login` routes to the app while `styx_svc` is set. `exit`
   accepts only a same-site absolute path as `next`.
+- **Safe next (2026-10-13).** A cross-site link to `/login?next=/api/...`
+  would be followed by the SPA as a same-site navigation carrying
+  SameSite=Strict cookies. One rule, `app/security/safe_next.py` mirrored by
+  `frontend/src/lib/safe-next.ts`, applies to the login page and every
+  backend `next=` builder (service, workstation and instance auth-check,
+  `/_styx/exit`): a single leading `/`, no whitespace/controls/backslash, no
+  percent-encoded `.`/`/`/`\` (raw or once-decoded), no `.`/`..`
+  segments, and the first segment (decoded, any case) is not `api`,
+  `internal`, `_styx`, `login`, `logout`, `setup`, `accept-invite` or
+  `change-password`. `/_styx/exit` alone may target `/login` (the login
+  page re-validates its own `next`). Unsafe values are dropped, not
+  rewritten.
+- **Instance desktops require Styx login + ownership (2026-10-13).**
+  Instance routers (`/i/<sub>` and extra ports) previously only stripped
+  cookies, so any running desktop was public to anyone who guessed its
+  user-chosen subdomain. Middleware `instance-forward-auth` →
+  `/internal/instances/auth-check` replaces `styx-cookie-strip` there: it
+  authenticates the `styx_proxy` cookie, resolves the instance from
+  `X-Forwarded-Uri` (`/i/<sub>/…`, incl. tunnel-mode `/i/<sub>/p/<slug>/…`)
+  or, for direct-mode extra ports, from `X-Forwarded-Host` `<sub>.<domain>`
+  with `/p/<slug>/…`, and allows only the owner or an admin
+  (`require_owner_or_admin`, as `/api/instances`). Anonymous navigations
+  302 to `/login?next=<uri>` (no `next` for host-routed extra ports),
+  XHR/websocket 401; other users 403; unknown or not running/idle 503,
+  which `instance-unavailable-errors` (listed first) turns into the same
+  page `instances_fallback` serves. On 2xx it returns the cleaned `Cookie`
+  header, so there is still one forwardAuth per router.
 - **Groups.** Deleting a group removes its name from every service's
   `allowed_groups`; a service whose list becomes empty is disabled (empty
   means "any user"). Unknown group names are rejected (422).
@@ -348,8 +375,8 @@ Every write triggers `route_writer.write_routes` (extend signature with
   left, so the upstream gets an empty `Cookie:` line. Coverage:
   `svc-auth-{slug}` (sso, incl. the bypass success path),
   `svc-strip-{slug}` → `/internal/services/{slug}/strip` (app-native: no
-  auth, always 200), `ws-forward-auth` (`/w/`), and `styx-cookie-strip` →
-  `/internal/strip` on `/i/` instance and extra-port routers. Not covered:
+  auth, always 200), `ws-forward-auth` (`/w/`), and `instance-forward-auth` →
+  `/internal/instances/auth-check` on `/i/` instance and extra-port routers. Not covered:
   `ip-ban-gate` (it guards the Styx API, which needs its cookies; no
   response headers). Routing still works: Traefik matches the `styx_svc`
   rule before middlewares run.
