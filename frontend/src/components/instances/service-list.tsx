@@ -1,0 +1,105 @@
+import { useEffect, useState } from "react";
+import { Link2, X } from "lucide-react";
+import { toast } from "sonner";
+import { api, type ProxiedService, type ServiceTile } from "@/api/client";
+import { useAuth } from "@/hooks/use-auth";
+import { cn } from "@/lib/utils";
+
+const TIP_KEY = "styx.serviceTipDismissed";
+const TIP = "Tip: open apps with a non-admin account — proxied apps run with your Styx rights.";
+const tileCls =
+  "flex w-full items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-left text-sm " +
+  "transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
+
+/** Admins receive the full model (health_status); members get tiles (up). */
+function toTile(s: ServiceTile | ProxiedService): ServiceTile {
+  if (!("health_status" in s)) return s;
+  const up = s.health_status === "healthy" ? true : s.health_status === "unhealthy" ? false : null;
+  return { id: s.id, slug: s.slug, name: s.name, icon: s.icon, mount_mode: s.mount_mode, enabled: s.enabled, up };
+}
+
+const HEALTH = (up: boolean | null) =>
+  up === true ? { dot: "bg-success", label: "Healthy" }
+    : up === false ? { dot: "bg-destructive", label: "Unreachable" }
+    : { dot: "bg-muted-foreground/50", label: "Status unknown" };
+
+function readDismissed(): boolean {
+  try { return localStorage.getItem(TIP_KEY) === "1"; } catch { return false; }
+}
+
+function Tile({ s }: { s: ServiceTile }) {
+  const h = HEALTH(s.up);
+  const body = (
+    <>
+      <span className="text-lg leading-none" aria-hidden>{s.icon ?? <Link2 className="h-4 w-4" />}</span>
+      <span className="min-w-0 flex-1 truncate font-medium">{s.name}</span>
+      <span className="flex items-center gap-1.5">
+        <span className={cn("h-2 w-2 shrink-0 rounded-full", h.dot)} aria-hidden />
+        <span className="sr-only">{h.label}</span>
+      </span>
+    </>
+  );
+  // Unhealthy tiles stay clickable: health is advisory, the app may still work.
+  if (s.mount_mode === "path") {
+    return <a href={`/${s.slug}/`} className={tileCls} aria-label={`Open ${s.name}`} title={`/${s.slug}/`}>{body}</a>;
+  }
+  const enter = async () => {
+    try { await api.enterService(s.slug); window.location.assign("/"); }
+    catch { toast.error(`Could not open ${s.name}`); }
+  };
+  return (
+    <button type="button" className={tileCls} aria-label={`Open ${s.name}`} onClick={() => void enter()}
+      title="Takes over this browser's host. Return via /_styx/exit">{body}</button>
+  );
+}
+
+export function ServiceList({ onOpenSettings }: { onOpenSettings?: () => void }) {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+  const [tiles, setTiles] = useState<ServiceTile[] | null>(null);
+  const [tipHidden, setTipHidden] = useState(readDismissed);
+
+  useEffect(() => {
+    let live = true;
+    const load = () => api.listServiceTiles()
+      .then((r) => { if (live) setTiles(r.map(toTile).filter((x) => x.enabled)); })
+      .catch(() => { if (live) setTiles((t) => t ?? []); });
+    void load();
+    const t = setInterval(load, 30_000);
+    return () => { live = false; clearInterval(t); };
+  }, []);
+
+  if (tiles === null) return null;
+  if (tiles.length === 0) {
+    if (!isAdmin) return null;
+    return (
+      <p className="mb-4 rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+        No services yet. Add one in <button type="button" onClick={onOpenSettings}
+          className="underline underline-offset-2 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">Settings → Services</button>.
+      </p>
+    );
+  }
+
+  const dismiss = () => {
+    setTipHidden(true);
+    try { localStorage.setItem(TIP_KEY, "1"); } catch { /* ignore */ }
+  };
+
+  return (
+    <section className="mb-4 space-y-2" aria-label="Services">
+      <h3 className="text-sm font-medium text-muted-foreground">Services</h3>
+      {isAdmin && !tipHidden && (
+        <div className="flex items-center gap-2 rounded-md bg-muted/40 px-2.5 py-1.5 text-xs text-muted-foreground">
+          <p className="min-w-0 flex-1">{TIP}</p>
+          <button type="button" aria-label="Dismiss tip" onClick={dismiss}
+            className="rounded p-0.5 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+      <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {tiles.map((s) => <li key={s.id}><Tile s={s} /></li>)}
+      </ul>
+    </section>
+  );
+}

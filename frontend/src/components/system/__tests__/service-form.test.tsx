@@ -9,9 +9,11 @@ const presets = [{ id: "sonarr", name: "Sonarr", icon: null, default_port: 8989,
   health_path: "/sonarr/ping", verify_tls: true, base_url_hint: "URL Base = /sonarr", warnings: [] }];
 
 type Props = Parameters<typeof ServiceForm>[0];
-function setup(extra: Partial<Props> = {}) {
+const ACK = /I understand that this app runs on the same origin as Styx/;
+function setup(extra: Partial<Props> = {}, acked = true) {
   const onSubmit = vi.fn();
   render(<ServiceForm presets={presets} groups={[]} onSubmit={onSubmit} onCancel={() => {}} {...extra} />);
+  if (acked) fireEvent.click(screen.getByLabelText(ACK));
   return onSubmit;
 }
 const change = (label: string, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
@@ -199,5 +201,31 @@ describe("ServiceForm saving and server errors", () => {
     await waitFor(() => expect(save()).toBeEnabled());
     change("Slug", "y");
     expect(screen.queryByText("Slug already in use")).not.toBeInTheDocument();
+  });
+});
+
+describe("ServiceForm same-origin acknowledgement", () => {
+  test("shows the danger callout and an unchecked box; save needs the ack", () => {
+    setup({}, false);
+    expect(screen.getByText(RISK.sameOrigin)).toBeInTheDocument();
+    const box = screen.getByLabelText(ACK);
+    expect(box).not.toBeChecked();
+    fillUrl();
+    expect(save()).toBeDisabled();
+    fireEvent.click(box);
+    expect(save()).toBeEnabled();
+    fireEvent.click(box);
+    expect(save()).toBeDisabled();
+  });
+
+  test("edit starts unacknowledged and resets when the form reopens", () => {
+    const { unmount } = render(<ServiceForm presets={presets} groups={[]} initial={existing} onSubmit={vi.fn()} onCancel={() => {}} />);
+    expect(save()).toBeDisabled();
+    fireEvent.click(screen.getByLabelText(ACK));
+    expect(save()).toBeEnabled();
+    unmount();
+    render(<ServiceForm presets={presets} groups={[]} initial={existing} onSubmit={vi.fn()} onCancel={() => {}} />);
+    expect(screen.getByLabelText(ACK)).not.toBeChecked();
+    expect(save()).toBeDisabled();
   });
 });

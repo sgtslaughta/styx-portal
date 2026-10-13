@@ -14,6 +14,8 @@ const EMPTY: ProxiedServiceInput = {
   mount_mode: "path", auth_mode: "sso", bypass_rules: [], allowed_groups: [], verify_tls: true,
   health_path: null, preset_id: null, enabled: true,
 };
+const ACK_TEXT =
+  "I understand that this app runs on the same origin as Styx: any JavaScript it serves can use Styx with the rights of whoever opens it.";
 const KNOWN = ["slug", "name", "upstream_url", "container", "container_port", "health_path", "icon"];
 
 export type DiscoveredPrefill = { name: string; port?: number; preset: string | null };
@@ -56,6 +58,7 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
   const [touched, setTouched] = useState<Set<string>>(new Set());
   const [srv, setSrv] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
+  const [ack, setAck] = useState(false); // never pre-checked, not even on edit
   const [containers, setContainers] = useState<DiscoveredContainer[] | null>(null);
   const [discoverErr, setDiscoverErr] = useState<string | null>(null);
 
@@ -95,7 +98,7 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
   };
 
   const submit = async () => {
-    if (!valid || saving) return;
+    if (!valid || !ack || saving) return;
     setSaving(true);
     try {
       const res = await onSubmit({ ...f, name: f.name.trim(), bypass_rules: f.auth_mode === "sso-with-bypass" ? f.bypass_rules : [] });
@@ -235,6 +238,14 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
             <Switch id="enabled" aria-label="Enabled" checked={f.enabled} onCheckedChange={(v) => set("enabled", v)} />
           </div>
         </Section>
+        <div className="space-y-2.5">
+          <RiskCallout>{RISK.sameOrigin}</RiskCallout>
+          <label htmlFor="ack-origin" className="flex items-start gap-2 text-sm">
+            <input id="ack-origin" type="checkbox" required checked={ack} onChange={(e) => setAck(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" />
+            <span>{ACK_TEXT}</span>
+          </label>
+        </div>
         {stray.length > 0 && (
           <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 p-2.5 text-xs text-destructive">
             {stray.map(([k, m]) => <p key={k}>{k}: {m}</p>)}
@@ -243,7 +254,7 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
       </DrawerBody>
       <DrawerFooter>
         <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
-        <Button type="submit" disabled={!valid || saving} aria-busy={saving}>Save</Button>
+        <Button type="submit" disabled={!valid || !ack || saving} aria-busy={saving}>Save</Button>
       </DrawerFooter>
     </form>
   );

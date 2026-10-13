@@ -81,6 +81,7 @@ describe("ServicesPanel", () => {
     const dlg = await screen.findByRole("dialog");
     const ch = (l: string, v: string) => fireEvent.change(within(dlg).getByLabelText(l), { target: { value: v } });
     ch("Slug", "dup"); ch("Name", "Dup"); ch("Upstream URL", "http://h:1");
+    fireEvent.click(within(dlg).getByLabelText(/I understand that this app runs on the same origin/));
     fireEvent.click(within(dlg).getByRole("button", { name: /^save$/i }));
     expect(await within(dlg).findByText("Slug already in use")).toBeInTheDocument();
     expect(toast.error).not.toHaveBeenCalled();
@@ -94,6 +95,7 @@ describe("ServicesPanel", () => {
     const dlg = await screen.findByRole("dialog");
     const ch = (l: string, v: string) => fireEvent.change(within(dlg).getByLabelText(l), { target: { value: v } });
     ch("Slug", "n"); ch("Name", "N"); ch("Upstream URL", "http://h:1");
+    fireEvent.click(within(dlg).getByLabelText(/I understand that this app runs on the same origin/));
     fireEvent.click(within(dlg).getByRole("button", { name: /^save$/i }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("db down"));
   });
@@ -104,6 +106,7 @@ describe("ServicesPanel", () => {
     await screen.findByText("Jellyfin");
     fireEvent.click(screen.getByRole("button", { name: "Edit Jellyfin" }));
     const dlg = await screen.findByRole("dialog");
+    fireEvent.click(within(dlg).getByLabelText(/I understand that this app runs on the same origin/));
     fireEvent.click(within(dlg).getByRole("button", { name: /^save$/i }));
     await waitFor(() => expect(a.updateService).toHaveBeenCalled());
     const [id, body] = a.updateService.mock.calls[0] ?? [];

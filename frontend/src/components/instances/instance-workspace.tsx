@@ -1,20 +1,23 @@
 import { useState } from "react";
 import { InstanceGrid } from "./instance-grid";
 import { InstanceDetailPane } from "./instance-detail-pane";
+import { ServiceList } from "./service-list";
 import { WorkstationList } from "./workstation-list";
 import { cn } from "@/lib/utils";
 
 interface InstanceWorkspaceProps {
   onLaunch: () => void;
+  onOpenSettings?: () => void;
 }
 
-export function InstanceWorkspace({ onLaunch }: InstanceWorkspaceProps) {
+export function InstanceWorkspace({ onLaunch, onOpenSettings }: InstanceWorkspaceProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   return (
     <div className="relative flex h-[calc(100vh-8.5rem)] gap-3">
       {/* List pane: 40% on md+, full-width on narrow */}
       <div className="w-full overflow-y-auto md:w-2/5 md:min-w-[320px]">
+        <ServiceList onOpenSettings={onOpenSettings} />
         <WorkstationList />
         <InstanceGrid
           dense

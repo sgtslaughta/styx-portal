@@ -67,7 +67,7 @@ export default function App() {
       <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
       <main className="flex-1 p-6">
         <div className={activeTab === "instances" ? "" : "hidden"}>
-          <InstanceWorkspace onLaunch={() => setActiveTab("templates")} />
+          <InstanceWorkspace onLaunch={() => setActiveTab("templates")} onOpenSettings={() => setActiveTab("system")} />
         </div>
         <div className={activeTab === "templates" ? "" : "hidden"}>
           <div className="mb-4 flex gap-1">

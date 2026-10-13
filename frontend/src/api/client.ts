@@ -31,6 +31,11 @@ export type ProxiedService = {
   health_status: "healthy" | "unhealthy" | "unknown"; health_checked_at: string | null;
   preset_id: string | null; enabled: boolean; created_at: string; updated_at: string;
 };
+/** Non-admin view of GET /services. `up` null = unknown. Admins receive the full ProxiedService instead. */
+export type ServiceTile = {
+  id: string; slug: string; name: string; icon: string | null;
+  mount_mode: ProxiedService["mount_mode"]; enabled: boolean; up: boolean | null;
+};
 export type ProxiedServiceInput = Omit<ProxiedService,
   "id" | "upstream_fallback" | "health_status" | "health_checked_at" | "created_at" | "updated_at">;
 export type ServicePreset = {
@@ -166,6 +171,8 @@ async function request<T>(path: string, init?: RequestInit, retried = false): Pr
 
 export const api = {
   listServices: () => request<ProxiedService[]>("/services"),
+  /** Role-dependent shape: tiles for members, full services for admins. Always fetch fresh. */
+  listServiceTiles: () => request<(ServiceTile | ProxiedService)[]>("/services"),
   listServicePresets: () => request<ServicePreset[]>("/services/presets"),
   discoverContainers: () => request<DiscoveredContainer[]>("/services/discover"),
   createService: (data: ProxiedServiceInput) =>

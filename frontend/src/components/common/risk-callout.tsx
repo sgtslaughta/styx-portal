@@ -12,6 +12,10 @@ export const RISK = {
   cookieRoot:
     "Takes over the root of the hostname for this browser. One service at a time. " +
     "Mobile apps cannot use this mode. To leave, open /_styx/exit.",
+  sameOrigin:
+    "Proxied apps share Styx's origin. Styx no longer sends its API session to the app's server, " +
+    "but scripts inside the app run in your browser with your Styx rights. Only add apps you trust; " +
+    "admins should use a non-admin account for everyday use.",
 } as const;
 
 export function RiskCallout({ children, tone = "danger" }: { children: ReactNode; tone?: "danger" | "warning" }) {
