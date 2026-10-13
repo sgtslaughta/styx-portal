@@ -1,0 +1,20 @@
+{
+  "id": "jellyfin",
+  "name": "Jellyfin",
+  "icon": "🎬",
+  "default_port": 8096,
+  "mount_mode": "path",
+  "auth_mode": "sso-with-bypass",
+  "bypass_rules": [
+    {
+      "path_prefix": "/jellyfin/",
+      "required_header": "Authorization"
+    }
+  ],
+  "health_path": "/jellyfin/health",
+  "verify_tls": true,
+  "base_url_hint": "Dashboard → Networking → Base URL = /jellyfin, then restart Jellyfin.",
+  "warnings": [
+    "Requests carrying an Authorization header bypass Styx login so Jellyfin apps work. Jellyfin validates the token itself."
+  ]
+}

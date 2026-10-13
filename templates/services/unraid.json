@@ -1,0 +1,16 @@
+{
+  "id": "unraid",
+  "name": "Unraid",
+  "icon": "🟠",
+  "default_port": 443,
+  "mount_mode": "cookie-root",
+  "auth_mode": "sso",
+  "bypass_rules": [],
+  "health_path": "/login",
+  "verify_tls": false,
+  "base_url_hint": null,
+  "warnings": [
+    "Unraid uses a self-signed certificate: TLS verification is disabled for this upstream.",
+    "Takes over the root of the hostname for this browser (one service at a time)."
+  ]
+}

@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     DOCKER_NETWORK: str = "styx-portal"
     SELKIES_DEFAULT_PORT: int = 3001
     TEMPLATES_DIR: str = "/app/templates"
+    SERVICE_PRESETS_DIR: str = "/app/templates/services"
     SCREENSHOT_CACHE_DIR: str = "/app/data/screenshots"
     SCREENSHOT_INTERVAL_SECONDS: int = 30
     TRAEFIK_DYNAMIC_DIR: str = "/app/traefik-dynamic"

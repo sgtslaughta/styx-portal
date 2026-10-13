@@ -9,7 +9,7 @@ from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Settings
-from app.models import ServiceTemplate
+from app.models import ServicePreset, ServiceTemplate
 
 logger = logging.getLogger("styx-portal")
 
@@ -69,6 +69,7 @@ async def init_db():
     _restrict_db_perms()
     async with async_session() as session:
         await seed_templates(session, settings.TEMPLATES_DIR)
+        await seed_service_presets(session, settings.SERVICE_PRESETS_DIR)
 
 
 async def _run_migrations(conn):
@@ -169,4 +170,19 @@ async def seed_templates(session: AsyncSession, templates_dir: str):
         template = ServiceTemplate(**data)
         session.add(template)
 
+    await session.commit()
+
+
+async def seed_service_presets(session: AsyncSession, presets_dir: str):
+    """Insert-only seed of templates/services/*.json into service_presets."""
+    if not os.path.isdir(presets_dir):
+        return
+    for filename in sorted(os.listdir(presets_dir)):
+        if not filename.endswith(".json"):
+            continue
+        with open(os.path.join(presets_dir, filename)) as f:
+            data = json.load(f)
+        if await session.get(ServicePreset, data["id"]):
+            continue
+        session.add(ServicePreset(**data))
     await session.commit()

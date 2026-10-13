@@ -1,0 +1,20 @@
+{
+  "id": "audiobookshelf",
+  "name": "Audiobookshelf",
+  "icon": "🎧",
+  "default_port": 13378,
+  "mount_mode": "cookie-root",
+  "auth_mode": "sso-with-bypass",
+  "bypass_rules": [
+    {
+      "path_prefix": "/api/",
+      "required_header": "Authorization"
+    }
+  ],
+  "health_path": "/healthcheck",
+  "verify_tls": true,
+  "base_url_hint": null,
+  "warnings": [
+    "Audiobookshelf has no base-URL support: it takes over the root of the hostname for this browser (one service at a time). Mobile apps cannot use this mode."
+  ]
+}

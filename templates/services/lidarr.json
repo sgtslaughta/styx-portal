@@ -1,0 +1,20 @@
+{
+  "id": "lidarr",
+  "name": "Lidarr",
+  "icon": "🎵",
+  "default_port": 8686,
+  "mount_mode": "path",
+  "auth_mode": "sso-with-bypass",
+  "bypass_rules": [
+    {
+      "path_prefix": "/lidarr/api",
+      "required_header": "X-Api-Key"
+    }
+  ],
+  "health_path": "/lidarr/ping",
+  "verify_tls": true,
+  "base_url_hint": "Settings → General → URL Base = /lidarr, then restart Lidarr.",
+  "warnings": [
+    "/lidarr/api is reachable without Styx login so mobile apps can use the API key."
+  ]
+}
