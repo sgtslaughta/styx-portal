@@ -283,3 +283,67 @@ class WorkstationAccess(SQLModel, table=True):
     workstation_id: str = Field(foreign_key="workstations.id", index=True)
     user_id: str = Field(foreign_key="users.id", index=True)
     created_at: datetime = Field(default_factory=_now)
+
+
+class Group(SQLModel, table=True):
+    __tablename__ = "groups"
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    name: str = Field(unique=True, index=True)
+    description: str | None = None
+    created_at: datetime = Field(default_factory=_now)
+
+
+class UserGroup(SQLModel, table=True):
+    __tablename__ = "user_groups"
+    user_id: str = Field(foreign_key="users.id", primary_key=True)
+    group_id: str = Field(foreign_key="groups.id", primary_key=True)
+
+
+class ServicePreset(SQLModel, table=True):
+    """Routing preset seeded from templates/services/*.json (insert-only)."""
+    __tablename__ = "service_presets"
+    id: str = Field(primary_key=True)          # e.g. "sonarr"
+    name: str
+    icon: str | None = None
+    default_port: int | None = None
+    mount_mode: str = "path"
+    auth_mode: str = "sso"
+    bypass_rules: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
+    health_path: str | None = None
+    verify_tls: bool = True
+    base_url_hint: str | None = None
+    warnings: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+
+
+class ProxiedService(SQLModel, table=True):
+    __tablename__ = "proxied_services"
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    slug: str = Field(unique=True, index=True)
+    name: str
+    icon: str | None = None
+    kind: str = "url"                          # url | docker-local
+    upstream_url: str | None = None            # url kind
+    container: str | None = None               # docker-local kind
+    container_port: int | None = None
+    # Set when connecting the container to the styx network failed and we
+    # fell back to host.docker.internal (see routers/services.py).
+    upstream_fallback: str | None = None
+    mount_mode: str = "path"                   # path | cookie-root
+    auth_mode: str = "sso"                     # sso | sso-with-bypass | app-native
+    bypass_rules: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
+    allowed_groups: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    verify_tls: bool = True
+    health_path: str | None = None
+    health_status: str = "unknown"             # healthy | unhealthy | unknown
+    health_checked_at: datetime | None = None
+    preset_id: str | None = None
+    enabled: bool = True
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+
+
+def upstream_base(svc: "ProxiedService") -> str:
+    """Base URL Traefik and the health loop use to reach the service."""
+    if svc.kind == "docker-local":
+        return svc.upstream_fallback or f"http://{svc.container}:{svc.container_port}"
+    return (svc.upstream_url or "").rstrip("/")
