@@ -148,4 +148,12 @@ describe("ServicesPanel", () => {
     const region = await screen.findByRole("region", { name: "Base path" });
     expect(region.closest('[data-slot="drawer-body"]')).not.toBeNull();
   });
+
+  test("row shows the last mount outcome on a fresh page load", async () => {
+    const dock = svc({ id: "s3", slug: "sonarr", name: "Sonarr", kind: "docker-local", container: "sonarr", container_port: 8989, url: null, upstream_url: null });
+    a.listServices.mockResolvedValue([dock]);
+    a.mountLatest.mockResolvedValue({ id: "j", state: "rolled_back", changes: [], backup_dir: "/b", log_excerpt: "x", created_at: "", finished_at: "", steps: [] });
+    render(<ServicesPanel />);
+    expect(await screen.findByText("Rolled back")).toBeInTheDocument();
+  });
 });

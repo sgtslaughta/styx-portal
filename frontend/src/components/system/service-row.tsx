@@ -1,10 +1,12 @@
 import { Pencil, Trash2 } from "lucide-react";
-import type { MountJob, ProxiedService } from "@/api/client";
+import { useQuery } from "@tanstack/react-query";
+import type { ProxiedService } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { fetchLatestMount } from "./service-mount";
 
 const DOT = { healthy: "bg-success", unhealthy: "bg-destructive", unknown: "bg-muted-foreground/50" } as const;
 
@@ -45,9 +47,12 @@ const MOUNT_CHIP = {
   failed: { label: "Needs attention", cls: "border-destructive/40 text-destructive" },
 } as const;
 
-export function ServiceRow({ s, busy, lastMount, onToggle, onEdit, onDelete }: {
-  s: ProxiedService; busy: boolean; lastMount?: MountJob["state"]; onToggle: (v: boolean) => void; onEdit: () => void; onDelete: () => void;
+export function ServiceRow({ s, busy, onToggle, onEdit, onDelete }: {
+  s: ProxiedService; busy: boolean; onToggle: (v: boolean) => void; onEdit: () => void; onDelete: () => void;
 }) {
+  const managed = s.kind === "docker-local" && s.mount_mode === "path";
+  const { data: job } = useQuery({ queryKey: ["mount-job", s.id], queryFn: () => fetchLatestMount(s.id), enabled: managed, staleTime: 30_000 });
+  const lastMount = job?.state;
   const label = s.health_status === "unknown" ? "Not checked yet" : s.health_status === "healthy" ? "Healthy" : "Unhealthy";
   const target = s.kind === "url" ? s.upstream_url : `${s.container}:${s.container_port}`;
   return (

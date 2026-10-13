@@ -14,6 +14,10 @@ export const pollWhile = (state?: string) => (ACTIVE.includes(state ?? "") ? 100
 const shortSteps = (steps: MountJob["steps"]) => steps.map((s) =>
   s.id === "backup" && s.detail?.includes("/") ? { ...s, detail: s.detail.split("/").filter(Boolean).slice(-1)[0], title: s.detail } : s);
 
+/** Latest mount job, or null when none ran yet (404). Shared by the drawer and the row chips. */
+export const fetchLatestMount = (id: string): Promise<MountJob | null> =>
+  api.mountLatest(id).catch((e: { status?: number }) => (e?.status === 404 ? null : Promise.reject(e)));
+
 export function ServiceMount({ service, onChanged }: { service: ProxiedService; onChanged?: (svc: ProxiedService) => void }) {
   const { id, name, slug } = service;
   const qc = useQueryClient();
@@ -23,7 +27,7 @@ export function ServiceMount({ service, onChanged }: { service: ProxiedService; 
   const plan = useQuery({ queryKey: ["mount-plan", id], queryFn: () => api.mountPlan(id), enabled });
   const job = useQuery<MountJob | null>({
     queryKey: ["mount-job", id], enabled,
-    queryFn: () => api.mountLatest(id).catch((e: { status?: number }) => (e?.status === 404 ? null : Promise.reject(e))),
+    queryFn: () => fetchLatestMount(id),
     refetchInterval: (q) => pollWhile(q.state.data?.state),
   });
   const apply = useMutation({
