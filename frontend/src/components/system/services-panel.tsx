@@ -160,7 +160,8 @@ export function ServicesPanel() {
             <DrawerTitle>{editing?.kind === "edit" ? `Edit ${editing.svc.name}` : "Add service"}</DrawerTitle>
             <DrawerDescription>Services are published on this hostname. Review each warning before saving.</DrawerDescription>
           </DrawerHeader>
-          {editing?.kind === "edit" && <ServiceMount service={editing.svc} />}
+          {editing?.kind === "edit" && <ServiceMount service={editing.svc}
+            onChanged={(svc) => { setEditing({ kind: "edit", svc }); void load(); }} />}
           {editing && (
             <ServiceForm
               key={editing.kind === "edit" ? editing.svc.id : editing.kind === "discovered" ? editing.c.name : "new"}
