@@ -218,6 +218,7 @@ def create_app(user: str, password: str,
     refit_file = os.path.join(seat_dir, "refit-request") if seat_dir else ""
     last_refit = {"ts": float("-inf")}
     size_owner = refit.SizeOwner()
+    viewers = {}     # ws id -> (fire_refit, announce_and_close) per connection
 
     def _write_state():
         if not state_file:
@@ -334,6 +335,8 @@ def create_app(user: str, password: str,
                 resize = {"size": None, "timer": None}
 
                 def fire_refit():
+                    if resize["size"] is None:
+                        return
                     target = refit.decide(resize["size"], refit.read_size(size_file),
                                           last_refit["ts"], time.time())
                     if target is None or ws_server.closed:
@@ -343,10 +346,16 @@ def create_app(user: str, password: str,
                         return
                     last_refit["ts"] = time.time()
                     refit.request(refit_file, *target)
-                    asyncio.ensure_future(announce_and_close())
+                    # Every viewer's upstream socket dies with the old selkies:
+                    # announce to all so each shim holds and reconnects instead
+                    # of surfacing a plain close (selkies' client reloads on it).
+                    for _fire, announce in list(viewers.values()):
+                        asyncio.ensure_future(announce())
 
                 async def announce_and_close():
-                    await ws_server.send_str(refit.MARKER)   # shim shows the overlay
+                    if ws_server.closed:
+                        return
+                    await ws_server.send_str(refit.MARKER)   # shim shows the pill
                     await ws_server.close(code=refit.CLOSE_CODE, message=b"refit")
 
                 def on_client(data) -> bool:
@@ -358,11 +367,13 @@ def create_app(user: str, password: str,
                     req = refit.parse_resize(data) if seat_dir else None
                     if not req:
                         return False
+                    resize["size"] = req
                     if size_owner.claim(id(ws_server)):
-                        resize["size"] = req
                         resize["timer"] and resize["timer"].cancel()
                         resize["timer"] = asyncio.get_running_loop().call_later(refit.SETTLE_S, fire_refit)
                     return True
+
+                viewers[id(ws_server)] = (fire_refit, announce_and_close)
 
                 await asyncio.gather(pump(ws_server, ws_client, on_activity=on_client),
                                      pump(ws_client, ws_server, on_binary=mark_frame),
@@ -371,7 +382,14 @@ def create_app(user: str, password: str,
                 resize["timer"] and resize["timer"].cancel()
             finally:
                 conns["n"] -= 1
+                viewers.pop(id(ws_server), None)
                 size_owner.release(id(ws_server))
+                # Owner left: the newest remaining viewer takes over and the
+                # seat follows its last reported size right away.
+                if size_owner.owner is None and viewers:
+                    nxt = next(reversed(viewers))
+                    size_owner.claim(nxt)
+                    viewers[nxt][0]()
                 _write_state()
                 await ws_client.close()
         return ws_server
