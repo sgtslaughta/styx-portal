@@ -136,20 +136,29 @@ def _redirect_host(request: Request) -> str:
     """X-Forwarded-Host mirrors the client's Host header, so it is
     attacker-influenced — only honor hosts we actually serve: the public
     domain, the configured LAN URL, or a private/loopback address (the LAN
-    routers are host-agnostic). Anything else falls back to DOMAIN."""
+    routers are host-agnostic). Anything else falls back to DOMAIN. A
+    non-standard port (from the host or X-Forwarded-Port) is kept for an
+    honored host: validation is on the hostname, the port is digits only."""
     raw = request.headers.get("x-forwarded-host", "").split(",")[0].strip().lower()
-    if not raw or not re.fullmatch(r"[a-z0-9.\-]+(:\d+)?", raw):
+    if not raw or not re.fullmatch(r"[a-z0-9.\-]+(:\d{1,5})?", raw):
         return _settings.DOMAIN
-    allowed = {_settings.DOMAIN.lower()}
+    host, _, port = raw.partition(":")
+    if not port:
+        xp = request.headers.get("x-forwarded-port", "").split(",")[0].strip()
+        port = xp if re.fullmatch(r"\d{1,5}", xp) and xp not in ("80", "443") else ""
+    if port and not 0 < int(port) < 65536:
+        port = ""
+    with_port = f"{host}:{port}" if port else host
+    allowed = {_settings.DOMAIN.lower().partition(":")[0]}
     if _settings.SERVER_LAN_URL:
-        allowed.add(_settings.SERVER_LAN_URL.split("://", 1)[-1].rstrip("/").lower())
-    if raw in allowed:
-        return raw
-    bare = raw.rsplit(":", 1)[0] if re.search(r":\d+$", raw) else raw
+        allowed.add(_settings.SERVER_LAN_URL.split("://", 1)[-1].rstrip("/")
+                    .lower().partition(":")[0])
+    if host in allowed:
+        return with_port
     try:
-        addr = ipaddress.ip_address(bare)
+        addr = ipaddress.ip_address(host)
         if addr.is_private or addr.is_loopback:
-            return raw
+            return with_port
     except ValueError:
         pass
     return _settings.DOMAIN
