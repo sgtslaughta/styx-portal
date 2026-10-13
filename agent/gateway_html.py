@@ -41,7 +41,7 @@ def inject_title(html: str, hostname: str) -> str:
               "delete document.hidden;delete document.visibilityState;"
               "document.dispatchEvent(new Event('visibilitychange'));};"
               "setTimeout(window.styxRestoreVisibility,%d);"
-              "}catch(e){}})();</script>") % (json.dumps(hostname), VIS_GRACE_MS)
+              "}catch(e){}})();</script>") % (json.dumps(hostname).replace("<", "\\u003c"), VIS_GRACE_MS)
     if "</head>" in html:
         return html.replace("</head>", script + "</head>", 1)
     return script + html
@@ -94,12 +94,12 @@ def inject_idle_watchdog(html: str, timeout_s: int, lead_s: int,
 
 
 def inject_favicon(html: str, etag: str) -> str:
-    """Replace the selkies tab icon with the workstation icon (/styx-favicon).
+    """Replace the selkies tab icon with the workstation icon (styx-favicon, relative: streams live under /w/<sub>/).
     Selkies sets its own <link rel=icon>, so remove those and re-assert ours
     when the head mutates. ponytail: observer + 2s poll backstop; ceiling is
     one querySelectorAll per 2s. `etag` goes through json.dumps with '<'
     escaped, so it cannot close the script tag."""
-    href = json.dumps("/styx-favicon?v=" + etag).replace("<", "\\u003c")
+    href = json.dumps("styx-favicon?v=" + etag).replace("<", "\\u003c")
     script = ("<script>(function(){var h=%s;"
               "function fix(){if(!document.head)return;var ok=false,l=document.querySelectorAll("
               "'link[rel~=\"icon\"],link[rel~=\"apple-touch-icon\"]');"

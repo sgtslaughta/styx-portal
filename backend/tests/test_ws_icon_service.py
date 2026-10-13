@@ -44,6 +44,15 @@ def test_bad_images_rejected(value):
     b'<svg xmlns="http://www.w3.org/2000/svg"><foreignObject/></svg>',
     b'<svg xmlns="http://www.w3.org/2000/svg"><style>@import url(http://evil/a.css);</style></svg>',
     b'<svg xmlns="http://www.w3.org/2000/svg" style="fill:url(http://evil/a)"/>',
+    b'<svg xmlns="http://www.w3.org/2000/svg"><h:img xmlns:h="http://www.w3.org/1999/xhtml" src="http://e/x"/></svg>',
+    b'<svg xmlns="http://www.w3.org/2000/svg"><h:meta xmlns:h="http://www.w3.org/1999/xhtml" http-equiv="refresh" content="0;url=http://e"/></svg>',
+    b'<svg xmlns="http://www.w3.org/2000/svg"><rect style="fill:\\75rl(http://e/a)"/></svg>',
+    b'<svg xmlns="http://www.w3.org/2000/svg"><style>@\\69mport "http://e/a.css";</style></svg>',
+    b'<svg xmlns="http://www.w3.org/2000/svg" onLoad="x()"/>',
+    b'<svg xmlns="http://www.w3.org/2000/svg"><a href="&#106;avascript:alert(1)"/></svg>',
+    b'<svg xmlns="http://www.w3.org/2000/svg" xmlns:x="http://www.w3.org/1999/xlink"><a x:href="javascript:alert(1)"/></svg>',
+    b'<svg xmlns="http://www.w3.org/2000/svg"><use href="data:image/svg+xml,%3Csvg/%3E"/></svg>',
+    b'<svg xmlns="http://www.w3.org/2000/svg"><image href="data:image/svg+xml;base64,AAAA"/></svg>',
     b'<html/>', b'<svg', b'\xff\xfe<svg/>',
 ])
 def test_bad_svg_rejected(svg):
@@ -100,3 +109,15 @@ def test_etag_changes_with_icon_name_id():
     assert base != ws_icon.icon_etag("emoji:x", "n", "i")
     assert base != ws_icon.icon_etag(None, "m", "i")
     assert base == ws_icon.icon_etag(None, "n", "i")
+
+
+def test_normal_svg_accepted():
+    svg = (b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><title>t</title>'
+           b'<defs><linearGradient id="g"><stop offset="0" stop-color="#fff"/></linearGradient></defs>'
+           b'<path d="M0 0h8v8z" fill="url(#g)"/>'
+           b'<image href="data:image/png;base64,AAAA"/></svg>')
+    ws_icon.validate_icon("image", uri(svg, "image/svg+xml"))
+
+
+def test_svg_csp_has_sandbox():
+    assert "sandbox" in ws_icon.SVG_HEADERS["Content-Security-Policy"]

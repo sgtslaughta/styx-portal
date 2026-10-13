@@ -44,10 +44,15 @@ def sync(cfg: dict, install: Path, etag: str, fetch=api_bytes) -> bool:
         if ctype not in TYPES or not body or len(body) > MAX_BYTES:
             raise ValueError(f"unusable icon response ({ctype}, {len(body)} bytes)")
         install.mkdir(parents=True, exist_ok=True)
+        _put(install / "favicon.type", ctype.encode())   # type first: bytes never meet a stale type
         _put(install / "favicon", body)
-        _put(install / "favicon.type", ctype.encode())
         _put(install / "favicon.etag", (got or etag).encode())   # last: marks complete
         return True
     except Exception as e:  # noqa: BLE001 - supervisor must survive any icon fault
         print(f"favicon sync failed: {e}", flush=True)
         return False
+
+
+def on_heartbeat(cfg: dict, hb: dict) -> bool:
+    """Supervisor hook: sync into the same install dir the gateway reads."""
+    return sync(cfg, Path(cfg["install_dir"]), hb.get("icon_etag", ""))

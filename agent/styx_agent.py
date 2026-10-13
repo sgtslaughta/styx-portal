@@ -346,7 +346,7 @@ def run(cfg: dict) -> int:
                       f"  python3 {INSTALL_DIR / 'styx_agent.py'} uninstall",
                       flush=True)
                 break
-            favicon.sync(cfg, INSTALL_DIR, hb.get("icon_etag", ""))
+            favicon.on_heartbeat(cfg, hb)
             if hb.get("disconnect_clients"):
                 print("server requested client disconnect (logout); "
                       "restarting gateway", flush=True)

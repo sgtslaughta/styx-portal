@@ -368,7 +368,9 @@ def create_app(user: str, password: str,
         if not icon:
             return web.Response(status=404)
         return web.Response(body=icon[0], content_type=icon[1], headers={
-            "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff"})
+            "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy":
+                "default-src 'none'; style-src 'unsafe-inline'; sandbox"})
 
     def _relative_location(request, loc):
         """Absolute-path redirects would escape a /w/<slug> prefix; make them
