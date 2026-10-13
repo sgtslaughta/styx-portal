@@ -6,7 +6,8 @@ import "@fontsource-variable/commissioner/flar.css";
 import "@/styles/globals.css";
 
 // CSP forbids inline scripts, so the theme class is applied here (mirrors index.html).
-const t = localStorage.getItem("theme");
+let t: string | null = null;
+try { t = localStorage.getItem("theme"); } catch { /* storage blocked */ }
 document.documentElement.classList.toggle(
   "dark",
   t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme:dark)").matches),
