@@ -117,6 +117,10 @@ it("focus moves into the dock on open and back to the tab on close", async () =>
     await waitFor(() => expect(tab).toHaveFocus());
   } finally { tab.remove(); }
 });
+it("opens focused on the current app's link, not the container", async () => {
+  render(<Dock open {...dockProps} />);
+  await waitFor(() => expect(screen.getByRole("link", { name: /sonarr/i })).toHaveFocus());
+});
 it("takes focus away from an iframe that held it when the dock opens", async () => {
   const frame = document.createElement("iframe");
   document.body.appendChild(frame);

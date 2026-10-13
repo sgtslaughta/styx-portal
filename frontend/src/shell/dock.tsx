@@ -1,6 +1,6 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { AnimatePresence, m, type Variants } from "framer-motion";
-import { Link2 } from "lucide-react";
+import { ExternalLink, House, Link2, LogOut } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import type { ServiceTile } from "@/api/client";
 import { spring } from "@/lib/motion";
@@ -28,7 +28,8 @@ export function Dock({ open, onOpenChange, tiles, current, focusSlug, side, tabR
       const focusIn = () => {
         const el = contentRef.current; // the portal mounts a frame or two after `open` flips
         if (!el) { if (tries++ < 10) id = requestAnimationFrame(focusIn); return; }
-        if (!el.contains(document.activeElement)) (el.querySelector<HTMLElement>("a") ?? el).focus();
+        if (!el.contains(document.activeElement) || document.activeElement === el)
+          (el.querySelector<HTMLElement>('a[aria-current="page"]') ?? el.querySelector<HTMLElement>("a") ?? el).focus();
       };
       id = requestAnimationFrame(focusIn);
       wasOpen.current = true;
@@ -59,7 +60,7 @@ export function Dock({ open, onOpenChange, tiles, current, focusSlug, side, tabR
                 initial={phone ? { y: 24, opacity: 0 } : { x: dir * 24, opacity: 0 }} animate={{ x: 0, y: 0, opacity: 1 }}
                 exit={phone ? { y: 24, opacity: 0 } : { x: dir * 24, opacity: 0 }}
                 transition={spring}
-                className={`fixed z-50 flex flex-col gap-3 border border-border bg-background/80 p-4 text-foreground shadow-xl backdrop-blur-xl dark:bg-background/72
+                className={`fixed z-50 outline-none flex flex-col gap-3 border border-border bg-background/80 p-4 text-foreground shadow-xl backdrop-blur-xl dark:bg-card/80
                   inset-x-0 bottom-0 max-h-[80dvh] pb-[max(1rem,env(safe-area-inset-bottom))] rounded-t-2xl
                   sm:inset-x-auto sm:inset-y-0 sm:max-h-none sm:w-[min(22rem,calc(100vw-32px))] sm:rounded-none ${side === "right" ? "sm:right-0" : "sm:left-0"}`}
               >
@@ -73,7 +74,7 @@ export function Dock({ open, onOpenChange, tiles, current, focusSlug, side, tabR
                       return (
                         <m.li key={t.id} custom={i} variants={item}>
                           <a href={shellHref(t)} target="_top" aria-current={active ? "page" : undefined}
-                            className={`flex min-h-12 items-center gap-3 rounded-md px-3 hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? "ring-2 ring-obol-foreground dark:ring-obol" : ""}`}>
+                            className={`flex min-h-12 items-center gap-3 rounded-md border border-transparent px-3 hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? "border-obol-foreground dark:border-obol" : ""}`}>
                             <span aria-hidden className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-base leading-none text-primary">{t.icon ?? <Link2 className="h-3.5 w-3.5" />}</span>
                             <span className="flex-1 truncate">{t.name}</span>
                             <span className={`size-2.5 rounded-full ${h.dot}`} aria-hidden />
@@ -85,9 +86,9 @@ export function Dock({ open, onOpenChange, tiles, current, focusSlug, side, tabR
                   </m.ul>
                 )}
                 <div className="flex flex-wrap gap-1 border-t border-border pt-3">
-                  <a href="/_styx/exit?next=/" target="_top" className={ACTION}>Home</a>
-                  {cur && <a href={frameSrc(cur.mount_mode, cur.slug, "/")} target="_blank" rel="noopener" className={ACTION}>Pop out</a>}
-                  {focusSlug === current && <a href="/_styx/exit?next=/" target="_top" className={ACTION}>Exit focus</a>}
+                  <a href="/_styx/exit?next=/" target="_top" className={ACTION}><House className="mr-2 size-4" aria-hidden />Home</a>
+                  {cur && <a href={frameSrc(cur.mount_mode, cur.slug, "/")} target="_blank" rel="noopener" className={ACTION}><ExternalLink className="mr-2 size-4" aria-hidden />Pop out</a>}
+                  {focusSlug === current && <a href="/_styx/exit?next=/" target="_top" className={ACTION}><LogOut className="mr-2 size-4" aria-hidden />Exit focus</a>}
                 </div>
               </m.div>
             </DialogPrimitive.Content>

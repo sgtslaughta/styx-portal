@@ -135,6 +135,17 @@ describe("ServicesPanel", () => {
     render(<ServicesPanel />);
     fireEvent.click(await screen.findByRole("button", { name: "Edit Sonarr" }));
     fireEvent.click(await screen.findByRole("button", { name: "Use focus mode instead" }));
-    expect(await screen.findByText("Focus: opens on its own")).toBeInTheDocument();
+    expect(await screen.findByText("Focus: opens full screen")).toBeInTheDocument();
+  });
+
+  test("base path section renders inside the drawer's scroll body", async () => {
+    const dock = svc({ id: "s3", slug: "sonarr", name: "Sonarr", kind: "docker-local", container: "sonarr", container_port: 8989, url: null, upstream_url: null });
+    a.listServices.mockResolvedValue([dock]);
+    a.mountPlan.mockResolvedValue({ method: "config_file", changes: [{ target: "/c", key: "k", old: "", new: "/sonarr" }], needs_consent: false, reason: null });
+    a.mountLatest.mockRejectedValue(Object.assign(new Error("nf"), { status: 404 }));
+    render(<ServicesPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Sonarr" }));
+    const region = await screen.findByRole("region", { name: "Base path" });
+    expect(region.closest('[data-slot="drawer-body"]')).not.toBeNull();
   });
 });

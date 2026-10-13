@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { DiscoveredContainer, Group, ProxiedService, ProxiedServiceInput, ServicePreset } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,8 @@ type Props = {
   /** Resolve with field errors to show them next to their fields; throw/reject is not expected. */
   onSubmit: (data: ProxiedServiceInput) => void | FieldErrors | Promise<void | FieldErrors>;
   onCancel: () => void;
+  /** Rendered first inside the scrolling body (e.g. the base-path section). */
+  lead?: ReactNode;
 };
 
 function withPreset(f: ProxiedServiceInput, p: ServicePreset): ProxiedServiceInput {
@@ -52,7 +54,7 @@ function initialState(initial: Props["initial"], discovered: Props["discovered"]
   return EMPTY;
 }
 
-export function ServiceForm({ initial, presets, groups, discovered, loadContainers, onSubmit, onCancel }: Props) {
+export function ServiceForm({ initial, presets, groups, discovered, loadContainers, onSubmit, onCancel, lead }: Props) {
   const isEdit = !!initial;
   const [f, setF] = useState<ProxiedServiceInput>(() => initialState(initial, discovered, presets));
   const [touched, setTouched] = useState<Set<string>>(new Set());
@@ -110,6 +112,7 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
   return (
     <form className="flex min-h-0 flex-1 flex-col" noValidate onSubmit={(e) => { e.preventDefault(); void submit(); }}>
       <DrawerBody className="space-y-5">
+        {lead}
         <Section title="Basics">
           <Field id="preset" label="Preset" hint="Optional: prefills mode, auth, health and bypass rules.">
             <select id="preset" className={selectCls} value={f.preset_id ?? ""} autoFocus={!isEdit && !discovered}
@@ -206,8 +209,8 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
           </div>
         )}
       </DrawerBody>
-      <DrawerFooter>
-        {!ack && <p className="mr-auto self-center text-xs text-muted-foreground">Tick “I understand” under Before you save to turn on Save.</p>}
+      <DrawerFooter className="flex-wrap">
+        {!ack && <p className="basis-full text-xs text-muted-foreground sm:mr-auto sm:basis-auto sm:self-center">Tick “I understand” above to turn on Save.</p>}
         <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
         <Button type="submit" disabled={!valid || !ack || saving} aria-busy={saving}>Save</Button>
       </DrawerFooter>

@@ -125,3 +125,11 @@ it("consent dialog has a stacked list for small widths", async () => {
   expect(list).toHaveTextContent("(not set)");
   expect(dlg.querySelector("table")).toHaveClass("hidden", "sm:table");
 });
+
+it("rollback outcome takes focus even when the plan loads after the job", async () => {
+  vi.mocked(api.mountPlan).mockImplementation(() => new Promise((r) => setTimeout(() => r({ method: "config_file", changes: CH, needs_consent: false, reason: null }), 50)));
+  vi.mocked(api.mountLatest).mockResolvedValue(rolled);
+  wrap(<ServiceMount service={svc} />);
+  const alert = await screen.findByRole("alert");
+  await waitFor(() => expect(alert).toHaveFocus());
+});

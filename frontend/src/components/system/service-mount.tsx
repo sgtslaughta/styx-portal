@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Check } from "lucide-react";
+import { Check, ChevronRight } from "lucide-react";
 import { api, type MountJob, type ProxiedService } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Stepper } from "@/components/ui/stepper";
@@ -47,9 +47,14 @@ export function ServiceMount({ service, onChanged }: { service: ProxiedService; 
 
   const jobState = job.data?.state;
   const outcomeRef = useRef<HTMLParagraphElement>(null);
+  // The outcome paragraph only exists once plan and job have both loaded; Radix's open autofocus
+  // runs before that, so focus on the next frame, after it.
+  const ready = !!plan.data && !job.isLoading;
   useEffect(() => {
-    if (jobState === "rolled_back" || jobState === "failed") outcomeRef.current?.focus();
-  }, [jobState]);
+    if (!ready || (jobState !== "rolled_back" && jobState !== "failed")) return;
+    const id = requestAnimationFrame(() => outcomeRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, [jobState, ready]);
   const seen = useRef<string | null>(null);
   const jobKey = job.data ? `${job.data.id}:${job.data.state}` : null;
   useEffect(() => {
@@ -60,7 +65,7 @@ export function ServiceMount({ service, onChanged }: { service: ProxiedService; 
 
   if (!enabled) return null;
   if (plan.isError) return (
-    <p className="px-4 pb-2 text-sm text-muted-foreground">Couldn't check {name}'s settings. {(plan.error as Error).message}</p>
+    <p className="text-sm text-muted-foreground">Couldn't check {name}'s settings. {(plan.error as Error).message}</p>
   );
   if (!plan.data || job.isLoading) return null;
   const p = plan.data;
@@ -81,7 +86,7 @@ export function ServiceMount({ service, onChanged }: { service: ProxiedService; 
       <Stepper steps={shortSteps(j.steps)} />
       <p ref={outcomeRef} role="alert" tabIndex={-1} className="text-sm text-destructive outline-none">Couldn't switch {name} to /{slug}, so Styx put its settings back.</p>
       {j.log_excerpt && (
-        <details className="text-sm"><summary className="cursor-pointer">App log</summary>
+        <details className="group text-sm"><summary className="inline-flex cursor-pointer list-none items-center gap-1 [&::-webkit-details-marker]:hidden"><ChevronRight className="size-4 transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden />App log</summary>
           <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted p-2 text-xs">{j.log_excerpt}</pre>
         </details>
       )}
@@ -115,8 +120,8 @@ export function ServiceMount({ service, onChanged }: { service: ProxiedService; 
     </>
   );
   return (
-    <section aria-label="Base path" className="space-y-3 px-4 pb-2">
-      <h3 className="text-sm font-semibold">Base path</h3>
+    <section aria-label="Base path" className="space-y-3">
+      <h3 className="text-base font-semibold">Base path</h3>
       {body}
       <MountConsentDialog open={asking} appName={name} changes={p.changes} onCancel={() => setAsking(false)}
         onConfirm={() => { setAsking(false); apply.mutate(true); }} />

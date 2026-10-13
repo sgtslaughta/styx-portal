@@ -141,7 +141,7 @@ export function ServicesPanel() {
                     <span className="ml-2 font-sans">{c.ports.length ? `${c.ports.length > 1 ? "Ports" : "Port"} ${c.ports.join(", ")}` : "No published ports"}</span>
                   </div>
                 </div>
-                <Button size="sm" disabled={c.ports.length === 0} aria-label={`Expose ${c.name}`}
+                <Button size="sm" variant="outline" disabled={c.ports.length === 0} aria-label={`Expose ${c.name}`}
                   onClick={() => { setPicker(null); setEditing({ kind: "discovered", c }); }}>Expose</Button>
               </li>
             ))}
@@ -160,8 +160,6 @@ export function ServicesPanel() {
             <DrawerTitle>{editing?.kind === "edit" ? `Edit ${editing.svc.name}` : "Add service"}</DrawerTitle>
             <DrawerDescription>Services are published on this hostname. Review each warning before saving.</DrawerDescription>
           </DrawerHeader>
-          {editing?.kind === "edit" && <ServiceMount service={editing.svc}
-            onChanged={(svc) => { setEditing({ kind: "edit", svc }); void load(); }} />}
           {editing && (
             <ServiceForm
               key={editing.kind === "edit" ? `${editing.svc.id}:${editing.svc.updated_at}:${editing.svc.mount_mode}` : editing.kind === "discovered" ? editing.c.name : "new"}
@@ -169,6 +167,8 @@ export function ServicesPanel() {
               discovered={editing.kind === "discovered"
                 ? { name: editing.c.name, port: editing.c.ports[0], preset: editing.c.suggested_preset } : null}
               presets={presets} groups={groups} loadContainers={api.discoverContainers}
+              lead={editing.kind === "edit" ? <ServiceMount service={editing.svc}
+                onChanged={(svc) => { setEditing({ kind: "edit", svc }); void load(); }} /> : undefined}
               onSubmit={submit} onCancel={() => setEditing(null)} />
           )}
         </DrawerContent>
