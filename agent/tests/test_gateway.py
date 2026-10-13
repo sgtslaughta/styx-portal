@@ -825,9 +825,10 @@ async def test_index_holds_when_seat_selkies_down(tmp_path):
 
 @pytest.mark.asyncio
 async def test_refit_announces_to_every_viewer_and_hands_owner_over(tmp_path):
-    """Two viewers: the owner's resize closes BOTH with the marker + 4002 (the
-    old selkies dies for everyone); the non-owner's size never refits while the
-    owner is connected, but is applied once the owner leaves."""
+    """Two controllers: the newest owns at once; its resize closes BOTH with the
+    marker + 4002; the demoted one's size never refits while the owner is
+    connected, but is applied once the owner leaves. A shared viewer is closed
+    too but never owns."""
     import asyncio
     (tmp_path / "seat-size").write_text("1920x1080")
     received = []
@@ -837,16 +838,18 @@ async def test_refit_announces_to_every_viewer_and_hands_owner_over(tmp_path):
     saved = (gateway.refit.MIN_INTERVAL_S, gateway.REFIT_HOLD_S, gateway.OWNER_GRACE_S)
     gateway.refit.MIN_INTERVAL_S, gateway.REFIT_HOLD_S, gateway.OWNER_GRACE_S = 0.0, 0.0, 0.2
     try:
+        other = await client.ws_connect("/websocket?styx_vid=oth1", headers=hdr)
+        assert (await other.receive()).data == "styx-owner,1"
         owner = await client.ws_connect("/websocket?styx_vid=own1", headers=hdr)
-        other = await client.ws_connect("/websocket?role=viewer&styx_vid=oth1", headers=hdr)
         assert (await owner.receive()).data == "styx-owner,1"
         assert (await other.receive()).data == "styx-owner,0"
+        shared = await client.ws_connect("/websocket?role=viewer&styx_vid=sh1", headers=hdr)
         await owner.send_str("r,1920x1080,primary")          # claims, no change
         await other.send_str("r,1280x720,primary")           # not the owner
         await asyncio.sleep(0.6)
         assert not (tmp_path / "refit-request").exists()
         await owner.send_str("r,2552x1294,primary")
-        for ws in (owner, other):
+        for ws in (owner, other, shared):
             msg = await asyncio.wait_for(ws.receive(), timeout=3)
             assert msg.type == aiohttp.WSMsgType.TEXT and msg.data == "styx-refit"
             msg = await asyncio.wait_for(ws.receive(), timeout=3)
@@ -856,8 +859,9 @@ async def test_refit_announces_to_every_viewer_and_hands_owner_over(tmp_path):
         (tmp_path / "refit-request").unlink()
         (tmp_path / "seat-size").write_text("2552x1294")
         await asyncio.sleep(0.5)                         # old viewers' grace lapses
+        other2 = await client.ws_connect("/websocket?styx_vid=oth2", headers=hdr)
+        assert (await other2.receive()).data == "styx-owner,1"
         owner2 = await client.ws_connect("/websocket?styx_vid=own2", headers=hdr)
-        other2 = await client.ws_connect("/websocket?role=viewer&styx_vid=oth2", headers=hdr)
         assert (await owner2.receive()).data == "styx-owner,1"
         assert (await other2.receive()).data == "styx-owner,0"
         await owner2.send_str("r,2552x1294,primary")     # claims, no change
