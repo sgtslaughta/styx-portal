@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ServiceTile } from "@/api/client";
 import { useFrameSync } from "./use-frame-sync";
 import { frameSrc } from "./url";
@@ -13,23 +13,25 @@ async function clearRootWorkers() {
   } catch { /* best effort */ }
 }
 
-export function Card({ title, text, href, action }: { title: string; text: string; href: string; action: string }) {
+const BTN = "mt-4 inline-flex min-h-11 items-center rounded-md bg-primary px-4 font-semibold text-primary-foreground";
+
+export function Card({ title, text, href, action, onAction }:
+  { title: string; text: string; action: string; href?: string; onAction?: () => void }) {
   return (
     <main className="flex h-dvh w-screen items-center justify-center bg-background p-4">
       <div className="max-w-md rounded-lg border border-border bg-card p-6 text-card-foreground">
         <h1 className="text-xl font-semibold">{title}</h1>
         <p className="mt-2 text-muted-foreground">{text}</p>
-        <a href={href} target="_top"
-           className="mt-4 inline-flex min-h-11 items-center rounded-md bg-primary px-4 font-semibold text-primary-foreground">
-          {action}
-        </a>
+        {onAction
+          ? <button type="button" onClick={onAction} className={BTN}>{action}</button>
+          : <a href={href} target="_top" className={BTN}>{action}</a>}
       </div>
     </main>
   );
 }
 
 export function Frame({ tile, inner, onTitle }: { tile: ServiceTile; inner: string; onTitle: (t: string) => void }) {
-  const ref = useRef<HTMLIFrameElement>(null);
+  const [el, setEl] = useState<HTMLIFrameElement | null>(null);
   const [ready, setReady] = useState(tile.mount_mode !== "cookie-root");
   useEffect(() => {
     if (tile.mount_mode === "cookie-root") void clearRootWorkers().then(() => setReady(true));
@@ -38,12 +40,12 @@ export function Frame({ tile, inner, onTitle }: { tile: ServiceTile; inner: stri
     try { if (new URL(href, location.href).origin === location.origin) window.location.assign(href); }
     catch { /* ignore malformed */ }
   }, []);
-  const blocked = useFrameSync(ref, tile, onLeave, onTitle);
+  const blocked = useFrameSync(el, tile, onLeave, onTitle);
   const src = frameSrc(tile.mount_mode, tile.slug, inner);
   if (blocked) {
     return <Card title={`${tile.name} can't run inside Styx`}
       text="This app blocks being shown inside another page." href={src} action={`Open ${tile.name} on its own`} />;
   }
   if (!ready) return null;
-  return <iframe ref={ref} title={tile.name} src={src} className="h-full w-full border-0" allow={ALLOW} />;
+  return <iframe ref={setEl} title={tile.name} src={src} className="h-full w-full border-0" allow={ALLOW} />;
 }

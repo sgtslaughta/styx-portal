@@ -1,44 +1,58 @@
-import { useEffect, useState, type RefObject } from "react";
+import { useLayoutEffect, useState } from "react";
 import type { ServiceTile } from "@/api/client";
 import { isFrameBlocked, shellPathFor } from "./url";
 
-/** Mirrors the framed app's URL/title into the address bar. Returns true when the frame refused to load. */
+type Patched = { cw: Window; doc: Document; restore: () => void };
+
+/** Mirrors the framed app's URL/title into the address bar. Returns true when the first load was refused. */
 export function useFrameSync(
-  ref: RefObject<HTMLIFrameElement | null>, tile: ServiceTile,
+  frame: HTMLIFrameElement | null, tile: ServiceTile,
   onLeave: (href: string) => void, onTitle: (t: string) => void,
 ): boolean {
   const [blocked, setBlocked] = useState(false);
-  useEffect(() => {
-    const frame = ref.current;
+  useLayoutEffect(() => {
     if (!frame) return;
-    let detach = () => {};
+    let first = true;
+    let patched: Patched | null = null;
     const attach = () => {
-      detach();
-      if (isFrameBlocked(frame)) { setBlocked(true); return; }
+      patched = null; // old document is gone; never touch its wrappers
+      const wasFirst = first;
+      first = false;
+      if (isFrameBlocked(frame)) { if (wasFirst) setBlocked(true); return; }
       const cw = frame.contentWindow!;
+      const doc = cw.document;
+      const readTitle = () => { try { if (cw.document === doc) onTitle(doc.title); } catch { /* gone */ } };
       const sync = () => {
         try {
           const p = shellPathFor(tile.mount_mode, tile.slug, cw.location);
           if (p) window.history.replaceState(null, "", p); else onLeave(cw.location.href);
-          onTitle(cw.document.title);
-        } catch { /* frame navigated away mid-sync */ }
+        } catch { return; }
+        requestAnimationFrame(readTitle);
       };
       const { pushState, replaceState } = cw.history;
       cw.history.pushState = function (...a: Parameters<History["pushState"]>) { pushState.apply(this, a); sync(); };
       cw.history.replaceState = function (...a: Parameters<History["replaceState"]>) { replaceState.apply(this, a); sync(); };
       cw.addEventListener("popstate", sync);
       cw.addEventListener("hashchange", sync);
-      detach = () => {
-        try {
+      const titleEl = doc.querySelector("title");
+      const mo = titleEl && typeof MutationObserver !== "undefined" ? new MutationObserver(readTitle) : null;
+      if (titleEl) mo?.observe(titleEl, { childList: true, characterData: true, subtree: true });
+      patched = {
+        cw, doc,
+        restore: () => {
+          mo?.disconnect();
           cw.history.pushState = pushState; cw.history.replaceState = replaceState;
           cw.removeEventListener("popstate", sync); cw.removeEventListener("hashchange", sync);
-        } catch { /* frame gone */ }
-        detach = () => {};
+        },
       };
       sync();
     };
     frame.addEventListener("load", attach);
-    return () => { frame.removeEventListener("load", attach); detach(); };
-  }, [ref, tile, onLeave, onTitle]);
+    return () => {
+      frame.removeEventListener("load", attach);
+      const p = patched as Patched | null;
+      try { if (p && p.cw.document === p.doc) p.restore(); } catch { /* frame gone */ }
+    };
+  }, [frame, tile, onLeave, onTitle]);
   return blocked;
 }
