@@ -5,7 +5,7 @@ from sqlmodel import delete, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.database import get_session
-from app.models import Group, User, UserGroup
+from app.models import Group, ProxiedService, User, UserGroup
 from app.schemas import GroupCreate, GroupOut, UserGroupsUpdate
 from app.security.deps import require_admin
 from app.services.audit import audit_request
@@ -53,10 +53,25 @@ async def delete_group(group_id: str, request: Request,
     if g is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Group not found")
     await session.exec(delete(UserGroup).where(UserGroup.group_id == group_id))
+    # ACLs reference group *names*: drop the name now, or a later group with the
+    # same name would silently inherit access. [] means "any user", so a service
+    # whose last group goes away is disabled instead (fail closed).
+    disabled = []
+    for svc in (await session.exec(select(ProxiedService))).all():
+        if g.name not in svc.allowed_groups:
+            continue
+        svc.allowed_groups = [n for n in svc.allowed_groups if n != g.name]
+        if not svc.allowed_groups and svc.enabled:
+            svc.enabled = False
+            disabled.append(svc.slug)
+        session.add(svc)
     await session.delete(g)
     await audit_request(session, request, "group.delete", user_id=admin.id,
-                        resource=group_id, detail={"name": g.name})
+                        resource=group_id, detail={"name": g.name, "disabled_services": disabled})
     await session.commit()
+    if disabled:
+        from app.routers.services import _refresh
+        await _refresh(session)
     return Response(status_code=204)
 
 

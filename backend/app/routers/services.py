@@ -10,7 +10,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Settings
 from app.database import get_session
-from app.models import ProxiedService, ServicePreset, User
+from app.models import Group, ProxiedService, ServicePreset, User
 from app.routers.services_auth import user_may_open
 from app.schemas import (DiscoveredContainer, ProxiedServiceCreate, ProxiedServiceOut,
                          ProxiedServiceUpdate, ServicePresetOut)
@@ -78,6 +78,14 @@ async def _attach_docker(s: ProxiedService, docker: DockerManager) -> None:
     s.upstream_fallback = None if ok else f"http://host.docker.internal:{s.container_port}"
 
 
+async def _check_groups(session: AsyncSession, names: list[str]) -> None:
+    known = set((await session.exec(select(Group.name).where(Group.name.in_(names)))).all())
+    missing = sorted(set(names) - known)
+    if missing:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT,
+                            f"Unknown group(s): {', '.join(missing)}")
+
+
 async def _release_container(session: AsyncSession, docker: DockerManager,
                              container: str, exclude_id: str) -> None:
     """Leave the services network unless another service row still uses the container."""
@@ -126,6 +134,7 @@ async def create_service(body: ProxiedServiceCreate, request: Request,
                          docker: DockerManager = Depends(get_docker_manager)):
     if (await session.exec(select(ProxiedService).where(ProxiedService.slug == body.slug))).first():
         raise HTTPException(status.HTTP_409_CONFLICT, "Slug already in use")
+    await _check_groups(session, body.allowed_groups)
     s = ProxiedService(**body.model_dump(exclude={"bypass_rules"}),
                        bypass_rules=[r.model_dump() for r in body.bypass_rules])
     await _attach_docker(s, docker)
@@ -145,6 +154,7 @@ async def update_service(sid: str, body: ProxiedServiceUpdate, request: Request,
                          session: AsyncSession = Depends(get_session),
                          docker: DockerManager = Depends(get_docker_manager)):
     s = await _get_or_404(session, sid)
+    await _check_groups(session, body.allowed_groups)
     prev = s.container if s.kind == "docker-local" and not s.upstream_fallback else None
     for k, v in body.model_dump(exclude={"bypass_rules"}).items():
         setattr(s, k, v)
