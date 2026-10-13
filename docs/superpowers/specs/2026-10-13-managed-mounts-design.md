@@ -70,7 +70,6 @@ configured by Styx") with **Change** under Advanced (admin override).
 ```json
 "subpath": {
   "methods": [
-    {"type": "env", "var": "SONARR__SERVER__URLBASE", "styx_managed_only": true},
     {"type": "config_file",
      "paths": ["/config/config.xml"],
      "format": "xml", "xpath": "/Config/UrlBase"}
@@ -80,19 +79,15 @@ configured by Styx") with **Change** under Advanced (admin override).
 }
 ```
 
-- `env`: only for containers Styx created (`styx.managed=true` label), set at
-  create/recreate. Never recreate an adopted container (would drift from the
-  user's compose file).
 - `config_file`: read/write via Docker archive API (`get_archive` /
   `put_archive`), first existing path wins. Formats: `xml` (xpath to a text
   node, created if missing), `json` (dotted key), `ini` (section.key).
-- `env` method type is reserved and not implemented; presets with only an env
-  method stay manual. `api` is likewise reserved (YAGNI;
-  every SP1 preset is covered by env/config_file).
-- Initial presets with `subpath`: sonarr, radarr, lidarr, prowlarr
+- `env` and `api` method types are reserved and not implemented (YAGNI). Presets
+  with only an env method (e.g. audiobookshelf, `ROUTER_BASE_PATH`) stay manual.
+- Initial managed presets with `subpath`: sonarr, radarr, lidarr, prowlarr
   (`/config/config.xml` UrlBase), jellyfin
-  (`/config/config/network.xml` and `/config/network.xml`, `BaseUrl`),
-  audiobookshelf (env `ROUTER_BASE_PATH`, managed only). Others stay manual.
+  (`/config/config/network.xml` and `/config/network.xml`, `BaseUrl`). Others
+  stay manual.
 - New presets: `homeassistant`, `immich` with `"mount_mode": "cookie-root"`.
 
 ### 3.2 Apply job
@@ -292,8 +287,8 @@ bool`, `frame_ok bool default true` (Open without overlay = false).
 
 **Backend unit** (pytest, mocked Docker): plan/backup/apply/restart/verify/
 rollback state machine incl. rollback failure and startup-interrupt; xml/json/
-ini editors; env method refused on adopted containers; consent 409; focus
-router generation; `/_styx/open` Sec-Fetch-Site matrix + confirm POST; bypass
+ini editors; consent 409; focus
+router generation; `/_styx/open` Sec-Fetch-Site matrix + confirm link page (cross-site and missing header); bypass
 rules incl. `required_query` and spoof cases; identity header forwarding on/off;
 frame-header middleware labels.
 
