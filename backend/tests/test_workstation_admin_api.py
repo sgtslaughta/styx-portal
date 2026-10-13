@@ -374,3 +374,17 @@ async def test_ws_auth_check_not_public_and_proxy_cookie_only(admin_client, clie
     client.cookies.clear()
     client.cookies.set("styx_proxy", proxy)
     assert (await client.get("/internal/workstations/auth-check", headers=hdr)).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_auth_check_login_redirect_drops_encoded_next(session):
+    """next= follows the shared safe_next rule: encoded dots/slashes dropped."""
+    ws, _ = await _seed(session)
+    from httpx import ASGITransport, AsyncClient
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.get("/internal/workstations/auth-check", headers={
+            "X-Forwarded-Uri": f"/w/{ws.subdomain}/%2e%2e/%2e%2e/api/x",
+            "X-Forwarded-Proto": "https", "X-Forwarded-Host": "localhost",
+            "Sec-Fetch-Mode": "navigate"})
+        assert r.status_code == 302
+        assert r.headers["location"] == "https://localhost/login"

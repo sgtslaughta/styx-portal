@@ -17,6 +17,7 @@ from app.schemas import (
     WorkstationUpdate, WorkstationUpdateCommandOut,
 )
 from app.security.cookies import clean_cookie_header
+from app.security.safe_next import safe_next
 from app.security.deps import require_admin, get_current_user
 from app.services.audit import audit_request
 from app.services.workstations import (
@@ -168,8 +169,8 @@ def _unauthenticated(request: Request, msg: str):
     if proto not in ("http", "https"):
         proto = "https"
     target = f"{proto}://{_redirect_host(request)}/login"
-    # next= only for known-shape stream paths (no open redirect).
-    if re.match(r"^/w/[a-z0-9-]+(/|$)", uri):
+    # next= only for known-shape stream paths passing the shared rule.
+    if re.match(r"^/w/[a-z0-9-]+(/|$)", uri) and safe_next(uri):
         target += f"?next={quote(uri, safe='/')}"
     return RedirectResponse(target, status_code=302)
 

@@ -134,3 +134,21 @@ async def test_service_write_reports_route_failure(admin_client, monkeypatch):
         "slug": "sonarr", "name": "S", "kind": "url", "upstream_url": "http://10.0.0.2"})
     assert r.status_code == 503
     assert "routes" in r.json()["detail"].lower()
+
+
+# --- next= follows the shared safe_next rule (app/security/safe_next.py) ---
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("nxt", ["/api/auth/logout", "/API/x", "/internal/strip",
+                                 "/%61pi/x", "/x/%2e%2e/api", "/setup"])
+async def test_exit_rejects_styx_internal_next(client, nxt):
+    r = await client.get("/_styx/exit", params={"next": nxt}, follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"] == "/"
+
+
+@pytest.mark.asyncio
+async def test_auth_check_drops_encoded_next(client, session):
+    await _svc(session)
+    r = await client.get(AUTH.format(slug="sonarr"), headers=_fwd("/sonarr/%2e%2e/api/x"))
+    assert r.status_code == 302
+    assert r.headers["location"] == "https://localhost/login"

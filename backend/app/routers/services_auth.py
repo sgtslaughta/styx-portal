@@ -14,6 +14,7 @@ from app.routers.groups import user_group_names
 from app.routers.workstations import _redirect_host
 from app.security.cookies import clean_cookie_header
 from app.security.deps import get_current_user, proxy_user_or_none
+from app.security.safe_next import safe_next
 from app.services.service_routes import COOKIE_NAME
 
 router = APIRouter()
@@ -22,11 +23,6 @@ router = APIRouter()
 internal_router = APIRouter()
 exit_router = APIRouter()
 pages_router = APIRouter()
-
-# Same-site absolute path only: one leading "/", then no "/", "\", whitespace or controls
-# right after it ("//host" and "/\host" are protocol-relative to browsers).
-_SAFE_NEXT = re.compile(r"^/(?![/\\])[A-Za-z0-9._~!$&'()*+,;=:@%/?#\[\]-]*$")
-
 
 async def get_service_by_slug(session: AsyncSession, slug: str) -> ProxiedService | None:
     return (await session.exec(select(ProxiedService).where(ProxiedService.slug == slug))).first()
@@ -76,7 +72,9 @@ async def user_may_open(session: AsyncSession, user: User, svc: ProxiedService) 
     return bool(set(names) & set(svc.allowed_groups))
 
 
-def _login_redirect(request: Request, uri: str, cookie_root: bool = False):
+def login_redirect(request: Request, uri: str | None, cookie_root: bool = False):
+    """forwardAuth denial for an anonymous request: 302 to /login (next= only
+    when safe_next allows it) for navigations, 401 for XHR/websocket."""
     is_nav = (request.headers.get("sec-fetch-mode") == "navigate"
               or "text/html" in request.headers.get("accept", ""))
     if not is_nav:
@@ -85,7 +83,7 @@ def _login_redirect(request: Request, uri: str, cookie_root: bool = False):
     if proto not in ("http", "https"):
         proto = "https"
     login = "/login"
-    if _SAFE_NEXT.match(uri):
+    if safe_next(uri):
         login += f"?next={quote(uri, safe='/?=&')}"
     if cookie_root:
         # While styx_svc is set, /login itself routes to the service: clear the
@@ -105,7 +103,7 @@ async def auth_check(slug: str, request: Request,
         return Response(status_code=200, headers=clean_cookie_header(request))
     user = await proxy_user_or_none(request, session)
     if user is None:
-        return _login_redirect(request, uri, svc.mount_mode == "cookie-root")
+        return login_redirect(request, uri, svc.mount_mode == "cookie-root")
     if not await user_may_open(session, user, svc):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this service")
     groups = await user_group_names(session, user.id)
@@ -139,7 +137,7 @@ async def enter_service(slug: str, user: User = Depends(get_current_user),
 
 @exit_router.get("/exit")
 async def exit_service(next: str = "/"):
-    resp = RedirectResponse(next if _SAFE_NEXT.match(next) else "/", status_code=302)
+    resp = RedirectResponse(safe_next(next, allow_login=True) or "/", status_code=302)
     resp.delete_cookie(COOKIE_NAME, path="/")
     return resp
 
