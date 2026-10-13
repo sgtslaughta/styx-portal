@@ -5,7 +5,7 @@ export const TOKENS = {
     destructive: "#B8432A", success: "#4F9A6C", successForeground: "#3A7A53",
     obol: "#B88A3E", obolForeground: "#86601F", ring: "#2A767C" },
   dark: { background: "#0F1C22", foreground: "#EDF1EF", card: "#15262D", muted: "#1D3139",
-    mutedForeground: "#9FB0B4", border: "#2A4049", primary: "#2A767C", primaryForeground: "#EDF1EF",
+    mutedForeground: "#9FB0B4", border: "#2A4049", primary: "#6FB7BC", primaryForeground: "#0F1C22",
     destructive: "#E07A5F", success: "#4F9A6C", successForeground: "#7CC49A",
     obol: "#B88A3E", obolForeground: "#D2A657", ring: "#6FB7BC" },
 } as const;
@@ -23,6 +23,7 @@ export const TEXT_PAIRS: [string, string, string][] = [
   [TOKENS.dark.foreground, TOKENS.dark.background, "dark body"],
   [TOKENS.dark.mutedForeground, TOKENS.dark.card, "dark muted on card"],
   [TOKENS.dark.primaryForeground, TOKENS.dark.primary, "dark button"],
+  [TOKENS.dark.primary, TOKENS.dark.background, "dark primary text"],
   [TOKENS.dark.ring, TOKENS.dark.background, "dark link"],
   [TOKENS.dark.destructive, TOKENS.dark.background, "dark danger"],
   [TOKENS.dark.obolForeground, TOKENS.dark.background, "dark obol text"],
