@@ -175,3 +175,19 @@ async def test_default_getter_uses_probe_container(session, tmp_path, monkeypatc
     args, kw = d.probe_http.call_args
     assert args[0] == "http://sonarr:8989/sonarr" and args[1] == "styx-services"
     assert kw["extra_hosts"] is None
+
+
+async def test_probe_unavailable_rolls_back_with_note(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    calls = []
+
+    async def broken(url):
+        calls.append(url)
+        return -1
+    await run_job(job.id, svc.id, PLAN, d, factory, http_get=broken)
+    await session.refresh(job)
+    assert len(calls) == 2                       # no waiting on a dead probe
+    assert job.state == "rolled_back"
+    assert "probe image unavailable" in job.steps[3]["detail"]
+    assert "couldn't confirm" in job.log_excerpt
+    assert d.write_file.call_args.args[2] == XML

@@ -62,6 +62,7 @@ STEPS = [("backup", "Back up settings"), ("apply", "Apply base path"),
 VERIFY_BUDGET_S = 90
 VERIFY_INTERVAL_S = 2
 KEEP_BACKUPS = 5
+PROBE_DETAIL = "Styx couldn't start its check (probe image unavailable)"
 
 
 def _probe_getter(docker, svc):
@@ -73,14 +74,18 @@ def _probe_getter(docker, svc):
     return get
 
 
-async def _verify(get, url: str) -> bool:
+async def _verify(get, url: str) -> str:
+    """"ok", "down" (no answer in budget) or "probe" (the check itself couldn't run)."""
     loop = asyncio.get_running_loop()
     end = loop.time() + VERIFY_BUDGET_S
     while True:
-        if 200 <= await get(url) < 400:
-            return True
+        code = await get(url)
+        if 200 <= code < 400:
+            return "ok"
+        if code < 0:
+            return "probe"
         if loop.time() >= end:
-            return False
+            return "down"
         await asyncio.sleep(VERIFY_INTERVAL_S)
 
 
@@ -175,12 +180,14 @@ async def run_job(job_id, svc_id, plan, docker, session_factory, http_get=None,
         mark("restart", "done")
         mark("verify", "active")
         await save()
-        if await _verify(get, base + verify_path):
+        res = await _verify(get, base + verify_path)
+        if res == "ok":
             mark("verify", "done")
             await save("done")
             await _set_managed(session_factory, svc_id)
             return
-        mark("verify", "failed", f"No answer at {verify_path} after {VERIFY_BUDGET_S}s")
+        mark("verify", "failed", PROBE_DETAIL if res == "probe"
+             else f"No answer at {verify_path} after {VERIFY_BUDGET_S}s")
     except Exception as e:  # noqa: BLE001 - any failure triggers rollback
         fail_active(e)
     if not written:
@@ -194,7 +201,11 @@ async def run_job(job_id, svc_id, plan, docker, session_factory, http_get=None,
     try:
         await asyncio.to_thread(docker.write_file, c, path, original, info)
         await asyncio.to_thread(docker.restart_container, c)
-        ok = await _verify(get, base + (old_verify_path or "/"))
+        res = await _verify(get, base + (old_verify_path or "/"))
+        ok = res != "down"
+        if res == "probe":
+            logs = f"{logs}\nRestored the old settings but couldn't confirm the app answers ({PROBE_DETAIL}).".strip()
+            await save(log_excerpt=logs)
     except Exception as e:  # noqa: BLE001
         logger.exception("mount job %s rollback failed", job_id)
         logs = f"{logs}\nRollback failed: {e}. Backup at {bdir}".strip()

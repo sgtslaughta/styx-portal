@@ -290,30 +290,50 @@ class DockerManager:
         if not _PROBE_URL.fullmatch(url):
             raise ValueError("probe url must be plain http(s) with no shell metacharacters")
         image = Settings().MOUNT_PROBE_IMAGE
-        try:
-            self._client.images.get(image)
-        except docker.errors.ImageNotFound:
-            self._client.images.pull(image)
         c = None
         try:
+            try:
+                self._client.images.get(image)
+            except docker.errors.ImageNotFound:
+                self._client.images.pull(image)
             c = self._client.containers.create(
                 image, ["wget", "-q", "-S", "-O", "/dev/null", "-T", str(timeout_s), url],
-                network=network, read_only=True, cap_drop=["ALL"], mem_limit="32m",
-                labels={"styx.probe": "true"}, extra_hosts=extra_hosts)
+                network=network, read_only=True, cap_drop=["ALL"], mem_limit="32m", pids_limit=32,
+                security_opt=["no-new-privileges"], labels={"styx.probe": "true"},
+                extra_hosts=extra_hosts)
             c.start()
+        except Exception as e:  # noqa: BLE001 - the probe itself could not run
+            logger.warning("Couldn't run the probe image %s: %s", image, e)
+            self._rm_probe(c)
+            return -1
+        try:
             c.wait(timeout=timeout_s + 10)
             out = c.logs(stdout=True, stderr=True).decode("utf-8", "replace")
+            # busybox wget follows redirects and prints every hop; the first
+            # status line is the app's own answer (3xx counts as up).
             codes = re.findall(r"HTTP/1\.[01] (\d{3})", out)
-            return int(codes[-1]) if codes else 0
+            return int(codes[0]) if codes else 0
         except Exception:  # noqa: BLE001 - unreachable app == status 0
             logger.debug("probe of %s failed", url, exc_info=True)
             return 0
         finally:
-            if c is not None:
-                try:
-                    c.remove(force=True)
-                except Exception:  # noqa: BLE001
-                    logger.warning("could not remove probe container", exc_info=True)
+            self._rm_probe(c)
+
+    @staticmethod
+    def _rm_probe(c) -> None:
+        if c is not None:
+            try:
+                c.remove(force=True)
+            except Exception:  # noqa: BLE001
+                logger.warning("could not remove probe container", exc_info=True)
+
+    def remove_probe_containers(self) -> int:
+        """Force-remove probe containers left behind by a crash."""
+        n = 0
+        for c in self._client.containers.list(all=True, filters={"label": "styx.probe=true"}):
+            self._rm_probe(c)
+            n += 1
+        return n
 
     def container_labels(self, container: str) -> dict:
         return self._client.containers.get(container).labels or {}
