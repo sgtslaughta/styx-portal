@@ -12,7 +12,7 @@ from app.database import get_session
 from app.models import ProxiedService, User
 from app.routers.groups import user_group_names
 from app.routers.workstations import _redirect_host
-from app.security.deps import get_current_user, session_user_or_none
+from app.security.deps import get_current_user, proxy_user_or_none
 from app.services.service_routes import COOKIE_NAME
 
 router = APIRouter()
@@ -102,7 +102,7 @@ async def auth_check(slug: str, request: Request,
     uri = request.headers.get("x-forwarded-uri", "/")
     if svc.auth_mode == "sso-with-bypass" and bypass_matches(svc.bypass_rules, uri, request.headers):
         return Response(status_code=200)
-    user = await session_user_or_none(request, session)
+    user = await proxy_user_or_none(request, session)
     if user is None:
         return _login_redirect(request, uri, svc.mount_mode == "cookie-root")
     if not await user_may_open(session, user, svc):

@@ -41,37 +41,33 @@ def require_owner_or_admin(owner_id: str | None, user: User) -> None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not the owner")
 
 
-async def refresh_user_or_none(request: Request, session: AsyncSession) -> User | None:
-    """User behind a valid, unrevoked refresh_token cookie, else None. Read-only.
+async def proxy_user_or_none(request: Request, session: AsyncSession) -> User | None:
+    """User behind a valid styx_proxy cookie, else None (forwardAuth only).
 
-    Same validation as POST /api/auth/refresh (signature, exp, type, stored row
-    not revoked, active user) but never rotates: forwardAuth cannot set cookies.
-    Reuse detection (family kill) stays in /refresh, where rotation happens.
+    Valid = signature + exp, type "proxy", its refresh family still has a live
+    (unrevoked, unexpired) row for the same user, and the user is active. API
+    tokens are never accepted here; the proxy token is never accepted by the API.
     """
+    from datetime import datetime, timezone
+    from sqlmodel import select
     from app.models import RefreshToken
-    raw = request.cookies.get("refresh_token")
+    from app.security.cookies import PROXY_COOKIE
+    raw = request.cookies.get(PROXY_COOKIE)
     if not raw:
         return None
     try:
         claims = tokens.decode_token(raw)
     except tokens.TokenError:
         return None
-    if claims.get("type") != "refresh":
+    if claims.get("type") != "proxy" or not claims.get("fam"):
         return None
-    stored = await session.get(RefreshToken, claims.get("jti"))
-    if not stored or stored.revoked or stored.user_id != claims.get("sub"):
+    rows = (await session.exec(select(RefreshToken).where(
+        RefreshToken.family_id == claims["fam"],
+        RefreshToken.user_id == claims.get("sub"),
+        RefreshToken.revoked == False))).all()  # noqa: E712
+    now = datetime.now(timezone.utc)
+    if not any((r.expires_at if r.expires_at.tzinfo else
+                r.expires_at.replace(tzinfo=timezone.utc)) > now for r in rows):
         return None
     user = await session.get(User, claims["sub"])
     return user if user and user.is_active else None
-
-
-async def session_user_or_none(request: Request, session: AsyncSession) -> User | None:
-    """get_current_user, else a valid refresh token; None instead of 401 (forwardAuth).
-
-    Path-mode apps never call /api/auth/refresh, so without the fallback every
-    service would bounce to /login when the 15-min access token expires.
-    """
-    try:
-        return await get_current_user(request, session)
-    except HTTPException:
-        return await refresh_user_or_none(request, session)

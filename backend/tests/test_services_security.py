@@ -55,72 +55,14 @@ async def test_exit_rejects_unsafe_next(client, nxt):
     assert r.status_code == 302 and r.headers["location"] == "/"
 
 
-# --- C: forwardAuth survives access-token expiry via the refresh token ---
-
-async def _member(session):
-    from sqlmodel import select
-    from app.models import User
-    return (await session.exec(select(User).where(User.username == "member"))).first()
-
-
-def _expired_access(user):
-    from app.security import tokens
-    return tokens.create_access_token(user.id, user.role, ttl=-60)
-
+# --- C: forwardAuth runs on styx_proxy alone (details: test_proxy_cookie.py) ---
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("access", ["missing", "expired"])
-async def test_valid_refresh_allows_when_access_missing_or_expired(member_client, session, access):
-    await _svc(session)
-    user = await _member(session)
-    if access == "missing":
-        member_client.cookies.delete("access_token")
-    else:
-        member_client.cookies.set("access_token", _expired_access(user))
-    r = await member_client.get(AUTH.format(slug="sonarr"), headers=_fwd("/sonarr/"))
-    assert r.status_code == 200
-    assert r.headers["x-styx-user"] == "member"
-
-
-@pytest.mark.asyncio
-async def test_revoked_refresh_denied(member_client, session):
-    from sqlmodel import update
-    from app.models import RefreshToken
-    await _svc(session)
-    member_client.cookies.delete("access_token")
-    await session.exec(update(RefreshToken).values(revoked=True))
-    await session.commit()
-    r = await member_client.get(AUTH.format(slug="sonarr"), headers=_fwd("/sonarr/"))
-    assert r.status_code == 302
-
-
-@pytest.mark.asyncio
-async def test_invalid_or_wrong_type_refresh_denied(member_client, session):
-    await _svc(session)
-    user = await _member(session)
-    member_client.cookies.delete("access_token")
-    for bad in ("garbage", _expired_access(user)):
-        member_client.cookies.set("refresh_token", bad)
-        r = await member_client.get(AUTH.format(slug="sonarr"), headers=_fwd("/sonarr/"))
-        assert r.status_code == 302
-
-
-@pytest.mark.asyncio
-async def test_refresh_of_inactive_user_denied(member_client, session):
-    await _svc(session)
-    user = await _member(session)
-    user.is_active = False
-    session.add(user)
-    await session.commit()
-    member_client.cookies.delete("access_token")
-    r = await member_client.get(AUTH.format(slug="sonarr"), headers=_fwd("/sonarr/"))
-    assert r.status_code == 302
-
-
-@pytest.mark.asyncio
-async def test_refresh_fallback_keeps_group_acl(member_client, session):
+async def test_proxy_cookie_keeps_group_acl(member_client, session):
     await _svc(session, allowed_groups=["ops"])
-    member_client.cookies.delete("access_token")
+    proxy = member_client.cookies.get("styx_proxy")
+    member_client.cookies.clear()
+    member_client.cookies.set("styx_proxy", proxy)
     r = await member_client.get(AUTH.format(slug="sonarr"), headers=_fwd("/sonarr/"))
     assert r.status_code == 403
 
