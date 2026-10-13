@@ -1,0 +1,11 @@
+{
+  "name": "styx-e2e",
+  "private": true,
+  "description": "Isolated full-stack end-to-end suite (proxied services). Run via ./run.sh",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

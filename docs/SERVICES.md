@@ -134,3 +134,31 @@ the user's `/api` cookies, so it can act with the **viewing user's Styx rights**
 Treat every proxied app as trusted code. Admins should use a non-admin account for daily
 app use. The service form requires you to acknowledge this. A full fix needs per-service
 origins (subdomains), which is out of scope for now.
+
+## Running the end-to-end suite
+
+`e2e/` holds an isolated full-stack Playwright suite for proxied services: Traefik,
+backend and frontend built from this checkout, plus two `traefik/whoami` upstreams (one
+docker-local, found through "Add from container"; one reached by URL). whoami echoes the
+request headers, which lets the suite prove that Styx cookies never reach an upstream.
+
+```bash
+e2e/run.sh                     # build, start, test, always `down -v`
+e2e/run.sh -g "cookie-root"    # any Playwright args pass through
+KEEP=1 e2e/run.sh              # leave the stack up for debugging
+```
+
+Requirements: Docker with Compose v2, Node 20+. The script installs the pinned
+`@playwright/test` and Chromium on first run.
+
+- Compose project `styx-e2e` (`e2e/compose.yml`), fresh tmpfs database each run, no
+  fixed container names. The only published port is `127.0.0.1:18080` (Traefik, plain
+  HTTP, `COOKIE_SECURE=false`, `DOMAIN=127.0.0.1`).
+- The backend reaches Docker only through `e2e/docker-shim`, which narrows discovery to
+  containers labelled `styx-e2e.discoverable=true` and refuses every write except
+  create/connect/disconnect on `styx-e2e-services` for containers of this project. The
+  backend's hardcoded `styx-traefik` (the live stack's Traefik) is rewritten to the e2e
+  Traefik, so the suite can run next to a live stack without touching it.
+- The admin is created through the real `/setup` page and users through invite links.
+- Screenshots of every services/groups screen (light and dark, 1440x900 and 390x844)
+  land in `e2e/screenshots/` (gitignored).
