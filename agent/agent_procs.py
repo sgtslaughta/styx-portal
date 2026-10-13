@@ -1,4 +1,5 @@
 """Child-process supervision and check-printing helpers for the styx agent."""
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -84,6 +85,25 @@ def settings_restart_keys(old: dict, new: dict) -> tuple[str, ...]:
            for k, d in SEAT_DEFAULTS.items()):
         keys += ("seat",)
     return keys
+
+
+def viewers_connected(state_path) -> bool:
+    """True when the gateway state file reports live stream websockets."""
+    try:
+        n = json.loads(Path(state_path).read_text()).get("active_connections")
+    except (OSError, ValueError, AttributeError):
+        return False
+    return isinstance(n, int) and n > 0
+
+
+def merge_pending(pending: dict | None, old_ss: dict, new_ss: dict) -> dict:
+    """Fold a settings push into a deferred restart: keep the earliest old
+    settings, union the restart keys."""
+    keys = settings_restart_keys(old_ss, new_ss)
+    if pending is None:
+        return {"old": old_ss, "keys": keys}
+    return {"old": pending["old"],
+            "keys": tuple(dict.fromkeys(pending["keys"] + keys))}
 
 
 def _check(label: str, ok: bool, detail: str = "") -> bool:
