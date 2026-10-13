@@ -253,6 +253,8 @@ def test_bitrate_is_viewer_adjustable_ceiling(tmp_path, monkeypatch):
     assert "--video-bitrate=16000,1000-16000" in cmd
     cmd = _seat_cmd(tmp_path, monkeypatch, {"video_bitrate_kbps": 800})
     assert "--video-bitrate=800,800-800" in cmd
+    cmd = _seat_cmd(tmp_path, monkeypatch, {"video_bitrate_kbps": "junk"})
+    assert "--video-bitrate=16000,1000-16000" in cmd
 
 
 def test_gnome_seat_always_disables_client_cursor(tmp_path, monkeypatch):
