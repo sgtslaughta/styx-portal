@@ -6,6 +6,7 @@ from app.routers import services_auth
 
 NAV = {"x-forwarded-uri": "/sonarr/", "x-forwarded-host": "localhost",
        "sec-fetch-mode": "navigate"}
+SAME = {"sec-fetch-site": "same-origin"}
 XHR = {"x-forwarded-uri": "/sonarr/", "accept": "application/json"}
 
 
@@ -54,14 +55,14 @@ async def test_instance_other_owner_nav_html_xhr_json(member_client, session):
 
 
 @pytest.mark.asyncio
-async def test_enter_cookie_follows_cookie_secure(member_client, session, monkeypatch):
+async def test_open_cookie_follows_cookie_secure(member_client, session, monkeypatch):
     s = ProxiedService(slug="unraid", name="U", kind="url", upstream_url="http://10.0.0.2:80",
                        auth_mode="sso", bypass_rules=[], mount_mode="cookie-root")
     session.add(s)
     await session.commit()
-    r = await member_client.post("/api/services/unraid/enter")
+    r = await member_client.get("/_styx/open/unraid", headers=SAME, follow_redirects=False)
     assert "styx_svc=unraid" in r.headers["set-cookie"]
     assert "secure" not in r.headers["set-cookie"].lower()  # suite runs COOKIE_SECURE=false
     monkeypatch.setattr(services_auth._settings, "COOKIE_SECURE", True)
-    r = await member_client.post("/api/services/unraid/enter")
+    r = await member_client.get("/_styx/open/unraid", headers=SAME, follow_redirects=False)
     assert "secure" in r.headers["set-cookie"].lower()
