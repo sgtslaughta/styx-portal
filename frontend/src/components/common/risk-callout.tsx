@@ -60,7 +60,7 @@ export function RiskCallout({ title, children, details, footer, tone = "danger",
         className,
       )}
     >
-      <AlertTriangle className={cn("mt-px h-4 w-4 shrink-0", danger ? "text-destructive" : "text-warning-foreground")} aria-hidden />
+      <AlertTriangle className={cn("mt-px h-4 w-4 shrink-0", danger ? "text-destructive" : "text-warning")} aria-hidden />
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3">
           {title && <p className="text-[13px] font-semibold leading-snug">{title}</p>}
