@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import {
   ADMIN, MEMBER, SHOTS, STYX_COOKIES, ensureService, eventually, headerLines, isWhoami, settled, uiLogin, updateService,
@@ -22,6 +23,7 @@ test.beforeAll(async ({ browser }) => {
   const focus = { kind: "docker-local", container: "styx-e2e-focusapp-1", container_port: 80, mount_mode: "cookie-root" };
   await ensureService(c, { slug: "focusapp", name: "Focusapp", ...focus });
   await ensureService(c, { slug: "focusapp2", name: "Focusapp Two", ...focus });
+  await ensureService(c, { slug: "stoppable", name: "Stoppable", kind: "docker-local", container: "styx-e2e-stoppable-1", container_port: 80 });
   await ensureService(c, { slug: "frameblock", name: "Frameblock", kind: "docker-local", container: "styx-e2e-frameblock-1", container_port: 80 });
   const who = { kind: "url", upstream_url: "http://whoami-url:80", container: null, container_port: null };
   await ensureService(c, { slug: "idon", name: "Idon", pass_identity: true, ...who });
@@ -225,6 +227,38 @@ test("s5 frame-blocking app gets the blocked card", async () => {
   const link = p.getByRole("link", { name: "Open Frameblock on its own" });
   await expect(link).toHaveAttribute("href", "/frameblock/");
   await expect(p.locator("iframe")).toHaveCount(0);
+});
+
+test("s5b a stopped app shows Styx's 503 page inside the frame, not the blocked card", async () => {
+  const p = member.page;
+  const docker = (...a: string[]) => execFileSync("docker", a, { stdio: "ignore" });
+  await p.goto("/_styx/app/stoppable/");
+  await expect(p.frameLocator("iframe").locator("body")).toHaveText(/stoppable/, { timeout: 30_000 });
+  docker("stop", "-t", "1", "styx-e2e-stoppable-1");
+  try {
+    await p.goto("/_styx/app/stoppable/");
+    await expect(p.frameLocator("iframe").getByRole("heading", { name: "Service unavailable" })).toBeVisible({ timeout: 30_000 });
+    // Past the detector's 10s window: the card must still not appear.
+    await p.waitForTimeout(11_000);
+    await expect(p.getByRole("heading", { name: /can't run inside Styx/ })).toHaveCount(0);
+    await expect(p.locator("iframe")).toHaveCount(1);
+  } finally {
+    docker("start", "styx-e2e-stoppable-1");
+  }
+});
+
+test("s5c an expired session inside the frame offers a sign-in that returns to the shell", async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const p = await ctx.newPage();
+  await uiLogin(p, MEMBER);
+  await p.goto("/_styx/app/idon/");
+  await expect(p.frameLocator("iframe").locator("body")).toContainText("Hostname", { timeout: 30_000 });
+  await ctx.clearCookies({ name: "styx_proxy" });
+  await p.frameLocator("iframe").locator("body").evaluate(() => { location.href = "/idon/next"; });
+  const link = p.frameLocator("iframe").getByRole("link", { name: "Sign in" });
+  await expect(link).toHaveAttribute("href", "/login?next=%2F_styx%2Fapp%2Fidon%2Fnext", { timeout: 30_000 });
+  await expect(link).toHaveAttribute("target", "_top");
+  await ctx.close();
 });
 
 test("s6 identity headers only when enabled; spoofing is replaced", async () => {

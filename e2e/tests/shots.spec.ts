@@ -351,6 +351,13 @@ test("service rows with mount chips", async () => {
   try {
     await mockApi(p, "GET", new RegExp(`/api/services/${c}/mount/jobs/latest$`), MOUNT_STATES["log-open"].job);
     await mockApi(p, "GET", new RegExp(`/api/services/${a}/mount/jobs/latest$`), CHIP_JOBS.done);
+    // "Base path set" reads the server-owned mount_managed flag: set it on the shotblock row only.
+    await p.route((u) => u.pathname === "/api/services", async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      const res = await route.fetch();
+      const rows = (await res.json()) as { id: string; mount_managed: boolean }[];
+      return route.fulfill({ response: res, json: rows.map((r) => (r.id === a ? { ...r, mount_managed: true } : r)) });
+    });
     await mockApi(p, "GET", new RegExp(`/api/services/${b}/mount/jobs/latest$`), CHIP_JOBS.failed);
     await each(async (_w, t, file) => {
       await setTheme(p, t);

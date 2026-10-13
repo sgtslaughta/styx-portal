@@ -154,6 +154,14 @@ services:
       styx-e2e.discoverable: "true"
     networks: [apps]
 
+  # plain framable app the shell spec stops mid-session
+  stoppable:
+    image: nginx:1.27-alpine
+    volumes: ["./apps/stoppable/nginx.conf:/etc/nginx/conf.d/default.conf:ro"]
+    labels:
+      styx-e2e.discoverable: "true"
+    networks: [apps]
+
   # config.xml exists, but /brokenapp/ping never answers -> rollback
   brokenapp:
     image: nginx:1.27-alpine
