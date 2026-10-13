@@ -26,6 +26,7 @@ class Viewer:
     dpi: float | None = None      # last scaling_dpi from SETTINGS
     timer: object = None          # settle-then-refit timer
     gone: object = None           # grace timer once the last socket closed
+    shared: bool = False          # selkies `role=viewer`: read-only, never owns the size
 
 
 class Viewers:
@@ -62,8 +63,8 @@ class Viewers:
         return [r for r in self.by_vid.values() if r.socks]
 
     def newest(self):
-        """vid of the most recently connected viewer that still has a socket."""
+        """vid of the most recently connected controller that still has a socket."""
         for vid in reversed(self.by_vid):
-            if self.by_vid[vid].socks:
+            if self.by_vid[vid].socks and not self.by_vid[vid].shared:
                 return vid
         return None

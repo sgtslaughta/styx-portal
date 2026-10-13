@@ -306,7 +306,7 @@ def create_app(user: str, password: str,
                     if not seat_dir or not isinstance(data, str):
                         return False
                     if data == "styx-takeover":
-                        set_owner(vid)
+                        rec.shared or set_owner(vid)
                         return True
                     if data.startswith("SETTINGS,"):
                         try:
@@ -325,19 +325,16 @@ def create_app(user: str, password: str,
                         rec.timer = asyncio.get_running_loop().call_later(refit.SETTLE_S, fire_refit, rec)
                     return True
 
-                owner_told = False
-                if seat_dir:
-                    # selkies keeps one controller and kills the previous one, so
-                    # a controller always owns the size at once; read-only
-                    # `role=viewer` sockets only own an unowned seat.
-                    if "role=viewer" in qs.split("&") or not size_owner.owner:
-                        size_owner.claim(vid)
-                    elif size_owner.owner != vid:
+                # selkies keeps one controller and kills the previous one, so a
+                # controller owns the size at once. Shared (`role=viewer`) sockets
+                # never send `r,` and never own: no owner frames, no banner.
+                rec.shared = "role=viewer" in qs.split("&")
+                if seat_dir and not rec.shared:
+                    if size_owner.owner and size_owner.owner != vid:
                         set_owner(vid)      # sends styx-owner,1 to this socket itself
-                        owner_told = True
-                    if not owner_told:
-                        await ws_server.send_str(
-                            "styx-owner,1" if size_owner.owner == vid else "styx-owner,0")
+                    else:
+                        size_owner.claim(vid)
+                        await ws_server.send_str("styx-owner,1")
 
                 await asyncio.gather(pump(ws_server, ws_client, on_activity=on_client),
                                      pump(ws_client, ws_server, on_binary=mark_frame),
