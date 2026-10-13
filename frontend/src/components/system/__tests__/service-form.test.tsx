@@ -96,6 +96,19 @@ describe("ServiceForm risk callouts", () => {
   });
 });
 
+describe("ServiceForm server-owned fields", () => {
+  test("edit payload never carries mount_managed", () => {
+    const onSubmit = vi.fn();
+    render(<ServiceForm presets={presets} groups={[]} initial={{ ...existing, mount_managed: true }}
+      onSubmit={onSubmit} onCancel={() => {}} />);
+    fireEvent.click(screen.getByLabelText(ACK));
+    fireEvent.click(save());
+    const payload = onSubmit.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(payload).toBeDefined();
+    expect(payload).not.toHaveProperty("mount_managed");
+  });
+});
+
 describe("ServiceForm behaviour", () => {
   test("switching kind to docker-local clears upstream_url", () => {
     const onSubmit = setup();

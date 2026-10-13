@@ -43,8 +43,10 @@ describe("services api", () => {
   test("mount endpoints", async () => {
     await api.mountPlan("s1");
     expect(lastCall()[0]).toBe("/api/services/s1/mount/plan");
+    expect(lastCall()[1].method).toBe("POST");
     await api.mountApply("s1", true);
     expect(lastCall()[0]).toBe("/api/services/s1/mount/apply");
+    expect(lastCall()[1].method).toBe("POST");
     expect(JSON.parse(lastCall()[1].body as string)).toEqual({ consent: true });
     await api.mountLatest("s1");
     expect(lastCall()[0]).toBe("/api/services/s1/mount/jobs/latest");

@@ -42,7 +42,7 @@ function withPreset(f: ProxiedServiceInput, p: ServicePreset): ProxiedServiceInp
 
 function initialState(initial: Props["initial"], discovered: Props["discovered"], presets: ServicePreset[]) {
   if (initial) {
-    const { id: _i, upstream_fallback: _u, health_status: _h, health_checked_at: _c, created_at: _a, updated_at: _b, ...rest } = initial;
+    const { id: _i, upstream_fallback: _u, health_status: _h, health_checked_at: _c, created_at: _a, updated_at: _b, mount_managed: _m, ...rest } = initial;
     return rest;
   }
   if (discovered) {
