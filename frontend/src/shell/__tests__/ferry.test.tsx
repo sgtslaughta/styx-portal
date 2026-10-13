@@ -96,6 +96,15 @@ it("hotkey re-attaches after a frame load", () => {
   fresh.dispatchEvent(Object.assign(new Event("keydown"), { code: "KeyS", altKey: true, shiftKey: true, ctrlKey: true }));
   expect(toggle).toHaveBeenCalledTimes(1);
 });
+it("Escape typed inside the framed app reaches onEscape (the app may hold focus)", () => {
+  const onEscape = vi.fn();
+  const win = new EventTarget() as unknown as Window;
+  function H() { useHotkey(() => [win], vi.fn(), undefined, onEscape); return null; }
+  render(<H />);
+  win.dispatchEvent(Object.assign(new Event("keydown"), { key: "Escape" }));
+  win.dispatchEvent(Object.assign(new Event("keydown"), { key: "a" }));
+  expect(onEscape).toHaveBeenCalledTimes(1);
+});
 const dockProps = { onOpenChange: () => {}, tiles, current: "sonarr", focusSlug: null, side: "right" as const };
 it("focus moves into the dock on open and back to the tab on close", async () => {
   const tab = document.createElement("button");

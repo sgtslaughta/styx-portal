@@ -89,10 +89,3 @@ describe("blocked-frame poll", () => {
     expect(card()).toBeNull();
   });
 });
-
-it("inert freezes the iframe so the app inside cannot take focus from the dock", () => {
-  const { container, rerender } = render(<Frame tile={tile} inner="/" onTitle={() => {}} />);
-  expect(container.querySelector("iframe")!.hasAttribute("inert")).toBe(false);
-  rerender(<Frame tile={tile} inner="/" onTitle={() => {}} inert />);
-  expect(container.querySelector("iframe")!.hasAttribute("inert")).toBe(true);
-});

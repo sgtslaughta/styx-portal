@@ -24,7 +24,7 @@ export function ShellApp() {
   const [side, setSide] = useState(() => readPos().side);
   const [frameEl, setFrameEl] = useState<HTMLIFrameElement | null>(null);
   const toggle = useCallback(() => { setSide(readPos().side); setOpen((o) => !o); }, []);
-  useHotkey(() => [window, frameEl?.contentWindow ?? null], toggle, frameEl);
+  useHotkey(() => [window, frameEl?.contentWindow ?? null], toggle, frameEl, () => setOpen(false));
   const onTitle = useCallback((t: string) => { if (t) document.title = t; }, []);
   if (isPending) return null;
   if (error && !tiles) {
@@ -40,7 +40,7 @@ export function ShellApp() {
     <LazyMotion features={domMax}> {/* domMax: the edge tab needs drag */}
       <MotionConfig reducedMotion="user">
         <div className="h-dvh w-screen">
-          <Frame key={tile.slug} tile={tile} inner={target.inner} onTitle={onTitle} onFrame={setFrameEl} inert={open} />
+          <Frame key={tile.slug} tile={tile} inner={target.inner} onTitle={onTitle} onFrame={setFrameEl} />
           <EdgeTab onOpen={toggle} open={open} tabRef={tabRef} />
           <Dock open={open} onOpenChange={setOpen} tiles={tiles} current={tile.slug} focusSlug={focus?.slug ?? null} side={side} tabRef={tabRef} />
         </div>
