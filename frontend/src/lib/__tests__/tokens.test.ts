@@ -13,6 +13,18 @@ describe("Styx tokens", () => {
     for (const hex of Object.values(TOKENS.light)) expect(root).toContain(hex.toLowerCase());
     for (const hex of Object.values(TOKENS.dark)) expect(dark).toContain(hex.toLowerCase());
   });
+  it("each mode defines --warning-foreground and a chart-2 distinct from Obol", () => {
+    const css = readFileSync("src/styles/globals.css", "utf8").toLowerCase();
+    const root = /:root\s*\{[^}]*\}/.exec(css)![0];
+    const dark = /\.dark\s*\{[^}]*\}/.exec(css)![0];
+    expect(root).toContain(`--warning-foreground: ${TOKENS.light.warningForeground.toLowerCase()}`);
+    expect(dark).toContain(`--warning-foreground: ${TOKENS.dark.warningForeground.toLowerCase()}`);
+    for (const [blk, bg] of [[root, TOKENS.light.background], [dark, TOKENS.dark.background]] as const) {
+      const c2 = /--chart-2:\s*(#[0-9a-f]{6})/.exec(blk)![1]!;
+      expect(c2).not.toBe(TOKENS.light.obol.toLowerCase());
+      expect(contrast(c2, bg)).toBeGreaterThanOrEqual(3);
+    }
+  });
   it("light auth form keeps Current primary", () => {
     const css = readFileSync("src/styles/globals.css", "utf8").toLowerCase();
     const form = /(?<!\.dark )\.styx-auth-form\s*\{[^}]*\}/.exec(css)![0];

@@ -27,9 +27,10 @@
   --obol: #B88A3E;
   --obol-foreground: #86601F;
   --warning: #A87A2A;
+  --warning-foreground: #86601F;
   --idle: #A87A2A;
   --chart-1: #2A767C;
-  --chart-2: #B88A3E;
+  --chart-2: #8F6A2E;
   --chart-3: #6B8F5E;
   --chart-4: #C4623F;
 }
@@ -58,9 +59,10 @@
   --obol: #B88A3E;
   --obol-foreground: #D2A657;
   --warning: #D2A657;
+  --warning-foreground: #D2A657;
   --idle: #D2A657;
   --chart-1: #6FB7BC;
-  --chart-2: #D2A657;
+  --chart-2: #C9A25E;
   --chart-3: #8DB87E;
   --chart-4: #E07A5F;
 }
@@ -91,6 +93,7 @@
   --color-obol-foreground: var(--obol-foreground);
   --font-sans: "Commissioner Variable", ui-sans-serif, system-ui, sans-serif;
   --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
   --color-idle: var(--idle);
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);

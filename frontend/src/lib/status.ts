@@ -28,9 +28,9 @@ export const STATUS_META: Record<InstanceStatusValue, StatusMeta> = {
   pulling:  { label: "Pulling",  textClass: "text-primary",          dotClass: "bg-primary",          icon: Download,      pulse: true,  group: "transition" },
   starting: { label: "Starting", textClass: "text-primary",          dotClass: "bg-primary",          icon: Loader2,       pulse: true,  group: "transition" },
   running:  { label: "Running",  textClass: "text-success",          dotClass: "bg-success",          icon: Activity,      pulse: true,  group: "running" },
-  idle:     { label: "Idle",     textClass: "text-warning",          dotClass: "bg-warning",          icon: Clock,         pulse: false, group: "running" },
-  paused:   { label: "Paused",   textClass: "text-warning",          dotClass: "bg-warning",          icon: Pause,         pulse: false, group: "paused" },
-  stopping: { label: "Stopping", textClass: "text-warning",          dotClass: "bg-warning",          icon: Loader2,       pulse: true,  group: "transition" },
+  idle:     { label: "Idle",     textClass: "text-warning-foreground",          dotClass: "bg-warning",          icon: Clock,         pulse: false, group: "running" },
+  paused:   { label: "Paused",   textClass: "text-warning-foreground",          dotClass: "bg-warning",          icon: Pause,         pulse: false, group: "paused" },
+  stopping: { label: "Stopping", textClass: "text-warning-foreground",          dotClass: "bg-warning",          icon: Loader2,       pulse: true,  group: "transition" },
   stopped:  { label: "Stopped",  textClass: "text-muted-foreground", dotClass: "bg-muted-foreground", icon: Square,        pulse: false, group: "stopped" },
   error:    { label: "Error",    textClass: "text-destructive",      dotClass: "bg-destructive",      icon: AlertTriangle, pulse: false, group: "error" },
 };

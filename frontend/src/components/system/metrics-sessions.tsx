@@ -198,7 +198,7 @@ function SessionRow({
         <span className="text-xs text-muted-foreground tabular-nums">
           {uptimeSeconds != null ? formatDuration(uptimeSeconds) : "—"}
         </span>
-        <span className={cn("text-xs tabular-nums", idleSeconds && idleSeconds > 300 ? "text-warning" : "text-muted-foreground")}>
+        <span className={cn("text-xs tabular-nums", idleSeconds && idleSeconds > 300 ? "text-warning-foreground" : "text-muted-foreground")}>
           {idleSeconds != null ? formatDuration(idleSeconds) : "—"}
         </span>
         <div className="flex gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
@@ -284,7 +284,7 @@ function ActionBtn({
   const colors = {
     success: "text-success-foreground hover:bg-success/15",
     blue: "text-primary hover:bg-primary/15",
-    warning: "text-warning hover:bg-warning/15",
+    warning: "text-warning-foreground hover:bg-warning/15",
     destructive: "text-destructive hover:bg-destructive/15",
   };
   return (

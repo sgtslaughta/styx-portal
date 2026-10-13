@@ -193,7 +193,7 @@ function LogLine({ line, lineNum, query }: { line: string; lineNum: number; quer
       </span>
       <span className={cn(
         "whitespace-pre",
-        isError ? "text-destructive" : isWarn ? "text-warning" : "text-muted-foreground"
+        isError ? "text-destructive" : isWarn ? "text-warning-foreground" : "text-muted-foreground"
       )}>
         {query ? (
           highlighted.split("<<<MARK>>>").map((part, i) => {
@@ -201,7 +201,7 @@ function LogLine({ line, lineNum, query }: { line: string; lineNum: number; quer
             const [match, ...rest] = part.split("<<<ENDMARK>>>");
             return (
               <span key={i}>
-                <mark className="bg-warning/30 text-warning rounded-sm px-0.5">{match}</mark>
+                <mark className="bg-warning/30 text-warning-foreground rounded-sm px-0.5">{match}</mark>
                 {rest.join("")}
               </span>
             );

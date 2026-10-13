@@ -172,7 +172,7 @@ export function UsersPanel() {
                   )}
                 </Button>
               </div>
-              <p className="mt-1 text-xs text-warning">Valid for 72 hours. Share securely — anyone with this link can join.</p>
+              <p className="mt-1 text-xs text-warning-foreground">Valid for 72 hours. Share securely — anyone with this link can join.</p>
             </div>
           )}
 

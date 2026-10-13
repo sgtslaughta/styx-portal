@@ -64,7 +64,7 @@ export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
                 initial={{ opacity: 0, x: -5 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0 }}
-                className="text-[10px] text-warning"
+                className="text-[10px] text-warning-foreground"
               >
                 idle {formatDuration(idleSeconds)}
               </motion.span>
