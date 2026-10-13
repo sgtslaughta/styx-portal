@@ -21,10 +21,10 @@ SVG_HEADERS = {"Content-Security-Policy":
 
 _DATA_URI = re.compile(r"^data:([a-z0-9.+/-]+);base64,([A-Za-z0-9+/=\s]+)$")
 _SVG_NS = "{http://www.w3.org/2000/svg}"
-_BAD_TAGS = {"script", "foreignobject", "iframe", "object", "embed", "animate", "set"}
-_ATTR_NS = {"http://www.w3.org/1999/xlink", "http://www.w3.org/XML/1998/namespace"}
+_BAD_TAGS = {"style", "script", "foreignobject", "iframe", "object", "embed", "animate", "set"}
+_ATTR_NS = {"http://www.w3.org/1999/xlink"}
 _IMG_DATA = re.compile(r"^data:image/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]*$")
-_BAD_URL = re.compile(r"@import|url\(\s*['\"]?\s*(?!#)", re.I)
+_BAD_URL = re.compile(r"@import|image-set|src\(|expression\(|url\(\s*['\"]?\s*(?!#)", re.I)
 _DOCTYPE = re.compile(rb"<!\s*(DOCTYPE|ENTITY)", re.I)
 
 
@@ -58,8 +58,8 @@ def _check_svg(data: bytes) -> None:
         tag = el.tag[len(_SVG_NS):].lower()
         if tag in _BAD_TAGS:
             raise ValueError("SVG may not contain scripts or embedded content")
-        if tag == "style" and ("\\" in (el.text or "") or _BAD_URL.search(el.text or "")):
-            raise ValueError("SVG may not reference external resources")
+        if "\\" in (el.text or "") or "\\" in (el.tail or ""):
+            raise ValueError("SVG may not contain escapes")
         for name, val in el.attrib.items():
             ns, _, local = name.rpartition("}")
             local = local.lower()
@@ -71,8 +71,8 @@ def _check_svg(data: bytes) -> None:
             if local == "href":
                 if not (val.startswith("#") or (tag == "image" and _IMG_DATA.match(val))):
                     raise ValueError("SVG may not reference external resources")
-            elif local == "style" and "\\" in val:
-                raise ValueError("SVG may not reference external resources")
+            if "\\" in val:
+                raise ValueError("SVG may not contain escapes")
             if _BAD_URL.search(val):
                 raise ValueError("SVG may not reference external resources")
 
