@@ -14,8 +14,11 @@ export function useFrameSync(
     if (!frame) return;
     let first = true;
     let patched: Patched | null = null;
+    let observer: MutationObserver | null = null;
     const attach = () => {
       patched = null; // old document is gone; never touch its wrappers
+      observer?.disconnect();
+      observer = null;
       const wasFirst = first;
       first = false;
       if (isFrameBlocked(frame)) { if (wasFirst) setBlocked(true); return; }
@@ -37,6 +40,7 @@ export function useFrameSync(
       const titleEl = doc.querySelector("title");
       const mo = titleEl && typeof MutationObserver !== "undefined" ? new MutationObserver(readTitle) : null;
       if (titleEl) mo?.observe(titleEl, { childList: true, characterData: true, subtree: true });
+      observer = mo;
       patched = {
         cw, doc,
         restore: () => {
@@ -53,6 +57,7 @@ export function useFrameSync(
       const p = patched as Patched | null;
       try { if (p && p.cw.document === p.doc) p.restore(); } catch { /* frame gone */ }
     };
-  }, [frame, tile, onLeave, onTitle]);
+    // Keyed on slug/mode, not tile identity: a refetch returning an equal tile must not re-attach.
+  }, [frame, tile.slug, tile.mount_mode, onLeave, onTitle]);
   return blocked;
 }

@@ -1,6 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { Frame } from "../frame";
+
+afterEach(() => { vi.restoreAllMocks(); Reflect.deleteProperty(navigator, "serviceWorker"); });
 
 const tile = { id: "1", slug: "sonarr", name: "Sonarr", icon: null, mount_mode: "path", enabled: true, up: true, frame_ok: true } as const;
 
@@ -33,7 +35,6 @@ it("focus apps get sync after the service-worker cleanup", async () => {
   Object.defineProperty(iframe, "contentWindow", { get() { throw new DOMException("x", "SecurityError"); } });
   fireEvent.load(iframe);
   expect(screen.getByRole("heading", { name: "Immich can't run inside Styx" })).toBeTruthy();
-  Reflect.deleteProperty(navigator, "serviceWorker");
 });
 
 it("mirrors the app URL and patches each document's own history", () => {

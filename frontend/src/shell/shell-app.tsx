@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { toTile } from "@/lib/service-tiles";
@@ -6,14 +6,15 @@ import { Card, Frame } from "./frame";
 import { parseShellPath } from "./url";
 
 export function ShellApp() {
-  const target = parseShellPath(location.pathname, location.search, location.hash);
+  // Frozen: URL sync rewrites the address bar, which must not change the iframe src.
+  const [target] = useState(() => parseShellPath(location.pathname, location.search, location.hash));
   const { data: tiles, isPending, error, refetch } = useQuery({
     queryKey: ["service-tiles"],
     queryFn: async () => (await api.listServiceTiles()).map(toTile),
   });
   const onTitle = useCallback((t: string) => { if (t) document.title = t; }, []);
   if (isPending) return null;
-  if (error) {
+  if (error && !tiles) {
     return <Card title="Couldn't load your apps" text={`${error.message} Check your connection and try again.`}
       action="Try again" onAction={() => void refetch()} />;
   }
@@ -24,7 +25,7 @@ export function ShellApp() {
   }
   return (
     <div className="h-dvh w-screen">
-      <Frame tile={tile} inner={target.inner} onTitle={onTitle} />
+      <Frame key={tile.slug} tile={tile} inner={target.inner} onTitle={onTitle} />
     </div>
   );
 }
