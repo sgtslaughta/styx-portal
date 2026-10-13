@@ -1,6 +1,7 @@
 """Traefik forwardAuth target, cookie-root enter/exit, unavailable page (spec §4.2, §5)."""
+import posixpath
 import re
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -30,10 +31,36 @@ async def get_service_by_slug(session: AsyncSession, slug: str) -> ProxiedServic
     return (await session.exec(select(ProxiedService).where(ProxiedService.slug == slug))).first()
 
 
+_ENCODED_SEP = re.compile(r"%(2e|2f|5c)", re.IGNORECASE)
+
+
+def _bypass_path(uri: str) -> str | None:
+    """Normalised request path, or None if it smells of traversal/encoding tricks.
+
+    The upstream may decode or normalise differently than a string compare, so
+    any encoded ".", "/", "\\", backslash or ".." segment (raw or decoded,
+    which also catches double-encoding) disqualifies the request from bypass.
+    """
+    raw = uri.split("?", 1)[0].split("#", 1)[0]
+    decoded = unquote(raw)
+    for p in (raw, decoded):
+        if "\\" in p or _ENCODED_SEP.search(p) or ".." in p.split("/"):
+            return None
+    if not decoded.startswith("/"):
+        return None
+    norm = re.sub(r"/+", "/", posixpath.normpath(decoded))
+    if decoded.endswith("/") and norm != "/":
+        norm += "/"
+    return norm
+
+
 def bypass_matches(rules: list[dict], uri: str, headers) -> bool:
-    path = uri.split("?", 1)[0]
+    path = _bypass_path(uri)
+    if path is None:
+        return False
     for rule in rules:
-        if not path.startswith(rule.get("path_prefix", "/")):
+        prefix = rule.get("path_prefix", "/")
+        if not (path == prefix or path.startswith(prefix.rstrip("/") + "/")):
             continue
         hdr = rule.get("required_header")
         if not hdr or hdr.lower() in headers:

@@ -132,3 +132,35 @@ async def test_auth_check_not_served_under_api(member_client, session):
     await _svc(session)
     r = await member_client.get("/api/services/sonarr/auth-check", headers=_fwd("/sonarr/"))
     assert r.status_code in (404, 405)
+
+
+# --- E: bypass matching is segment-bounded and traversal-proof ---
+
+def _bypass_svc(session):
+    return _svc(session, auth_mode="sso-with-bypass",
+                bypass_rules=[{"path_prefix": "/sonarr/api", "required_header": None}])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("uri", ["/sonarr/api", "/sonarr/api/v3/series?q=%2e%2e%2f",
+                                 "/sonarr/api/", "/sonarr//api/x", "/sonarr/./api/x"])
+async def test_bypass_allows_within_prefix(client, session, uri):
+    await _bypass_svc(session)
+    r = await client.get(AUTH.format(slug="sonarr"), headers=_fwd(uri))
+    assert r.status_code == 200, uri
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("uri", [
+    "/sonarr/apix", "/sonarr/api-admin/x",                 # no segment boundary
+    "/sonarr/api/../admin", "/sonarr/api/..",              # dot-dot segments
+    "/sonarr/api/%2e%2e/admin", "/sonarr/api/%2E%2E/admin",  # encoded dots
+    "/sonarr/api/.%2e/admin", "/sonarr/api%2f..%2fadmin", "/sonarr/api%2Fx",
+    "/sonarr/api/%5c..%5cadmin", "/sonarr/api/%5Cx",         # encoded backslash
+    "/sonarr/api/\\..\\admin", "/sonarr/api\\x",            # raw backslash
+    "/sonarr/api/%252e%252e/admin",                          # double-encoded
+])
+async def test_bypass_rejects_boundary_and_traversal(client, session, uri):
+    await _bypass_svc(session)
+    r = await client.get(AUTH.format(slug="sonarr"), headers=_fwd(uri))
+    assert r.status_code == 302, uri
