@@ -111,6 +111,6 @@ def test_size_owner_first_viewer_wins_until_it_leaves():
     assert o.claim("b")
 
 
-def test_reload_js_has_takeover_banner():
-    assert "styx-takeover" in refit.RELOAD_JS and "Fit to my window" in refit.RELOAD_JS
+def test_reload_js_has_viewer_id_and_no_takeover():
     assert "styx_vid" in refit.RELOAD_JS
+    assert "styx-takeover" not in refit.RELOAD_JS and "Fit to my window" not in refit.RELOAD_JS
