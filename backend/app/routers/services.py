@@ -39,6 +39,7 @@ def _out(s: ProxiedService) -> ProxiedServiceOut:
         bypass_rules=s.bypass_rules, allowed_groups=s.allowed_groups, verify_tls=s.verify_tls,
         health_path=s.health_path, health_status=s.health_status,
         health_checked_at=_iso(s.health_checked_at), preset_id=s.preset_id, enabled=s.enabled,
+        mount_managed=s.mount_managed, pass_identity=s.pass_identity, frame_ok=s.frame_ok,
         created_at=_iso(s.created_at) or "", updated_at=_iso(s.updated_at) or "")
 
 
@@ -132,7 +133,7 @@ async def discover(admin: User = Depends(require_admin),
 def _tile(s: ProxiedService) -> ServiceTileOut:
     up = {"healthy": True, "unhealthy": False}.get(s.health_status)
     return ServiceTileOut(id=s.id, slug=s.slug, name=s.name, icon=s.icon,
-                          mount_mode=s.mount_mode, enabled=s.enabled, up=up)
+                          mount_mode=s.mount_mode, enabled=s.enabled, up=up, frame_ok=s.frame_ok)
 
 
 @router.get("", response_model=list[ProxiedServiceOut] | list[ServiceTileOut])

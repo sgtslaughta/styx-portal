@@ -20,6 +20,8 @@ SERVICE_KINDS = {"url", "docker-local"}
 class BypassRule(BaseModel):
     path_prefix: str = Field(min_length=1, max_length=255)
     required_header: str | None = Field(default=None, max_length=64)
+    header_prefix: str | None = Field(default=None, max_length=64)   # header value must start with this
+    required_query: str | None = Field(default=None, max_length=64)  # query param must be present & non-empty
 
     @field_validator("path_prefix")
     @classmethod
@@ -44,6 +46,9 @@ class _ServiceFields(BaseModel):
     health_path: str | None = Field(default=None, max_length=255)
     preset_id: str | None = None
     enabled: bool = True
+    mount_managed: bool = False
+    pass_identity: bool = False
+    frame_ok: bool = True
 
     @field_validator("kind")
     @classmethod
@@ -134,6 +139,9 @@ class ProxiedServiceOut(BaseModel):
     health_checked_at: str | None
     preset_id: str | None
     enabled: bool
+    mount_managed: bool
+    pass_identity: bool
+    frame_ok: bool
     created_at: str
     updated_at: str
 
@@ -147,6 +155,7 @@ class ServiceTileOut(BaseModel):
     mount_mode: str
     enabled: bool
     up: bool | None          # None = unknown
+    frame_ok: bool = True
 
 
 class ServicePresetOut(BaseModel):
@@ -161,6 +170,7 @@ class ServicePresetOut(BaseModel):
     verify_tls: bool
     base_url_hint: str | None
     warnings: list[str]
+    subpath: dict | None = None
 
 
 class DiscoveredContainer(BaseModel):

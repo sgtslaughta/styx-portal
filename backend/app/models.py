@@ -300,7 +300,7 @@ class UserGroup(SQLModel, table=True):
 
 
 class ServicePreset(SQLModel, table=True):
-    """Routing preset seeded from templates/services/*.json (insert-only)."""
+    """Routing preset seeded from templates/services/*.json (upserted on startup)."""
     __tablename__ = "service_presets"
     id: str = Field(primary_key=True)          # e.g. "sonarr"
     name: str
@@ -313,6 +313,7 @@ class ServicePreset(SQLModel, table=True):
     verify_tls: bool = True
     base_url_hint: str | None = None
     warnings: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    subpath: dict | None = Field(default=None, sa_column=Column(JSON))
 
 
 class ProxiedService(SQLModel, table=True):
@@ -338,6 +339,9 @@ class ProxiedService(SQLModel, table=True):
     health_checked_at: datetime | None = None
     preset_id: str | None = None
     enabled: bool = True
+    mount_managed: bool = False   # Styx set the app's base path (spec §3)
+    pass_identity: bool = False   # forward X-Styx-User/Email/Groups upstream
+    frame_ok: bool = True         # False = "Open without overlay"
     created_at: datetime = Field(default_factory=_now)
     updated_at: datetime = Field(default_factory=_now)
 
@@ -347,3 +351,17 @@ def upstream_base(svc: "ProxiedService") -> str:
     if svc.kind == "docker-local":
         return svc.upstream_fallback or f"http://{svc.container}:{svc.container_port}"
     return (svc.upstream_url or "").rstrip("/")
+
+
+class MountJob(SQLModel, table=True):
+    """One base-path apply run (spec §3.2). steps: [{id,label,state,detail}]."""
+    __tablename__ = "mount_jobs"
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    service_id: str = Field(index=True)
+    state: str = "pending"        # pending|running|done|rolled_back|failed
+    steps: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
+    changes: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
+    backup_dir: str | None = None
+    log_excerpt: str | None = None
+    created_at: datetime = Field(default_factory=_now)
+    finished_at: datetime | None = None
