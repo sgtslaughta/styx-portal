@@ -2,11 +2,10 @@ import { useEffect, useState } from "react";
 import type { DiscoveredContainer, Group, ProxiedService, ProxiedServiceInput, ServicePreset } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { DrawerBody, DrawerFooter } from "@/components/ui/drawer";
-import { RISK, RiskCallout } from "@/components/common/risk-callout";
-import { BypassRulesEditor, Field, Section, selectCls } from "./service-form-parts";
+import { RISK, RISK_DETAIL, RiskCallout } from "@/components/common/risk-callout";
+import { BypassRulesEditor, Field, Section, SwitchRow, selectCls } from "./service-form-parts";
 import { validateService, type FieldErrors } from "./service-validation";
 
 const EMPTY: ProxiedServiceInput = {
@@ -16,6 +15,11 @@ const EMPTY: ProxiedServiceInput = {
 };
 const ACK_TEXT =
   "I understand that this app runs on the same origin as Styx: any JavaScript it serves can use Styx with the rights of whoever opens it.";
+const checkCls =
+  "h-4 w-4 shrink-0 accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
+const chipCls =
+  "flex cursor-pointer items-center gap-2 rounded-md border border-border bg-muted/30 px-2.5 py-1.5 text-sm " +
+  "transition-colors hover:bg-accent has-[:checked]:border-primary/50 has-[:checked]:bg-primary/10";
 const KNOWN = ["slug", "name", "upstream_url", "container", "container_port", "health_path", "icon"];
 
 export type DiscoveredPrefill = { name: string; port?: number; preset: string | null };
@@ -118,7 +122,7 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
               {presets.map((p) => <option key={p.id} value={p.id}>{p.icon ? `${p.icon} ` : ""}{p.name}</option>)}
             </select>
           </Field>
-          {preset?.warnings.map((w) => <RiskCallout key={w} tone="warning">{w}</RiskCallout>)}
+          {preset?.warnings.map((w) => <RiskCallout key={w} tone="warning" title={`${preset.name} note`}>{w}</RiskCallout>)}
           <div className="grid gap-3 sm:grid-cols-2">
             <Field id="name" label="Name" error={err("name")}>
               <Input id="name" value={f.name} autoComplete="off" {...aria("name")} onChange={(e) => set("name", e.target.value)} />
@@ -129,9 +133,12 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
                 onChange={(e) => set("slug", e.target.value)} />
             </Field>
           </div>
+          <SwitchRow id="enabled" label="Enabled" hint="When off, the service keeps its settings but is not reachable.">
+            <Switch id="enabled" aria-label="Enabled" checked={f.enabled} onCheckedChange={(v) => set("enabled", v)} />
+          </SwitchRow>
         </Section>
 
-        <Section title="Upstream">
+        <Section title="Upstream" hint="Where Styx forwards requests for this service.">
           <Field id="kind" label="Kind">
             <select id="kind" className={selectCls} value={f.kind} onChange={(e) => setKind(e.target.value as ProxiedServiceInput["kind"])}>
               <option value="url">URL (any host:port)</option>
@@ -176,9 +183,17 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
               </div>
             </div>
           )}
+          <Field id="health" label="Health path" error={err("health_path")} hint="Optional, e.g. /ping. Checked periodically.">
+            <Input id="health" placeholder="/ping" value={f.health_path ?? ""} {...aria("health_path")}
+              onChange={(e) => set("health_path", e.target.value || null)} />
+          </Field>
+          <SwitchRow id="verify-tls" label="Verify upstream TLS" hint="Turn off only for self-signed certificates on your LAN.">
+            <Switch id="verify-tls" aria-label="Verify upstream TLS" checked={f.verify_tls} onCheckedChange={(v) => set("verify_tls", v)} />
+          </SwitchRow>
+          {!f.verify_tls && <RiskCallout title="TLS not verified">{RISK.tls}</RiskCallout>}
         </Section>
 
-        <Section title="Access">
+        <Section title="Access" hint="How the app is mounted and who can open it.">
           <div className="grid gap-3 sm:grid-cols-2">
             <Field id="mount" label="Mount mode">
               <select id="mount" className={selectCls} value={f.mount_mode}
@@ -196,21 +211,23 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
               </select>
             </Field>
           </div>
-          {f.mount_mode === "cookie-root" && <RiskCallout>{RISK.cookieRoot}</RiskCallout>}
-          {f.auth_mode === "app-native" && <RiskCallout>{RISK.appNative}</RiskCallout>}
+          {f.mount_mode === "cookie-root" && (
+            <RiskCallout title="Takes over this browser" details={RISK_DETAIL.cookieRoot}>{RISK.cookieRoot}</RiskCallout>
+          )}
+          {f.auth_mode === "app-native" && <RiskCallout title="No Styx login">{RISK.appNative}</RiskCallout>}
           {f.auth_mode === "sso-with-bypass" && (
             <BypassRulesEditor rules={f.bypass_rules} errors={errors} onChange={(r) => set("bypass_rules", r)} />
           )}
-          <div className="space-y-1.5">
-            <Label>Allowed groups</Label>
+          <fieldset className="space-y-2">
+            <legend className="mb-1.5 text-sm font-medium">Allowed groups</legend>
             {groups.length === 0 ? (
               <p className="text-xs text-muted-foreground">No groups defined. Any logged-in user can open this service. Create groups under Administration, Groups.</p>
             ) : (
               <>
-                <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                <div className="flex flex-wrap gap-2">
                   {groups.map((g) => (
-                    <label key={g.id} className="flex items-center gap-1.5 text-sm">
-                      <input type="checkbox" className="accent-primary" checked={f.allowed_groups.includes(g.name)}
+                    <label key={g.id} className={chipCls}>
+                      <input type="checkbox" className={checkCls} checked={f.allowed_groups.includes(g.name)}
                         onChange={(e) => set("allowed_groups", e.target.checked
                           ? [...f.allowed_groups, g.name] : f.allowed_groups.filter((n) => n !== g.name))} />
                       {g.name}
@@ -220,32 +237,18 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
                 <p className="text-xs text-muted-foreground">Leave all unchecked to allow any logged-in user. Admins always have access.</p>
               </>
             )}
-          </div>
+          </fieldset>
         </Section>
 
-        <Section title="Health and TLS">
-          <Field id="health" label="Health path" error={err("health_path")} hint="Optional, e.g. /ping. Checked periodically.">
-            <Input id="health" placeholder="/ping" value={f.health_path ?? ""} {...aria("health_path")}
-              onChange={(e) => set("health_path", e.target.value || null)} />
-          </Field>
-          <div className="flex items-center justify-between gap-3">
-            <Label htmlFor="verify-tls">Verify upstream TLS</Label>
-            <Switch id="verify-tls" aria-label="Verify upstream TLS" checked={f.verify_tls} onCheckedChange={(v) => set("verify_tls", v)} />
-          </div>
-          {!f.verify_tls && <RiskCallout>{RISK.tls}</RiskCallout>}
-          <div className="flex items-center justify-between gap-3">
-            <Label htmlFor="enabled">Enabled</Label>
-            <Switch id="enabled" aria-label="Enabled" checked={f.enabled} onCheckedChange={(v) => set("enabled", v)} />
-          </div>
+        <Section title="Before you save">
+          <RiskCallout title="Runs with your Styx rights" details={RISK_DETAIL.sameOrigin} footer={
+            <label htmlFor="ack-origin" className="mt-2.5! flex items-start gap-2 rounded-md border border-border bg-background/60 p-2.5 text-sm text-foreground">
+              <input id="ack-origin" type="checkbox" required checked={ack} onChange={(e) => setAck(e.target.checked)}
+                className={`mt-0.5 ${checkCls}`} />
+              <span>{ACK_TEXT}</span>
+            </label>
+          }>{RISK.sameOrigin}</RiskCallout>
         </Section>
-        <div className="space-y-2.5">
-          <RiskCallout>{RISK.sameOrigin}</RiskCallout>
-          <label htmlFor="ack-origin" className="flex items-start gap-2 text-sm">
-            <input id="ack-origin" type="checkbox" required checked={ack} onChange={(e) => setAck(e.target.checked)}
-              className="mt-0.5 h-4 w-4 shrink-0 accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" />
-            <span>{ACK_TEXT}</span>
-          </label>
-        </div>
         {stray.length > 0 && (
           <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/5 p-2.5 text-xs text-destructive">
             {stray.map(([k, m]) => <p key={k}>{k}: {m}</p>)}
@@ -253,6 +256,7 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
         )}
       </DrawerBody>
       <DrawerFooter>
+        {!ack && <p className="mr-auto self-center text-xs text-muted-foreground">Confirm the acknowledgement to save.</p>}
         <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
         <Button type="submit" disabled={!valid || !ack || saving} aria-busy={saving}>Save</Button>
       </DrawerFooter>

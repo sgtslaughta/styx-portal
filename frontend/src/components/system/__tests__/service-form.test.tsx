@@ -1,7 +1,7 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { describe, test, expect, vi } from "vitest";
 import { ServiceForm } from "../service-form";
-import { RISK } from "@/components/common/risk-callout";
+import { RISK, RISK_DETAIL } from "@/components/common/risk-callout";
 import type { ProxiedService } from "@/api/client";
 
 const presets = [{ id: "sonarr", name: "Sonarr", icon: null, default_port: 8989, mount_mode: "path" as const,
@@ -66,6 +66,13 @@ describe("ServiceForm risk callouts", () => {
     setup();
     change("Mount mode", "cookie-root");
     expect(screen.getByText(RISK.cookieRoot)).toBeInTheDocument();
+    expect(screen.queryByText(RISK_DETAIL.cookieRoot)).not.toBeInTheDocument();
+    const callout = screen.getByText(RISK.cookieRoot).closest("[role=alert]") as HTMLElement;
+    const toggle = within(callout).getByRole("button", { name: "Details" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(toggle);
+    expect(screen.getByText(RISK_DETAIL.cookieRoot)).toBeInTheDocument();
+    expect(within(callout).getByRole("button", { name: "Hide details" })).toHaveAttribute("aria-expanded", "true");
   });
 
   test("callout texts match spec section 9 verbatim", () => {

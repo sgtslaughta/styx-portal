@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import type { BypassRule } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -26,12 +26,29 @@ export function Field({ id, label, error, hint, className, children }: {
   );
 }
 
-export function Section({ title, children }: { title: string; children: ReactNode }) {
+export function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+  const id = useId();
   return (
-    <fieldset className="space-y-3 border-t border-border pt-4 first:border-0 first:pt-0">
-      <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</legend>
+    <section role="group" aria-labelledby={id} className="space-y-3 border-t border-border pt-5 first:border-0 first:pt-0">
+      <div>
+        <h3 id={id} className="text-sm font-semibold">{title}</h3>
+        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      </div>
       {children}
-    </fieldset>
+    </section>
+  );
+}
+
+/** Label + description on the left, a switch on the right. */
+export function SwitchRow({ id, label, hint, children }: { id: string; label: string; hint?: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div className="space-y-0.5">
+        <Label htmlFor={id}>{label}</Label>
+        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      </div>
+      {children}
+    </div>
   );
 }
 
@@ -42,12 +59,12 @@ export function BypassRulesEditor({ rules, errors, onChange }: {
   return (
     <div className="space-y-3">
       {rules.length === 0 && (
-        <p className="text-xs text-muted-foreground">
+        <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
           No bypass rules. Add one only for paths that must work without a Styx login, such as an app API used by mobile clients.
         </p>
       )}
       {rules.map((r, i) => (
-        <div key={i} className="space-y-2 rounded-md border border-border bg-surface p-3">
+        <div key={i} className="space-y-2.5 rounded-md border border-border bg-muted/30 p-3">
           <div className="flex items-start gap-2">
             <div className="grid flex-1 gap-2 sm:grid-cols-2">
               <div>
@@ -67,12 +84,13 @@ export function BypassRulesEditor({ rules, errors, onChange }: {
                 {errors[`bypass_header_${i}`] && <p className="mt-1 text-xs text-destructive">{errors[`bypass_header_${i}`]}</p>}
               </div>
             </div>
-            <Button type="button" variant="ghost" size="icon-sm" aria-label={`Remove bypass rule ${i + 1}`}
+            <Button type="button" variant="ghost" size="icon" aria-label={`Remove bypass rule ${i + 1}`}
+              className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
               onClick={() => onChange(rules.filter((_, j) => j !== i))}>
               <Trash2 className="h-4 w-4" />
             </Button>
           </div>
-          <RiskCallout>{RISK.bypass(r.path_prefix || "<prefix>")}</RiskCallout>
+          <RiskCallout title="Public without login">{RISK.bypass(r.path_prefix || "<prefix>")}</RiskCallout>
         </div>
       ))}
       <Button type="button" variant="outline" size="sm"
