@@ -53,3 +53,23 @@ export async function setTheme(page: Page, want: "light" | "dark") {
   expect(await page.evaluate(() => localStorage.getItem("theme"))).toBe(want);
   await expect(page.locator("html")).toHaveClass(want === "dark" ? /dark/ : /^(?!.*dark).*$/);
 }
+
+export async function waitHttp(req: APIRequestContext, url: string, ok = (s: number) => s < 400, timeout = 120_000) {
+  await expect.poll(async () => (await req.get(url, { failOnStatusCode: false, maxRedirects: 0 }).catch(() => null))?.status() ?? 0,
+    { timeout, intervals: [2000] }).toSatisfy(ok);
+}
+
+const JF_AUTH = 'MediaBrowser Client="e2e", Device="e2e", DeviceId="e2e-1", Version="1.0"';
+/** Completes Jellyfin's startup wizard through Styx (needs Allow native apps on: every call carries
+ *  `Authorization: MediaBrowser ...`, so it bypasses Styx login). Returns an access token. */
+export async function jellyfinToken(req: APIRequestContext, base: string): Promise<string> {
+  const headers = { Authorization: JF_AUTH };
+  const user = { Name: "e2e", Password: "e2e-Jelly-Pass-42" };
+  await req.post(`${base}/Startup/Configuration`, { headers, data: { UICulture: "en-US", MetadataCountryCode: "US", PreferredMetadataLanguage: "en" } });
+  await req.get(`${base}/Startup/User`, { headers });
+  await req.post(`${base}/Startup/User`, { headers, data: user });
+  await req.post(`${base}/Startup/Complete`, { headers });
+  const r = await req.post(`${base}/Users/AuthenticateByName`, { headers, data: { Username: user.Name, Pw: user.Password } });
+  expect(r.ok(), `AuthenticateByName -> ${r.status()}`).toBeTruthy();
+  return (await r.json()).AccessToken;
+}
