@@ -38,3 +38,15 @@ async def test_seed_upserts_existing_preset(session, tmp_path):
     p = await session.get(ServicePreset, "sonarr")
     await session.refresh(p)
     assert p.name == "Sonarr" and p.subpath == {"methods": []}
+
+
+def test_bypass_rule_rejects_fail_open_combos():
+    import pytest
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        BypassRule(path_prefix="/a/", header_prefix="X")
+    with pytest.raises(ValidationError):
+        BypassRule(path_prefix="/a/", required_header="H", required_query="q")
+    BypassRule(path_prefix="/a/")
+    BypassRule(path_prefix="/a/", required_query="q")
+    BypassRule(path_prefix="/a/", required_header="H", header_prefix="X")

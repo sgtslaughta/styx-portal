@@ -30,6 +30,16 @@ class BypassRule(BaseModel):
             raise ValueError("path_prefix must start with /")
         return v
 
+    @model_validator(mode="after")
+    def _one_condition(self):
+        # a rule without a condition bypasses its whole prefix, so never let a
+        # half-specified rule (e.g. header_prefix alone) silently widen that
+        if self.header_prefix and not self.required_header:
+            raise ValueError("header_prefix requires required_header")
+        if self.required_header and self.required_query:
+            raise ValueError("required_header and required_query are mutually exclusive")
+        return self
+
 
 class _ServiceFields(BaseModel):
     name: str = Field(min_length=1, max_length=255)
@@ -46,7 +56,6 @@ class _ServiceFields(BaseModel):
     health_path: str | None = Field(default=None, max_length=255)
     preset_id: str | None = None
     enabled: bool = True
-    mount_managed: bool = False
     pass_identity: bool = False
     frame_ok: bool = True
 
