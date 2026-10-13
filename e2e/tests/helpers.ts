@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { expect, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
+import { expect, type Locator, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
 
 export const ADMIN = { username: "admin", password: "Styx-e2e-Admin-Quartz-Lantern-91" };
 export const MEMBER = { username: "alice", password: "Styx-e2e-Member-Willow-Harbor-57" };
@@ -121,4 +121,16 @@ export async function ensureService(ctx: BrowserContext, svc: Record<string, unk
     allowed_groups: ["media"], verify_tls: true, health_path: null, preset_id: null, enabled: true,
     pass_identity: false, frame_ok: true, acknowledged_origin: true, ...svc,
   });
+}
+
+/** Wait until the element has stopped moving (spring/slide-in finished): same box on 3 consecutive samples. */
+export async function settled(loc: Locator) {
+  let last = "";
+  let same = 0;
+  await expect.poll(async () => {
+    const now = JSON.stringify(await loc.boundingBox());
+    same = now === last ? same + 1 : 0;
+    last = now;
+    return same;
+  }, { intervals: [60], timeout: 5000 }).toBeGreaterThanOrEqual(3);
 }
