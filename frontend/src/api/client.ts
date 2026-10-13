@@ -17,6 +17,7 @@ export type Workstation = {
   all_users: boolean; last_heartbeat: string | null; last_error: string | null;
   created_at: string; allowed_user_ids: string[];
   in_use: boolean; in_use_by: string | null; in_use_self: boolean;
+  icon_kind: "auto" | "emoji" | "image"; icon_etag: string;
 };
 export type EnrollToken = {
   token: string; expires_at: string;
@@ -260,6 +261,8 @@ export const api = {
     request<Workstation>(`/workstations/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   setWorkstationAccess: (id: string, user_ids: string[]) =>
     request<Workstation>(`/workstations/${id}/access`, { method: "PUT", body: JSON.stringify({ user_ids }) }),
+  setWorkstationIcon: (id: string, kind: "auto" | "emoji" | "image", value?: string) =>
+    request<Workstation>(`/workstations/${id}/icon`, { method: "PUT", body: JSON.stringify({ kind, value }) }),
   revokeWorkstation: (id: string, purge = false) =>
     request<{ ok: boolean }>(`/workstations/${id}?purge=${purge}`, { method: "DELETE" }),
   workstationConnectUrl: (id: string, force = false) =>
