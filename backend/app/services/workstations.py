@@ -145,6 +145,8 @@ AGENT_UPDATE_FILES = [
     ("seat_labwc.py", "seat_labwc.py"),
     ("health.py", "health.py"),
     ("refit.py", "refit.py"),
+    ("seat_scale.py", "seat_scale.py"),
+    ("viewers.py", "viewers.py"),
     ("seat_portal.py", "seat_portal.py"),
     ("seat_clipboard.py", "seat_clipboard.py"),
     ("portal_api.py", "portal_api.py"),
