@@ -22,7 +22,7 @@ async def test_service_nav_403_is_html_page(member_client, session):
     r = await member_client.get("/internal/services/sonarr/auth-check", headers=NAV)
     assert r.status_code == 403
     assert r.headers["content-type"].startswith("text/html")
-    assert "No access" in r.text and 'href="/"' in r.text
+    assert "No access" in r.text and 'href="/_styx/exit"' in r.text
     assert "sonarr" not in r.text.lower()
 
 

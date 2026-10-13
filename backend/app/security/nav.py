@@ -2,13 +2,12 @@
 from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-_NO_ACCESS_HTML = """<!doctype html><html><head><meta charset="utf-8">
-<title>No access</title>
-<style>body{font-family:system-ui;background:#0b0f14;color:#e6edf3;display:grid;
-place-items:center;height:100vh;margin:0}main{text-align:center}a{color:#7aa2f7}</style>
-</head><body><main><h1>No access</h1>
-<p>Your account is not allowed to open this page. Ask an administrator for access.</p>
-<p><a href="/">Back to Styx</a></p></main></body></html>"""
+from app.security.page_style import styx_page
+
+_NO_ACCESS_HTML = styx_page(
+    "No access",
+    "<h1>No access</h1><p>Your account can't open this app. Ask an administrator to add you "
+    'to its group.</p><p><a href="/_styx/exit">Back to Styx</a></p>')
 
 
 def is_navigation(request: Request) -> bool:

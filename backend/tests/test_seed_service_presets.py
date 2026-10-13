@@ -26,3 +26,37 @@ async def test_repo_presets_load(session):
     assert {"sonarr", "jellyfin", "audiobookshelf", "unraid", "generic-url"} <= ids
     ab = await session.get(ServicePreset, "audiobookshelf")
     assert ab.mount_mode == "cookie-root"
+
+
+import pathlib  # noqa: E402
+
+from app.schemas_services import BypassRule  # noqa: E402
+
+PRESETS = pathlib.Path(__file__).resolve().parents[2] / "templates" / "services"
+
+
+def test_servarr_presets_have_config_file_subpath():
+    for app in ("sonarr", "radarr", "lidarr", "prowlarr"):
+        sub = json.loads((PRESETS / f"{app}.json").read_text())["subpath"]
+        assert sub["methods"][0] == {"type": "config_file", "paths": ["/config/config.xml"],
+                                     "format": "xml", "key": "/Config/UrlBase"}
+        assert sub["verify_path"] == "/{slug}/ping"
+
+
+def test_jellyfin_native_rules():
+    p = json.loads((PRESETS / "jellyfin.json").read_text())
+    hdrs = {r.get("required_header") for r in p["bypass_rules"]}
+    assert {"Authorization", "X-Emby-Authorization", "X-Emby-Token", "X-MediaBrowser-Token"} <= hdrs
+    assert any(r.get("required_query") == "api_key" for r in p["bypass_rules"])
+    assert p["auth_mode"] == "sso"  # native apps are opt-in (spec §5)
+
+
+def test_focus_presets():
+    for app in ("homeassistant", "immich"):
+        assert json.loads((PRESETS / f"{app}.json").read_text())["mount_mode"] == "cookie-root"
+
+
+def test_all_preset_bypass_rules_validate():
+    for f in PRESETS.glob("*.json"):
+        for r in json.loads(f.read_text()).get("bypass_rules", []):
+            BypassRule(**r)

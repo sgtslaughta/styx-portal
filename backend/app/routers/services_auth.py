@@ -16,6 +16,7 @@ from app.routers.groups import user_group_names
 from app.routers.workstations import _redirect_host
 from app.config import Settings
 from app.security.cookies import clean_cookie_header
+from app.security.page_style import styx_page
 from app.security.nav import is_navigation, no_access
 from app.security.deps import get_current_user, proxy_user_or_none
 from app.security.safe_next import safe_next
@@ -165,12 +166,9 @@ async def exit_service(next: str = "/"):
     return resp
 
 
-_CONFIRM_HTML = """<!doctype html><html><head><meta charset="utf-8">
-<title>Open app?</title></head><body>
-<h1>Open app?</h1>
-<p>A link from another site wants to open an app in Styx.</p>
-<p><a href="/_styx/open/{slug}">Open {slug}</a></p>
-<p><a href="/">Stay in Styx</a></p></body></html>"""
+_CONFIRM_BODY = (
+    "<h1>Open app?</h1><p>A link from another site wants to open an app in Styx.</p>"
+    '<p><a href="/_styx/open/{slug}">Open {slug}</a></p><p><a href="/">Stay in Styx</a></p>')
 
 
 def _focus_response(svc: ProxiedService) -> RedirectResponse:
@@ -203,19 +201,16 @@ async def open_service(slug: str, request: Request,
     if request.headers.get("sec-fetch-site") not in ("same-origin", "none"):
         if not SERVICE_SLUG_RE.match(slug):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown service")
-        return HTMLResponse(_CONFIRM_HTML.format(slug=html.escape(slug)),
+        return HTMLResponse(styx_page("Open app?", _CONFIRM_BODY.format(slug=html.escape(slug))),
                             headers={"Cache-Control": "no-store"})
     svc, deny = await _open_target(slug, request, session)
     return deny or _focus_response(svc)
 
 
-_UNAVAILABLE_HTML = """<!doctype html><html><head><meta charset="utf-8">
-<title>Service unavailable</title>
-<style>body{font-family:system-ui;background:#0b0f14;color:#e6edf3;display:grid;
-place-items:center;height:100vh;margin:0}main{text-align:center}a{color:#7aa2f7}</style>
-</head><body><main><h1>Service unavailable</h1>
-<p>Styx could not reach this service. It may be stopped or still starting.</p>
-<p><a href="/_styx/exit">Back to Styx</a></p></main></body></html>"""
+_UNAVAILABLE_HTML = styx_page(
+    "Service unavailable",
+    "<h1>Service unavailable</h1><p>Styx could not reach this service. It may be stopped or "
+    'still starting.</p><p><a href="/_styx/exit">Back to Styx</a></p>')
 
 
 @pages_router.get("/service-unavailable", include_in_schema=False)

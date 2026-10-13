@@ -16,5 +16,19 @@
   "base_url_hint": "Settings → General → URL Base = /lidarr, then restart Lidarr.",
   "warnings": [
     "/lidarr/api is reachable without Styx login so mobile apps can use the API key."
-  ]
+  ],
+  "subpath": {
+    "methods": [
+      {
+        "type": "config_file",
+        "paths": [
+          "/config/config.xml"
+        ],
+        "format": "xml",
+        "key": "/Config/UrlBase"
+      }
+    ],
+    "restart": true,
+    "verify_path": "/{slug}/ping"
+  }
 }
