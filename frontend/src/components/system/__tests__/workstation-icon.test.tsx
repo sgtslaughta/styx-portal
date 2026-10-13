@@ -135,4 +135,12 @@ describe("WorkstationIconSettings", () => {
     }
     expect(inputs).toEqual(["icon-error-a", "icon-error-b"]);
   });
+
+  test("failed reset keeps the custom mode", async () => {
+    set.mockRejectedValue(new Error("nope"));
+    render(<WorkstationIconSettings ws={ws({ icon_kind: "emoji" })} onSaved={vi.fn()} />);
+    fireEvent.click(screen.getByText("Reset to auto"));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("nope"));
+    expect(screen.getByText("Emoji").getAttribute("aria-pressed")).toBe("true");
+  });
 });

@@ -52,4 +52,4 @@ def api_bytes(cfg: dict, path: str) -> tuple[bytes, str, str]:
     ctx = _ssl_context(cfg) if url.startswith("https") else None
     with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
         ctype = resp.headers.get("Content-Type", "").split(";")[0].strip()
-        return resp.read(), ctype, resp.headers.get("ETag", "").strip('"')
+        return resp.read(), ctype, resp.headers.get("ETag", "").removeprefix("W/").strip('"')

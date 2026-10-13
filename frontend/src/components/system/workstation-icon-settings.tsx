@@ -43,7 +43,7 @@ export function WorkstationIconSettings({ ws, onSaved }: { ws: Workstation; onSa
   const emojiErr = mode === "emoji" && emoji ? emojiError(emoji) : null;
   const canSave = !saving && (mode === "emoji" ? emojiError(emoji) === null : image !== null);
 
-  const send = async (kind: Kind, value?: string) => {
+  const send = async (kind: Kind, value?: string): Promise<boolean> => {
     setSaving(true);
     try {
       await api.setWorkstationIcon(ws.id, kind, value);
@@ -52,16 +52,18 @@ export function WorkstationIconSettings({ ws, onSaved }: { ws: Workstation; onSa
       setFileError(null);
       setFileKey((k) => k + 1);
       onSaved();
+      return true;
     } catch (e) {
       toast.error((e as Error).message);
+      return false;
     } finally {
       setSaving(false);
     }
   };
 
   const reset = async () => {
-    setMode("auto");
-    await send("auto");
+    if (await send("auto")) setMode("auto");
+    else setMode(ws.icon_kind);
   };
 
   const pick = (file: File | undefined) => {

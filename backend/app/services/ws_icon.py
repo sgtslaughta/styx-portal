@@ -28,6 +28,33 @@ _BAD_FUNC = re.compile(r"@import|image-set|src\(|expression\(", re.I)
 _URL = re.compile(r"url\(", re.I)
 _LOCAL_URL = re.compile(r"url\(\s*(['\"]?)\s*#[^)'\"]*\1\s*\)", re.I)
 _XML_NS = "http://www.w3.org/XML/1998/namespace"
+# Editor metadata stripped (not rejected) before validation.
+_EDITOR_NS = ("http://www.inkscape.org/namespaces/inkscape",
+              "http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd",
+              "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+              "http://purl.org/dc/elements/1.1/",
+              "http://purl.org/dc/terms/",
+              "http://creativecommons.org/ns#",
+              "http://web.resource.org/cc/")
+_PLAIN = "Export as plain SVG (Inkscape: Save as \u203a Plain SVG) and try again."
+ET.register_namespace("", _SVG_NS[1:-1])
+ET.register_namespace("xlink", "http://www.w3.org/1999/xlink")
+
+
+def _ns(name: str) -> str:
+    return name[1:].split("}", 1)[0] if name.startswith("{") else ""
+
+
+def _strip_editor_metadata(el) -> None:
+    for child in list(el):
+        tag = child.tag if isinstance(child.tag, str) else ""
+        if _ns(tag) in _EDITOR_NS or (_ns(tag) == _SVG_NS[1:-1]
+                                      and tag.endswith("}metadata")):
+            el.remove(child)
+        else:
+            _strip_editor_metadata(child)
+    for name in [n for n in el.attrib if _ns(n) in _EDITOR_NS]:
+        del el.attrib[name]
 
 
 def _bad_url(val: str) -> bool:
@@ -37,6 +64,10 @@ def _bad_url(val: str) -> bool:
 _DOCTYPE = re.compile(rb"<!\s*(DOCTYPE|ENTITY)", re.I)
 
 
+_SVG_START = re.compile(rb"^(\xef\xbb\xbf)?\s*(<\?xml.*?\?>\s*|<!--.*?-->\s*)*(<svg|<!doctype)",
+                        re.I | re.S)
+
+
 def _sniff(data: bytes) -> str | None:
     if data.startswith(b"\x89PNG\r\n\x1a\n"):
         return "image/png"
@@ -44,14 +75,15 @@ def _sniff(data: bytes) -> str | None:
         return "image/x-icon"
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "image/webp"
-    if b"<svg" in data[:4096].lower():
+    if _SVG_START.match(data[:16384]):
         return "image/svg+xml"
     return None
 
 
-def _check_svg(data: bytes) -> None:
+def _check_svg(data: bytes) -> bytes:
     """No defusedxml dependency (B314 nosec below): reject DTD/entities up front, then walk the
-    tree refusing active content and any non-local reference."""
+    tree refusing active content and any non-local reference. Editor metadata
+    is stripped first; returns the cleaned serialization to store."""
     if _DOCTYPE.search(data) or b"<?xml-stylesheet" in data.lower():
         raise ValueError("SVG may not contain a DOCTYPE or entities")
     try:
@@ -61,9 +93,10 @@ def _check_svg(data: bytes) -> None:
         raise ValueError("Image is not valid SVG")
     if root.tag not in (f"{_SVG_NS}svg", "svg"):
         raise ValueError("Image is not valid SVG")
+    _strip_editor_metadata(root)
     for el in root.iter():
         if not isinstance(el.tag, str) or not el.tag.startswith(_SVG_NS):
-            raise ValueError("SVG may only contain SVG elements")
+            raise ValueError(f"SVG contains unsupported elements. {_PLAIN}")
         tag = el.tag[len(_SVG_NS):].lower()
         if tag in _BAD_TAGS:
             raise ValueError("SVG may not contain scripts or embedded content")
@@ -74,7 +107,7 @@ def _check_svg(data: bytes) -> None:
             local = local.lower()
             if ns and ns[1:] not in _ATTR_NS and not (
                     ns[1:] == _XML_NS and local in ("space", "lang")):
-                raise ValueError("SVG contains an unsupported attribute")
+                raise ValueError(f"SVG contains unsupported attributes. {_PLAIN}")
             squashed = re.sub(r"\s", "", val).lower()
             if local.startswith("on") or "javascript:" in squashed:
                 raise ValueError("SVG may not contain scripts")
@@ -85,6 +118,7 @@ def _check_svg(data: bytes) -> None:
                 raise ValueError("SVG may not contain escapes")
             if _bad_url(val):
                 raise ValueError("SVG may not reference external resources")
+    return ET.tostring(root, encoding="utf-8")
 
 
 def _is_one_grapheme(s: str) -> bool:
@@ -103,6 +137,15 @@ def _is_one_grapheme(s: str) -> bool:
             clusters += 1
         prev = ch
     return clusters == 1
+
+
+def _first_grapheme(s: str) -> str:
+    best = ""
+    for i in range(1, min(len(s), 64) + 1):
+        if not _is_one_grapheme(s[:i]):
+            break
+        best = s[:i]
+    return best or s[:1]
 
 
 def validate_icon(kind: str, value: str | None) -> str | None:
@@ -128,7 +171,7 @@ def validate_icon(kind: str, value: str | None) -> str | None:
     if mime is None:
         raise ValueError("Image must be PNG, SVG, ICO or WebP")
     if mime == "image/svg+xml":
-        _check_svg(data)
+        data = _check_svg(data)
     return f"data:{mime};base64,{base64.b64encode(data).decode()}"
 
 
@@ -149,7 +192,7 @@ def render_icon(icon: str | None, name: str, ws_id: str) -> tuple[bytes, str]:
     bg = PALETTE[int(hashlib.sha256(ws_id.encode()).hexdigest()[:8], 16) % len(PALETTE)]
     if icon and icon.startswith("emoji:"):
         return _svg(icon[6:], "#1F2430", 36), "image/svg+xml"
-    return _svg((name.strip()[:1] or "?").upper(), bg, 36), "image/svg+xml"
+    return _svg((_first_grapheme(name.strip()) or "?").upper(), bg, 36), "image/svg+xml"
 
 
 def icon_kind(icon: str | None) -> str:
