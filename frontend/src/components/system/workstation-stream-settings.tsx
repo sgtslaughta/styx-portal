@@ -26,6 +26,9 @@ export function WorkstationStreamSettings({
   const [paintOver, setPaintOver] = useState<boolean>(
     ss.use_paint_over_quality !== false
   );
+  const [fullColor, setFullColor] = useState<boolean>(
+    ss.video_fullcolor !== false
+  );
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -35,6 +38,7 @@ export function WorkstationStreamSettings({
       framerate,
       h264_streaming_mode: gaming,
       use_paint_over_quality: paintOver,
+      video_fullcolor: fullColor,
     };
     const crfNum = parseInt(crf, 10);
     if (!Number.isNaN(crfNum) && crfNum >= 5 && crfNum <= 50) {
@@ -115,6 +119,17 @@ export function WorkstationStreamSettings({
               onChange={(e) => setPaintOver(e.target.checked)}
             />
             Sharpen static screen
+          </label>
+          <label
+            className="flex items-center gap-1.5"
+            title="4:4:4 chroma: full colour resolution for crisp text (about double the bitrate of 4:2:0). Browsers without a 4:4:4 decoder fall back automatically."
+          >
+            <input
+              type="checkbox"
+              checked={fullColor}
+              onChange={(e) => setFullColor(e.target.checked)}
+            />
+            Full colour (4:4:4)
           </label>
           <Button size="sm" onClick={save} disabled={saving}>
             {saving ? "Saving…" : "Save"}

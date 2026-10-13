@@ -714,7 +714,8 @@ async def test_first_resize_mismatch_requests_refit_and_closes_4002(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_matching_resize_is_forwarded(tmp_path):
+async def test_matching_resize_is_swallowed(tmp_path):
+    """selkies cannot resize a GNOME host: every seat `r,` stays with the gateway."""
     import asyncio
     (tmp_path / "seat-size").write_text("2552x1294")
     received = []
@@ -722,12 +723,12 @@ async def test_matching_resize_is_forwarded(tmp_path):
     try:
         ws = await client.ws_connect("/websocket", headers={"Authorization": _basic("styx", "pw")})
         await ws.send_str("r,2560x1300,primary")
-        await asyncio.sleep(1.3)                 # past the settle window
+        await asyncio.sleep(0.6)                 # past the settle window
         await ws.close()
     finally:
         await client.close()
         await up.close()
-    assert "r,2560x1300,primary" in received
+    assert "r,2560x1300,primary" not in received
     assert not (tmp_path / "refit-request").exists()
 
 
@@ -741,7 +742,7 @@ async def test_refit_uses_last_size_after_settle(tmp_path):
     try:
         ws = await client.ws_connect("/websocket", headers={"Authorization": _basic("styx", "pw")})
         await ws.send_str("r,1000x700,primary")
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.1)
         await ws.send_str("r,2552x1294,primary")
         assert not (tmp_path / "refit-request").exists()     # still settling
         msg = await asyncio.wait_for(ws.receive(), timeout=3)
@@ -815,3 +816,70 @@ async def test_index_holds_when_seat_selkies_down(tmp_path):
     finally:
         await seat.close()
         await plain.close()
+
+
+@pytest.mark.asyncio
+async def test_refit_announces_to_every_viewer_and_hands_owner_over(tmp_path):
+    """Two viewers: the owner's resize closes BOTH with the marker + 4002 (the
+    old selkies dies for everyone); the non-owner's size never refits while the
+    owner is connected, but is applied once the owner leaves."""
+    import asyncio
+    (tmp_path / "seat-size").write_text("1920x1080")
+    received = []
+    up, client = await _refit_pair(tmp_path, received, str(tmp_path))
+    hdr = {"Authorization": _basic("styx", "pw")}
+    try:
+        owner = await client.ws_connect("/websocket", headers=hdr)
+        other = await client.ws_connect("/websocket", headers=hdr)
+        await owner.send_str("r,1920x1080,primary")          # claims, no change
+        await other.send_str("r,1280x720,primary")           # not the owner
+        await asyncio.sleep(0.6)
+        assert not (tmp_path / "refit-request").exists()
+        await owner.send_str("r,2552x1294,primary")
+        for ws in (owner, other):
+            msg = await asyncio.wait_for(ws.receive(), timeout=3)
+            assert msg.type == aiohttp.WSMsgType.TEXT and msg.data == "styx-refit"
+            msg = await asyncio.wait_for(ws.receive(), timeout=3)
+            assert msg.type == aiohttp.WSMsgType.CLOSE and msg.data == 4002
+        assert (tmp_path / "refit-request").read_text() == "2552x1294"
+        # Seat rebuilt at the owner's size; the owner leaves, the other takes over.
+        (tmp_path / "refit-request").unlink()
+        (tmp_path / "seat-size").write_text("2552x1294")
+        gateway.refit.MIN_INTERVAL_S, saved = 0.0, gateway.refit.MIN_INTERVAL_S
+        try:
+            owner2 = await client.ws_connect("/websocket", headers=hdr)
+            other2 = await client.ws_connect("/websocket", headers=hdr)
+            await owner2.send_str("r,2552x1294,primary")     # claims, no change
+            await other2.send_str("r,1280x720,primary")
+            await asyncio.sleep(0.6)
+            assert not (tmp_path / "refit-request").exists()
+            await owner2.close()
+            msg = await asyncio.wait_for(other2.receive(), timeout=3)
+            assert msg.type == aiohttp.WSMsgType.TEXT and msg.data == "styx-refit"
+            assert (tmp_path / "refit-request").read_text() == "1280x720"
+        finally:
+            gateway.refit.MIN_INTERVAL_S = saved
+    finally:
+        await client.close()
+        await up.close()
+
+
+@pytest.mark.asyncio
+async def test_live_port_file_overrides_upstream(tmp_path):
+    """The supervisor promotes a standby selkies by publishing its port."""
+    from aiohttp.test_utils import TestClient, TestServer
+    received = []
+    up = TestClient(TestServer(await _recording_upstream(received)))
+    await up.start_server()
+    (tmp_path / "selkies-port").write_text(str(up.server.port))
+    client = TestClient(TestServer(gateway.create_app(
+        "styx", "pw", upstream_port=1, seat_dir=str(tmp_path))))   # port 1: dead
+    await client.start_server()
+    try:
+        ws = await client.ws_connect("/websocket", headers={"Authorization": _basic("styx", "pw")})
+        await ws.send_str("SETTINGS,{}")
+        await ws.close()
+    finally:
+        await client.close()
+        await up.close()
+    assert "SETTINGS,{}" in received

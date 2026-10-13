@@ -116,6 +116,7 @@ def test_quality_env_ignores_bad_values(tmp_path, monkeypatch):
     assert "SELKIES_VIDEO_CRF" not in env
     assert env["SELKIES_VIDEO_PAINTOVER_CRF"] == "12"          # bad value -> default
     assert env["SELKIES_VIDEO_STREAMING_MODE"] == "false"   # 2.0 default is true; keep ours
+    assert env["SELKIES_VIDEO_FULLCOLOR"] == "true"          # 4:4:4: sharp desktop text
 
 
 def test_every_flag_exists_in_installed_selkies(tmp_path, monkeypatch):
