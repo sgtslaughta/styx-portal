@@ -72,6 +72,15 @@ def test_start_writes_script_and_counts_restarts(tmp_path, monkeypatch):
     assert kw["start_new_session"] is True
 
 
+def test_helper_gets_scale_file_env(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(seat_gnome.subprocess, "Popen",
+                        lambda cmd, **k: calls.append((cmd, k)) or object())
+    seat = seat_gnome.GnomeSeat(tmp_path, str(tmp_path), log=subprocess.DEVNULL)
+    seat._spawn_helper(1920, 1080)
+    assert calls[0][1]["env"]["STYX_SEAT_SCALE_FILE"] == str(tmp_path / "seat-scale")
+
+
 class _P:
     pid = 4242
 

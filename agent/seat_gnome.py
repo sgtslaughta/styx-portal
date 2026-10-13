@@ -205,7 +205,8 @@ class GnomeSeat:
                     "DBUS_SESSION_BUS_ADDRESS": self.bus or "",
                     "XDG_DESKTOP_PORTAL_DIR": str(self.portal_dir),
                     "XDG_CURRENT_DESKTOP": "ubuntu:GNOME", "XDG_SESSION_TYPE": "wayland",
-                    "STYX_PORTAL_READY": str(self.ready_file)})
+                    "STYX_PORTAL_READY": str(self.ready_file),
+                    "STYX_SEAT_SCALE_FILE": str(self.install_dir / "seat-scale")})
         return subprocess.Popen([SYS_PYTHON, str(self.install_dir / "seat_portal.py"),
                                  f"{w}x{h}"], env=env, stdout=self.log, stderr=self.log,
                                 start_new_session=True)
