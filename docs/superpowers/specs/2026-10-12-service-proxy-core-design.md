@@ -296,7 +296,7 @@ Every write triggers `route_writer.write_routes` (extend signature with
   edge sets it. Rate limits, IP bans and the audit log use this IP.
 - **auth-check** is internal-only (see above), for services
   (`/internal/services/{slug}/auth-check`) and workstation streams
-  (`/internal/workstations/auth-check`, moved from the public
+  (`/internal/workstations/<id>/auth-check`, moved from the public
   `/api/workstations/auth-check`, which mutated seat occupancy). Both
   authenticate only via the `styx_proxy` cookie (below). The backend rate
   limiter skips `/internal/`; Traefik's `styx-ratelimit` already runs
@@ -324,13 +324,20 @@ Every write triggers `route_writer.write_routes` (extend signature with
 - **Instance desktops require Styx login + ownership (2026-10-13).**
   Instance routers (`/i/<sub>` and extra ports) previously only stripped
   cookies, so any running desktop was public to anyone who guessed its
-  user-chosen subdomain. Middleware `instance-forward-auth` →
-  `/internal/instances/auth-check` replaces `styx-cookie-strip` there: it
-  authenticates the `styx_proxy` cookie, resolves the instance from
-  `X-Forwarded-Uri` (`/i/<sub>/…`, incl. tunnel-mode `/i/<sub>/p/<slug>/…`)
-  or, for direct-mode extra ports, from `X-Forwarded-Host` `<sub>.<domain>`
-  with `/p/<slug>/…`, and allows only the owner or an admin
-  (`require_owner_or_admin`, as `/api/instances`). Anonymous navigations
+  user-chosen subdomain. Each instance now gets its own middleware
+  `inst-auth-<id>` → `/internal/instances/<id>/auth-check` on its primary
+  and extra-port routers (replacing `styx-cookie-strip`): it authenticates
+  the `styx_proxy` cookie and allows only the owner or an admin
+  (`require_owner_or_admin`, as `/api/instances`). **The instance is bound
+  by the auth address route_writer emits, never parsed from
+  `X-Forwarded-Uri`/`X-Forwarded-Host`**, so no parser differential (dot
+  segments, encoded `/`, `//`, case, query strings, Host port/trailing
+  dot, absolute-form URIs) can make the check authorize a different
+  instance than Traefik routed to. Workstations use the same scheme
+  (`ws-auth-<id>` → `/internal/workstations/<id>/auth-check`, replacing
+  the shared, path-parsing `ws-forward-auth`). Instance, extra-port and
+  workstation rules are segment-bounded (`Path(/i/dev) ||
+  PathPrefix(/i/dev/)`), so `/i/devx` never rides `dev`'s router. Anonymous navigations
   302 to `/login?next=<uri>` (no `next` for host-routed extra ports),
   XHR/websocket 401; other users 403; unknown or not running/idle 503,
   which `instance-unavailable-errors` (listed first) turns into the same
@@ -375,8 +382,8 @@ Every write triggers `route_writer.write_routes` (extend signature with
   left, so the upstream gets an empty `Cookie:` line. Coverage:
   `svc-auth-{slug}` (sso, incl. the bypass success path),
   `svc-strip-{slug}` → `/internal/services/{slug}/strip` (app-native: no
-  auth, always 200), `ws-forward-auth` (`/w/`), and `instance-forward-auth` →
-  `/internal/instances/auth-check` on `/i/` instance and extra-port routers. Not covered:
+  auth, always 200), `ws-auth-<id>` (`/w/`), and `inst-auth-<id>` →
+  `/internal/instances/<id>/auth-check` on `/i/` instance and extra-port routers. Not covered:
   `ip-ban-gate` (it guards the Styx API, which needs its cookies; no
   response headers). Routing still works: Traefik matches the `styx_svc`
   rule before middlewares run.

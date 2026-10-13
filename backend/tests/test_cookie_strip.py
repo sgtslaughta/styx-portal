@@ -117,7 +117,7 @@ async def test_workstation_auth_check_returns_clean_cookie(anon, session):
     session.add(Workstation(id="w1", name="desk", hostname="desk", subdomain="desk",
                             lan_ip="10.0.0.5", port=8443, all_users=True, created_by=uid))
     await session.commit()
-    r = await anon.get("/internal/workstations/auth-check",
+    r = await anon.get("/internal/workstations/w1/auth-check",
                        headers=_hdr(f"x=1; styx_proxy={tok}", uri="/w/desk/"))
     assert r.status_code == 200, r.text
     assert r.headers["cookie"] == "x=1"
@@ -142,23 +142,23 @@ def test_every_upstream_forward_auth_rewrites_cookie():
     # ip-ban-gate guards the Styx API itself (needs its cookies), no response headers
     fas.pop("ip-ban-gate")
     assert {"svc-auth-sonarr", "svc-auth-bz", "svc-strip-plex", "svc-strip-unraid",
-            "ws-forward-auth", "instance-forward-auth"} <= set(fas)
+            "ws-auth-w1", "inst-auth-i1"} <= set(fas)
     for name, fa in fas.items():
         assert "Cookie" in fa["authResponseHeaders"], name
     assert mws["svc-auth-sonarr"]["forwardAuth"]["authResponseHeaders"] == [
         "X-Styx-User", "X-Styx-Groups", "Cookie"]
     assert mws["svc-strip-plex"]["forwardAuth"]["address"] == \
         "http://backend:8000/internal/services/plex/strip"
-    assert mws["instance-forward-auth"]["forwardAuth"]["address"] == \
-        "http://backend:8000/internal/instances/auth-check"
+    assert mws["inst-auth-i1"]["forwardAuth"]["address"] == \
+        "http://backend:8000/internal/instances/i1/auth-check"
 
 
 def test_every_proxied_router_strips_cookies():
     routers = _all_cfg()["http"]["routers"]
     expect = {"svc-sonarr": "svc-auth-sonarr", "svc-bz": "svc-auth-bz",
               "svc-plex": "svc-strip-plex", "svc-unraid": "svc-strip-unraid",
-              "ws-w1": "ws-forward-auth", "i1": "instance-forward-auth",
-              "i1-p-web": "instance-forward-auth"}
+              "ws-w1": "ws-auth-w1", "i1": "inst-auth-i1",
+              "i1-p-web": "inst-auth-i1"}
     for rid, mw in expect.items():
         assert mw in routers[rid]["middlewares"], rid
     # every non-Styx upstream router is covered

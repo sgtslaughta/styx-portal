@@ -99,7 +99,7 @@ Read this section before exposing anything.
 - The cookie-root routing cookie is a selector, not a credential: access is checked on
   every request.
 - **Access checks are internal.** forwardAuth calls
-  `/internal/services/<slug>/auth-check` (and `/internal/workstations/auth-check`), paths
+  `/internal/services/<slug>/auth-check` (and `/internal/workstations/<id>/auth-check`, `/internal/instances/<id>/auth-check`), paths
   no Traefik router exposes. They authenticate only with the `styx_proxy` cookie.
 - **Network isolation.** Proxied containers sit on `styx-services` with Traefik only, so
   they cannot reach the Styx API or the Docker socket proxy.

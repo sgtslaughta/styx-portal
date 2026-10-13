@@ -175,25 +175,23 @@ def _unauthenticated(request: Request, msg: str):
     return RedirectResponse(target, status_code=302)
 
 
-@internal_router.get("/auth-check")
-async def auth_check(request: Request,
+@internal_router.get("/{ws_id}/auth-check")
+async def auth_check(ws_id: str, request: Request,
                      session: AsyncSession = Depends(get_session)):
     """Traefik forwardAuth target gating /w/ stream routes. 200 = allow.
 
     Served under /internal (never routed by Traefik) and authenticated only by
     the styx_proxy cookie: it mutates seat occupancy, so it must not be public.
+    The workstation comes from the router's auth address (route_writer emits
+    one per workstation), never from parsing the request, so Traefik's routing
+    and this check cannot disagree about which desktop is being opened.
     """
     from app.security.deps import proxy_user_or_none
     user = await proxy_user_or_none(request, session)
     if user is None:
         return _unauthenticated(request, "Not authenticated")
     uri = request.headers.get("x-forwarded-uri", "")
-    m = re.match(r"^/w/([a-z0-9-]+)", uri)
-    if not m:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Unknown stream path")
-    result = await session.exec(select(Workstation).where(
-        Workstation.subdomain == m.group(1)))
-    ws = result.first()
+    ws = await session.get(Workstation, ws_id)
     if ws is None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Unknown workstation")
     allowed = await _allowed_ids(session, ws.id)

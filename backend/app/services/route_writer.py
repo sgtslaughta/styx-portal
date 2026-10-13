@@ -10,6 +10,16 @@ logger = logging.getLogger("styx-portal")
 _settings = Settings()
 
 
+def _forward_auth(address: str) -> dict:
+    """forwardAuth that also swaps in the Cookie header minus Styx cookies."""
+    return {"forwardAuth": {"address": address, "authResponseHeaders": ["Cookie"]}}
+
+
+def _seg(prefix: str) -> str:
+    """Segment-bounded path rule: /i/dev must not capture /i/devx."""
+    return f"Path(`{prefix}`) || PathPrefix(`{prefix}/`)"
+
+
 def _router_transport(deploy_mode: str, domain: str) -> dict:
     """Return entryPoints and TLS config dict based on deploy mode."""
     if deploy_mode == "direct":
@@ -58,13 +68,6 @@ def build_routes_config(instances: list[dict], domain: str,
             }
         },
     }
-    # Instance desktops (and their extra ports): Styx login + owner-or-admin,
-    # and the Cookie header comes back minus Styx cookies so containers never
-    # see Styx credentials. Only emitted when instances exist.
-    if instances:
-        middlewares["instance-forward-auth"] = {"forwardAuth": {
-            "address": "http://backend:8000/internal/instances/auth-check",
-            "authResponseHeaders": ["Cookie"]}}
     config: dict = {
         "http": {
             "routers": {
@@ -129,6 +132,11 @@ def build_routes_config(instances: list[dict], domain: str,
 
         strip_mw = f"strip-{subdomain}"
         middlewares[strip_mw] = {"stripPrefix": {"prefixes": [f"/i/{subdomain}"]}}
+        # Styx login + owner-or-admin, bound to THIS instance by the address
+        # (never parsed from the request); also strips Styx cookies.
+        auth_mw = f"inst-auth-{inst_id}"
+        middlewares[auth_mw] = _forward_auth(
+            f"http://backend:8000/internal/instances/{inst_id}/auth-check")
 
         # Capture primary router transport config for reuse by extra ports
         primary_transport = _router_transport(deploy_mode, domain)
@@ -136,8 +144,8 @@ def build_routes_config(instances: list[dict], domain: str,
         primary_tls = primary_transport.get("tls")
 
         config["http"]["routers"][inst_id] = {
-            "rule": f"Host(`{domain}`) && PathPrefix(`/i/{subdomain}`)",
-            "middlewares": ["instance-unavailable-errors", "instance-forward-auth", strip_mw],
+            "rule": f"Host(`{domain}`) && ({_seg(f'/i/{subdomain}')})",
+            "middlewares": ["instance-unavailable-errors", auth_mw, strip_mw],
             "service": inst_id,
             "priority": 50,
             **primary_transport,
@@ -158,13 +166,13 @@ def build_routes_config(instances: list[dict], domain: str,
 
             # Build rule based on deploy mode
             if deploy_mode == "direct":
-                rule = f"Host(`{subdomain}.{domain}`) && PathPrefix(`/p/{slug}`)"
+                rule = f"Host(`{subdomain}.{domain}`) && ({_seg(f'/p/{slug}')})"
             else:
                 # LAN/tunnel: nests under the instance's path
-                rule = f"PathPrefix(`/i/{subdomain}/p/{slug}`)"
+                rule = _seg(f"/i/{subdomain}/p/{slug}")
 
             # Prepare middlewares: error handling + strip-prefix if needed
-            ep_middlewares = ["instance-unavailable-errors", "instance-forward-auth"]
+            ep_middlewares = ["instance-unavailable-errors", auth_mw]
 
             if ep.get("strip_prefix", True):
                 if deploy_mode == "direct":
@@ -196,7 +204,6 @@ def build_routes_config(instances: list[dict], domain: str,
                 has_https = True
             config["http"]["services"][rid] = {"loadBalancer": ep_svc_config}
 
-    has_workstations = bool(workstations)
     for ws in workstations or []:
         sub = ws["subdomain"]
         strip_mw = f"strip-w-{sub}"
@@ -211,11 +218,14 @@ def build_routes_config(instances: list[dict], domain: str,
                 "Authorization": f"Basic {creds}"}}}
 
         rid = f"ws-{ws['id']}"
-        router_middlewares = ["instance-unavailable-errors", "ws-forward-auth", strip_mw]
+        ws_auth = f"ws-auth-{ws['id']}"
+        middlewares[ws_auth] = _forward_auth(
+            f"http://backend:8000/internal/workstations/{ws['id']}/auth-check")
+        router_middlewares = ["instance-unavailable-errors", ws_auth, strip_mw]
         if "selkies_password" in ws and ws["selkies_password"]:
             router_middlewares.insert(2, auth_header_mw)
         config["http"]["routers"][rid] = {
-            "rule": f"Host(`{domain}`) && PathPrefix(`/w/{sub}`)",
+            "rule": f"Host(`{domain}`) && ({_seg(f'/w/{sub}')})",
             "middlewares": router_middlewares,
             "service": rid,
             "priority": 50,
@@ -223,7 +233,7 @@ def build_routes_config(instances: list[dict], domain: str,
         }
         if lan_serving:
             config["http"]["routers"][f"{rid}-lan"] = _lan_router(
-                f"PathPrefix(`/w/{sub}`)", rid, 50, router_middlewares)
+                _seg(f"/w/{sub}"), rid, 50, router_middlewares)
         protocol = ws.get("protocol", "http")
         svc: dict = {"servers": [{"url": f"{protocol}://{ws['lan_ip']}:{ws['port']}"}]}
         if protocol == "https":
@@ -241,12 +251,6 @@ def build_routes_config(instances: list[dict], domain: str,
             "PathPrefix(`/api`)", "api", 100, ["ip-ban-gate", "styx-ratelimit"])
         config["http"]["routers"]["frontend-lan"] = _lan_router(
             "PathPrefix(`/`)", "frontend", 1, ["styx-ratelimit"])
-
-    # Add shared forwardAuth middleware if any workstations exist
-    if has_workstations:
-        middlewares["ws-forward-auth"] = {"forwardAuth": {
-            "address": "http://backend:8000/internal/workstations/auth-check",
-            "authResponseHeaders": ["Cookie"]}}
 
     if has_https:
         config["http"]["serversTransports"] = {

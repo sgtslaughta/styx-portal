@@ -99,7 +99,7 @@ async def test_auth_check_no_cookie_unauthorized(session):
     # Create a fresh unauthenticated client
     from httpx import ASGITransport, AsyncClient
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as fresh_client:
-        r = await fresh_client.get("/internal/workstations/auth-check",
+        r = await fresh_client.get(f"/internal/workstations/{ws.id}/auth-check",
                                    headers={"X-Forwarded-Uri": f"/w/{ws.subdomain}/"})
         assert r.status_code == 401
 
@@ -114,7 +114,7 @@ async def test_auth_check_browser_navigation_redirects_to_login(session):
         # Location must be ABSOLUTE on the original host — Traefik resolves a
         # relative Location against the auth-server URL (http://backend:8000).
         # Test settings: DOMAIN=localhost.
-        r = await fresh_client.get("/internal/workstations/auth-check", headers={
+        r = await fresh_client.get(f"/internal/workstations/{ws.id}/auth-check", headers={
             "X-Forwarded-Uri": f"/w/{ws.subdomain}/",
             "X-Forwarded-Proto": "https", "X-Forwarded-Host": "localhost",
             "Sec-Fetch-Mode": "navigate"})
@@ -122,33 +122,33 @@ async def test_auth_check_browser_navigation_redirects_to_login(session):
         assert r.headers["location"] == \
             f"https://localhost/login?next=/w/{ws.subdomain}/"
         # Accept: text/html also counts as a navigation (older browsers)
-        r = await fresh_client.get("/internal/workstations/auth-check", headers={
+        r = await fresh_client.get(f"/internal/workstations/{ws.id}/auth-check", headers={
             "X-Forwarded-Uri": f"/w/{ws.subdomain}/",
             "Accept": "text/html,application/xhtml+xml"})
         assert r.status_code == 302
         # Forged X-Forwarded-Host falls back to DOMAIN (no host-header redirect)
-        r = await fresh_client.get("/internal/workstations/auth-check", headers={
+        r = await fresh_client.get(f"/internal/workstations/{ws.id}/auth-check", headers={
             "X-Forwarded-Uri": f"/w/{ws.subdomain}/",
             "X-Forwarded-Proto": "https", "X-Forwarded-Host": "evil.example",
             "Sec-Fetch-Mode": "navigate"})
         assert r.status_code == 302
         assert r.headers["location"].startswith("https://localhost/login")
         # Private LAN IP hosts are honored (host-agnostic LAN routers)
-        r = await fresh_client.get("/internal/workstations/auth-check", headers={
+        r = await fresh_client.get(f"/internal/workstations/{ws.id}/auth-check", headers={
             "X-Forwarded-Uri": f"/w/{ws.subdomain}/",
             "X-Forwarded-Proto": "https", "X-Forwarded-Host": "192.168.1.10:443",
             "Sec-Fetch-Mode": "navigate"})
         assert r.status_code == 302
         assert r.headers["location"].startswith("https://192.168.1.10:443/login")
         # Unrecognized URI shape: redirect to login WITHOUT next (no open redirect)
-        r = await fresh_client.get("/internal/workstations/auth-check", headers={
+        r = await fresh_client.get(f"/internal/workstations/{ws.id}/auth-check", headers={
             "X-Forwarded-Uri": "https://evil.example/phish",
             "X-Forwarded-Proto": "https", "X-Forwarded-Host": "localhost",
             "Sec-Fetch-Mode": "navigate"})
         assert r.status_code == 302
         assert r.headers["location"] == "https://localhost/login"
         # Non-navigation (websocket/XHR) keeps the 401
-        r = await fresh_client.get("/internal/workstations/auth-check", headers={
+        r = await fresh_client.get(f"/internal/workstations/{ws.id}/auth-check", headers={
             "X-Forwarded-Uri": f"/w/{ws.subdomain}/websockets"})
         assert r.status_code == 401
 
@@ -169,7 +169,7 @@ async def test_occupancy_records_and_gates_connect(admin_client, client, session
     assert (await client.post("/api/auth/login",
             json={"username": "carol", "password": "x"})).status_code == 200
     client.headers["X-CSRF-Token"] = client.cookies.get("csrf_token") or ""
-    r = await client.get("/internal/workstations/auth-check", headers={
+    r = await client.get(f"/internal/workstations/{ws.id}/auth-check", headers={
         "X-Forwarded-Uri": f"/w/{ws.subdomain}/websockets"})
     assert r.status_code == 200
     await session.refresh(ws)
@@ -226,7 +226,7 @@ async def test_auth_check_with_access_allowed(admin_client, client, session):
     # Grant access and check auth-check allows
     session.add(WorkstationAccess(workstation_id=ws.id, user_id=user.id))
     await session.commit()
-    r = await client.get("/internal/workstations/auth-check",
+    r = await client.get(f"/internal/workstations/{ws.id}/auth-check",
                          headers={"X-Forwarded-Uri": f"/w/{ws.subdomain}/"})
     assert r.status_code == 200
     assert r.json()["ok"] is True
@@ -243,7 +243,7 @@ async def test_auth_check_without_access_forbidden(admin_client, client, session
     csrf = client.cookies.get("csrf_token")
     client.headers["X-CSRF-Token"] = csrf or ""
 
-    r = await client.get("/internal/workstations/auth-check",
+    r = await client.get(f"/internal/workstations/{ws.id}/auth-check",
                          headers={"X-Forwarded-Uri": f"/w/{ws.subdomain}/"})
     assert r.status_code == 403
 
@@ -251,23 +251,37 @@ async def test_auth_check_without_access_forbidden(admin_client, client, session
 @pytest.mark.asyncio
 async def test_auth_check_admin_always_allowed(admin_client, session):
     ws, _ = await _seed(session)
-    r = await admin_client.get("/internal/workstations/auth-check",
+    r = await admin_client.get(f"/internal/workstations/{ws.id}/auth-check",
                                headers={"X-Forwarded-Uri": f"/w/{ws.subdomain}/"})
     assert r.status_code == 200
 
 
 @pytest.mark.asyncio
-async def test_auth_check_bad_uri_forbidden(admin_client, session):
-    ws, _ = await _seed(session)
-    r = await admin_client.get("/internal/workstations/auth-check",
-                               headers={"X-Forwarded-Uri": "/bad/path/"})
-    assert r.status_code == 403
+async def test_auth_check_bound_by_id_not_forwarded_path(client, session):
+    """The workstation comes from the router's auth address, never the request:
+    a path naming a workstation the user may open cannot open another one."""
+    ws, user = await _seed(session)
+    mine = Workstation(name="mine", hostname="mine", subdomain="mine", lan_ip="10.0.0.6",
+                       port=8443, created_by=user.id)
+    session.add(mine)
+    session.add(WorkstationAccess(workstation_id=mine.id, user_id=user.id))
+    await session.commit()
+    await client.get("/api/auth/csrf")
+    assert (await client.post("/api/auth/login",
+            json={"username": "carol", "password": "x"})).status_code == 200
+    for uri in ["/w/mine/", "/w/mine/../desk/", "/w/desk/../mine/", "/w/mine%2f..%2fdesk/",
+                "//w/mine/", "/W/MINE/", "/w/desk/?x=/w/mine/", "https://localhost/w/mine/"]:
+        h = {"X-Forwarded-Uri": uri}
+        assert (await client.get(f"/internal/workstations/{ws.id}/auth-check",
+                                 headers=h)).status_code == 403, uri
+        assert (await client.get(f"/internal/workstations/{mine.id}/auth-check",
+                                 headers=h)).status_code == 200, uri
 
 
 @pytest.mark.asyncio
 async def test_auth_check_unknown_workstation_forbidden(admin_client, session):
     ws, _ = await _seed(session)
-    r = await admin_client.get("/internal/workstations/auth-check",
+    r = await admin_client.get("/internal/workstations/unknown/auth-check",
                                headers={"X-Forwarded-Uri": "/w/unknown/"})
     assert r.status_code == 403
 
@@ -370,10 +384,10 @@ async def test_ws_auth_check_not_public_and_proxy_cookie_only(admin_client, clie
     proxy = client.cookies.get("styx_proxy")
     client.cookies.clear()
     client.cookies.set("access_token", access)
-    assert (await client.get("/internal/workstations/auth-check", headers=hdr)).status_code == 401
+    assert (await client.get(f"/internal/workstations/{ws.id}/auth-check", headers=hdr)).status_code == 401
     client.cookies.clear()
     client.cookies.set("styx_proxy", proxy)
-    assert (await client.get("/internal/workstations/auth-check", headers=hdr)).status_code == 200
+    assert (await client.get(f"/internal/workstations/{ws.id}/auth-check", headers=hdr)).status_code == 200
 
 
 @pytest.mark.asyncio
@@ -382,7 +396,7 @@ async def test_auth_check_login_redirect_drops_encoded_next(session):
     ws, _ = await _seed(session)
     from httpx import ASGITransport, AsyncClient
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        r = await c.get("/internal/workstations/auth-check", headers={
+        r = await c.get(f"/internal/workstations/{ws.id}/auth-check", headers={
             "X-Forwarded-Uri": f"/w/{ws.subdomain}/%2e%2e/%2e%2e/api/x",
             "X-Forwarded-Proto": "https", "X-Forwarded-Host": "localhost",
             "Sec-Fetch-Mode": "navigate"})
