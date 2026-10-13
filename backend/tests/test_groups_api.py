@@ -33,3 +33,9 @@ async def test_group_crud_and_membership(admin_client, session):
 async def test_groups_admin_only(member_client):
     r = await member_client.get("/api/groups")
     assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_group_name_rejects_comma(admin_client):
+    r = await admin_client.post("/api/groups", json={"name": "ops,dev"})
+    assert r.status_code == 422

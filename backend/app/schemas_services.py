@@ -191,7 +191,7 @@ class DiscoveredContainer(BaseModel):
 
 
 class GroupCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=64, pattern=r"^[^,]+$")  # X-Styx-Groups is comma-joined
     description: str | None = Field(default=None, max_length=255)
 
 

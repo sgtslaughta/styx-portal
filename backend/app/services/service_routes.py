@@ -72,7 +72,7 @@ def add_service_routes(config: dict, middlewares: dict, services: list[dict],
     middlewares["styx-frame-sameorigin"] = {"headers": {"customFrameOptionsValue": "SAMEORIGIN"}}
     routers["styx-shell"] = {"rule": f"Host(`{domain}`) && PathPrefix(`/_styx/app`)",
                              "service": "frontend", "priority": 95,
-                             "middlewares": ["styx-ratelimit"], **transport}
+                             "middlewares": ["ip-ban-gate", "styx-ratelimit"], **transport}
     if has_cookie_root:
         # While a takeover cookie is set, /api belongs to the app unless the
         # request is from the Styx frontend (X-Styx-Client header).

@@ -171,6 +171,7 @@ def test_shell_router_above_focus_and_exit():
     assert r["service"] == "frontend" and r["priority"] == 95
     assert "PathPrefix(`/_styx/app`)" in r["rule"]
     assert r["priority"] > cfg["http"]["routers"]["styx-exit"]["priority"]
+    assert r["middlewares"] == ["ip-ban-gate", "styx-ratelimit"]
 
 
 def test_service_routers_force_sameorigin():
