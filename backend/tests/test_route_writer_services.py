@@ -18,7 +18,7 @@ def test_path_mode_router():
         assert mw in r["middlewares"]
     fa = cfg["http"]["middlewares"]["svc-auth-sonarr"]["forwardAuth"]
     assert fa["address"] == "http://backend:8000/internal/services/sonarr/auth-check"
-    assert fa["authResponseHeaders"] == ["X-Styx-User", "X-Styx-Groups"]
+    assert fa["authResponseHeaders"] == ["X-Styx-User", "X-Styx-Groups", "Cookie"]
     assert cfg["http"]["services"]["svc-sonarr"]["loadBalancer"]["servers"] == [
         {"url": "http://192.168.1.10:8989"}]
     # no cookie-root service: /api router untouched
@@ -158,5 +158,7 @@ def test_auth_check_is_internal_and_unrouted(tmp_path, monkeypatch):
         assert "Path" in r["rule"], name  # every backend router is path-scoped
         assert not _path_matches(r["rule"], "/internal/services/sonarr/auth-check"), name
         assert not _path_matches(r["rule"], "/internal/workstations/auth-check"), name
+        assert not _path_matches(r["rule"], "/internal/strip"), name
+        assert not _path_matches(r["rule"], "/internal/services/sonarr/strip"), name
     wfa = cfg["http"]["middlewares"]["ws-forward-auth"]["forwardAuth"]
     assert wfa["address"] == "http://backend:8000/internal/workstations/auth-check"

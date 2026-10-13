@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlmodel import select, delete
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -16,6 +16,7 @@ from app.schemas import (
     EnrollTokenOut, WorkstationAccessUpdate, WorkstationConnectOut, WorkstationOut,
     WorkstationUpdate, WorkstationUpdateCommandOut,
 )
+from app.security.cookies import clean_cookie_header
 from app.security.deps import require_admin, get_current_user
 from app.services.audit import audit_request
 from app.services.workstations import (
@@ -204,7 +205,7 @@ async def auth_check(request: Request,
         ws.occupied_at = datetime.now(timezone.utc)
         session.add(ws)
         await session.commit()
-    return {"ok": True}
+    return JSONResponse({"ok": True}, headers=clean_cookie_header(request))
 
 
 @router.get("/mine", response_model=list[WorkstationOut])

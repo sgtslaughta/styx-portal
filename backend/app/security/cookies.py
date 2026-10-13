@@ -3,6 +3,9 @@
 API tokens are scoped to /api so proxied upstreams (same origin, other paths)
 never receive them. forwardAuth gets its own styx_proxy cookie (Path=/), a
 token the API refuses, so a leaked proxy cookie cannot drive the Styx API.
+Path=/ cookies still reach Traefik on proxied paths, so every forwardAuth
+endpoint returns `Cookie` minus STYX_COOKIES (strip_styx_cookies) and Traefik
+swaps it in via authResponseHeaders: upstreams never see Styx credentials.
 """
 from fastapi import Response
 
@@ -15,6 +18,24 @@ ACCESS_PATH = "/api"
 REFRESH_PATH = "/api/auth"      # only /refresh and /logout read it
 PROXY_COOKIE = "styx_proxy"
 _LEGACY = ("access_token", "refresh_token")   # pre-split cookies lived at Path=/
+STYX_COOKIES = frozenset({PROXY_COOKIE, *_LEGACY, CSRF_COOKIE, "styx_svc"})
+
+
+def strip_styx_cookies(header: str) -> str:
+    """Cookie header minus Styx's cookies; other pairs kept verbatim, in order."""
+    keep = [p.strip() for p in header.split(";")]
+    return "; ".join(p for p in keep
+                     if p and p.split("=", 1)[0].strip() not in STYX_COOKIES)
+
+
+def clean_cookie_header(request) -> dict[str, str]:
+    """forwardAuth response header replacing the upstream request's Cookie.
+
+    An empty value is sent when nothing is left: Traefik (v3 forward.go) always
+    deletes the request header named in authResponseHeaders, then copies the
+    auth response's values, so the upstream gets an empty `Cookie:` line.
+    """
+    return {"Cookie": strip_styx_cookies("; ".join(request.headers.getlist("cookie")))}
 
 
 def _common() -> dict:

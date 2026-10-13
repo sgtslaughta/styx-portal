@@ -12,6 +12,7 @@ from app.database import get_session
 from app.models import ProxiedService, User
 from app.routers.groups import user_group_names
 from app.routers.workstations import _redirect_host
+from app.security.cookies import clean_cookie_header
 from app.security.deps import get_current_user, proxy_user_or_none
 from app.services.service_routes import COOKIE_NAME
 
@@ -101,7 +102,7 @@ async def auth_check(slug: str, request: Request,
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown service")
     uri = request.headers.get("x-forwarded-uri", "/")
     if svc.auth_mode == "sso-with-bypass" and bypass_matches(svc.bypass_rules, uri, request.headers):
-        return Response(status_code=200)
+        return Response(status_code=200, headers=clean_cookie_header(request))
     user = await proxy_user_or_none(request, session)
     if user is None:
         return _login_redirect(request, uri, svc.mount_mode == "cookie-root")
@@ -109,7 +110,16 @@ async def auth_check(slug: str, request: Request,
         raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this service")
     groups = await user_group_names(session, user.id)
     return Response(status_code=200,
-                    headers={"X-Styx-User": user.username, "X-Styx-Groups": ",".join(groups)})
+                    headers={"X-Styx-User": user.username, "X-Styx-Groups": ",".join(groups),
+                             **clean_cookie_header(request)})
+
+
+@internal_router.get("/strip")
+@internal_router.get("/services/{slug}/strip")
+async def strip_cookies(request: Request, slug: str | None = None):
+    """Strip-only forwardAuth (app-native services, /i/ instances): no auth,
+    always 200 with the Cookie header minus Styx cookies."""
+    return Response(status_code=200, headers=clean_cookie_header(request))
 
 
 @router.post("/{slug}/enter")

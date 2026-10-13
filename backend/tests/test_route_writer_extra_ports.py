@@ -117,7 +117,8 @@ def test_extra_port_strip_prefix_middleware():
     assert extra_router, "no extra-port router found"
 
     # Get the strip middleware ID from the router
-    strip_mws = [m for m in extra_router.get("middlewares", []) if "strip" in m]
+    strip_mws = [m for m in extra_router.get("middlewares", [])
+                 if "strip" in m and m != "styx-cookie-strip"]
     assert strip_mws, "no strip middleware in extra-port router"
 
     # Verify the middleware exists and has the right prefix

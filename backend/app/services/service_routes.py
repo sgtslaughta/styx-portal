@@ -8,11 +8,12 @@ Mounted on the single Styx hostname. `path` services get Path(/slug) || PathPref
 COOKIE_NAME = "styx_svc"
 # /internal is never routed by Traefik (see test_auth_check_is_internal_and_unrouted).
 AUTH_CHECK = "http://backend:8000/internal/services/{slug}/auth-check"
-# Known limitation (same-origin): services share the Styx origin, so the browser
-# also sends Styx's access_token/refresh_token cookies to every proxied app.
-# Stock Traefik cannot drop individual cookies from the Cookie header, so a
-# service operator (or a compromised app) can read Styx session tokens.
-# Only proxy apps you trust with Styx sessions; see docs (Security model).
+STRIP = "http://backend:8000/internal/services/{slug}/strip"
+# Same origin: the browser sends Styx's Path=/ cookies (styx_proxy, csrf_token,
+# styx_svc) to every proxied app. Each service forwardAuth answers with the
+# Cookie header minus Styx cookies and Traefik swaps it in (authResponseHeaders
+# replaces the request header), so upstream servers never see Styx credentials.
+# app-native services get a strip-only forwardAuth (no auth) for the same reason.
 IDENTITY_HEADERS = ["X-Styx-User", "X-Styx-Groups", "X-authentik-username",
                     "X-authentik-groups", "X-authentik-email", "X-authentik-uid"]
 BASE_MW = ["ip-ban-gate", "styx-ratelimit", "styx-strip-identity", "service-unavailable-errors"]
@@ -35,8 +36,12 @@ def add_service_routes(config: dict, middlewares: dict, services: list[dict],
         if s["auth_mode"] != "app-native":
             middlewares[f"svc-auth-{slug}"] = {"forwardAuth": {
                 "address": AUTH_CHECK.format(slug=slug),
-                "authResponseHeaders": ["X-Styx-User", "X-Styx-Groups"]}}
+                "authResponseHeaders": ["X-Styx-User", "X-Styx-Groups", "Cookie"]}}
             mws.append(f"svc-auth-{slug}")
+        else:
+            middlewares[f"svc-strip-{slug}"] = {"forwardAuth": {
+                "address": STRIP.format(slug=slug), "authResponseHeaders": ["Cookie"]}}
+            mws.append(f"svc-strip-{slug}")
         if s["mount_mode"] == "cookie-root":
             has_cookie_root = True
             rule = (f"Host(`{domain}`) && HeaderRegexp(`Cookie`, "
