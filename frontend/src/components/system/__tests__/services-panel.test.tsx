@@ -9,7 +9,9 @@ vi.mock("@/api/client", () => ({
 }));
 vi.mock("sonner", () => ({ toast }));
 
-import { ServicesPanel } from "../services-panel";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ServicesPanel as Panel } from "../services-panel";
+const ServicesPanel = () => <QueryClientProvider client={new QueryClient()}><Panel /></QueryClientProvider>;
 import { ApiError } from "@/api/client";
 
 const svc = (o: Record<string, unknown> = {}) => ({

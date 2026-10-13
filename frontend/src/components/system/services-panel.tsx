@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Boxes, Globe, Plus } from "lucide-react";
-import { api, type DiscoveredContainer, type Group, type ProxiedService, type ProxiedServiceInput, type ServicePreset } from "@/api/client";
+import { api, type DiscoveredContainer, type MountJob, type Group, type ProxiedService, type ProxiedServiceInput, type ServicePreset } from "@/api/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -9,6 +10,7 @@ import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } f
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { ServiceForm } from "./service-form";
+import { ServiceMount } from "./service-mount";
 import { ServiceRow } from "./service-row";
 import { serverFieldErrors, type FieldErrors } from "./service-validation";
 
@@ -16,6 +18,7 @@ type Editing = { kind: "new" } | { kind: "edit"; svc: ProxiedService } | { kind:
 const errMsg = (e: unknown, fb: string) => (e instanceof Error && e.message ? e.message : fb);
 
 export function ServicesPanel() {
+  const qc = useQueryClient();
   const [services, setServices] = useState<ProxiedService[] | null>(null);
   const [presets, setPresets] = useState<ServicePreset[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -113,7 +116,8 @@ export function ServicesPanel() {
           ) : (
             <ul className="space-y-2">
               {services.map((s) => (
-                <ServiceRow key={s.id} s={s} busy={busyId === s.id} onToggle={(v) => void toggle(s, v)}
+                <ServiceRow key={s.id} s={s} busy={busyId === s.id}
+                  lastMount={qc.getQueryData<MountJob | null>(["mount-job", s.id])?.state} onToggle={(v) => void toggle(s, v)}
                   onEdit={() => setEditing({ kind: "edit", svc: s })} onDelete={() => setToDelete(s)} />
               ))}
             </ul>
@@ -156,6 +160,7 @@ export function ServicesPanel() {
             <DrawerTitle>{editing?.kind === "edit" ? `Edit ${editing.svc.name}` : "Add service"}</DrawerTitle>
             <DrawerDescription>Services are published on this hostname. Review each warning before saving.</DrawerDescription>
           </DrawerHeader>
+          {editing?.kind === "edit" && <ServiceMount service={editing.svc} />}
           {editing && (
             <ServiceForm
               key={editing.kind === "edit" ? editing.svc.id : editing.kind === "discovered" ? editing.c.name : "new"}

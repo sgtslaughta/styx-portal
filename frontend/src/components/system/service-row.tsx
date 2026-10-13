@@ -1,5 +1,5 @@
 import { Pencil, Trash2 } from "lucide-react";
-import type { ProxiedService } from "@/api/client";
+import type { MountJob, ProxiedService } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -39,8 +39,14 @@ function badges(s: ProxiedService): { key: string; label: string; cls?: string; 
   return out;
 }
 
-export function ServiceRow({ s, busy, onToggle, onEdit, onDelete }: {
-  s: ProxiedService; busy: boolean; onToggle: (v: boolean) => void; onEdit: () => void; onDelete: () => void;
+const MOUNT_CHIP = {
+  done: { label: "Base path set", cls: "border-obol/60 text-obol-foreground" },
+  rolled_back: { label: "Rolled back", cls: "border-destructive/40 text-destructive" },
+  failed: { label: "Needs attention", cls: "border-destructive/40 text-destructive" },
+} as const;
+
+export function ServiceRow({ s, busy, lastMount, onToggle, onEdit, onDelete }: {
+  s: ProxiedService; busy: boolean; lastMount?: MountJob["state"]; onToggle: (v: boolean) => void; onEdit: () => void; onDelete: () => void;
 }) {
   const label = s.health_status === "unknown" ? "Not checked yet" : s.health_status === "healthy" ? "Healthy" : "Unhealthy";
   const target = s.kind === "url" ? s.upstream_url : `${s.container}:${s.container_port}`;
@@ -66,6 +72,11 @@ export function ServiceRow({ s, busy, onToggle, onEdit, onDelete }: {
           {badges(s).map((b) => (
             <Badge key={b.key} variant={b.cls ? "outline" : "secondary"} className={b.cls} title={b.title}>{b.label}</Badge>
           ))}
+          {lastMount && lastMount in MOUNT_CHIP && (
+            <Badge variant="outline" className={MOUNT_CHIP[lastMount as keyof typeof MOUNT_CHIP].cls}>
+              {MOUNT_CHIP[lastMount as keyof typeof MOUNT_CHIP].label}
+            </Badge>
+          )}
         </div>
       </div>
       <div className="flex shrink-0 flex-col-reverse items-end gap-1 sm:flex-row sm:items-center">
