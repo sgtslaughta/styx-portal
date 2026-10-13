@@ -67,3 +67,16 @@ def test_garbage_file_is_manual_not_raise():
         p = plan_mount(_svc(), _preset(), _docker({"/config/network.xml": blob}))
         assert p.method is None and p.changes == []
         assert "couldn't read J's settings file" in p.reason
+
+
+def test_missing_hint_appended():
+    preset = ServicePreset(id="jellyfin", name="Jellyfin", subpath={**SUB, "missing_hint": "Click Save once."})
+    p = plan_mount(_svc(), preset, _docker({}))
+    assert p.method is None and p.reason.endswith("Click Save once.")
+
+
+def test_jellyfin_preset_has_hint():
+    import json
+    from pathlib import Path
+    data = json.loads((Path(__file__).parents[2] / "templates/services/jellyfin.json").read_text())
+    assert "Save once" in data["subpath"]["missing_hint"]

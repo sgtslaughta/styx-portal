@@ -54,7 +54,8 @@ def plan_mount(svc: ProxiedService, preset: ServicePreset | None, docker) -> Mou
             return plan
     return MountPlan(needs_consent=needs_consent,
                      reason=f"Styx can't find {preset.name}'s settings file in the container "
-                             "(settings on a tmpfs mount can't be read).")
+                             "(settings on a tmpfs mount can't be read)."
+                             + (f" {hint}" if (hint := (preset.subpath or {}).get("missing_hint")) else ""))
 
 
 STEPS = [("backup", "Back up settings"), ("apply", "Apply base path"),
@@ -62,6 +63,8 @@ STEPS = [("backup", "Back up settings"), ("apply", "Apply base path"),
 VERIFY_BUDGET_S = 90
 VERIFY_INTERVAL_S = 2
 KEEP_BACKUPS = 5
+BIND_DETAIL = ("This settings file is mounted on its own, so Styx can't replace it. "
+               "Mount its folder instead, or set the base path by hand.")
 PROBE_DETAIL = "Styx couldn't start its check (probe image unavailable)"
 
 
@@ -87,6 +90,10 @@ async def _verify(get, url: str) -> str:
         if loop.time() >= end:
             return "down"
         await asyncio.sleep(VERIFY_INTERVAL_S)
+
+
+class _BindMounted(Exception):
+    pass
 
 
 def _prune(svc_dir: Path) -> None:
@@ -172,7 +179,13 @@ async def run_job(job_id, svc_id, plan, docker, session_factory, http_get=None,
     try:
         new_text, _ = edit_config(original.decode("utf-8"), plan.fmt, plan.key, plan.changes[0]["new"])
         written = True  # from here on a failed write may have partly landed
-        await asyncio.to_thread(docker.write_file, c, path, new_text.encode("utf-8"), info)
+        try:
+            await asyncio.to_thread(docker.write_file, c, path, new_text.encode("utf-8"), info)
+        except Exception as e:  # noqa: BLE001
+            if "device or resource busy" in str(e).lower():
+                written = False  # a lone bind-mounted file can't be replaced; nothing changed
+                raise _BindMounted(BIND_DETAIL) from e
+            raise
         mark("apply", "done")
         mark("restart", "active")
         await save()
@@ -188,6 +201,8 @@ async def run_job(job_id, svc_id, plan, docker, session_factory, http_get=None,
             return
         mark("verify", "failed", PROBE_DETAIL if res == "probe"
              else f"No answer at {verify_path} after {VERIFY_BUDGET_S}s")
+    except _BindMounted as e:
+        fail_active(e)
     except Exception as e:  # noqa: BLE001 - any failure triggers rollback
         fail_active(e)
     if not written:

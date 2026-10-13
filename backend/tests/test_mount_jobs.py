@@ -191,3 +191,13 @@ async def test_probe_unavailable_rolls_back_with_note(session, tmp_path, monkeyp
     assert "probe image unavailable" in job.steps[3]["detail"]
     assert "couldn't confirm" in job.log_excerpt
     assert d.write_file.call_args.args[2] == XML
+
+
+async def test_bind_mounted_file_fails_without_restore(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    d.write_file.side_effect = OSError("rename: device or resource busy")
+    await run_job(job.id, svc.id, PLAN, d, factory)
+    await session.refresh(job)
+    assert job.state == "failed" and "mounted on its own" in job.steps[1]["detail"]
+    assert d.write_file.call_count == 1 and d.restart_container.call_count == 0
+    assert "Rollback" not in (job.log_excerpt or "")

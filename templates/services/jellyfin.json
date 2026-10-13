@@ -48,6 +48,7 @@
       }
     ],
     "restart": true,
-    "verify_path": "/{slug}/health"
+    "verify_path": "/{slug}/health",
+    "missing_hint": "Open Jellyfin, go to Dashboard \u203a Networking and click Save once so it writes its network settings, then try again."
   }
 }
