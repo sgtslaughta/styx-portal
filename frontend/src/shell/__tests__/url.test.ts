@@ -27,3 +27,15 @@ it("isFrameBlocked", () => {
   expect(isFrameBlocked({ contentWindow: { get location(): never { throw new DOMException("x", "SecurityError"); } } } as never)).toBe(true);
   expect(isFrameBlocked({ contentWindow: { location: { href: "https://h/sonarr/" } } })).toBe(false);
 });
+
+import { frameAncestorsBlock } from "../url";
+describe("frameAncestorsBlock", () => {
+  it.each([
+    ["frame-ancestors 'none'", true],
+    ["default-src 'self'; frame-ancestors https://other.example", true],
+    ["frame-ancestors 'self'", false],
+    ["frame-ancestors *", false],
+    ["default-src 'self'", false],
+    [null, false],
+  ])("%s -> %s", (csp, want) => { expect(frameAncestorsBlock(csp)).toBe(want); });
+});

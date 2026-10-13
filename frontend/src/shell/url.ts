@@ -46,3 +46,11 @@ export function isFrameLocationForbidden(frame: { contentWindow: { location: { h
   try { void frame.contentWindow?.location.href; return false; }
   catch { return true; }
 }
+
+/** True when a Content-Security-Policy forbids framing by Styx's own origin (no 'self' or * in frame-ancestors). */
+export function frameAncestorsBlock(csp: string | null): boolean {
+  const dir = csp?.split(";").map((d) => d.trim()).find((d) => d.toLowerCase().startsWith("frame-ancestors"));
+  if (!dir) return false;
+  const sources = dir.split(/\s+/).slice(1).map((x) => x.toLowerCase());
+  return !sources.includes("'self'") && !sources.includes("*");
+}

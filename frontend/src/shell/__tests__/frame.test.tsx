@@ -89,3 +89,27 @@ describe("blocked-frame poll", () => {
     expect(card()).toBeNull();
   });
 });
+
+describe("blocked-frame header probe", () => {
+  const blank = () => ({ location: { href: "about:blank" } });
+  const run = async (csp: string | null) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { headers: csp ? { "content-security-policy": csp } : {} }));
+    vi.stubGlobal("fetch", fetchMock);
+    const { container } = render(<Frame tile={tile} inner="/" onTitle={() => {}} />);
+    Object.defineProperty(container.querySelector("iframe")!, "contentWindow", { get: blank, configurable: true });
+    await act(async () => { await vi.advanceTimersByTimeAsync(12_000); });
+    return fetchMock;
+  };
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+
+  it("an about:blank frame whose app sends frame-ancestors 'none' is blocked", async () => {
+    const f = await run("default-src 'self'; frame-ancestors 'none'");
+    expect(f).toHaveBeenCalledWith("/sonarr/", expect.anything());
+    expect(screen.getByRole("heading", { name: "Sonarr can't run inside Styx" })).toBeTruthy();
+  });
+  it("frame-ancestors 'self' or no CSP leaves a slow about:blank frame alone", async () => {
+    await run("frame-ancestors 'self'");
+    expect(screen.queryByRole("heading", { name: "Sonarr can't run inside Styx" })).toBeNull();
+  });
+});
