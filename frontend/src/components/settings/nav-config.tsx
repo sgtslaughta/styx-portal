@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 import {
   Activity, Terminal, Cpu, ScrollText, Users, KeyRound, HardDrive,
-  Link2, BarChart3, Shield, UserCircle, Heart, MonitorSmartphone, SlidersHorizontal,
+  Link2, UsersRound, BarChart3, Shield, UserCircle, Heart, MonitorSmartphone, SlidersHorizontal,
 } from "lucide-react";
 import { MetricsOverview } from "@/components/system/metrics-overview";
 import { MetricsSessions } from "@/components/system/metrics-sessions";
@@ -9,6 +9,7 @@ import { MetricsResources } from "@/components/system/metrics-resources";
 import { MetricsLogs } from "@/components/system/metrics-logs";
 import { HealthPanel } from "@/components/system/health-panel";
 import { UsersPanel } from "@/components/system/users-panel";
+import { GroupsPanel } from "@/components/system/groups-panel";
 import { WorkstationsPanel } from "@/components/system/workstations-panel";
 import { OAuthProvidersPanel } from "@/components/system/oauth-providers-panel";
 import { ImageManager } from "@/components/system/image-manager";
@@ -59,6 +60,9 @@ export const CATEGORIES: SettingsCategory[] = [
       { id: "users", label: "Users", icon: Users,
         description: "Manage user accounts, roles, and invitations.",
         tooltip: "Create or disable users; generate invites", Component: UsersPanel },
+      { id: "groups", label: "Groups", icon: UsersRound,
+        description: "Group users to control who can open proxied services.",
+        tooltip: "Create groups and assign members", Component: GroupsPanel },
       { id: "workstations", label: "Workstations", icon: MonitorSmartphone,
         description: "Enroll and manage physical Linux machines.",
         tooltip: "Stream physical workstations via the Styx agent", Component: WorkstationsPanel },

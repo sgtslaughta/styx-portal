@@ -2,10 +2,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/api/client";
-import { Users, Copy, Trash2, Check, ShieldCheck, ShieldOff, Lock, Unlock, RefreshCw, AlertTriangle } from "lucide-react";
+import { Users, Copy, Trash2, Check, ShieldCheck, ShieldOff, Lock, Unlock, RefreshCw, AlertTriangle, UsersRound } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { UserGroupsDialog } from "@/components/system/user-groups-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,6 +51,7 @@ export function UsersPanel() {
   const [resetPasswordDialog, setResetPasswordDialog] = useState<{ userId: string; tempPassword: string } | null>(null);
   const [resetPasswordCopied, setResetPasswordCopied] = useState(false);
   const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<string | null>(null);
+  const [groupsFor, setGroupsFor] = useState<{ id: string; username: string } | null>(null);
 
   const invite = useMutation({
     mutationFn: () => api.createInvite({ role: "user" }),
@@ -286,6 +288,10 @@ export function UsersPanel() {
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
+                                  <DropdownMenuItem onClick={() => setGroupsFor({ id: u.id, username: u.username })}>
+                                    <UsersRound className="h-4 w-4 mr-2" />
+                                    Groups…
+                                  </DropdownMenuItem>
                                   <DropdownMenuItem
                                     onClick={() => resetPassword.mutate(u.id)}
                                     disabled={resetPassword.isPending}
@@ -330,6 +336,13 @@ export function UsersPanel() {
           </div>
         </CardContent>
       </Card>
+
+      <UserGroupsDialog
+        open={groupsFor !== null}
+        userId={groupsFor?.id ?? ""}
+        username={groupsFor?.username ?? ""}
+        onOpenChange={(o) => { if (!o) setGroupsFor(null); }}
+      />
 
       {/* Reset password dialog */}
       <Dialog open={!!resetPasswordDialog} onOpenChange={(open) => !open && setResetPasswordDialog(null)}>
