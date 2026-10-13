@@ -41,15 +41,23 @@ def monitors_config(state, scale):
     return (serial, 1, out, {}) if out and changed else None
 
 
+def _at_scale(state, scale) -> bool:
+    return all(float(lm[2]) == float(scale) for lm in state[2])
+
+
 def apply_scale(bus, scale, log) -> None:
-    """Set the logical scale on the live monitor(s); a rejection is logged, never raised."""
-    import dbus
-    dc = dbus.Interface(bus.get_object("org.gnome.Mutter.DisplayConfig",
-                                       "/org/gnome/Mutter/DisplayConfig"),
-                        "org.gnome.Mutter.DisplayConfig")
+    """Set the logical scale on the live monitor(s). Never raises: it runs as a
+    GLib timeout callback, and a raising callback would remove its source."""
     try:
-        cfg = monitors_config(dc.GetCurrentState(), scale)
+        import dbus
+        dc = dbus.Interface(bus.get_object("org.gnome.Mutter.DisplayConfig",
+                                           "/org/gnome/Mutter/DisplayConfig"),
+                            "org.gnome.Mutter.DisplayConfig")
+        state = dc.GetCurrentState()
+        cfg = monitors_config(state, scale)
         if cfg is None:
+            if not _at_scale(state, scale):
+                log("scale", scale, "unsupported by the current monitor mode")
             return
         serial, method, lms, props = cfg
         lm = dbus.Array([dbus.Struct((dbus.Int32(x), dbus.Int32(y), dbus.Double(sc),
@@ -61,5 +69,6 @@ def apply_scale(bus, scale, log) -> None:
         dc.ApplyMonitorsConfig(dbus.UInt32(serial), dbus.UInt32(method), lm,
                                dbus.Dictionary({}, signature="sv"))
         log("scale", scale, "applied")
-    except dbus.exceptions.DBusException as e:
-        log("scale", scale, "rejected:", e.get_dbus_message())
+    except Exception as e:
+        get = getattr(e, "get_dbus_message", None)
+        log("scale", scale, "failed:", get() if get else e)
