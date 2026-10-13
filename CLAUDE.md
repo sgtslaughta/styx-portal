@@ -24,6 +24,7 @@ backend/           FastAPI application
       groups.py    Group CRUD + per-user membership
       services.py  Proxied services CRUD, presets, docker discovery
       services_auth.py  forwardAuth (/internal), cookie-root enter/exit
+      service_mounts.py Managed-path plan/apply/job API (admin, consent)
     services/
       docker_manager.py    Docker API wrapper
       traefik_labels.py    Label generation for Traefik routing
@@ -33,6 +34,10 @@ backend/           FastAPI application
       route_writer.py      Traefik dynamic config (extended for workstation routes)
       service_routes.py    Traefik routers/middlewares for proxied services
       service_health.py    Proxied service health loop (HTTP / docker state)
+      mount_edit.py        Managed mount edits: xml/json/ini config writes, backups
+      mount_jobs.py        Mount apply job runner (steps, verify, restart, rollback)
+  security/
+    page_style.py      Styx-styled HTML pages (title escaped; body trusted)
   tests/           pytest test suite
 docker-compose.yml Infrastructure services
 traefik/           Traefik static config

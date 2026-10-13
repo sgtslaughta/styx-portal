@@ -86,7 +86,8 @@ configured by Styx") with **Change** under Advanced (admin override).
 - `config_file`: read/write via Docker archive API (`get_archive` /
   `put_archive`), first existing path wins. Formats: `xml` (xpath to a text
   node, created if missing), `json` (dotted key), `ini` (section.key).
-- `api` method type is reserved in the schema but not implemented (YAGNI;
+- `env` method type is reserved and not implemented; presets with only an env
+  method stay manual. `api` is likewise reserved (YAGNI;
   every SP1 preset is covered by env/config_file).
 - Initial presets with `subpath`: sonarr, radarr, lidarr, prowlarr
   (`/config/config.xml` UrlBase), jellyfin
@@ -127,9 +128,11 @@ Focus = SP1 cookie-root (SP1 §4.2) plus:
 
 - `GET /_styx/open/<slug>` (backend, priority 90): ACL check, sets
   `styx_svc=<slug>`, then 302 to the shell `/_styx/app/<slug>/`.
-  - Requires `Sec-Fetch-Site` in {`same-origin`, `none`}; otherwise renders a
-    confirm page (POST with CSRF) so a cross-site link can't silently swap the
-    user's focused app.
+  - Requires `Sec-Fetch-Site` in {`same-origin`, `none`}; otherwise (cross-site
+    or missing header) renders an unauthenticated confirm page with a same-origin
+    link to `/_styx/open/<slug>`, so a cross-site link can't silently swap the
+    user's focused app. No POST and no CSRF form: `styx_proxy` is
+    `SameSite=Strict`, so the link click is same-origin and carries the cookie.
   - Response carries `Clear-Site-Data: "cache"` (not `"storage"`: app logins
     in localStorage survive).
 - The shell unregisters service workers registered at scope `/` before loading
@@ -268,7 +271,6 @@ Focus = SP1 cookie-root (SP1 §4.2) plus:
 | GET | `/api/services/{id}/mount/jobs/latest` | admin; job with steps |
 | GET | `/api/services/focus` | user; `{slug}` of the active focus app (cookie is HttpOnly) |
 | GET | `/_styx/open/{slug}` | user; §4 |
-| POST | `/_styx/open/{slug}` | user; confirm-page submit, CSRF |
 
 Schema additions on `proxied_services`: `mount_managed bool`, `pass_identity
 bool`, `frame_ok bool default true` (Open without overlay = false).
@@ -278,7 +280,8 @@ bool`, `frame_ok bool default true` (Open without overlay = false).
 - Writes into containers only via archive API on the configured container, only
   to preset-declared paths; adopted containers need explicit, audited consent.
 - Backups before every write; auto-rollback.
-- `/_styx/open` cross-site requests need a confirm POST (CSRF-protected).
+- `/_styx/open` cross-site or header-less requests get an unauthenticated
+  confirm page with a same-origin link (no state change until that click).
 - Native-app bypass off by default, preset-declared headers only, red callout.
 - Identity headers stripped from clients always; forwarded only when opted in.
 - Frame: `X-Frame-Options: SAMEORIGIN` forced on service routes (prevents
