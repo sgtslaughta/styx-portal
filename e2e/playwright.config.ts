@@ -11,6 +11,7 @@ export default defineConfig({
   use: {
     baseURL: process.env.E2E_BASE_URL ?? "http://127.0.0.1:18080",
     viewport: { width: 1440, height: 900 },
+    reducedMotion: "reduce", // screenshots are never caught mid-fade
     trace: "retain-on-failure",
   },
   // services.spec bootstraps the admin on a fresh DB, so it must run first; mounts.spec

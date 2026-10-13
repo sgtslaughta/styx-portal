@@ -5,6 +5,7 @@ import { BrowserRouter, Routes, Route } from "react-router";
 import { Toaster } from "sonner";
 import { MotionConfig } from "framer-motion";
 import App from "./App";
+import { applyReducedMotion } from "@/lib/motion";
 import { AuthProvider } from "@/auth/AuthContext";
 import { ProtectedRoute } from "@/auth/ProtectedRoute";
 import { ThemeProvider } from "@/theme/ThemeProvider";
@@ -31,6 +32,8 @@ function ThemedToaster() {
   }, []);
   return <Toaster theme={isDark ? "dark" : "light"} />;
 }
+
+applyReducedMotion();
 
 const queryClient = new QueryClient({
   defaultOptions: {
