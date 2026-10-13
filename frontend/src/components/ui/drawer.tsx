@@ -25,7 +25,7 @@ function DrawerOverlay({ className, ...props }: React.ComponentProps<typeof Dial
 }
 
 const drawerVariants = cva(
-  "fixed z-50 flex flex-col bg-background shadow-lg data-[state=open]:animate-in data-[state=closed]:animate-out",
+  "fixed z-50 flex flex-col bg-background dark:bg-card shadow-lg data-[state=open]:animate-in data-[state=closed]:animate-out",
   {
     variants: {
       side: {
@@ -80,7 +80,7 @@ function DrawerFooter({ className, ...props }: React.ComponentProps<"div">) {
 }
 
 function DrawerTitle({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Title>) {
-  return <DialogPrimitive.Title data-slot="drawer-title" className={cn("text-base font-semibold", className)} {...props} />;
+  return <DialogPrimitive.Title data-slot="drawer-title" className={cn("text-lg leading-tight font-semibold", className)} {...props} />;
 }
 
 function DrawerDescription({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Description>) {

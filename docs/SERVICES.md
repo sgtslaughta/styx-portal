@@ -102,7 +102,7 @@ Every service has a mount mode. The preset picks it; admins can change it under
 
 The service form shows the choice as a line under **Access**, for example
 "Path /sonarr, configured by Styx", "Path /nextcloud, set the app's base path
-yourself" or "Focus: opens on its own". Styx can only configure docker-local
+yourself" or "Focus: opens full screen". Styx can only configure docker-local
 services whose preset has a `subpath` block. In the database, focus is still
 `cookie-root`.
 

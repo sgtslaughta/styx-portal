@@ -32,5 +32,5 @@ it("open without overlay flips frame_ok", () => {
 });
 it("focus mode line", () => {
   render(<Harness f={{ mount_mode: "cookie-root" }} />);
-  expect(screen.getByText("Focus: opens on its own")).toBeInTheDocument();
+  expect(screen.getByText("Focus: opens full screen")).toBeInTheDocument();
 });

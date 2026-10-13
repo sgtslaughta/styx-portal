@@ -63,7 +63,7 @@ export function RiskCallout({ title, children, details, footer, tone = "danger",
       <AlertTriangle className={cn("mt-px h-4 w-4 shrink-0", danger ? "text-destructive" : "text-warning")} aria-hidden />
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-          {title && <p className="text-[13px] font-semibold leading-snug">{title}</p>}
+          {title && <p className="text-sm font-semibold leading-snug">{title}</p>}
           <div className="ml-auto flex gap-x-3">
             {details && (
               <button type="button" className={linkCls} aria-expanded={open} aria-controls={detailsId}
@@ -74,7 +74,7 @@ export function RiskCallout({ title, children, details, footer, tone = "danger",
             </a>
           </div>
         </div>
-        <p className="text-foreground/85">{children}</p>
+        <p className="max-w-[68ch] text-foreground/85">{children}</p>
         {details && open && <p id={detailsId} className="text-muted-foreground">{details}</p>}
         {footer}
       </div>

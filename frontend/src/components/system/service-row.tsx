@@ -51,11 +51,11 @@ export function ServiceRow({ s, busy, lastMount, onToggle, onEdit, onDelete }: {
   const label = s.health_status === "unknown" ? "Not checked yet" : s.health_status === "healthy" ? "Healthy" : "Unhealthy";
   const target = s.kind === "url" ? s.upstream_url : `${s.container}:${s.container_port}`;
   return (
-    <li className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-3 sm:items-center">
+    <li className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-3">
       <Tooltip>
         <TooltipTrigger asChild>
           <span tabIndex={0} role="img" aria-label={`Health: ${s.health_status}`}
-            className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-ring sm:mt-0">
+            className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-ring">
             <span className={cn("h-2.5 w-2.5 rounded-full", DOT[s.health_status])} />
           </span>
         </TooltipTrigger>
@@ -79,7 +79,7 @@ export function ServiceRow({ s, busy, lastMount, onToggle, onEdit, onDelete }: {
           )}
         </div>
       </div>
-      <div className="flex shrink-0 flex-col-reverse items-end gap-1 sm:flex-row sm:items-center">
+      <div className="flex shrink-0 flex-col-reverse items-end gap-1 sm:flex-row sm:items-center sm:self-center">
         <Switch size="sm" checked={s.enabled} disabled={busy} aria-label={`Enable ${s.name}`} title={s.enabled ? "Enabled" : "Disabled"}
           className="sm:mr-1" onCheckedChange={onToggle} />
         <div className="flex">

@@ -187,7 +187,7 @@ export function InstanceDetailPane({ instanceId }: InstanceDetailPaneProps) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
         <p>No instance selected.</p>
-        <p>Pick one from the list, or launch a new one from the Template Gallery.</p>
+        <p>Pick one from the list, or launch a new one from the template gallery.</p>
       </div>
     );
   }

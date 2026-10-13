@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { SettingsNav } from "./settings-nav";
 import { visibleCategories, type SettingsSection } from "./nav-config";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 
 export function SettingsLayout() {
@@ -35,9 +36,10 @@ export function SettingsLayout() {
                 <Button
                   key={s.id}
                   onClick={() => setActiveId(s.id)}
-                  variant={isActive ? "default" : "outline"}
+                  variant="outline"
                   size="sm"
-                  className="flex shrink-0 items-center gap-1.5 whitespace-nowrap"
+                  aria-current={isActive ? "page" : undefined}
+                  className={cn("flex shrink-0 items-center gap-1.5 whitespace-nowrap", isActive && "border-primary/40 bg-primary/15 text-foreground dark:border-primary/40 dark:bg-primary/15")}
                 >
                   <Icon className="h-4 w-4" />
                   {s.label}

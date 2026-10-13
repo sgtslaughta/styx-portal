@@ -22,9 +22,9 @@ function Tile({ s, focused }: { s: ServiceTile; focused: boolean }) {
   const href = shellHref(s);
   // Unhealthy tiles stay clickable: health is advisory, the app may still work.
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex w-full items-stretch gap-2">
       <a href={href} className={cn(tileCls, focused && "border-obol-foreground dark:border-obol")} aria-label={`Open ${s.name}`} aria-current={focused ? "true" : undefined} title={href}>
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-base leading-none text-primary" aria-hidden>
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-base leading-none text-primary" aria-hidden>
           {s.icon ?? <Link2 className="h-3.5 w-3.5" />}
         </span>
         <span className="min-w-0 flex-1">
@@ -37,7 +37,7 @@ function Tile({ s, focused }: { s: ServiceTile; focused: boolean }) {
         </span>
       </a>
       {focused && (
-        <Button asChild variant="outline" size="sm">
+        <Button asChild variant="outline" size="sm" className="h-auto self-stretch">
           <a href="/_styx/exit?next=/" aria-label={`Exit ${s.name}`}>Exit</a>
         </Button>
       )}
@@ -92,7 +92,7 @@ export function ServiceList({ onOpenSettings }: { onOpenSettings?: () => void })
         </div>
       )}
       <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {tiles.map((s) => <li key={s.id}><Tile s={s} focused={!!focus?.slug && focus.slug === s.slug} /></li>)}
+        {tiles.map((s) => <li key={s.id} className="flex"><Tile s={s} focused={!!focus?.slug && focus.slug === s.slug} /></li>)}
       </ul>
     </section>
   );

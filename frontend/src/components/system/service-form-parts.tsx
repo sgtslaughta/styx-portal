@@ -9,8 +9,8 @@ import { cn } from "@/lib/utils";
 import { BYPASS_PREFIX_ERROR, type FieldErrors } from "./service-validation";
 
 export const selectCls =
-  "h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none dark:bg-background/60 " +
-  "focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 " +
+  "h-9 max-sm:h-11 max-sm:text-base w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none dark:bg-background/60 " +
+  "focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 " +
   "aria-invalid:border-destructive";
 
 export function Field({ id, label, error, hint, className, children }: {
@@ -31,7 +31,7 @@ export function Section({ title, hint, children }: { title: string; hint?: strin
   return (
     <section role="group" aria-labelledby={id} className="space-y-3 border-t border-border pt-5 first:border-0 first:pt-0">
       <div>
-        <h3 id={id} className="text-sm font-semibold">{title}</h3>
+        <h3 id={id} className="text-base font-semibold">{title}</h3>
         {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
       </div>
       {children}

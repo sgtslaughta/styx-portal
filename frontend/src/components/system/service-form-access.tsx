@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ChevronRight } from "lucide-react";
 import type { Group, ProxiedServiceInput, ServicePreset } from "@/api/client";
 import { Switch } from "@/components/ui/switch";
 import { RISK, RISK_DETAIL, RiskCallout } from "@/components/common/risk-callout";
@@ -20,7 +21,7 @@ type Props = {
 };
 
 function mountLine(f: ProxiedServiceInput, preset?: ServicePreset) {
-  if (f.mount_mode === "cookie-root") return "Focus: opens on its own";
+  if (f.mount_mode === "cookie-root") return "Focus: opens full screen";
   if (preset?.subpath) return `Path /${f.slug || "your-slug"}, configured by Styx`;
   return `Path /${f.slug || "your-slug"}, set the app's base path yourself`;
 }
@@ -65,15 +66,15 @@ export function AccessSection({ f, set, preset, groups, errors }: Props) {
       {f.pass_identity && <RiskCallout tone="warning" title="App sees who is signed in">{RISK.passIdentity}</RiskCallout>}
       {f.auth_mode === "app-native" && <RiskCallout title="No Styx login">{RISK.appNative}</RiskCallout>}
 
-      <details className="space-y-3" open={showAdvanced}>
-        <summary className="cursor-pointer text-sm font-medium" onClick={(e) => { e.preventDefault(); setAdvanced(!showAdvanced); }}>Advanced</summary>
+      <details className="group space-y-3" open={showAdvanced}>
+        <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-sm font-medium [&::-webkit-details-marker]:hidden" onClick={(e) => { e.preventDefault(); setAdvanced(!showAdvanced); }}><ChevronRight className="size-4 transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden />Advanced</summary>
         <div className="mt-3 space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <Field id="mount" label="Mount mode">
               <select id="mount" className={selectCls} value={f.mount_mode}
                 onChange={(e) => set("mount_mode", e.target.value as ProxiedServiceInput["mount_mode"])}>
                 <option value="path">Path (/slug)</option>
-                <option value="cookie-root">Focus (opens on its own)</option>
+                <option value="cookie-root">Focus (opens full screen)</option>
               </select>
             </Field>
             <Field id="auth" label="Auth mode">

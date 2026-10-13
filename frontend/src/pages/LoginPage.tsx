@@ -9,7 +9,7 @@ import { PasswordInput } from "@/components/ui/password-input";
 import { LoginBrandPanel } from "@/components/auth/LoginBrandPanel";
 import { friendlyLoginError } from "@/lib/auth-errors";
 import { safeNext } from "@/lib/safe-next";
-import { KeyRound, Loader2 } from "lucide-react";
+import { KeyRound, Loader2, Waves } from "lucide-react";
 
 export function LoginPage() {
   const [username, setU] = useState("");
@@ -105,9 +105,10 @@ export function LoginPage() {
       <LoginBrandPanel />
       <div className="styx-auth-form flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm space-y-6">
+          <div className="flex items-center justify-center gap-2 md:hidden"><Waves className="h-5 w-5 text-primary" aria-hidden /><span className="text-base font-extrabold tracking-wider">STYX PORTAL</span></div>
           <div className="space-y-1 text-center">
-            <h1 className="text-2xl font-bold">Sign in</h1>
-            <p className="text-sm text-muted-foreground">Welcome back. Please sign in to continue.</p>
+            <h1 className="text-2xl font-semibold">Sign in</h1>
+            <p className="text-sm text-muted-foreground">Welcome back.</p>
           </div>
 
           {providers.length > 0 && (
@@ -134,7 +135,7 @@ export function LoginPage() {
 
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-2">
-              <label htmlFor="username" className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <label htmlFor="username" className="block text-sm font-medium">
                 Email or username
               </label>
               <Input
@@ -147,7 +148,7 @@ export function LoginPage() {
               />
             </div>
             <div className="space-y-2">
-              <label htmlFor="password" className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <label htmlFor="password" className="block text-sm font-medium">
                 Password
               </label>
               <PasswordInput
