@@ -907,8 +907,9 @@ service. Empty allowed-groups means every logged-in user. Admins can always open
 
 ## Discovery
 "Add from container" lists running containers on the Styx host. Exposing one attaches it
-to the `styx-portal` network; if that fails Styx falls back to `host.docker.internal:<port>`
-and shows a *fallback* badge (the port must then be published on the host).
+to the `styx-services` network (shared only with Traefik, never the backend); if that fails
+Styx falls back to `host.docker.internal:<port>` and shows a *fallback* badge (the port must
+then be published on the host). Health of attached containers shows as unknown.
 
 ## Security model
 Every service is reachable from the internet through Cloudflare → Traefik → Styx.
@@ -921,6 +922,13 @@ Every service is reachable from the internet through Cloudflare → Traefik → 
 - **Verify upstream TLS off** means traffic between Styx and that host can be intercepted
   on your LAN. Use it only for self-signed appliances such as Unraid.
 - The routing cookie is a selector, not a credential: access is checked on every request.
+- Access checks run on `/internal/services/<slug>/auth-check`, a path no Traefik router
+  exposes. A valid refresh token keeps service access alive past the 15-minute access token.
+- Client IPs (rate limits, bans, audit) come from forwarded headers only when the peer is in
+  `TRUSTED_PROXY_CIDRS` (default: loopback + docker bridge pools).
+- Deleting a group removes it from every service; a service left with no groups is disabled.
+- **Known limitation:** services share the Styx origin, so the browser sends Styx session
+  cookies to them. Only proxy apps you trust with Styx sessions.
 - All service changes are written to the audit log.
 ```
 

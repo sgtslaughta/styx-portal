@@ -159,7 +159,7 @@ All service routers are `Host(<domain>) && ...`, get `ip-ban-gate` and
   `verify_tls=false` emits a per-service `serversTransport` with
   `insecureSkipVerify: true`.
 - `docker-local` kind: on create/enable, backend connects the container to
-  the `styx-portal` network via docker-proxy; upstream is
+  the `styx-services` network (Traefik-only, §10.1) via docker-proxy; upstream is
   `http://<container>:<container_port>`. If the connect fails (e.g.
   `network_mode: host`), fall back to `http://host.docker.internal:<published
   port>` and record the fallback in the service row.
@@ -266,11 +266,49 @@ Every write triggers `route_writer.write_routes` (extend signature with
   scanners but is not authentication.
 - The routing cookie is a selector, never a credential; ACL is enforced on
   every request by `auth-check`, not at `enter` time only.
-- `auth-check` is only reachable on the internal docker network (Traefik →
-  backend); it is not routed publicly.
+- `auth-check` lives at `/internal/services/{slug}/auth-check`. No Traefik
+  router matches `/internal` (asserted by a route_writer test), so only
+  Traefik's forwardAuth, over the docker network, can reach it.
 - Secrets introduced later (SSH keys, Authentik token) use the existing
   Fernet pattern. SP1 stores no new secrets.
 - Admin-only CRUD, every mutation audited.
+
+### 10.1 Security model (post-review hardening, 2026-10-12)
+
+- **Network isolation.** `docker-local` containers are attached to a
+  dedicated bridge `styx-services` (setting `SERVICES_NETWORK`, created on
+  demand, defined in compose). Only Traefik joins it; backend and frontend
+  do not, so a proxied app cannot reach Styx's API or the docker
+  socket-proxy directly. Updating a service to another container or kind,
+  or deleting it, disconnects the old container unless another service row
+  still references it. The backend cannot probe attached containers, so
+  their health shows `unknown` (fallback upstreams are still probed).
+- **Client IP trust.** `CF-Connecting-IP` / `X-Forwarded-For` are honoured
+  only when the socket peer is in `TRUSTED_PROXY_CIDRS` (default
+  `127.0.0.1/32,::1/128,172.16.0.0/12,192.168.0.0/16`, docker's default
+  bridge pools; widen it if `daemon.json` sets other address pools).
+  `CF-Connecting-IP` is ignored in `DEPLOY_MODE=direct`, where no Cloudflare
+  edge sets it. Rate limits, IP bans and the audit log use this IP.
+- **auth-check** is internal-only (see above). It accepts a valid access
+  token, or, when that is missing/expired, a valid unrevoked refresh token
+  (read-only check, no rotation), so path-mode apps do not bounce to
+  `/login` every 15 minutes.
+- **Routing.** Path rules are `Path(/slug) || PathPrefix(/slug/)`; a slug
+  never captures a sibling prefix (`a` vs `/assets`, `son` vs `sonarr`).
+  Bypass rules match on segment boundaries against the normalised path;
+  any `..` segment, backslash or encoded `.`/`/`/`\` (raw or decoded)
+  disqualifies the request from bypass.
+- **Cookie-root login** redirects via `/_styx/exit?next=/login?next=...`
+  because `/login` routes to the app while `styx_svc` is set. `exit`
+  accepts only a same-site absolute path as `next`.
+- **Groups.** Deleting a group removes its name from every service's
+  `allowed_groups`; a service whose list becomes empty is disabled (empty
+  means "any user"). Unknown group names are rejected (422).
+- **Member listing** returns tile fields only (no upstream or container).
+- **Known limitation: same origin.** Proxied apps share the Styx origin, so
+  browsers send Styx's `access_token`/`refresh_token` cookies to them.
+  Stock Traefik cannot strip individual cookies, so only proxy apps you
+  trust with Styx sessions. A fix is an architectural decision (pending).
 
 ## 11. Testing
 

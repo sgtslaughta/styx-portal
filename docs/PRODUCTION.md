@@ -71,6 +71,8 @@ All of the following are already implemented:
 - **Per-user instance networks:** Each user gets an isolated Docker bridge network (`styx-u-{user_id}`). Instance containers are confined to their user's network.
 - **Security headers:** CSP, HSTS (direct mode only), X-Frame-Options, X-Content-Type-Options all enforced.
 - **Audit log:** All auth, role, instance, and provider changes are logged to the audit table with timestamp, user, IP, and action. Accessible at `GET /api/audit` (admin).
+- **Trusted proxies:** The backend believes `CF-Connecting-IP` / `X-Forwarded-For` only from peers in `TRUSTED_PROXY_CIDRS` (default `127.0.0.1/32,::1/128,172.16.0.0/12,192.168.0.0/16`, docker's default bridge pools). Widen it only if your docker `daemon.json` uses other address pools. `CF-Connecting-IP` is ignored in direct mode.
+- **Proxied-service network:** Containers exposed as services join the `styx-services` network, shared only with Traefik (not the backend). forwardAuth checks run on `/internal/...`, a path no Traefik router exposes.
 
 ## Health Monitoring
 
