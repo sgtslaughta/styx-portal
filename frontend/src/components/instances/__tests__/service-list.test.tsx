@@ -42,13 +42,13 @@ describe("ServiceList", () => {
     renderList();
     expect(await screen.findByRole("link", { name: /open sonarr/i })).toHaveAttribute("href", "/_styx/app/sonarr/");
     expect(screen.getByRole("link", { name: /open immich/i })).toHaveAttribute("href", "/_styx/open/immich");
-    expect(screen.getByText("Opens on its own")).toBeInTheDocument();
+    expect(screen.getByText("Opens full screen")).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: "Exit Immich" })).toHaveAttribute("href", "/_styx/exit?next=/");
     expect(screen.queryByRole("link", { name: "Exit Sonarr" })).toBeNull();
-    expect(screen.getByRole("link", { name: "Exit Immich" }).parentElement).toHaveClass("ring-obol");
+    expect(screen.getByRole("link", { name: "Open Immich" })).toHaveClass("border-obol-foreground");
     expect(screen.getByRole("link", { name: "Open Immich" })).toHaveAttribute("aria-current", "true");
     expect(screen.getByRole("link", { name: "Open Sonarr" })).not.toHaveAttribute("aria-current");
-    expect(screen.getByRole("link", { name: "Exit Immich" })).toHaveClass("min-h-11");
+    expect(screen.getByRole("link", { name: "Exit Immich" })).toHaveClass("max-sm:h-11");
   });
 
   test("frame_ok false path tile opens directly; unknown focus slug marks nothing", async () => {

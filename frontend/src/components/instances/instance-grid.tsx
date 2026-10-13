@@ -174,8 +174,8 @@ export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: 
     return (
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", stiffness: 300, damping: 25 }} className="flex flex-col items-center justify-center py-20 text-center">
         <p className="mb-1 text-lg font-medium text-foreground">No instances yet</p>
-        <p className="mb-4 text-sm text-muted-foreground">Browse the Template Gallery to launch one.</p>
-        <button onClick={onLaunch} className="text-sm font-medium text-primary hover:underline">Go to Template Gallery &rarr;</button>
+        <p className="mb-4 text-sm text-muted-foreground">Browse the template gallery to launch one.</p>
+        <button onClick={onLaunch} className="text-sm font-medium text-primary hover:underline">Go to template gallery &rarr;</button>
       </motion.div>
     );
   }
