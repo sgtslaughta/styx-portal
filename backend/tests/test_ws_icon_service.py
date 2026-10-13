@@ -53,6 +53,13 @@ def test_bad_images_rejected(value):
     b'<svg xmlns="http://www.w3.org/2000/svg" xmlns:x="http://www.w3.org/1999/xlink"><a x:href="javascript:alert(1)"/></svg>',
     b'<svg xmlns="http://www.w3.org/2000/svg"><use href="data:image/svg+xml,%3Csvg/%3E"/></svg>',
     b'<svg xmlns="http://www.w3.org/2000/svg"><image href="data:image/svg+xml;base64,AAAA"/></svg>',
+    b'<svg xmlns="http://www.w3.org/2000/svg"><style><desc/>@import url(http://e/a.css);</style></svg>',
+    b'<svg xmlns="http://www.w3.org/2000/svg"><style>rect{fill:red}</style></svg>',
+    b'<svg xmlns="http://www.w3.org/2000/svg"><rect fill="\\75rl(http://e/a)"/></svg>',
+    b'<svg xmlns="http://www.w3.org/2000/svg"><rect filter="\\75 rl(http://e/a)"/></svg>',
+    b'<svg xmlns="http://www.w3.org/2000/svg"><rect style="background:image-set(\'http://e\' 1x)"/></svg>',
+    b'<svg xmlns="http://www.w3.org/2000/svg"><rect fill="url(#a) url(http://e/b)"/></svg>',
+    b'<svg xmlns="http://www.w3.org/2000/svg" xml:base="http://e/"/>',
     b'<html/>', b'<svg', b'\xff\xfe<svg/>',
 ])
 def test_bad_svg_rejected(svg):

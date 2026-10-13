@@ -44,7 +44,7 @@ def sync(cfg: dict, install: Path, etag: str, fetch=api_bytes) -> bool:
         if ctype not in TYPES or not body or len(body) > MAX_BYTES:
             raise ValueError(f"unusable icon response ({ctype}, {len(body)} bytes)")
         install.mkdir(parents=True, exist_ok=True)
-        _put(install / "favicon.type", ctype.encode())   # type first: bytes never meet a stale type
+        _put(install / "favicon.type", ctype.encode())   # type first: a crash between the writes leaves new type + old bytes (harmless under nosniff + CSP; next sync fixes)
         _put(install / "favicon", body)
         _put(install / "favicon.etag", (got or etag).encode())   # last: marks complete
         return True
