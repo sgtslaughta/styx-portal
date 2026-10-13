@@ -138,22 +138,6 @@ async def strip_cookies(request: Request, slug: str | None = None):
     return Response(status_code=200, headers=clean_cookie_header(request))
 
 
-@router.post("/{slug}/enter")
-async def enter_service(slug: str, user: User = Depends(get_current_user),
-                        session: AsyncSession = Depends(get_session)):
-    svc = await get_service_by_slug(session, slug)
-    if svc is None or not svc.enabled:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown service")
-    if svc.mount_mode != "cookie-root":
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Service is not cookie-root mounted")
-    if not await user_may_open(session, user, svc):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this service")
-    resp = Response(status_code=200)
-    resp.set_cookie(COOKIE_NAME, svc.slug, path="/", httponly=True,
-                    secure=_settings.COOKIE_SECURE, samesite="lax")
-    return resp
-
-
 @router.get("/focus")
 async def current_focus(request: Request, user: User = Depends(get_current_user)):
     return {"slug": request.cookies.get(COOKIE_NAME)}
