@@ -13,7 +13,7 @@ export function MountConsentDialog({ open, appName, changes, backupHint, onConfi
           <DialogDescription>Styx didn't create this container, so it asks first.</DialogDescription>
         </DialogHeader>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+          <table className="hidden w-full text-left text-sm sm:table">
             <thead>
               <tr className="text-muted-foreground">
                 <th scope="col" className="py-1 pr-3 font-medium">File</th>
@@ -33,6 +33,15 @@ export function MountConsentDialog({ open, appName, changes, backupHint, onConfi
               ))}
             </tbody>
           </table>
+          <dl className="space-y-3 sm:hidden">
+            {changes.map((c) => (
+              <div key={`${c.target}:${c.key}`} className="rounded-md border border-border p-3 font-mono text-xs">
+                <dt className="break-all"><span className="text-muted-foreground">{c.target}</span> {c.key}</dt>
+                <dd className="mt-1 break-all"><span className="text-muted-foreground">Now</span> {c.old || "(not set)"}</dd>
+                <dd className="break-all"><span className="text-muted-foreground">After</span> {c.new}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
         <p className="text-sm text-muted-foreground">
           Styx backs up the file first and restores it if {appName} doesn't come back.{backupHint ? ` ${backupHint}` : ""}
