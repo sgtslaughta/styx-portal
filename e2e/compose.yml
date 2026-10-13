@@ -69,7 +69,9 @@ services:
       DOCKER_NETWORK: styx-e2e-edge
       SERVICES_NETWORK: styx-e2e-services
       TRAEFIK_CONTAINER: styx-e2e-traefik-1
-      COMPOSE_PROJECT: styx-e2e
+      # whoami lives in this same project but must stay discoverable; the shim's
+      # label filter already hides everything else. Non-matching sentinel = hide nothing.
+      COMPOSE_PROJECT: e2e-no-own-project-filter
       TEMPLATES_DIR: /app/templates
       JWT_SECRET: e2e-only-jwt-secret-not-for-production-0123456789abcdef
       COOKIE_SECURE: "false"

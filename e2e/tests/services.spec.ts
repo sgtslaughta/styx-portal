@@ -161,7 +161,9 @@ test("d. non-member: no tile, direct access denied", async () => {
   await expect(p.getByRole("link", { name: "Open Whoami" })).toHaveCount(0);
   const res = await p.goto("/whoami/");
   expect(res!.status()).toBe(403);
-  expect(isWhoami(await res!.text())).toBe(false);
+  const body = await res!.text();
+  expect(isWhoami(body)).toBe(false);
+  expect(body).toContain("No access"); // Styx page, not raw JSON
 });
 
 test("e. anonymous is sent to login with a safe next, and lands back on the app", async ({ browser }) => {
@@ -183,7 +185,7 @@ test("e. anonymous is sent to login with a safe next, and lands back on the app"
 });
 
 test("f. internal auth-check endpoints are not routed by Traefik", async () => {
-  for (const path of ["/internal/services/whoami/auth-check", "/internal/workstations/auth-check",
+  for (const path of ["/internal/services/whoami/auth-check", "/internal/workstations/x/auth-check", "/internal/instances/x/auth-check",
     "/internal/strip", "/internal/services/whoami/strip"]) {
     const res = await getNoRedirect(member.ctx.request, path, { "X-Forwarded-Uri": "/whoami/" });
     const body = await res.text();
