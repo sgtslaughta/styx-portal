@@ -1,7 +1,7 @@
 # backend/app/services/service_routes.py
 """Traefik routers/middlewares for proxied services (spec §4).
 
-Mounted on the single Styx hostname. `path` services get PathPrefix(/slug);
+Mounted on the single Styx hostname. `path` services get Path(/slug) || PathPrefix(/slug/);
 `cookie-root` services take over `/` for browsers carrying the styx_svc cookie.
 """
 
@@ -37,7 +37,8 @@ def add_service_routes(config: dict, middlewares: dict, services: list[dict],
                     f"`(^|; ){COOKIE_NAME}={slug}(;|$)`)")
             priority = 40
         else:
-            rule = f"Host(`{domain}`) && PathPrefix(`/{slug}`)"
+            # Segment boundary: slug "a" must not capture /assets, "son" not /sonarr.
+            rule = f"Host(`{domain}`) && (Path(`/{slug}`) || PathPrefix(`/{slug}/`))"
             priority = 60
         routers[rid] = {"rule": rule, "service": rid, "priority": priority,
                         "middlewares": mws, **transport}

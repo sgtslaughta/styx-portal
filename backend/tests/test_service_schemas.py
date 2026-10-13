@@ -51,3 +51,11 @@ def test_bypass_prefix_must_start_with_slash():
     with pytest.raises(ValidationError):
         ProxiedServiceCreate(**_base(auth_mode="sso-with-bypass",
                                      bypass_rules=[{"path_prefix": "api"}]))
+
+
+@pytest.mark.parametrize("slug", ["api", "i", "w", "assets", "login", "setup", "connecting",
+                                  "change-password", "accept-invite", "application", "static",
+                                  "media", "flows", "ws", "source"])
+def test_every_reserved_segment_rejected(slug):
+    with pytest.raises(ValidationError):
+        ProxiedServiceCreate(**_base(slug=slug))

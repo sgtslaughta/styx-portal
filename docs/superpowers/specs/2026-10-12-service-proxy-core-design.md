@@ -115,7 +115,7 @@ All service routers are `Host(<domain>) && ...`, get `ip-ban-gate` and
 
 ### 4.1 `path` mode
 
-- Rule: `PathPrefix(`/<slug>`)`, priority 60. No StripPrefix: the app is
+- Rule: `Path(`/<slug>`) || PathPrefix(`/<slug>/`)` (segment boundary), priority 60. No StripPrefix: the app is
   configured with its base URL and expects the prefix.
 
 ### 4.2 `cookie-root` mode

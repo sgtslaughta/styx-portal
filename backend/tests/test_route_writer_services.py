@@ -12,7 +12,7 @@ def _svc(**kw):
 def test_path_mode_router():
     cfg = build_routes_config([], "example.com", "tunnel", services=[_svc()])
     r = cfg["http"]["routers"]["svc-sonarr"]
-    assert r["rule"] == "Host(`example.com`) && PathPrefix(`/sonarr`)"
+    assert r["rule"] == "Host(`example.com`) && (Path(`/sonarr`) || PathPrefix(`/sonarr/`))"
     assert r["priority"] == 60
     for mw in ("ip-ban-gate", "styx-ratelimit", "styx-strip-identity", "svc-auth-sonarr"):
         assert mw in r["middlewares"]
@@ -104,3 +104,36 @@ def test_services_not_reachable_via_lan_ip(tmp_path, monkeypatch):
     for name, r in routers.items():
         if name.startswith("svc-"):
             assert r["rule"].startswith("Host(`example.com`)")
+
+
+def _path_matches(rule: str, path: str) -> bool:
+    """Evaluate the Path/PathPrefix terms of a Traefik rule (OR-ed) against a path."""
+    import re
+    exact = re.findall(r"Path\(`([^`]*)`\)", rule)
+    prefixes = re.findall(r"PathPrefix\(`([^`]*)`\)", rule)
+    return path in exact or any(path.startswith(p) for p in prefixes)
+
+
+def test_path_rule_has_segment_boundary():
+    cfg = build_routes_config([], "example.com", "tunnel", services=[_svc(slug="a")])
+    rule = cfg["http"]["routers"]["svc-a"]["rule"]
+    assert rule == "Host(`example.com`) && (Path(`/a`) || PathPrefix(`/a/`))"
+    assert _path_matches(rule, "/a") and _path_matches(rule, "/a/x")
+    for p in ("/assets/x", "/accept-invite/t", "/ab"):
+        assert not _path_matches(rule, p)
+
+
+def test_log_slug_does_not_capture_login():
+    cfg = build_routes_config([], "example.com", "tunnel", services=[_svc(slug="log")])
+    assert not _path_matches(cfg["http"]["routers"]["svc-log"]["rule"], "/login")
+
+
+def test_prefix_slugs_are_disjoint():
+    cfg = build_routes_config([], "example.com", "tunnel",
+                              services=[_svc(slug="son"), _svc(slug="sonarr")])
+    son = cfg["http"]["routers"]["svc-son"]["rule"]
+    sonarr = cfg["http"]["routers"]["svc-sonarr"]["rule"]
+    for p in ("/sonarr", "/sonarr/", "/sonarr/api"):
+        assert _path_matches(sonarr, p) and not _path_matches(son, p)
+    for p in ("/son", "/son/x"):
+        assert _path_matches(son, p) and not _path_matches(sonarr, p)
