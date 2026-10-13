@@ -269,12 +269,13 @@ def build_routes_config(instances: list[dict], domain: str,
 
 def write_routes(instances: list[dict], domain: str | None = None,
                  workstations: list[dict] | None = None,
-                 services: list[dict] | None = None):
+                 services: list[dict] | None = None, strict: bool = False):
     """Render the Traefik dynamic config to the file provider directory.
 
     A PermissionError here means the shared traefik-dynamic volume is not
     writable by the (non-root) backend user — log and continue rather than
     crash-looping startup; routing degrades but the portal stays up.
+    strict=True re-raises so an admin action can report the failure.
     """
     domain = domain or _settings.DOMAIN
     out_dir = Path(_settings.TRAEFIK_DYNAMIC_DIR)
@@ -289,9 +290,11 @@ def write_routes(instances: list[dict], domain: str | None = None,
             "user. Instance routing will not update. Fix volume ownership "
             "(chown 1000:1000) and restart.", out_dir,
         )
+        if strict:
+            raise
 
 
-async def refresh_routes_from_db(session):
+async def refresh_routes_from_db(session, strict: bool = False):
     """Query running/idle instances and (re)write the Traefik routes file."""
     from sqlmodel import select
     from app.models import (
@@ -331,4 +334,4 @@ async def refresh_routes_from_db(session):
         "slug": s.slug, "upstream": upstream_base(s), "mount_mode": s.mount_mode,
         "auth_mode": s.auth_mode, "verify_tls": s.verify_tls, "enabled": s.enabled,
     } for s in svc_result.all()]
-    write_routes(data, workstations=ws_data, services=svc_data)
+    write_routes(data, workstations=ws_data, services=svc_data, strict=strict)

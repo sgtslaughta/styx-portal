@@ -27,7 +27,7 @@ def docker_mock():
 def no_route_write(monkeypatch):
     calls = []
 
-    async def fake(session):
+    async def fake(session, **kw):
         calls.append(1)
     monkeypatch.setattr("app.services.route_writer.refresh_routes_from_db", fake)
     return calls

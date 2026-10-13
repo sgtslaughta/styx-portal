@@ -43,8 +43,21 @@ def _out(s: ProxiedService) -> ProxiedServiceOut:
 
 
 async def _refresh(session: AsyncSession) -> None:
+    """Rewrite Traefik routes; a failed write is an error the admin must see.
+
+    The DB change is already committed, but Traefik keeps the old routes (e.g.
+    a disabled app-native service stays reachable), so never swallow it.
+    """
     from app.services import route_writer
-    await route_writer.refresh_routes_from_db(session)
+    try:
+        await route_writer.refresh_routes_from_db(session, strict=True)
+    except OSError as e:
+        log.error("service change saved but Traefik routes not written: %s", e)
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Saved, but Traefik routes could not be written, so routing still uses the "
+            "previous configuration. Make the traefik-dynamic volume writable by the "
+            "backend (chown 1000:1000) and retry.") from e
 
 
 async def _get_or_404(session: AsyncSession, sid: str) -> ProxiedService:

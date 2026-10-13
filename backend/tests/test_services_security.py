@@ -164,3 +164,31 @@ async def test_bypass_rejects_boundary_and_traversal(client, session, uri):
     await _bypass_svc(session)
     r = await client.get(AUTH.format(slug="sonarr"), headers=_fwd(uri))
     assert r.status_code == 302, uri
+
+
+# --- I: route write failures are surfaced to the admin, not swallowed ---
+
+def test_write_routes_strict_raises(tmp_path, monkeypatch):
+    import os
+    from app.services import route_writer
+    if os.geteuid() == 0:
+        pytest.skip("root ignores directory permissions")
+    ro = tmp_path / "ro"
+    ro.mkdir()
+    ro.chmod(0o500)
+    monkeypatch.setattr(route_writer._settings, "TRAEFIK_DYNAMIC_DIR", str(ro))
+    route_writer.write_routes([])                    # startup path: logs, no raise
+    with pytest.raises(PermissionError):
+        route_writer.write_routes([], strict=True)
+
+
+@pytest.mark.asyncio
+async def test_service_write_reports_route_failure(admin_client, monkeypatch):
+    async def boom(session, strict=False):
+        assert strict
+        raise PermissionError("read-only volume")
+    monkeypatch.setattr("app.services.route_writer.refresh_routes_from_db", boom)
+    r = await admin_client.post("/api/services", json={
+        "slug": "sonarr", "name": "S", "kind": "url", "upstream_url": "http://10.0.0.2"})
+    assert r.status_code == 503
+    assert "routes" in r.json()["detail"].lower()
