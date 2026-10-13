@@ -18,6 +18,32 @@ export type Workstation = {
   created_at: string; allowed_user_ids: string[];
   in_use: boolean; in_use_by: string | null; in_use_self: boolean;
 };
+export type BypassRule = { path_prefix: string; required_header: string | null };
+export type ProxiedService = {
+  id: string; slug: string; name: string; icon: string | null;
+  kind: "url" | "docker-local";
+  upstream_url: string | null; container: string | null; container_port: number | null;
+  upstream_fallback: string | null;
+  mount_mode: "path" | "cookie-root";
+  auth_mode: "sso" | "sso-with-bypass" | "app-native";
+  bypass_rules: BypassRule[]; allowed_groups: string[];
+  verify_tls: boolean; health_path: string | null;
+  health_status: "healthy" | "unhealthy" | "unknown"; health_checked_at: string | null;
+  preset_id: string | null; enabled: boolean; created_at: string; updated_at: string;
+};
+export type ProxiedServiceInput = Omit<ProxiedService,
+  "id" | "upstream_fallback" | "health_status" | "health_checked_at" | "created_at" | "updated_at">;
+export type ServicePreset = {
+  id: string; name: string; icon: string | null; default_port: number | null;
+  mount_mode: ProxiedService["mount_mode"]; auth_mode: ProxiedService["auth_mode"];
+  bypass_rules: BypassRule[]; health_path: string | null; verify_tls: boolean;
+  base_url_hint: string | null; warnings: string[];
+};
+export type DiscoveredContainer = {
+  name: string; image: string; ports: number[]; networks: string[]; suggested_preset: string | null;
+};
+export type Group = { id: string; name: string; description: string | null; member_count: number };
+
 export type EnrollToken = {
   token: string; expires_at: string;
   lan_command: string | null; public_command: string;
@@ -100,6 +126,7 @@ async function request<T>(path: string, init?: RequestInit, retried = false): Pr
   const method = (init?.method ?? "GET").toUpperCase();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    "X-Styx-Client": "1",
     ...(init?.headers as Record<string, string>),
   };
   if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
@@ -126,10 +153,29 @@ async function request<T>(path: string, init?: RequestInit, retried = false): Pr
     throw new ApiError(detail.detail || res.statusText, res.status);
   }
   if (res.status === 204) return undefined as T;
-  return res.json();
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 export const api = {
+  listServices: () => request<ProxiedService[]>("/services"),
+  listServicePresets: () => request<ServicePreset[]>("/services/presets"),
+  discoverContainers: () => request<DiscoveredContainer[]>("/services/discover"),
+  createService: (data: ProxiedServiceInput) =>
+    request<ProxiedService>("/services", { method: "POST", body: JSON.stringify(data) }),
+  updateService: (id: string, data: Omit<ProxiedServiceInput, "slug">) =>
+    request<ProxiedService>(`/services/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteService: (id: string) => request<void>(`/services/${id}`, { method: "DELETE" }),
+  setServiceEnabled: (id: string, enabled: boolean) =>
+    request<ProxiedService>(`/services/${id}/${enabled ? "enable" : "disable"}`, { method: "POST" }),
+  enterService: (slug: string) => request<void>(`/services/${slug}/enter`, { method: "POST" }),
+  listGroups: () => request<Group[]>("/groups"),
+  createGroup: (data: { name: string; description?: string | null }) =>
+    request<Group>("/groups", { method: "POST", body: JSON.stringify(data) }),
+  deleteGroup: (id: string) => request<void>(`/groups/${id}`, { method: "DELETE" }),
+  getUserGroups: (userId: string) => request<string[]>(`/users/${userId}/groups`),
+  setUserGroups: (userId: string, groupIds: string[]) =>
+    request<string[]>(`/users/${userId}/groups`, { method: "PUT", body: JSON.stringify({ group_ids: groupIds }) }),
   listInstances: () => request<Instance[]>("/instances"),
   screenshotUrl: (id: string) => `${BASE}/instances/${id}/screenshot`,
   refreshScreenshot: (id: string) =>
