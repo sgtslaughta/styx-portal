@@ -1,5 +1,9 @@
+import io
 import logging
 import os
+import posixpath
+import tarfile
+import time
 from pathlib import Path
 
 import docker
@@ -19,6 +23,21 @@ _EXTRA_DOCKER_ARGS_DENYLIST = {
     "mounts", "volumes_from", "cgroup_parent", "sysctls",
     "restart_policy", "runtime", "device_cgroup_rules",
 }
+
+
+# Untrusted (container-sourced) archive streams: a single file is capped at
+# 1 MiB; the raw tar stream (headers + padding) at 2 MiB.
+_FILE_CAP = 1024 * 1024
+_STREAM_CAP = 2 * 1024 * 1024
+
+
+def _join_capped(stream) -> bytes:
+    buf = io.BytesIO()
+    for chunk in stream:
+        buf.write(chunk)
+        if buf.tell() > _STREAM_CAP:
+            raise ValueError("archive stream exceeds 2 MiB cap")
+    return buf.getvalue()
 
 
 def detect_gpu() -> dict:
@@ -217,11 +236,56 @@ class DockerManager:
 
     def restart_container(self, container_id: str) -> None:
         container = self._client.containers.get(container_id)
-        container.restart()
+        container.restart(timeout=30)
 
     def remove_container(self, container_id: str) -> None:
         container = self._client.containers.get(container_id)
         container.remove(force=True)
+
+    def read_file(self, container: str, path: str) -> tuple[bytes, tarfile.TarInfo] | None:
+        """(bytes, TarInfo) of one regular file inside a container, or None.
+
+        None when the path is missing, is not a single regular-file member
+        (symlink, hardlink, dir, ...), or the archive is empty. Raises
+        ValueError when the stream or the file exceeds the size caps.
+        """
+        try:
+            stream, _ = self._client.containers.get(container).get_archive(path)
+        except docker.errors.NotFound:
+            return None
+        raw = _join_capped(stream)
+        try:
+            tf = tarfile.open(fileobj=io.BytesIO(raw))
+        except tarfile.TarError as e:
+            raise ValueError(f"malformed archive for {path}") from e
+        members = tf.getmembers()
+        if len(members) != 1 or not members[0].isreg():
+            return None
+        info = members[0]
+        if info.size > _FILE_CAP:
+            raise ValueError(f"{path} exceeds 1 MiB cap")
+        return tf.extractfile(info).read(), info
+
+    def write_file(self, container: str, path: str, data: bytes, like: tarfile.TarInfo) -> None:
+        """Replace one file, keeping the original mode/uid/gid of `like`."""
+        info = tarfile.TarInfo(posixpath.basename(path))
+        info.size = len(data)
+        info.mode = like.mode
+        info.uid = like.uid
+        info.gid = like.gid
+        info.mtime = int(time.time())
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w") as tf:
+            tf.addfile(info, io.BytesIO(data))
+        self._client.containers.get(container).put_archive(
+            posixpath.dirname(path), buf.getvalue())
+
+    def container_labels(self, container: str) -> dict:
+        return self._client.containers.get(container).labels or {}
+
+    def container_logs(self, container: str, tail: int = 20) -> str:
+        raw = self._client.containers.get(container).logs(tail=tail)
+        return raw.decode("utf-8", "replace")
 
     def get_container_status(self, container_id: str) -> dict:
         try:
