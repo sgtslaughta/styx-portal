@@ -1,4 +1,5 @@
-"""Polls proxied services' health_path (spec §7)."""
+"""Proxied service health (spec §7): HTTP health_path for url services,
+Docker container state / HEALTHCHECK for docker-local ones."""
 import asyncio
 import ipaddress
 import logging
@@ -59,18 +60,37 @@ async def _safe_check(checker, url: str, verify: bool) -> str:
         return "unhealthy"
 
 
-async def run_health_pass(session: AsyncSession, checker=check_url) -> int:
+async def _docker_check(docker, container: str) -> str:
+    try:
+        return await asyncio.to_thread(docker.container_health, container)
+    except Exception:  # never let one docker hiccup stop the pass
+        log.warning("docker health check crashed for %s", container, exc_info=True)
+        return "unknown"
+
+
+def _default_docker():
+    from app.config import Settings
+    from app.services.docker_manager import DockerManager
+    return DockerManager(network_name=Settings().DOCKER_NETWORK)
+
+
+async def run_health_pass(session: AsyncSession, checker=check_url, docker=None) -> int:
     rows = (await session.exec(select(ProxiedService).where(
         ProxiedService.enabled == True))).all()  # noqa: E712
-    # Containers attached to styx-services are reachable from Traefik only; the
-    # backend deliberately is not on that network, so their health is unknown.
-    targets = [s for s in rows if s.health_path
-               and not (s.kind == "docker-local" and not s.upstream_fallback)]
-    # Concurrent, so N slow services cost one timeout, not N.
-    ids = [s.id for s in targets]
-    probes = [(upstream_base(s) + s.health_path, s.verify_tls) for s in targets]
+    # docker-local containers sit on styx-services, which the backend is
+    # deliberately not on: ask the Docker API instead of probing over HTTP.
+    local = [s for s in rows if s.kind == "docker-local" and s.container]
+    remote = [s for s in rows if s.kind != "docker-local" and s.health_path]
+    ids = [s.id for s in local] + [s.id for s in remote]
+    containers = [s.container for s in local]
+    probes = [(upstream_base(s) + s.health_path, s.verify_tls) for s in remote]
     await session.commit()          # end the read txn; don't hold ORM rows across awaits
-    results = await asyncio.gather(*(_safe_check(checker, u, v) for u, v in probes))
+    if containers and docker is None:
+        docker = _default_docker()
+    # Concurrent, so N slow services cost one timeout, not N.
+    results = await asyncio.gather(
+        *(_docker_check(docker, c) for c in containers),
+        *(_safe_check(checker, u, v) for u, v in probes))
     now = datetime.now(timezone.utc)
     # Column-level UPDATE by id: a row deleted (or edited) by an admin while the
     # checks ran is skipped (0 rows) instead of failing the pass or clobbering edits.
@@ -81,12 +101,14 @@ async def run_health_pass(session: AsyncSession, checker=check_url) -> int:
     return len(ids)
 
 
-async def health_loop(session_factory, interval: float = 30.0, checker=check_url) -> None:
+async def health_loop(session_factory, interval: float = 30.0, checker=check_url,
+                      docker=None) -> None:
     """Runs forever; swallows per-pass errors; stops only on cancellation."""
+    docker = docker or _default_docker()      # lazy: no socket opened until used
     while True:
         await asyncio.sleep(interval)
         try:
             async with session_factory() as session:
-                await run_health_pass(session, checker=checker)
+                await run_health_pass(session, checker=checker, docker=docker)
         except Exception:
             log.warning("service health pass failed", exc_info=True)

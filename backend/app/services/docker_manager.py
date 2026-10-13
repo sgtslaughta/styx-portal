@@ -232,6 +232,26 @@ class DockerManager:
         except docker.errors.NotFound:
             return {"status": "not_found"}
 
+    def container_health(self, name: str) -> str:
+        """healthy | unhealthy | unknown for a proxied docker-local service.
+
+        Not running or missing = unhealthy. A Docker HEALTHCHECK, if defined,
+        decides for a running container ("starting" = unknown). Docker API
+        errors = unknown (we can't tell, so don't claim the app is down).
+        """
+        try:
+            c = self._client.containers.get(name)
+        except docker.errors.NotFound:
+            return "unhealthy"
+        except docker.errors.DockerException:
+            return "unknown"
+        if c.status != "running":
+            return "unhealthy"
+        hc = (c.attrs.get("State") or {}).get("Health")
+        if not hc:
+            return "healthy"
+        return {"healthy": "healthy", "unhealthy": "unhealthy"}.get(hc.get("Status"), "unknown")
+
     def get_container_stats(self, container_id: str) -> dict:
         try:
             container = self._client.containers.get(container_id)
