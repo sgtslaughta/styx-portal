@@ -10,7 +10,9 @@ compose project:
 - the only writes allowed are network create/connect/disconnect on the e2e
   services network, for containers of the e2e project; `styx-traefik` in a
   connect/disconnect body is rewritten to the e2e Traefik container; plus
-  PUT archive / POST restart on e2e-project containers.
+  PUT archive / POST restart on e2e-project containers; plus the mount probe
+  container (create only with the probe image, label styx.probe=true and the
+  e2e services network; start/wait/delete only for styx.probe=true containers).
 """
 import json
 import os
@@ -24,6 +26,7 @@ SOCK = "/var/run/docker.sock"
 PROJECT = os.environ["E2E_PROJECT"]
 NETWORK = os.environ["E2E_SERVICES_NETWORK"]
 LABEL = "styx-e2e.discoverable=true"
+PROBE_IMAGE = os.environ.get("E2E_PROBE_IMAGE", "busybox:1.36")
 VER = re.compile(r"^/v\d+\.\d+")
 
 
@@ -121,8 +124,28 @@ class Handler(socketserver.StreamRequestHandler):
             if not info or info["Config"]["Labels"].get("com.docker.compose.project") != PROJECT:
                 return 403, "e2e shim: container outside the e2e project"
             return target, body
+        m = re.fullmatch(r"/containers/([^/]+)(/start|/wait)?", path)
+        if m and ((method == "DELETE" and not m.group(2)) or (method == "POST" and m.group(2))):
+            cid = urllib.parse.unquote(m.group(1))
+            info = None if "/" in cid else inspect(cid)
+            if not info or info["Config"]["Labels"].get("styx.probe") != "true":
+                return 403, "e2e shim: not a probe container"
+            return target, body
         if method != "POST":
             return 403, f"e2e shim: {method} not allowed"
+        if path == "/containers/create":
+            data = json.loads(body or b"{}")
+            if (data.get("Image") != PROBE_IMAGE
+                    or (data.get("Labels") or {}).get("styx.probe") != "true"
+                    or (data.get("HostConfig") or {}).get("NetworkMode") != NETWORK):
+                return 403, "e2e shim: only the mount probe container may be created"
+            return target, body
+        if path == "/images/create":
+            q = urllib.parse.parse_qs(url.query)
+            ref = q.get("fromImage", [""])[0] + ":" + q.get("tag", [""])[0]
+            if ref != PROBE_IMAGE:
+                return 403, "e2e shim: only the probe image may be pulled"
+            return target, body
         if path == "/networks/create":
             if json.loads(body or b"{}").get("Name") != NETWORK:
                 return 403, "e2e shim: only the e2e services network may be created"
