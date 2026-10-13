@@ -11,8 +11,15 @@ export const ACTIVE = ["pending", "running"];
 export const pollWhile = (state?: string) => (ACTIVE.includes(state ?? "") ? 1000 : false);
 
 /** Backup detail is a long host path: show the timestamp folder, keep the full path as a tooltip. */
+const STAMP = /^(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)Z$/;
+const backupLabel = (folder: string) => {
+  const m = STAMP.exec(folder);
+  if (!m) return folder;
+  const d = new Date(Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!, +m[4]!, +m[5]!));
+  return `Backup ${d.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`;
+};
 const shortSteps = (steps: MountJob["steps"]) => steps.map((s) =>
-  s.id === "backup" && s.detail?.includes("/") ? { ...s, detail: s.detail.split("/").filter(Boolean).slice(-1)[0], title: s.detail } : s);
+  s.id === "backup" && s.detail?.includes("/") ? { ...s, detail: backupLabel(s.detail.split("/").filter(Boolean).slice(-1)[0]!), title: s.detail } : s);
 
 /** Latest mount job, or null when none ran yet (404). Shared by the drawer and the row chips. */
 export const fetchLatestMount = (id: string): Promise<MountJob | null> =>
