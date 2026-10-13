@@ -24,12 +24,12 @@ it("adopted container asks for consent with the change table", async () => {
   expect(await screen.findByRole("dialog", { name: "Change Sonarr's settings?" })).toBeInTheDocument();
   expect(screen.getByRole("cell", { name: "/sonarr" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Restart Sonarr and apply" }));
-  await waitFor(() => expect(api.mountApply).toHaveBeenCalledWith("s1", true));
+  await waitFor(() => expect(api.mountApply).toHaveBeenCalledWith("s1", true, CH));
 });
 
 it("rollback shows reason, log and both recoveries", async () => {
   vi.mocked(api.mountPlan).mockResolvedValue({ method: "config_file", changes: CH, needs_consent: false, reason: null });
-  vi.mocked(api.mountLatest).mockResolvedValue({ id: "j", state: "rolled_back", changes: CH, backup_dir: "/b",
+  vi.mocked(api.mountLatest).mockResolvedValue({ id: "j", state: "rolled_back", changes: CH, backup_dir: "/b", changed: true,
     log_excerpt: "boom", created_at: "", finished_at: "", steps: [{ id: "verify", label: "Check the app responds", state: "failed", detail: "No answer" }] });
   wrap(<ServiceMount service={svc} />);
   expect(await screen.findByText(/Styx put its settings back/)).toBeInTheDocument();
@@ -76,9 +76,12 @@ it("polls only while pending or running", () => {
 
 it("failed job shows the backup path", async () => {
   vi.mocked(api.mountPlan).mockResolvedValue({ method: "config_file", changes: CH, needs_consent: false, reason: null });
-  vi.mocked(api.mountLatest).mockResolvedValue({ ...(rolled as object), state: "failed" } as never);
+  vi.mocked(api.mountLatest).mockResolvedValue({ ...(rolled as object), state: "failed", changed: true,
+    log_excerpt: "Rollback failed: disk gone" } as never);
   wrap(<ServiceMount service={svc} />);
-  expect(await screen.findByText(/Your backup is in \/b/)).toBeInTheDocument();
+  expect(await screen.findByText(/couldn't put the old settings back/)).toBeInTheDocument();
+  expect(screen.getByText(/Your backup is in \/b/)).toBeInTheDocument();
+  expect(screen.getByText(/Rollback failed: disk gone/)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
 });
 
@@ -132,4 +135,46 @@ it("rollback outcome takes focus even when the plan loads after the job", async 
   wrap(<ServiceMount service={svc} />);
   const alert = await screen.findByRole("alert");
   await waitFor(() => expect(alert).toHaveFocus());
+});
+
+const BIND = "This settings file is mounted on its own, so Styx can't replace it. Mount its folder instead, or set the base path by hand.";
+const steps = [{ id: "backup", label: "Back up settings", state: "done", detail: "/data/backups/s1/20261013T094107Z" },
+  { id: "apply", label: "Apply base path", state: "failed", detail: BIND },
+  { id: "restart", label: "Restart app", state: "pending", detail: null },
+  { id: "verify", label: "Check the app responds", state: "pending", detail: null }];
+
+it("failed before any write says nothing changed, shows the step reason, and no false restore claim", async () => {
+  vi.mocked(api.mountPlan).mockResolvedValue({ method: "config_file", changes: CH, needs_consent: false, reason: null });
+  vi.mocked(api.mountLatest).mockResolvedValue({ ...(rolled as object), state: "failed", changed: false, steps, log_excerpt: null } as never);
+  wrap(<ServiceMount service={svc} />);
+  expect(await screen.findByText(/Nothing was changed/)).toBeInTheDocument();
+  expect(screen.getAllByText(/mounted on its own/).length).toBeGreaterThan(0);
+  expect(screen.queryByText(/couldn't put the old settings back/)).toBeNull();
+  expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+});
+
+it("failed pre-flight (no backup folder) never prints 'is in .'", async () => {
+  vi.mocked(api.mountPlan).mockResolvedValue({ method: "config_file", changes: CH, needs_consent: false, reason: null });
+  vi.mocked(api.mountLatest).mockResolvedValue({ ...(rolled as object), state: "failed", changed: false, backup_dir: null,
+    steps: [{ ...steps[0]!, state: "failed", detail: "docker down" }], log_excerpt: null } as never);
+  wrap(<ServiceMount service={svc} />);
+  expect(await screen.findByText(/Nothing was changed/)).toBeInTheDocument();
+  expect(screen.getAllByText(/docker down/).length).toBeGreaterThan(0);
+  expect(screen.queryByText(/backup is in|is in \./i)).toBeNull();
+});
+
+it("a failed restore with no backup folder still says so without a path", async () => {
+  vi.mocked(api.mountPlan).mockResolvedValue({ method: "config_file", changes: CH, needs_consent: false, reason: null });
+  vi.mocked(api.mountLatest).mockResolvedValue({ ...(rolled as object), state: "failed", changed: true, backup_dir: null } as never);
+  wrap(<ServiceMount service={svc} />);
+  expect(await screen.findByText(/couldn't put the old settings back/)).toBeInTheDocument();
+  expect(screen.queryByText(/is in \./)).toBeNull();
+});
+
+it("calls onDone once when a job finishes done", async () => {
+  vi.mocked(api.mountPlan).mockResolvedValue({ method: "config_file", changes: [], needs_consent: false, reason: null });
+  vi.mocked(api.mountLatest).mockResolvedValue({ ...(rolled as object), state: "done" } as never);
+  const onDone = vi.fn();
+  wrap(<ServiceMount service={svc} onDone={onDone} />);
+  await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
 });

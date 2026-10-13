@@ -130,7 +130,7 @@ describe("ServicesPanel", () => {
     const dock = svc({ id: "s3", slug: "sonarr", name: "Sonarr", kind: "docker-local", container: "sonarr", container_port: 8989, url: null, upstream_url: null });
     a.listServices.mockResolvedValue([dock]);
     a.mountPlan.mockResolvedValue({ method: "config_file", changes: [{ target: "/c", key: "k", old: "", new: "/sonarr" }], needs_consent: false, reason: null });
-    a.mountLatest.mockResolvedValue({ id: "j", state: "rolled_back", changes: [], backup_dir: "/b", log_excerpt: "x", created_at: "", finished_at: "", steps: [] });
+    a.mountLatest.mockResolvedValue({ id: "j", state: "rolled_back", changes: [], backup_dir: "/b", changed: false, log_excerpt: "x", created_at: "", finished_at: "", steps: [] });
     a.updateService.mockResolvedValue({ ...dock, mount_mode: "cookie-root", updated_at: "2" });
     render(<ServicesPanel />);
     fireEvent.click(await screen.findByRole("button", { name: "Edit Sonarr" }));
@@ -152,8 +152,27 @@ describe("ServicesPanel", () => {
   test("row shows the last mount outcome on a fresh page load", async () => {
     const dock = svc({ id: "s3", slug: "sonarr", name: "Sonarr", kind: "docker-local", container: "sonarr", container_port: 8989, url: null, upstream_url: null });
     a.listServices.mockResolvedValue([dock]);
-    a.mountLatest.mockResolvedValue({ id: "j", state: "rolled_back", changes: [], backup_dir: "/b", log_excerpt: "x", created_at: "", finished_at: "", steps: [] });
+    a.mountLatest.mockResolvedValue({ id: "j", state: "rolled_back", changes: [], backup_dir: "/b", changed: false, log_excerpt: "x", created_at: "", finished_at: "", steps: [] });
     render(<ServicesPanel />);
     expect(await screen.findByText("Rolled back")).toBeInTheDocument();
+  });
+
+  test("Base path set chip reads mount_managed, not the job history", async () => {
+    const dock = svc({ id: "s3", slug: "sonarr", name: "Sonarr", kind: "docker-local", container: "sonarr", container_port: 8989,
+      url: null, upstream_url: null, mount_managed: true });
+    a.listServices.mockResolvedValue([dock]);
+    a.mountLatest.mockRejectedValue(Object.assign(new Error("nf"), { status: 404 }));
+    render(<ServicesPanel />);
+    expect(await screen.findByText("Base path set")).toBeInTheDocument();
+  });
+
+  test("no chip when the service was never managed", async () => {
+    const dock = svc({ id: "s3", slug: "sonarr", name: "Sonarr", kind: "docker-local", container: "sonarr", container_port: 8989,
+      url: null, upstream_url: null, mount_managed: false });
+    a.listServices.mockResolvedValue([dock]);
+    a.mountLatest.mockResolvedValue({ id: "j", state: "done", changes: [], backup_dir: "/b", log_excerpt: null, created_at: "", finished_at: "", steps: [] });
+    render(<ServicesPanel />);
+    await screen.findByText("Sonarr");
+    expect(screen.queryByText("Base path set")).toBeNull();
   });
 });

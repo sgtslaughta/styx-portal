@@ -7,6 +7,7 @@ import type {
   ServiceTemplate,
   TemplateCreate,
 } from "@/lib/types";
+import { safeNext } from "@/lib/safe-next";
 
 export type Workstation = {
   id: string; name: string; subdomain: string; hostname: string;
@@ -66,6 +67,8 @@ export type JobStep = {
 export type MountJob = {
   id: string; state: "pending" | "running" | "done" | "rolled_back" | "failed";
   steps: JobStep[]; changes: MountChange[]; backup_dir: string | null;
+  /** True once a write to the app's settings may have landed (false: nothing was touched). */
+  changed: boolean;
   log_excerpt: string | null; created_at: string; finished_at: string | null;
 };
 
@@ -173,7 +176,7 @@ async function request<T>(path: string, init?: RequestInit, retried = false): Pr
     if (!retried && (await silentRefresh())) {
       return request<T>(path, init, true);
     }
-    window.location.href = "/login?expired=1";
+    window.location.href = expiredLoginUrl(window.location.pathname, window.location.search);
     throw new Error("Unauthorized");
   }
   if (!res.ok) {
@@ -189,6 +192,13 @@ async function request<T>(path: string, init?: RequestInit, retried = false): Pr
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
+/** /login URL after a 401. Inside the shell (/_styx/app/...) it carries the shell path so sign-in returns there. */
+export function expiredLoginUrl(pathname: string, search: string): string {
+  const here = pathname + search;
+  const next = pathname.startsWith("/_styx/app/") ? safeNext(here) : null;
+  return next ? `/login?expired=1&next=${encodeURIComponent(next)}` : "/login?expired=1";
+}
+
 export const api = {
   listServices: () => request<ProxiedService[]>("/services"),
   /** Role-dependent shape: tiles for members, full services for admins. Always fetch fresh. */
@@ -202,10 +212,10 @@ export const api = {
   deleteService: (id: string) => request<void>(`/services/${id}`, { method: "DELETE" }),
   setServiceEnabled: (id: string, enabled: boolean) =>
     request<ProxiedService>(`/services/${id}/${enabled ? "enable" : "disable"}`, { method: "POST" }),
-  enterService: (slug: string) => request<void>(`/services/${slug}/enter`, { method: "POST" }),
   mountPlan: (id: string) => request<MountPlan>(`/services/${id}/mount/plan`, { method: "POST" }),
-  mountApply: (id: string, consent: boolean) =>
-    request<{ job_id: string }>(`/services/${id}/mount/apply`, { method: "POST", body: JSON.stringify({ consent }) }),
+  /** `changes` are the ones the admin reviewed; the server refuses if the file moved since. */
+  mountApply: (id: string, consent: boolean, changes?: MountChange[]) =>
+    request<{ job_id: string }>(`/services/${id}/mount/apply`, { method: "POST", body: JSON.stringify({ consent, changes }) }),
   mountLatest: (id: string) => request<MountJob>(`/services/${id}/mount/jobs/latest`),
   serviceFocus: () => request<{ slug: string | null }>("/services/focus"),
   listGroups: () => request<Group[]>("/groups"),

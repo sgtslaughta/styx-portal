@@ -25,7 +25,9 @@ const shortSteps = (steps: MountJob["steps"]) => steps.map((s) =>
 export const fetchLatestMount = (id: string): Promise<MountJob | null> =>
   api.mountLatest(id).catch((e: { status?: number }) => (e?.status === 404 ? null : Promise.reject(e)));
 
-export function ServiceMount({ service, onChanged }: { service: ProxiedService; onChanged?: (svc: ProxiedService) => void }) {
+export function ServiceMount({ service, onChanged, onDone }: {
+  service: ProxiedService; onChanged?: (svc: ProxiedService) => void; onDone?: () => void;
+}) {
   const { id, name, slug } = service;
   const qc = useQueryClient();
   const [asking, setAsking] = useState(false);
@@ -38,7 +40,7 @@ export function ServiceMount({ service, onChanged }: { service: ProxiedService; 
     refetchInterval: (q) => pollWhile(q.state.data?.state),
   });
   const apply = useMutation({
-    mutationFn: (consent: boolean) => api.mountApply(id, consent),
+    mutationFn: (consent: boolean) => api.mountApply(id, consent, plan.data?.changes),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["mount-job", id] });
       void qc.invalidateQueries({ queryKey: ["mount-plan", id] });
@@ -72,7 +74,8 @@ export function ServiceMount({ service, onChanged }: { service: ProxiedService; 
     if (jobKey === seen.current) return;
     seen.current = jobKey;
     if (jobState && !ACTIVE.includes(jobState)) void qc.invalidateQueries({ queryKey: ["mount-plan", id] });
-  }, [jobKey, jobState, qc, id]);
+    if (jobState === "done") onDone?.();
+  }, [jobKey, jobState, qc, id, onDone]);
 
   if (!enabled) return null;
   if (plan.isError) return (
@@ -93,29 +96,39 @@ export function ServiceMount({ service, onChanged }: { service: ProxiedService; 
     <p className="flex items-center gap-2 text-sm"><Check className="h-4 w-4 rounded-full ring-2 ring-success text-success-foreground" />Base path is set to /{slug}</p>
   );
 
+  const logBlock = j?.log_excerpt && (
+    <details className="group text-sm"><summary className="inline-flex cursor-pointer list-none items-center gap-1 [&::-webkit-details-marker]:hidden"><ChevronRight className="size-4 transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden />App log</summary>
+      <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted p-2 text-xs">{j.log_excerpt}</pre>
+    </details>
+  );
   let body: React.ReactNode;
   if (running) body = <Stepper steps={shortSteps(j.steps)} />;
   else if (j?.state === "rolled_back") body = (
     <>
       <Stepper steps={shortSteps(j.steps)} />
       <p ref={outcomeRef} role="alert" tabIndex={-1} className="text-sm text-destructive outline-none">Couldn't switch {name} to /{slug}, so Styx put its settings back.</p>
-      {j.log_excerpt && (
-        <details className="group text-sm"><summary className="inline-flex cursor-pointer list-none items-center gap-1 [&::-webkit-details-marker]:hidden"><ChevronRight className="size-4 transition-transform group-open:rotate-90 motion-reduce:transition-none" aria-hidden />App log</summary>
-          <pre className="mt-1 max-h-48 overflow-auto rounded bg-muted p-2 text-xs">{j.log_excerpt}</pre>
-        </details>
-      )}
+      {logBlock}
       <div className="flex flex-wrap gap-2">
         {retry}
         <Button size="sm" variant="outline" disabled={focus.isPending} onClick={() => focus.mutate()}>Use focus mode instead</Button>
       </div>
     </>
   );
-  else if (j?.state === "failed") body = (
-    <>
-      <p ref={outcomeRef} role="alert" tabIndex={-1} className="text-sm text-destructive outline-none">The change failed and Styx couldn't put the old settings back. Your backup is in {j.backup_dir}.</p>
-      {retry}
-    </>
-  );
+  else if (j?.state === "failed") {
+    const reason = j.steps.find((x) => x.state === "failed")?.detail;
+    body = (
+      <>
+        <Stepper steps={shortSteps(j.steps)} />
+        <p ref={outcomeRef} role="alert" tabIndex={-1} className="text-sm text-destructive outline-none">
+          {j.changed
+            ? `The change failed and Styx couldn't put the old settings back.${j.backup_dir ? ` Your backup is in ${j.backup_dir}.` : ""}`
+            : `Nothing was changed. ${reason ?? `${name} still has its old settings.`}`}
+        </p>
+        {logBlock}
+        {retry}
+      </>
+    );
+  }
   else if (p.method === null) body = (
     <p className="text-sm text-muted-foreground">{p.reason} You can set the base path to /{slug} in the app yourself, or use a preset.</p>
   );

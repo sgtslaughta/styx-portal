@@ -7,7 +7,7 @@ export function MountConsentDialog({ open, appName, changes, backupHint, onConfi
 }) {
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onCancel(); }}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{`Change ${appName}'s settings?`}</DialogTitle>
           <DialogDescription>Styx didn't create this container, so it asks first.</DialogDescription>
@@ -25,8 +25,8 @@ export function MountConsentDialog({ open, appName, changes, backupHint, onConfi
             <tbody>
               {changes.map((c) => (
                 <tr key={`${c.target}:${c.key}`} className="border-t border-border align-top font-mono text-xs">
-                  <td className="py-1.5 pr-3">{c.target}</td>
-                  <td className="py-1.5 pr-3">{c.key}</td>
+                  <td className="py-1.5 pr-3 break-all">{c.target}</td>
+                  <td className="py-1.5 pr-3 break-all">{c.key}</td>
                   <td className="py-1.5 pr-3">{c.old || "(not set)"}</td>
                   <td className="py-1.5">{c.new}</td>
                 </tr>

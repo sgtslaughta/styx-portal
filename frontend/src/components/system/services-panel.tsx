@@ -166,7 +166,8 @@ export function ServicesPanel() {
                 ? { name: editing.c.name, port: editing.c.ports[0], preset: editing.c.suggested_preset } : null}
               presets={presets} groups={groups} loadContainers={api.discoverContainers}
               lead={editing.kind === "edit" ? <ServiceMount service={editing.svc}
-                onChanged={(svc) => { setEditing({ kind: "edit", svc }); void load(); }} /> : undefined}
+                onChanged={(svc) => { setEditing({ kind: "edit", svc }); void load(); }}
+                onDone={() => void load()} /> : undefined}
               onSubmit={submit} onCancel={() => setEditing(null)} />
           )}
         </DrawerContent>
