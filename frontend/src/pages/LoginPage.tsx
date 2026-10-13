@@ -94,6 +94,11 @@ export function LoginPage() {
   // No users yet → send the first visitor to the admin setup flow instead of a
   // login form they could never satisfy.
   if (!loading && setupRequired) return <Navigate to="/setup" replace />;
+  // Signed in, nothing to follow: the form has no purpose.
+  if (!loading && user && !loggingIn.current
+      && !safeNext(new URLSearchParams(window.location.search).get("next"))) {
+    return <Navigate to="/" replace />;
+  }
 
   return (
     <div className="grid min-h-screen md:grid-cols-[3fr_2fr]">

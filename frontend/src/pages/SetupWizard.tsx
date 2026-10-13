@@ -29,7 +29,7 @@ export function SetupWizard() {
   const [err, setErr] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const nav = useNavigate();
-  const { refresh, setupRequired, loading } = useAuth();
+  const { refresh, setupRequired, loading, user } = useAuth();
   const score = password ? zxcvbn(password).score : 0;
   const { data: pre } = useQuery({ queryKey: ["setup-preflight"], queryFn: api.setupPreflight, retry: false });
 
@@ -46,6 +46,8 @@ export function SetupWizard() {
   }
 
   // Setup is a one-time flow: once an admin exists, never show it again.
+  // Signed in (e.g. just created the admin) → home, not the login page.
+  if (!loading && !setupRequired && user) return <Navigate to="/" replace />;
   if (!loading && !setupRequired) return <Navigate to="/login" replace />;
 
   return (
