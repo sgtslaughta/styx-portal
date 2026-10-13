@@ -11,7 +11,7 @@ import { validateService, type FieldErrors } from "./service-validation";
 const EMPTY: ProxiedServiceInput = {
   slug: "", name: "", icon: null, kind: "url", upstream_url: "", container: null, container_port: null,
   mount_mode: "path", auth_mode: "sso", bypass_rules: [], allowed_groups: [], verify_tls: true,
-  health_path: null, preset_id: null, enabled: true,
+  health_path: null, preset_id: null, enabled: true, pass_identity: false, frame_ok: true,
 };
 const ACK_TEXT =
   "I understand that this app runs on the same origin as Styx: any JavaScript it serves can use Styx with the rights of whoever opens it.";

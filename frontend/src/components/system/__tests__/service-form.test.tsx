@@ -6,7 +6,7 @@ import type { ProxiedService } from "@/api/client";
 
 const presets = [{ id: "sonarr", name: "Sonarr", icon: null, default_port: 8989, mount_mode: "path" as const,
   auth_mode: "sso-with-bypass" as const, bypass_rules: [{ path_prefix: "/sonarr/api", required_header: "X-Api-Key" }],
-  health_path: "/sonarr/ping", verify_tls: true, base_url_hint: "URL Base = /sonarr", warnings: [] }];
+  health_path: "/sonarr/ping", verify_tls: true, base_url_hint: "URL Base = /sonarr", warnings: [], subpath: null }];
 
 type Props = Parameters<typeof ServiceForm>[0];
 const ACK = /I understand that this app runs on the same origin as Styx/;
@@ -28,6 +28,7 @@ const existing: ProxiedService = {
   container: null, container_port: null, upstream_fallback: null, mount_mode: "path", auth_mode: "sso",
   bypass_rules: [], allowed_groups: [], verify_tls: true, health_path: null, health_status: "healthy",
   health_checked_at: null, preset_id: null, enabled: true, created_at: "", updated_at: "",
+  mount_managed: false, pass_identity: false, frame_ok: true,
 };
 
 describe("ServiceForm risk callouts", () => {

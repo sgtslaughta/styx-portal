@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Info, Link2, X } from "lucide-react";
 import { toast } from "sonner";
-import { api, type ProxiedService, type ServiceTile } from "@/api/client";
+import { api, type ServiceTile } from "@/api/client";
 import { useAuth } from "@/hooks/use-auth";
+import { HEALTH, toTile } from "@/lib/service-tiles";
 import { cn } from "@/lib/utils";
 
 const TIP_KEY = "styx.serviceTipDismissed";
@@ -10,18 +11,6 @@ const TIP = "Open apps with a non-admin account: proxied apps run with your Styx
 const tileCls =
   "flex w-full items-center gap-2.5 rounded-lg border border-border bg-card px-3 py-2 text-left text-sm " +
   "transition-colors hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
-
-/** Admins receive the full model (health_status); members get tiles (up). */
-function toTile(s: ServiceTile | ProxiedService): ServiceTile {
-  if (!("health_status" in s)) return s;
-  const up = s.health_status === "healthy" ? true : s.health_status === "unhealthy" ? false : null;
-  return { id: s.id, slug: s.slug, name: s.name, icon: s.icon, mount_mode: s.mount_mode, enabled: s.enabled, up };
-}
-
-const HEALTH = (up: boolean | null) =>
-  up === true ? { dot: "bg-success", label: "Healthy" }
-    : up === false ? { dot: "bg-destructive", label: "Unreachable" }
-    : { dot: "bg-muted-foreground/50", label: "Status unknown" };
 
 function readDismissed(): boolean {
   try { return localStorage.getItem(TIP_KEY) === "1"; } catch { return false; }

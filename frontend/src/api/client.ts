@@ -18,7 +18,10 @@ export type Workstation = {
   created_at: string; allowed_user_ids: string[];
   in_use: boolean; in_use_by: string | null; in_use_self: boolean;
 };
-export type BypassRule = { path_prefix: string; required_header: string | null };
+export type BypassRule = {
+  path_prefix: string; required_header: string | null;
+  header_prefix?: string | null; required_query?: string | null;
+};
 export type ProxiedService = {
   id: string; slug: string; name: string; icon: string | null;
   kind: "url" | "docker-local";
@@ -30,24 +33,41 @@ export type ProxiedService = {
   verify_tls: boolean; health_path: string | null;
   health_status: "healthy" | "unhealthy" | "unknown"; health_checked_at: string | null;
   preset_id: string | null; enabled: boolean; created_at: string; updated_at: string;
+  /** Server-owned: true when Styx manages the app's mount config. Never sent on write. */
+  mount_managed: boolean; pass_identity: boolean; frame_ok: boolean;
 };
 /** Non-admin view of GET /services. `up` null = unknown. Admins receive the full ProxiedService instead. */
 export type ServiceTile = {
   id: string; slug: string; name: string; icon: string | null;
-  mount_mode: ProxiedService["mount_mode"]; enabled: boolean; up: boolean | null;
+  mount_mode: ProxiedService["mount_mode"]; enabled: boolean; up: boolean | null; frame_ok: boolean;
 };
 export type ProxiedServiceInput = Omit<ProxiedService,
-  "id" | "upstream_fallback" | "health_status" | "health_checked_at" | "created_at" | "updated_at">;
+  "id" | "upstream_fallback" | "health_status" | "health_checked_at" | "created_at" | "updated_at" | "mount_managed">;
 export type ServicePreset = {
   id: string; name: string; icon: string | null; default_port: number | null;
   mount_mode: ProxiedService["mount_mode"]; auth_mode: ProxiedService["auth_mode"];
   bypass_rules: BypassRule[]; health_path: string | null; verify_tls: boolean;
   base_url_hint: string | null; warnings: string[];
+  subpath: { methods: unknown[]; verify_path?: string } | null;
 };
 export type DiscoveredContainer = {
   name: string; image: string; ports: number[]; networks: string[]; suggested_preset: string | null;
 };
 export type Group = { id: string; name: string; description: string | null; member_count: number };
+
+export type MountChange = { target: string; key: string; old: string | null; new: string };
+export type MountPlan = {
+  method: "config_file" | null; changes: MountChange[]; needs_consent: boolean; reason: string | null;
+};
+export type JobStep = {
+  id: string; label: string;
+  state: "pending" | "active" | "done" | "failed" | "skipped"; detail: string | null;
+};
+export type MountJob = {
+  id: string; state: "pending" | "running" | "done" | "rolled_back" | "failed";
+  steps: JobStep[]; changes: MountChange[]; backup_dir: string | null;
+  log_excerpt: string | null; created_at: string; finished_at: string | null;
+};
 
 export type EnrollToken = {
   token: string; expires_at: string;
@@ -183,6 +203,11 @@ export const api = {
   setServiceEnabled: (id: string, enabled: boolean) =>
     request<ProxiedService>(`/services/${id}/${enabled ? "enable" : "disable"}`, { method: "POST" }),
   enterService: (slug: string) => request<void>(`/services/${slug}/enter`, { method: "POST" }),
+  mountPlan: (id: string) => request<MountPlan>(`/services/${id}/mount/plan`, { method: "POST" }),
+  mountApply: (id: string, consent: boolean) =>
+    request<{ job_id: string }>(`/services/${id}/mount/apply`, { method: "POST", body: JSON.stringify({ consent }) }),
+  mountLatest: (id: string) => request<MountJob>(`/services/${id}/mount/jobs/latest`),
+  serviceFocus: () => request<{ slug: string | null }>("/services/focus"),
   listGroups: () => request<Group[]>("/groups"),
   createGroup: (data: { name: string; description?: string | null }) =>
     request<Group>("/groups", { method: "POST", body: JSON.stringify(data) }),
