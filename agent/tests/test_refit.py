@@ -72,7 +72,7 @@ def test_inject_reload():
     out = refit.inject_reload(html, True)
     assert 'id="styx-refit"' in out and "4002" in out and "styx-resizing" in out and refit.MARKER in out
     assert "window.WebSocket=S" in out and "self.WebSocket=S" in out and out.index("styx-refit") < out.index("</head>")
-    assert "socket_worker" not in out           # the worker keeps audio off the page thread
+    assert "q.delete('socket_worker')" in out    # an older shim pinned the page socket; undo it
     assert "Resizing" in refit.HOLD_HTML
     assert refit.inject_reload(html, False) == html
     assert refit.inject_reload("<p>no head</p>", True) == "<p>no head</p>"
