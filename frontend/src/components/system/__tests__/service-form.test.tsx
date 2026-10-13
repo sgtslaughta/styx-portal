@@ -34,6 +34,7 @@ const existing: ProxiedService = {
 describe("ServiceForm risk callouts", () => {
   test("bypass rule callout appears and empty prefix blocks save", () => {
     setup();
+    fireEvent.click(screen.getByText("Advanced"));
     change("Auth mode", "sso-with-bypass");
     fireEvent.click(screen.getByRole("button", { name: /add bypass rule/i }));
     expect(screen.getByText(RISK.bypass("<prefix>"))).toBeInTheDocument();
@@ -43,6 +44,7 @@ describe("ServiceForm risk callouts", () => {
   test("bypass callout shows the typed prefix; a valid prefix enables save", () => {
     setup();
     fillUrl();
+    fireEvent.click(screen.getByText("Advanced"));
     change("Auth mode", "sso-with-bypass");
     fireEvent.click(screen.getByRole("button", { name: /add bypass rule/i }));
     fireEvent.change(screen.getByLabelText("Bypass path prefix"), { target: { value: "/x/api" } });
@@ -87,6 +89,7 @@ describe("ServiceForm risk callouts", () => {
   test("bypass rules are dropped on submit when auth mode is no longer sso-with-bypass", () => {
     const onSubmit = setup();
     fillUrl();
+    fireEvent.click(screen.getByText("Advanced"));
     change("Auth mode", "sso-with-bypass");
     fireEvent.click(screen.getByRole("button", { name: /add bypass rule/i }));
     fireEvent.change(screen.getByLabelText("Bypass path prefix"), { target: { value: "/a" } });
@@ -136,6 +139,7 @@ describe("ServiceForm behaviour", () => {
     change("Preset", "sonarr");
     expect(screen.getByLabelText("Slug")).toHaveValue("sonarr");
     expect(screen.getByLabelText("Name")).toHaveValue("Sonarr");
+    fireEvent.click(screen.getByText("Advanced"));
     expect(screen.getByLabelText("Bypass path prefix")).toHaveValue("/sonarr/api");
     expect(screen.getByText(/URL Base = \/sonarr/)).toBeInTheDocument();
   });

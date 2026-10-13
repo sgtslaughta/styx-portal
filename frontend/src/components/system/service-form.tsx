@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { DrawerBody, DrawerFooter } from "@/components/ui/drawer";
 import { RISK, RISK_DETAIL, RiskCallout } from "@/components/common/risk-callout";
-import { BypassRulesEditor, Field, Section, SwitchRow, selectCls } from "./service-form-parts";
+import { Field, Section, SwitchRow, selectCls } from "./service-form-parts";
+import { AccessSection, checkCls } from "./service-form-access";
 import { validateService, type FieldErrors } from "./service-validation";
 
 const EMPTY: ProxiedServiceInput = {
@@ -15,11 +16,6 @@ const EMPTY: ProxiedServiceInput = {
 };
 const ACK_TEXT =
   "I understand that this app runs on the same origin as Styx: any JavaScript it serves can use Styx with the rights of whoever opens it.";
-const checkCls =
-  "h-4 w-4 shrink-0 accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
-const chipCls =
-  "flex cursor-pointer items-center gap-2 rounded-md border border-border bg-muted/30 px-2.5 py-1.5 text-sm " +
-  "transition-colors hover:bg-accent has-[:checked]:border-primary/50 has-[:checked]:bg-primary/10";
 const KNOWN = ["slug", "name", "upstream_url", "container", "container_port", "health_path", "icon"];
 
 export type DiscoveredPrefill = { name: string; port?: number; preset: string | null };
@@ -115,7 +111,7 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
     <form className="flex min-h-0 flex-1 flex-col" noValidate onSubmit={(e) => { e.preventDefault(); void submit(); }}>
       <DrawerBody className="space-y-5">
         <Section title="Basics">
-          <Field id="preset" label="Preset" hint={preset?.base_url_hint ? `App setting: ${preset.base_url_hint}` : "Optional: prefills mode, auth, health and bypass rules."}>
+          <Field id="preset" label="Preset" hint="Optional: prefills mode, auth, health and bypass rules.">
             <select id="preset" className={selectCls} value={f.preset_id ?? ""} autoFocus={!isEdit && !discovered}
               onChange={(e) => applyPreset(e.target.value)}>
               <option value="">None (custom)</option>
@@ -193,52 +189,7 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
           {!f.verify_tls && <RiskCallout title="TLS not verified">{RISK.tls}</RiskCallout>}
         </Section>
 
-        <Section title="Access" hint="How the app is mounted and who can open it.">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field id="mount" label="Mount mode">
-              <select id="mount" className={selectCls} value={f.mount_mode}
-                onChange={(e) => set("mount_mode", e.target.value as ProxiedServiceInput["mount_mode"])}>
-                <option value="path">Path (/slug, app has base URL)</option>
-                <option value="cookie-root">Cookie root (takeover)</option>
-              </select>
-            </Field>
-            <Field id="auth" label="Auth mode">
-              <select id="auth" className={selectCls} value={f.auth_mode}
-                onChange={(e) => set("auth_mode", e.target.value as ProxiedServiceInput["auth_mode"])}>
-                <option value="sso">SSO (Styx login required)</option>
-                <option value="sso-with-bypass">SSO with bypass rules</option>
-                <option value="app-native">App native (no Styx auth)</option>
-              </select>
-            </Field>
-          </div>
-          {f.mount_mode === "cookie-root" && (
-            <RiskCallout title="Takes over this browser" details={RISK_DETAIL.cookieRoot}>{RISK.cookieRoot}</RiskCallout>
-          )}
-          {f.auth_mode === "app-native" && <RiskCallout title="No Styx login">{RISK.appNative}</RiskCallout>}
-          {f.auth_mode === "sso-with-bypass" && (
-            <BypassRulesEditor rules={f.bypass_rules} errors={errors} onChange={(r) => set("bypass_rules", r)} />
-          )}
-          <fieldset className="space-y-2">
-            <legend className="mb-1.5 text-sm font-medium">Allowed groups</legend>
-            {groups.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No groups defined. Any logged-in user can open this service. Create groups under Administration, Groups.</p>
-            ) : (
-              <>
-                <div className="flex flex-wrap gap-2">
-                  {groups.map((g) => (
-                    <label key={g.id} className={chipCls}>
-                      <input type="checkbox" className={checkCls} checked={f.allowed_groups.includes(g.name)}
-                        onChange={(e) => set("allowed_groups", e.target.checked
-                          ? [...f.allowed_groups, g.name] : f.allowed_groups.filter((n) => n !== g.name))} />
-                      {g.name}
-                    </label>
-                  ))}
-                </div>
-                <p className="text-xs text-muted-foreground">Leave all unchecked to allow any logged-in user. Admins always have access.</p>
-              </>
-            )}
-          </fieldset>
-        </Section>
+        <AccessSection f={f} set={set} preset={preset ?? undefined} groups={groups} errors={errors} />
 
         <Section title="Before you save">
           <RiskCallout title="Runs with your Styx rights" details={RISK_DETAIL.sameOrigin} footer={

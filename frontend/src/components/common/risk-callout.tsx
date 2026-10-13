@@ -15,6 +15,10 @@ export const RISK = {
   sameOrigin:
     "Proxied apps share Styx's origin: scripts inside the app run in your browser with your Styx rights. " +
     "Only add apps you trust.",
+  nativeApps:
+    "Jellyfin's own login is exposed to the internet. Requests from its apps skip Styx login; rate limits and bans still apply.",
+  passIdentity:
+    "The app receives the signed-in user's name, email and groups. Only turn this on for apps that use them to sign people in.",
 } as const;
 
 /** Secondary context, collapsed behind "Details". */
