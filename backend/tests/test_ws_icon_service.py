@@ -189,3 +189,11 @@ def test_sniff_prolog_comment_then_svg():
     data = b'\xef\xbb\xbf <?xml version="1.0"?>\n<!-- a -->\n <!-- b -->\n<svg xmlns="x"/>'
     assert ws_icon._sniff(data) == "image/svg+xml"
     assert ws_icon._sniff(b"<!DOCTYPE svg>") == "image/svg+xml"
+
+
+@pytest.mark.parametrize("unit", [b"<?xml?>", b"<!---->"])
+def test_sniff_reviewer_redos_cases(unit):
+    import time
+    t = time.perf_counter()
+    assert ws_icon._sniff(unit * 2000 + b"x") is None
+    assert time.perf_counter() - t < 0.2
