@@ -276,6 +276,7 @@ def test_uninstall_removes_prev(monkeypatch, tmp_path):
 
 def test_snap_scope_props_pins_caller_and_strips_exec():
     import pytest
+    pytest.importorskip("dbus")
     import seat_portal
 
     ok = [("PIDs", [4242]), ("Description", "firefox"), ("Slice", "evil.slice"),

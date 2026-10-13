@@ -487,7 +487,7 @@ def main(argv) -> int:
             if ready:
                 _write_ready(ready, f"{w}x{h}")
             log("ready", f"{w}x{h}")
-            GLib.timeout_add(100, watch_resize)
+            GLib.timeout_add(25, watch_resize)
             return False
         st["tries"] += 1
         if st["tries"] >= LIVE_TRIES:
@@ -516,9 +516,9 @@ def main(argv) -> int:
         rq["tries"] += 1
         if mon.is_current():
             _write_ready(ready, f"{mon.w}x{mon.h}")
-            log("resized live", f"{mon.w}x{mon.h}", f"after {rq['tries']*100} ms")
+            log("resized live", f"{mon.w}x{mon.h}", f"after {rq['tries']*25} ms")
             rq["pending"] = None
-        elif rq["tries"] >= LIVE_TRIES * 2:
+        elif rq["tries"] >= LIVE_TRIES * 8:        # 10 s at 25 ms
             log("resize never became current", f"{mon.w}x{mon.h}")
             rq["pending"] = None
         return True
