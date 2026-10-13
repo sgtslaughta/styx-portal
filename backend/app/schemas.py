@@ -379,6 +379,6 @@ class ChangePasswordRequest(BaseModel):
 from app.schemas_services import (  # noqa: E402,F401  (re-export)
     AUTH_MODES, CONTAINER_NAME_RE, MOUNT_MODES, RESERVED_SERVICE_SLUGS, SERVICE_KINDS,
     SERVICE_SLUG_RE, BypassRule, DiscoveredContainer, GroupCreate, GroupOut,
-    ProxiedServiceCreate, ProxiedServiceOut, ProxiedServiceUpdate, ServicePresetOut,
+    ProxiedServiceCreate, ProxiedServiceOut, ProxiedServiceUpdate, ServicePresetOut, ServiceTileOut,
     UserGroupsUpdate, _ServiceFields,
 )

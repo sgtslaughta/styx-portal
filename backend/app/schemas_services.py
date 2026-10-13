@@ -138,6 +138,17 @@ class ProxiedServiceOut(BaseModel):
     updated_at: str
 
 
+class ServiceTileOut(BaseModel):
+    """What non-admins see: enough for a tile, no upstream/topology details."""
+    id: str
+    slug: str
+    name: str
+    icon: str | None
+    mount_mode: str
+    enabled: bool
+    up: bool | None          # None = unknown
+
+
 class ServicePresetOut(BaseModel):
     id: str
     name: str

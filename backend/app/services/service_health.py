@@ -1,10 +1,11 @@
 """Polls proxied services' health_path (spec §7)."""
 import asyncio
+import ipaddress
 import logging
 from datetime import datetime, timezone
 
 import httpx
-from sqlmodel import select
+from sqlmodel import select, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models import ProxiedService, upstream_base
@@ -13,9 +14,33 @@ log = logging.getLogger(__name__)
 CHECK_TIMEOUT = 5.0
 
 
+# Link-local (incl. cloud metadata 169.254.169.254) and AWS's IPv6 IMDS: never
+# probe these, an admin typo or a malicious upstream must not reach metadata.
+_FORBIDDEN_NETS = tuple(ipaddress.ip_network(n) for n in (
+    "169.254.0.0/16", "fe80::/10", "fd00:ec2::254/128"))
+
+
+async def _forbidden_target(url: str) -> str | None:
+    host = httpx.URL(url).host
+    try:
+        addrs = {ipaddress.ip_address(host)}
+    except ValueError:
+        try:
+            infos = await asyncio.get_running_loop().getaddrinfo(host, None)
+        except OSError:
+            return None                      # unresolvable: the GET fails on its own
+        addrs = {ipaddress.ip_address(i[4][0].split("%")[0]) for i in infos}
+    bad = [a for a in addrs if any(a in n for n in _FORBIDDEN_NETS)]
+    return f"{host} resolves to link-local/metadata address {bad[0]}" if bad else None
+
+
 async def check_url(url: str, verify: bool, transport: httpx.AsyncBaseTransport | None = None
                     ) -> str:
     """One GET, never follows redirects (so it cannot be steered off-host)."""
+    reason = await _forbidden_target(url)
+    if reason:
+        log.warning("health check refused: %s", reason)
+        return "unhealthy"
     try:
         # verify=False is the per-service admin opt-in (verify_tls toggle).
         async with httpx.AsyncClient(verify=verify, timeout=CHECK_TIMEOUT,  # nosec B501
@@ -42,15 +67,18 @@ async def run_health_pass(session: AsyncSession, checker=check_url) -> int:
     targets = [s for s in rows if s.health_path
                and not (s.kind == "docker-local" and not s.upstream_fallback)]
     # Concurrent, so N slow services cost one timeout, not N.
-    results = await asyncio.gather(*(
-        _safe_check(checker, upstream_base(s) + s.health_path, s.verify_tls) for s in targets))
+    ids = [s.id for s in targets]
+    probes = [(upstream_base(s) + s.health_path, s.verify_tls) for s in targets]
+    await session.commit()          # end the read txn; don't hold ORM rows across awaits
+    results = await asyncio.gather(*(_safe_check(checker, u, v) for u, v in probes))
     now = datetime.now(timezone.utc)
-    for s, status in zip(targets, results):
-        s.health_status = status
-        s.health_checked_at = now
-        session.add(s)
+    # Column-level UPDATE by id: a row deleted (or edited) by an admin while the
+    # checks ran is skipped (0 rows) instead of failing the pass or clobbering edits.
+    for sid, status in zip(ids, results):
+        await session.exec(update(ProxiedService).where(ProxiedService.id == sid)
+                           .values(health_status=status, health_checked_at=now))
     await session.commit()
-    return len(targets)
+    return len(ids)
 
 
 async def health_loop(session_factory, interval: float = 30.0, checker=check_url) -> None:

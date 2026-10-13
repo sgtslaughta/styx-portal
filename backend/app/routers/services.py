@@ -13,7 +13,7 @@ from app.database import get_session
 from app.models import Group, ProxiedService, ServicePreset, User
 from app.routers.services_auth import user_may_open
 from app.schemas import (DiscoveredContainer, ProxiedServiceCreate, ProxiedServiceOut,
-                         ProxiedServiceUpdate, ServicePresetOut)
+                         ProxiedServiceUpdate, ServicePresetOut, ServiceTileOut)
 from app.security.deps import get_current_user, require_admin
 from app.services.audit import audit_request
 from app.services.docker_manager import DockerManager
@@ -129,15 +129,20 @@ async def discover(admin: User = Depends(require_admin),
     return out
 
 
-@router.get("", response_model=list[ProxiedServiceOut])
+def _tile(s: ProxiedService) -> ServiceTileOut:
+    up = {"healthy": True, "unhealthy": False}.get(s.health_status)
+    return ServiceTileOut(id=s.id, slug=s.slug, name=s.name, icon=s.icon,
+                          mount_mode=s.mount_mode, enabled=s.enabled, up=up)
+
+
+@router.get("", response_model=list[ProxiedServiceOut] | list[ServiceTileOut])
 async def list_services(user: User = Depends(get_current_user),
                         session: AsyncSession = Depends(get_session)):
+    """Admins get the full model; members get tiles for services they may open."""
     rows = (await session.exec(select(ProxiedService).order_by(ProxiedService.name))).all()
-    out = []
-    for s in rows:
-        if user.role == "admin" or (s.enabled and await user_may_open(session, user, s)):
-            out.append(_out(s))
-    return out
+    if user.role == "admin":
+        return [_out(s) for s in rows]
+    return [_tile(s) for s in rows if s.enabled and await user_may_open(session, user, s)]
 
 
 @router.post("", response_model=ProxiedServiceOut, status_code=201)
