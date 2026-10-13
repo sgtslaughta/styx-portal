@@ -7,7 +7,7 @@ from app.security.page_style import styx_page
 _NO_ACCESS_HTML = styx_page(
     "No access",
     "<h1>No access</h1><p>Your account can't open this app. Ask an administrator to add you "
-    'to its group.</p><p><a href="/_styx/exit">Back to Styx</a></p>')
+    'to its group.</p><div class="actions"><a class="btn" href="/_styx/exit">Back to Styx</a></div>')
 
 
 def is_navigation(request: Request) -> bool:
