@@ -45,7 +45,7 @@ async def user_may_open(session: AsyncSession, user: User, svc: ProxiedService) 
     return bool(set(names) & set(svc.allowed_groups))
 
 
-def _login_redirect(request: Request, uri: str):
+def _login_redirect(request: Request, uri: str, cookie_root: bool = False):
     is_nav = (request.headers.get("sec-fetch-mode") == "navigate"
               or "text/html" in request.headers.get("accept", ""))
     if not is_nav:
@@ -53,10 +53,14 @@ def _login_redirect(request: Request, uri: str):
     proto = request.headers.get("x-forwarded-proto", "https")
     if proto not in ("http", "https"):
         proto = "https"
-    target = f"{proto}://{_redirect_host(request)}/login"
+    login = "/login"
     if _SAFE_NEXT.match(uri):
-        target += f"?next={quote(uri, safe='/?=&')}"
-    return RedirectResponse(target, status_code=302)
+        login += f"?next={quote(uri, safe='/?=&')}"
+    if cookie_root:
+        # While styx_svc is set, /login itself routes to the service: clear the
+        # cookie first or the browser loops between the app and auth-check.
+        login = f"/_styx/exit?next={quote(login, safe='')}"
+    return RedirectResponse(f"{proto}://{_redirect_host(request)}{login}", status_code=302)
 
 
 @router.get("/{slug}/auth-check")
@@ -70,7 +74,7 @@ async def auth_check(slug: str, request: Request,
         return Response(status_code=200)
     user = await session_user_or_none(request, session)
     if user is None:
-        return _login_redirect(request, uri)
+        return _login_redirect(request, uri, svc.mount_mode == "cookie-root")
     if not await user_may_open(session, user, svc):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this service")
     groups = await user_group_names(session, user.id)
@@ -94,8 +98,8 @@ async def enter_service(slug: str, user: User = Depends(get_current_user),
 
 
 @exit_router.get("/exit")
-async def exit_service():
-    resp = RedirectResponse("/", status_code=302)
+async def exit_service(next: str = "/"):
+    resp = RedirectResponse(next if _SAFE_NEXT.match(next) else "/", status_code=302)
     resp.delete_cookie(COOKIE_NAME, path="/")
     return resp
 
