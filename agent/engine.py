@@ -327,7 +327,7 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
     env["SELKIES_VIDEO_STREAMING_MODE"] = "true" if streaming is True else "false"
     # Admin bitrate is the default AND the ceiling; viewers may lower it. Floor
     # 1000 kbps: stale 1.x storage sends 8 (Mbps) which would otherwise mean 8 kbps.
-    kbps = _int_in(s.get("video_bitrate_kbps"), 500, 200000) or 16000
+    kbps = _int_in(s.get("video_bitrate_kbps", s.get("bitrate_kbps")), 500, 200000) or 16000
     lo = min(1000, kbps)
     cmd.append(f"--video-bitrate={kbps},{lo}-{kbps}")
     # Caps compression under motion so screen text stays legible.
