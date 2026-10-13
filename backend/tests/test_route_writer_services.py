@@ -162,3 +162,19 @@ def test_auth_check_is_internal_and_unrouted(tmp_path, monkeypatch):
         assert not _path_matches(r["rule"], "/internal/services/sonarr/strip"), name
     wfa = cfg["http"]["middlewares"]["ws-auth-w1"]["forwardAuth"]
     assert wfa["address"] == "http://backend:8000/internal/workstations/w1/auth-check"
+
+
+def test_shell_router_above_focus_and_exit():
+    cfg = build_routes_config([], "example.com", "tunnel",
+                              services=[_svc(slug="immich", mount_mode="cookie-root")])
+    r = cfg["http"]["routers"]["styx-shell"]
+    assert r["service"] == "frontend" and r["priority"] == 95
+    assert "PathPrefix(`/_styx/app`)" in r["rule"]
+    assert r["priority"] > cfg["http"]["routers"]["styx-exit"]["priority"]
+
+
+def test_service_routers_force_sameorigin():
+    cfg = build_routes_config([], "example.com", "tunnel", services=[_svc()])
+    assert "styx-frame-sameorigin" in cfg["http"]["routers"]["svc-sonarr"]["middlewares"]
+    mw = cfg["http"]["middlewares"]["styx-frame-sameorigin"]
+    assert mw["headers"]["customFrameOptionsValue"] == "SAMEORIGIN"

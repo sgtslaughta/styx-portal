@@ -16,7 +16,8 @@ STRIP = "http://backend:8000/internal/services/{slug}/strip"
 # app-native services get a strip-only forwardAuth (no auth) for the same reason.
 IDENTITY_HEADERS = ["X-Styx-User", "X-Styx-Email", "X-Styx-Groups", "X-authentik-username",
                     "X-authentik-groups", "X-authentik-email", "X-authentik-uid"]
-BASE_MW = ["ip-ban-gate", "styx-ratelimit", "styx-strip-identity", "service-unavailable-errors"]
+BASE_MW = ["ip-ban-gate", "styx-ratelimit", "styx-strip-identity", "service-unavailable-errors",
+           "styx-frame-sameorigin"]
 
 
 def add_service_routes(config: dict, middlewares: dict, services: list[dict],
@@ -68,6 +69,10 @@ def add_service_routes(config: dict, middlewares: dict, services: list[dict],
     routers["styx-exit"] = {"rule": f"Host(`{domain}`) && PathPrefix(`/_styx`)",
                             "service": "api", "priority": 90,
                             "middlewares": ["ip-ban-gate", "styx-ratelimit"], **transport}
+    middlewares["styx-frame-sameorigin"] = {"headers": {"customFrameOptionsValue": "SAMEORIGIN"}}
+    routers["styx-shell"] = {"rule": f"Host(`{domain}`) && PathPrefix(`/_styx/app`)",
+                             "service": "frontend", "priority": 95,
+                             "middlewares": ["styx-ratelimit"], **transport}
     if has_cookie_root:
         # While a takeover cookie is set, /api belongs to the app unless the
         # request is from the Styx frontend (X-Styx-Client header).
