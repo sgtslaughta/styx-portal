@@ -293,3 +293,36 @@ def test_snap_scope_props_pins_caller_and_strips_exec():
         seat_portal.snap_scope_props("evil.scope", ok, [], 4242)
     with pytest.raises(ValueError):  # aux units
         seat_portal.snap_scope_props("snap.firefox.firefox-1.scope", ok, [("x.service", [])], 4242)
+
+
+def test_viewers_connected(tmp_path):
+    p = tmp_path / "gw_state.json"
+    assert styx_agent.viewers_connected(p) is False  # missing
+    p.write_text("not json")
+    assert styx_agent.viewers_connected(p) is False
+    p.write_text(json.dumps({"active_connections": 0}))
+    assert styx_agent.viewers_connected(p) is False
+    p.write_text(json.dumps({"active_connections": 2}))
+    assert styx_agent.viewers_connected(p) is True
+
+
+def test_merge_pending_unions_keys_and_keeps_first_old():
+    a, b, c = {"x": 1}, {"x": 2}, {"x": 3}
+    p = styx_agent.merge_pending(None, a, b)
+    assert p["old"] == a and "seat" not in p["keys"]
+    p = styx_agent.merge_pending(p, b, c)
+    assert p["old"] == a
+    assert set(p["keys"]) == set(styx_agent.settings_restart_keys(a, b))
+
+
+def test_merge_pending_seat_change_in_either_push():
+    base = {"seat_width": 2560}
+    wide = {"seat_width": 1920}
+    p = styx_agent.merge_pending(None, base, wide)
+    assert "seat" in p["keys"]
+    p = styx_agent.merge_pending(p, wide, {"seat_width": 1920, "idle_timeout_s": 5})
+    assert "seat" in p["keys"]  # earlier push's seat change is kept
+    q = styx_agent.merge_pending(None, base, {"idle_timeout_s": 5})
+    assert "seat" not in q["keys"]
+    q = styx_agent.merge_pending(q, {"idle_timeout_s": 5}, wide)
+    assert "seat" in q["keys"]

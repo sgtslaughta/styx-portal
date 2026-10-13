@@ -41,7 +41,8 @@ from health import gw_state_path  # noqa: E402, F401
 from seat_gnome import Escalation, pick_seat_shell  # noqa: E402
 from agent_procs import (  # noqa: E402
     FRAME_START_TIMEOUT_S, _restart_engine, _terminate,
-    _check, build_gateway_cmd, drop_clients, settings_restart_keys)
+    _check, build_gateway_cmd, drop_clients, settings_restart_keys,  # noqa: F401
+    viewers_connected, merge_pending)
 
 
 def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool,
@@ -242,7 +243,23 @@ def run(cfg: dict) -> int:
                           "manager. Install: sudo apt install labwc")
         return proc
 
+    pending = None       # deferred settings-push restart (see merge_pending)
+    pending_exit = False
     while not stopping:
+        if (pending or pending_exit) and not viewers_connected(gw_state_path(cfg)):
+            if pending_exit:
+                # Shell is chosen once per process; systemd (Restart=always)
+                # brings the agent back up on the new one.
+                print("seat_shell changed; restarting agent", flush=True)
+                exit_code = 1
+                break
+            for key in pending["keys"]:
+                if key in procs:
+                    _terminate(procs[key])
+                    procs[key] = None
+            if "seat" in pending["keys"] and gseat:
+                gseat.stop()
+            pending = None
         if gseat and not gseat.alive():
             # Seat died: selkies (and the standby) are captured against a dead
             # portal session. The next branch restarts, seat first.
@@ -333,21 +350,12 @@ def run(cfg: dict) -> int:
                 old_ss = cfg["stream_settings"]
                 cfg["stream_settings"] = hb["stream_settings"]
                 CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
-                new_shell = pick_seat_shell(cfg)
-                if new_shell != shell_kind:
-                    # Shell is chosen once per process; systemd (Restart=always)
-                    # brings the agent back up on the new one.
-                    print(f"seat_shell changed to {new_shell}; restarting agent",
-                          flush=True)
-                    exit_code = 1
-                    break
-                keys = settings_restart_keys(old_ss, hb["stream_settings"])
-                for key in keys:
-                    if key in procs:
-                        _terminate(procs[key])
-                        procs[key] = None
-                if "seat" in keys and gseat:
-                    gseat.stop()
+                if pick_seat_shell(cfg) != shell_kind:
+                    pending_exit = True
+                pending = merge_pending(pending, old_ss, hb["stream_settings"])
+                if viewers_connected(gw_state_path(cfg)):
+                    print("settings changed; applying when the last viewer "
+                          "disconnects", flush=True)
                 continue
             interval = hb.get("heartbeat_interval_s", 30)
             backoff = 2
