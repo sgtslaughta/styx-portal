@@ -247,18 +247,21 @@ test("s5b a stopped app shows Styx's 503 page inside the frame, not the blocked 
   }
 });
 
-test("s5c an expired session inside the frame offers a sign-in that returns to the shell", async ({ browser }) => {
-  const ctx = await browser.newContext();
-  const p = await ctx.newPage();
-  await uiLogin(p, MEMBER);
+test("s5c an expired session inside the frame offers a sign-in that returns to the shell", async () => {
+  const p = member.page;
+  const ctx = member.ctx;
   await p.goto("/_styx/app/idon/");
   await expect(p.frameLocator("iframe").locator("body")).toContainText("Hostname", { timeout: 30_000 });
+  const saved = (await ctx.cookies()).filter((c) => c.name === "styx_proxy");
   await ctx.clearCookies({ name: "styx_proxy" });
-  await p.frameLocator("iframe").locator("body").evaluate(() => { location.href = "/idon/next"; });
-  const link = p.frameLocator("iframe").getByRole("link", { name: "Sign in" });
-  await expect(link).toHaveAttribute("href", "/login?next=%2F_styx%2Fapp%2Fidon%2Fnext", { timeout: 30_000 });
-  await expect(link).toHaveAttribute("target", "_top");
-  await ctx.close();
+  try {
+    await p.frameLocator("iframe").locator("body").evaluate(() => { location.href = "/idon/next"; });
+    const link = p.frameLocator("iframe").getByRole("link", { name: "Sign in" });
+    await expect(link).toHaveAttribute("href", "/login?next=%2F_styx%2Fapp%2Fidon%2Fnext", { timeout: 30_000 });
+    await expect(link).toHaveAttribute("target", "_top");
+  } finally {
+    await ctx.addCookies(saved);
+  }
 });
 
 test("s6 identity headers only when enabled; spoofing is replaced", async () => {
