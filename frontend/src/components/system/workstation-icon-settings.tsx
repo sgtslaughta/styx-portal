@@ -34,6 +34,7 @@ export function WorkstationIconSettings({ ws, onSaved }: { ws: Workstation; onSa
   const [fileError, setFileError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const pickId = useRef(0);
+  const [fileKey, setFileKey] = useState(0);
 
   useEffect(() => {
     setMode(ws.icon_kind);
@@ -49,6 +50,7 @@ export function WorkstationIconSettings({ ws, onSaved }: { ws: Workstation; onSa
       setEmoji("");
       setImage(null);
       setFileError(null);
+      setFileKey((k) => k + 1);
       onSaved();
     } catch (e) {
       toast.error((e as Error).message);
@@ -116,7 +118,7 @@ export function WorkstationIconSettings({ ws, onSaved }: { ws: Workstation; onSa
             onChange={(e) => setEmoji(e.target.value)}
             maxLength={16}
             aria-invalid={emojiErr ? true : undefined}
-            aria-describedby={emojiErr ? "icon-error" : undefined}
+            aria-describedby={emojiErr ? `icon-error-${ws.id}` : undefined}
             placeholder="🖥️"
             className="w-16 rounded border border-border bg-surface px-1 py-0.5 text-center"
           />
@@ -126,6 +128,7 @@ export function WorkstationIconSettings({ ws, onSaved }: { ws: Workstation; onSa
             <label className="cursor-pointer rounded-md border border-border px-2 py-1 text-xs hover:bg-muted">
               Upload image
               <input
+                key={fileKey}
                 type="file"
                 aria-label="Upload image"
                 accept=".png,.svg,.ico,.webp"
@@ -147,7 +150,7 @@ export function WorkstationIconSettings({ ws, onSaved }: { ws: Workstation; onSa
           </Button>
         )}
       </div>
-      {(emojiErr || fileError) && <p id="icon-error" role="alert" className="text-xs text-rose-400">{emojiErr ?? fileError}</p>}
+      {(emojiErr || fileError) && <p id={`icon-error-${ws.id}`} role="alert" className="text-xs text-rose-400">{emojiErr ?? fileError}</p>}
     </div>
   );
 }
