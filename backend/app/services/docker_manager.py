@@ -10,8 +10,6 @@ from app.config import Settings
 
 logger = logging.getLogger("styx-portal")
 
-TRAEFIK_CONTAINER = "styx-traefik"
-
 # Defense-in-depth: denylist of security-critical keys that extra_docker_args
 # must never set, even if validation bypasses. These are enforced at the sink.
 _EXTRA_DOCKER_ARGS_DENYLIST = {
@@ -56,7 +54,10 @@ class DockerManager:
         # docker being down. The client is built on first use; ping()/version()
         # already degrade gracefully, so the failure surfaces there as a clean
         # "not reachable", not an exception.
-        self._url = base_url or Settings().DOCKER_SOCKET
+        cfg = Settings()
+        self._url = base_url or cfg.DOCKER_SOCKET
+        self._traefik = cfg.TRAEFIK_CONTAINER
+        self._project = cfg.COMPOSE_PROJECT
         self._client_obj: docker.DockerClient | None = None
         self._network_name = network_name
 
@@ -311,7 +312,7 @@ class DockerManager:
         # the network was first made. Idempotent: a redundant connect raises
         # APIError, which we ignore.
         try:
-            net.connect(TRAEFIK_CONTAINER)
+            net.connect(self._traefik)
         except docker.errors.APIError:
             pass  # already connected, or traefik not present (tests/dev)
         return name
@@ -323,7 +324,7 @@ class DockerManager:
         except docker.errors.NotFound:
             return
         try:
-            net.disconnect(TRAEFIK_CONTAINER)
+            net.disconnect(self._traefik)
         except docker.errors.APIError:
             pass
         try:
@@ -353,12 +354,13 @@ class DockerManager:
 
     def list_containers(self) -> list[dict]:
         """Running containers not managed by Styx and not part of the Styx compose stack."""
-        own_project = None
-        try:
-            own_project = self._client.containers.get(TRAEFIK_CONTAINER).labels.get(
-                "com.docker.compose.project")
-        except docker.errors.DockerException:
-            pass
+        own_project = self._project or None
+        if own_project is None:
+            try:
+                own_project = self._client.containers.get(self._traefik).labels.get(
+                    "com.docker.compose.project")
+            except docker.errors.DockerException:
+                pass
         out = []
         for c in self._client.containers.list():
             labels = c.labels or {}

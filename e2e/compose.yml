@@ -2,7 +2,8 @@
 #   docker compose -p styx-e2e -f e2e/compose.yml up -d --build --wait
 # Only port: 127.0.0.1:18080 (Traefik `web`, plain HTTP). No container_names.
 # The backend reaches docker only through docker-shim, which confines every
-# write to this project (the backend hardcodes `styx-traefik`, the live name).
+# write to this project (TRAEFIK_CONTAINER/COMPOSE_PROJECT point the backend at
+# the e2e Traefik; the shim stays as the safety guard against the live `styx-traefik`).
 
 networks:
   edge:            # traefik <-> backend/frontend, plus the url-kind upstream
@@ -67,6 +68,8 @@ services:
       DOCKER_SOCKET: tcp://docker-shim:2375
       DOCKER_NETWORK: styx-e2e-edge
       SERVICES_NETWORK: styx-e2e-services
+      TRAEFIK_CONTAINER: styx-e2e-traefik-1
+      COMPOSE_PROJECT: styx-e2e
       TEMPLATES_DIR: /app/templates
       JWT_SECRET: e2e-only-jwt-secret-not-for-production-0123456789abcdef
       COOKIE_SECURE: "false"

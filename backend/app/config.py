@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     # Proxied docker-local services join this network; only Traefik shares it
     # (backend/frontend do not), so an app container cannot reach Styx directly.
     SERVICES_NETWORK: str = "styx-services"
+    TRAEFIK_CONTAINER: str = "styx-traefik"  # attached to per-user/service networks
+    # Compose project whose containers are "ours" (hidden from discovery).
+    # Empty = derive it from the Traefik container's compose label.
+    COMPOSE_PROJECT: str = ""
     SELKIES_DEFAULT_PORT: int = 3001
     TEMPLATES_DIR: str = "/app/templates"
     SERVICE_PRESETS_DIR: str = "/app/templates/services"

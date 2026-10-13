@@ -83,3 +83,47 @@ async def test_delete_disconnects_only_when_unreferenced(admin_client, docker_mo
     docker_mock.disconnect_from_network.assert_not_called()
     assert (await admin_client.delete(f"/api/services/{b}")).status_code == 204
     docker_mock.disconnect_from_network.assert_called_once_with("sonarr", NET)
+
+
+def _mgr(monkeypatch, **env):
+    for k, v in env.items():
+        monkeypatch.setenv(k, v)
+    return DockerManager()
+
+
+def test_traefik_container_is_a_setting(monkeypatch):
+    with patch("app.services.docker_manager.docker.DockerClient") as cls:
+        client = cls.return_value
+        client.networks.get.side_effect = docker.errors.NotFound("x")
+        net = client.networks.create.return_value
+        _mgr(monkeypatch, TRAEFIK_CONTAINER="e2e-traefik-1").ensure_traefik_network(NET)
+        net.connect.assert_called_once_with("e2e-traefik-1")
+
+
+def _ctr(name, project=None, managed=False):
+    c = MagicMock()
+    c.name = name
+    c.labels = {**({"com.docker.compose.project": project} if project else {}),
+                **({"styx-portal.managed": "true"} if managed else {})}
+    c.attrs = {}
+    c.image.tags = ["img"]
+    return c
+
+
+def test_list_containers_scoped_by_compose_project_setting(monkeypatch):
+    with patch("app.services.docker_manager.docker.DockerClient") as cls:
+        client = cls.return_value
+        client.containers.list.return_value = [_ctr("a", "mine"), _ctr("b", "other"), _ctr("c")]
+        out = _mgr(monkeypatch, COMPOSE_PROJECT="mine").list_containers()
+        assert [c["name"] for c in out] == ["b", "c"]
+        client.containers.get.assert_not_called()  # no lookup of the traefik name
+
+
+def test_list_containers_derives_project_from_traefik(monkeypatch):
+    with patch("app.services.docker_manager.docker.DockerClient") as cls:
+        client = cls.return_value
+        client.containers.get.return_value = _ctr("t", "derived")
+        client.containers.list.return_value = [_ctr("a", "derived"), _ctr("b", "other")]
+        out = _mgr(monkeypatch, TRAEFIK_CONTAINER="t").list_containers()
+        client.containers.get.assert_called_once_with("t")
+        assert [c["name"] for c in out] == ["b"]
