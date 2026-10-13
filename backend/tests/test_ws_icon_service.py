@@ -60,6 +60,9 @@ def test_bad_images_rejected(value):
     b'<svg xmlns="http://www.w3.org/2000/svg"><rect style="background:image-set(\'http://e\' 1x)"/></svg>',
     b'<svg xmlns="http://www.w3.org/2000/svg"><rect fill="url(#a) url(http://e/b)"/></svg>',
     b'<svg xmlns="http://www.w3.org/2000/svg" xml:base="http://e/"/>',
+    b'<svg xmlns="http://www.w3.org/2000/svg"><rect fill="url(\'http://e\')"/></svg>',
+    b'<svg xmlns="http://www.w3.org/2000/svg"><rect fill="url(#a)url(http://x)"/></svg>',
+    b'<svg xmlns="http://www.w3.org/2000/svg" xml:id="a"/>',
     b'<html/>', b'<svg', b'\xff\xfe<svg/>',
 ])
 def test_bad_svg_rejected(svg):
@@ -128,3 +131,10 @@ def test_normal_svg_accepted():
 
 def test_svg_csp_has_sandbox():
     assert "sandbox" in ws_icon.SVG_HEADERS["Content-Security-Policy"]
+
+
+@pytest.mark.parametrize("fill", ["url('#g')", "url( #a )", 'url("#a")', "url(#a) url('#b')"])
+def test_quoted_local_url_and_xml_space_accepted(fill):
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" xml:lang="en">'
+           f'<rect fill="{fill}"/></svg>').encode()
+    ws_icon.validate_icon("image", uri(svg, "image/svg+xml"))

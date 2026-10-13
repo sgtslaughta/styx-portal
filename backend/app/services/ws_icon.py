@@ -24,7 +24,16 @@ _SVG_NS = "{http://www.w3.org/2000/svg}"
 _BAD_TAGS = {"style", "script", "foreignobject", "iframe", "object", "embed", "animate", "set"}
 _ATTR_NS = {"http://www.w3.org/1999/xlink"}
 _IMG_DATA = re.compile(r"^data:image/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]*$")
-_BAD_URL = re.compile(r"@import|image-set|src\(|expression\(|url\(\s*['\"]?\s*(?!#)", re.I)
+_BAD_FUNC = re.compile(r"@import|image-set|src\(|expression\(", re.I)
+_URL = re.compile(r"url\(", re.I)
+_LOCAL_URL = re.compile(r"url\(\s*(['\"]?)\s*#[^)'\"]*\1\s*\)", re.I)
+_XML_NS = "http://www.w3.org/XML/1998/namespace"
+
+
+def _bad_url(val: str) -> bool:
+    """True unless every url( is a local #fragment reference."""
+    return bool(_BAD_FUNC.search(val)) or (
+        len(_URL.findall(val)) != len(_LOCAL_URL.findall(val)))
 _DOCTYPE = re.compile(rb"<!\s*(DOCTYPE|ENTITY)", re.I)
 
 
@@ -63,7 +72,8 @@ def _check_svg(data: bytes) -> None:
         for name, val in el.attrib.items():
             ns, _, local = name.rpartition("}")
             local = local.lower()
-            if ns and ns[1:] not in _ATTR_NS:
+            if ns and ns[1:] not in _ATTR_NS and not (
+                    ns[1:] == _XML_NS and local in ("space", "lang")):
                 raise ValueError("SVG contains an unsupported attribute")
             squashed = re.sub(r"\s", "", val).lower()
             if local.startswith("on") or "javascript:" in squashed:
@@ -73,7 +83,7 @@ def _check_svg(data: bytes) -> None:
                     raise ValueError("SVG may not reference external resources")
             if "\\" in val:
                 raise ValueError("SVG may not contain escapes")
-            if _BAD_URL.search(val):
+            if _bad_url(val):
                 raise ValueError("SVG may not reference external resources")
 
 
