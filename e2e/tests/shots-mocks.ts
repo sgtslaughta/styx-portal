@@ -44,8 +44,8 @@ export const CHIP_JOBS = {
 
 const inst = (n: number, name: string, status: string, more: object = {}) => ({
   id: `mock-inst-${n}`, template_id: "mock-tpl", name, subdomain: `mock${n}`, container_id: `c${n}`, status,
-  error_message: null, env_overrides: {}, volume_names: [], created_at: "2026-10-13T08:00:00Z",
-  started_at: "2026-10-13T08:01:00Z", stopped_at: null, last_activity: "2026-10-13T09:30:00Z", session_config: null, ...more,
+  error_message: null, env_overrides: {}, volume_names: [], created_at: "2026-10-13T08:00:00",
+  started_at: "2026-10-13T08:01:00", stopped_at: null, last_activity: "2026-10-13T09:30:00", session_config: null, ...more,
 });
 /** Running, paused, stopped and errored instances: fills every header count chip. */
 export const INSTANCES = [

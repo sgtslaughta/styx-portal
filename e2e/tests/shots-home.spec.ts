@@ -37,6 +37,17 @@ test("home with running, paused, stopped and errored instances", async ({ page }
   }
 });
 
+test("header user controls are right-aligned at 390", async ({ page }) => {
+  await login(page, MEMBER);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  // The theme toggle trails Log out, so the cluster's right edge is the toggle; Log out sits in the right half.
+  const toggle = (await page.getByRole("button", { name: "Toggle theme" }).boundingBox())!;
+  const logout = (await page.getByRole("button", { name: "Log out" }).boundingBox())!;
+  expect(toggle.x + toggle.width, "controls right edge").toBeGreaterThanOrEqual(390 - 24);
+  expect(logout.x, "Log out starts in the right half").toBeGreaterThan(195);
+});
+
 test("users table at 390 stays inside its card", async ({ page }) => {
   await login(page, ADMIN);
   await page.setViewportSize({ width: 390, height: 844 });
@@ -46,6 +57,8 @@ test("users table at 390 stays inside its card", async ({ page }) => {
     await openSettings(page, "Users");
     await expect(page.getByRole("row").filter({ hasText: MEMBER.username })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    // The table's own wrapper must not scroll sideways: actions collapse into the More menu.
+    expect(await page.locator("table").evaluate((t) => t.parentElement!.scrollWidth <= t.parentElement!.clientWidth)).toBe(true);
     await page.screenshot({ path: `${SHOTS}/users-390-${t}.png`, fullPage: true });
   }
 });
