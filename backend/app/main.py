@@ -26,6 +26,7 @@ from app.routers import workstations as workstations_router
 from app.routers import enroll as enroll_router
 from app.routers import agent as agent_router
 from app.routers import system_settings as system_settings_router
+from app.routers import groups as groups_router
 from app.security.deps import get_current_user, require_admin
 from app.services.docker_manager import DockerManager
 from app.services.session_monitor import SessionMonitor
@@ -282,6 +283,8 @@ app.include_router(workstations_router.router, prefix="/api/workstations", tags=
 app.include_router(enroll_router.router, prefix="/api/enroll", tags=["enroll"])
 app.include_router(agent_router.router, prefix="/api/agent", tags=["agent"])
 app.include_router(system_settings_router.router, prefix="/api/system-settings", tags=["system-settings"])
+app.include_router(groups_router.router, prefix="/api/groups", tags=["groups"])
+app.include_router(groups_router.users_router, prefix="/api/users", tags=["groups"])
 
 
 @app.get("/api/health")
