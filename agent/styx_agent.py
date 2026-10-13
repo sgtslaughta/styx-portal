@@ -182,10 +182,23 @@ def run(cfg: dict) -> int:
     internal_port = engine.pick_free_port()
     port_file = INSTALL_DIR / "selkies-port"   # gateway reads it per request
 
-    def publish_port():
+    def publish_port(why: str = "") -> None:
+        """<install>/selkies-port = the port of the live selkies. Re-published
+        every loop pass from the active process itself, so a stale value heals
+        within one pass; writes are logged because a stale port means the
+        gateway serves the hold page to everyone."""
+        proc = procs["selkies"]
+        port = getattr(proc, "styx_port", internal_port) if proc is not None else internal_port
+        try:
+            current = port_file.read_text().strip()
+        except OSError:
+            current = ""
+        if current == str(port):
+            return
         tmp = port_file.with_suffix(".tmp")
-        tmp.write_text(str(internal_port))
+        tmp.write_text(str(port))
         os.replace(tmp, port_file)
+        print(f"selkies port published: {port} (was {current or 'unset'}; {why})", flush=True)
 
     def spawn_standby():
         """GNOME seat only: a booted, idle selkies on its own port. A refit
@@ -320,7 +333,11 @@ def run(cfg: dict) -> int:
                 time.sleep(min(backoff, 60))
                 backoff *= 2
             procs["selkies"] = start_selkies()
-            publish_port()
+            if procs["selkies"] is not None:
+                procs["selkies"].styx_port = internal_port
+            publish_port("selkies started")
+        elif gseat:
+            publish_port("heal")
         if gseat and procs["selkies"] is not None and (
                 procs["standby"] is None or procs["standby"].poll() is not None):
             procs["standby"] = spawn_standby()
@@ -428,8 +445,7 @@ def run(cfg: dict) -> int:
                 if standby is not None and standby.poll() is None:
                     procs["selkies"], procs["standby"] = standby, None
                     internal_port = standby.styx_port
-                    publish_port()
-                    print(f"refit: promoted standby selkies on port {internal_port}", flush=True)
+                    publish_port("promoted standby")
                 last_engine_restart = time.monotonic()
             refit.clear_request(refit_req)
 
