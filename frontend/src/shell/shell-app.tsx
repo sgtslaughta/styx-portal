@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import { toTile } from "@/lib/service-tiles";
-import { LazyMotion, MotionConfig, domAnimation } from "framer-motion";
+import { LazyMotion, MotionConfig, domMax } from "framer-motion";
 import { Dock } from "./dock";
 import { EdgeTab } from "./edge-tab";
 import { readPos } from "./ferry-pos";
@@ -37,7 +37,7 @@ export function ShellApp() {
       href="/_styx/exit?next=/" action="Go home" />;
   }
   return (
-    <LazyMotion features={domAnimation}>
+    <LazyMotion features={domMax}> {/* domMax: the edge tab needs drag */}
       <MotionConfig reducedMotion="user">
         <div className="h-dvh w-screen">
           <Frame key={tile.slug} tile={tile} inner={target.inner} onTitle={onTitle} onFrame={setFrameEl} />

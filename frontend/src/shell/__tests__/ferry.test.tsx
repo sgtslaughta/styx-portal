@@ -96,3 +96,14 @@ it("hotkey re-attaches after a frame load", () => {
   fresh.dispatchEvent(Object.assign(new Event("keydown"), { code: "KeyS", altKey: true, shiftKey: true, ctrlKey: true }));
   expect(toggle).toHaveBeenCalledTimes(1);
 });
+it("focus moves into the dock on open and back to the tab on close", async () => {
+  const tab = document.createElement("button");
+  document.body.appendChild(tab);
+  const tabRef = { current: tab };
+  const props = { onOpenChange: () => {}, tiles, current: "sonarr", focusSlug: null, side: "right" as const, tabRef };
+  const { rerender } = render(<Dock open {...props} />);
+  await waitFor(() => expect(screen.getByRole("dialog")).toContainElement(document.activeElement as HTMLElement));
+  rerender(<Dock open={false} {...props} />);
+  await waitFor(() => expect(tab).toHaveFocus());
+  tab.remove();
+});

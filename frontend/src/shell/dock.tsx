@@ -1,4 +1,4 @@
-import type { RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { AnimatePresence, m, type Variants } from "framer-motion";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import type { ServiceTile } from "@/api/client";
@@ -17,6 +17,25 @@ type Props = {
 };
 
 export function Dock({ open, onOpenChange, tiles, current, focusSlug, side, tabRef }: Props) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const wasOpen = useRef(false);
+  // Radix autofocus skips forceMount+AnimatePresence; focus by hand so Esc works after an iframe hotkey
+  useEffect(() => {
+    if (open) {
+      let id = 0;
+      let tries = 0;
+      const focusIn = () => {
+        const el = contentRef.current; // the portal mounts a frame or two after `open` flips
+        if (!el) { if (tries++ < 10) id = requestAnimationFrame(focusIn); return; }
+        if (!el.contains(document.activeElement)) (el.querySelector<HTMLElement>("a") ?? el).focus();
+      };
+      id = requestAnimationFrame(focusIn);
+      wasOpen.current = true;
+      return () => cancelAnimationFrame(id);
+    }
+    if (wasOpen.current) tabRef?.current?.focus();
+    wasOpen.current = false;
+  }, [open, tabRef]);
   const phone = open && isPhone();
   const dir = side === "right" ? 1 : -1;
   const mid = (tiles.length - 1) / 2;
@@ -34,9 +53,8 @@ export function Dock({ open, onOpenChange, tiles, current, focusSlug, side, tabR
             <DialogPrimitive.Overlay forceMount asChild>
               <m.div className="fixed inset-0 z-50 bg-black/20" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />
             </DialogPrimitive.Overlay>
-            <DialogPrimitive.Content forceMount asChild
-              onCloseAutoFocus={(e) => { e.preventDefault(); tabRef?.current?.focus(); }}>
-              <m.div
+            <DialogPrimitive.Content forceMount asChild>
+              <m.div ref={contentRef} tabIndex={-1}
                 initial={phone ? { y: 24, opacity: 0 } : { x: dir * 24, opacity: 0 }} animate={{ x: 0, y: 0, opacity: 1 }}
                 exit={phone ? { y: 24, opacity: 0 } : { x: dir * 24, opacity: 0 }}
                 transition={spring}
