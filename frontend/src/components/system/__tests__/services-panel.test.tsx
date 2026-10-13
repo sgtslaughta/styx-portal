@@ -2,7 +2,7 @@ import { render, screen, waitFor, fireEvent, within } from "@testing-library/rea
 import { describe, test, expect, vi, beforeEach } from "vitest";
 
 const { a, toast } = vi.hoisted(() => ({ toast: { error: vi.fn(), success: vi.fn() }, a: { listServices: vi.fn(), listServicePresets: vi.fn(), listGroups: vi.fn(), discoverContainers: vi.fn(),
-  createService: vi.fn(), updateService: vi.fn(), deleteService: vi.fn(), setServiceEnabled: vi.fn() } }));
+  createService: vi.fn(), updateService: vi.fn(), deleteService: vi.fn(), setServiceEnabled: vi.fn(), mountPlan: vi.fn(), mountLatest: vi.fn(), mountApply: vi.fn() } }));
 vi.mock("@/api/client", () => ({
   api: new Proxy({}, { get: (_t, k: string) => (...args: unknown[]) => (a as unknown as Record<string, (...x: unknown[]) => unknown>)[k]?.(...args) }),
   ApiError: class extends Error { status = 0; detail: unknown; constructor(m: string, s: number, d?: unknown) { super(m); this.status = s; this.detail = d; } },
@@ -124,5 +124,17 @@ describe("ServicesPanel", () => {
     expect(await screen.findByText("Cookie root")).toBeInTheDocument();
     expect(screen.getByText("No Styx login")).toBeInTheDocument();
     expect(screen.getByText("TLS unverified")).toBeInTheDocument();
+  });
+
+  test("form remounts with focus mode after the switch", async () => {
+    const dock = svc({ id: "s3", slug: "sonarr", name: "Sonarr", kind: "docker-local", container: "sonarr", container_port: 8989, url: null, upstream_url: null });
+    a.listServices.mockResolvedValue([dock]);
+    a.mountPlan.mockResolvedValue({ method: "config_file", changes: [{ target: "/c", key: "k", old: "", new: "/sonarr" }], needs_consent: false, reason: null });
+    a.mountLatest.mockResolvedValue({ id: "j", state: "rolled_back", changes: [], backup_dir: "/b", log_excerpt: "x", created_at: "", finished_at: "", steps: [] });
+    a.updateService.mockResolvedValue({ ...dock, mount_mode: "cookie-root", updated_at: "2" });
+    render(<ServicesPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Sonarr" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use focus mode instead" }));
+    expect(await screen.findByText("Focus: opens on its own")).toBeInTheDocument();
   });
 });

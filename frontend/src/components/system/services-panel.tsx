@@ -164,7 +164,7 @@ export function ServicesPanel() {
             onChanged={(svc) => { setEditing({ kind: "edit", svc }); void load(); }} />}
           {editing && (
             <ServiceForm
-              key={editing.kind === "edit" ? editing.svc.id : editing.kind === "discovered" ? editing.c.name : "new"}
+              key={editing.kind === "edit" ? `${editing.svc.id}:${editing.svc.updated_at}:${editing.svc.mount_mode}` : editing.kind === "discovered" ? editing.c.name : "new"}
               initial={editing.kind === "edit" ? editing.svc : undefined}
               discovered={editing.kind === "discovered"
                 ? { name: editing.c.name, port: editing.c.ports[0], preset: editing.c.suggested_preset } : null}

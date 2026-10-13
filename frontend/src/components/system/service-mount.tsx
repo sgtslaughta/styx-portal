@@ -24,7 +24,10 @@ export function ServiceMount({ service, onChanged }: { service: ProxiedService; 
   });
   const apply = useMutation({
     mutationFn: (consent: boolean) => api.mountApply(id, consent),
-    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["mount-job", id] }); },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["mount-job", id] });
+      void qc.invalidateQueries({ queryKey: ["mount-plan", id] });
+    },
     onError: (e: Error) => toast.error(e.message),
   });
   const focus = useMutation({
@@ -39,14 +42,13 @@ export function ServiceMount({ service, onChanged }: { service: ProxiedService; 
   });
 
   const jobState = job.data?.state;
-  const wasActive = useRef(false);
+  const seen = useRef<string | null>(null);
+  const jobKey = job.data ? `${job.data.id}:${job.data.state}` : null;
   useEffect(() => {
-    if (jobState && ACTIVE.includes(jobState)) wasActive.current = true;
-    else if (jobState && wasActive.current) {
-      wasActive.current = false;
-      void qc.invalidateQueries({ queryKey: ["mount-plan", id] });
-    }
-  }, [jobState, qc, id]);
+    if (jobKey === seen.current) return;
+    seen.current = jobKey;
+    if (jobState && !ACTIVE.includes(jobState)) void qc.invalidateQueries({ queryKey: ["mount-plan", id] });
+  }, [jobKey, jobState, qc, id]);
 
   if (!enabled) return null;
   if (plan.isError) return (

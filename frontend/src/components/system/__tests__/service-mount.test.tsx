@@ -100,3 +100,15 @@ it("consent Cancel closes without applying", async () => {
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(api.mountApply).not.toHaveBeenCalled();
 });
+
+it("job going straight to done after apply refetches the plan and drops the Set button", async () => {
+  vi.mocked(api.mountPlan).mockResolvedValueOnce({ method: "config_file", changes: CH, needs_consent: false, reason: null })
+    .mockResolvedValue({ method: "config_file", changes: [], needs_consent: false, reason: null });
+  vi.mocked(api.mountLatest).mockRejectedValueOnce(notFound)
+    .mockResolvedValue({ ...(rolled as object), state: "done" } as never);
+  vi.mocked(api.mountApply).mockResolvedValue({ job_id: "j" });
+  wrap(<ServiceMount service={svc} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Set base path to /sonarr" }));
+  expect(await screen.findByText(/Base path set\. Sonarr answers at \/sonarr/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Set base path to /sonarr" })).toBeNull();
+});
