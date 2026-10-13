@@ -8,6 +8,7 @@ Configure via **Settings → System → Workstations → Stream settings**:
 
 - **FPS** — 60 default; 120 only with GPU + bandwidth headroom.
 - **Quality (CRF)** — H.264 CRF, default 25. 15–20 for gaming quality; lower = more bandwidth.
+- **Max bitrate (kbps)** — ceiling: the admin value is both the default and the maximum; viewers may lower it from the stream panel (floor 1000 kbps).
 - **Gaming mode** — full-motion encoding (`SELKIES_H264_STREAMING_MODE`); consistent latency under heavy motion, more bandwidth on static desktops. Turn on for game seats.
 - **Sharpen static screen** — paint-over pass re-encodes idle screens at high quality (crisp text). Leave on.
 
