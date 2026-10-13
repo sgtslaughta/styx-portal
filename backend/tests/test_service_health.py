@@ -135,3 +135,26 @@ async def test_lifespan_cancels_service_health_task(monkeypatch):
     task.cancel()
     await asyncio.gather(task, return_exceptions=True)
     assert state["cancelled"]
+
+
+@pytest.mark.asyncio
+async def test_attached_docker_local_not_probed(session):
+    """Backend is not on styx-services, so it cannot reach attached containers."""
+    s = ProxiedService(slug="dl", name="DL", kind="docker-local", container="sonarr",
+                       container_port=8989, health_path="/ping")
+    fb = ProxiedService(slug="fb", name="FB", kind="docker-local", container="radarr",
+                        container_port=7878, health_path="/ping",
+                        upstream_fallback="http://host.docker.internal:7878")
+    session.add(s)
+    session.add(fb)
+    await session.commit()
+    seen = []
+
+    async def fake(url, verify):
+        seen.append(url)
+        return "healthy"
+
+    await run_health_pass(session, checker=fake)
+    assert seen == ["http://host.docker.internal:7878/ping"]
+    await session.refresh(s)
+    assert s.health_status == "unknown"

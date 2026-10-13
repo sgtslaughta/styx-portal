@@ -278,7 +278,10 @@ class DockerManager:
     def ensure_user_network(self, user_id: str) -> str:
         """Per-user bridge network; traefik is attached so it can route to
         instance containers. Backend itself never joins user networks."""
-        name = f"styx-u-{user_id[:12]}"
+        return self.ensure_traefik_network(f"styx-u-{user_id[:12]}")
+
+    def ensure_traefik_network(self, name: str) -> str:
+        """Bridge network `name` (created if missing) with traefik attached."""
         try:
             net = self._client.networks.get(name)
         except docker.errors.NotFound:

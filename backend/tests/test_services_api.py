@@ -104,7 +104,7 @@ async def test_bad_upstream_url_rejected(admin_client, docker_mock, url):
 async def test_docker_local_connects_network(admin_client, docker_mock):
     r = await admin_client.post("/api/services", json=_docker_body())
     assert r.status_code == 201, r.text
-    docker_mock.connect_to_network.assert_called_once_with("sonarr")
+    docker_mock.connect_to_network.assert_called_once_with("sonarr", "styx-services")
     assert r.json()["upstream_fallback"] is None
 
 

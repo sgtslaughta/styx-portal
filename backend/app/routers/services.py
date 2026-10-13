@@ -1,7 +1,9 @@
 """Admin CRUD for proxied services (spec §6, §8)."""
 import asyncio
+import logging
 from datetime import datetime, timezone
 
+from docker.errors import DockerException
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -18,6 +20,7 @@ from app.services.docker_manager import DockerManager
 
 router = APIRouter()
 _settings = Settings()
+log = logging.getLogger(__name__)
 
 
 def get_docker_manager() -> DockerManager:
@@ -63,10 +66,27 @@ async def _attach_docker(s: ProxiedService, docker: DockerManager) -> None:
     known = {c["name"] for c in await asyncio.to_thread(docker.list_containers)}
     if s.container not in known:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Container not found among discoverable containers")
-    ok = await asyncio.to_thread(docker.connect_to_network, s.container)
+    net = _settings.SERVICES_NETWORK
+    try:
+        await asyncio.to_thread(docker.ensure_traefik_network, net)
+        ok = await asyncio.to_thread(docker.connect_to_network, s.container, net)
+    except DockerException:
+        log.warning("cannot attach %s to %s", s.container, net, exc_info=True)
+        ok = False
     # ponytail: fallback assumes the host published the same port number;
     # SP4 (deploy-from-template) owns ports and removes the guess.
     s.upstream_fallback = None if ok else f"http://host.docker.internal:{s.container_port}"
+
+
+async def _release_container(session: AsyncSession, docker: DockerManager,
+                             container: str, exclude_id: str) -> None:
+    """Leave the services network unless another service row still uses the container."""
+    other = (await session.exec(select(ProxiedService.id).where(
+        ProxiedService.kind == "docker-local", ProxiedService.container == container,
+        ProxiedService.id != exclude_id))).first()
+    if other is None:
+        await asyncio.to_thread(docker.disconnect_from_network, container,
+                                _settings.SERVICES_NETWORK)
 
 
 @router.get("/presets", response_model=list[ServicePresetOut])
@@ -125,6 +145,7 @@ async def update_service(sid: str, body: ProxiedServiceUpdate, request: Request,
                          session: AsyncSession = Depends(get_session),
                          docker: DockerManager = Depends(get_docker_manager)):
     s = await _get_or_404(session, sid)
+    prev = s.container if s.kind == "docker-local" and not s.upstream_fallback else None
     for k, v in body.model_dump(exclude={"bypass_rules"}).items():
         setattr(s, k, v)
     s.bypass_rules = [r.model_dump() for r in body.bypass_rules]
@@ -136,6 +157,8 @@ async def update_service(sid: str, body: ProxiedServiceUpdate, request: Request,
                                                "mount_mode": s.mount_mode})
     await session.commit()
     await session.refresh(s)
+    if prev and (s.kind != "docker-local" or s.container != prev):
+        await _release_container(session, docker, prev, s.id)
     await _refresh(session)
     return _out(s)
 
@@ -171,7 +194,7 @@ async def delete_service(sid: str, request: Request, admin: User = Depends(requi
                          docker: DockerManager = Depends(get_docker_manager)):
     s = await _get_or_404(session, sid)
     if s.kind == "docker-local" and not s.upstream_fallback:
-        await asyncio.to_thread(docker.disconnect_from_network, s.container)
+        await _release_container(session, docker, s.container, s.id)
     slug = s.slug
     await session.delete(s)
     await audit_request(session, request, "service.delete", user_id=admin.id,

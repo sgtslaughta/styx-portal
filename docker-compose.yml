@@ -5,6 +5,11 @@ networks:
   styx-docker:
     name: styx-docker
     internal: true
+  # Proxied docker-local services (SP1) are attached here by the backend.
+  # Only Traefik joins: app containers cannot reach backend/frontend directly.
+  styx-services:
+    name: styx-services
+    driver: bridge
 
 volumes:
   db-data:
@@ -62,6 +67,7 @@ services:
       - lan-certs:/lan-certs:ro
     networks:
       - styx-portal
+      - styx-services
     healthcheck:
       test: ["CMD", "traefik", "healthcheck", "--ping"]
       interval: 30s
@@ -86,6 +92,7 @@ services:
       - lan-certs:/lan-certs:ro
     networks:
       - styx-portal
+      - styx-services
     healthcheck:
       test: ["CMD", "traefik", "healthcheck", "--ping"]
       interval: 30s

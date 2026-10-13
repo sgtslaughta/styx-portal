@@ -37,7 +37,10 @@ async def _safe_check(checker, url: str, verify: bool) -> str:
 async def run_health_pass(session: AsyncSession, checker=check_url) -> int:
     rows = (await session.exec(select(ProxiedService).where(
         ProxiedService.enabled == True))).all()  # noqa: E712
-    targets = [s for s in rows if s.health_path]
+    # Containers attached to styx-services are reachable from Traefik only; the
+    # backend deliberately is not on that network, so their health is unknown.
+    targets = [s for s in rows if s.health_path
+               and not (s.kind == "docker-local" and not s.upstream_fallback)]
     # Concurrent, so N slow services cost one timeout, not N.
     results = await asyncio.gather(*(
         _safe_check(checker, upstream_base(s) + s.health_path, s.verify_tls) for s in targets))

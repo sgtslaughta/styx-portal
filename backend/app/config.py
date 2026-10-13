@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./data/styx-portal.db"
     DOCKER_SOCKET: str = "unix:///var/run/docker.sock"
     DOCKER_NETWORK: str = "styx-portal"
+    # Proxied docker-local services join this network; only Traefik shares it
+    # (backend/frontend do not), so an app container cannot reach Styx directly.
+    SERVICES_NETWORK: str = "styx-services"
     SELKIES_DEFAULT_PORT: int = 3001
     TEMPLATES_DIR: str = "/app/templates"
     SERVICE_PRESETS_DIR: str = "/app/templates/services"
