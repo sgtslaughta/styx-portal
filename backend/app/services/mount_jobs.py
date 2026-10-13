@@ -249,7 +249,9 @@ async def sweep_interrupted(session) -> int:
         j.state = "failed"
         where = f" (backup: {j.backup_dir})" if j.backup_dir else ""
         j.log_excerpt = ("Interrupted. The settings file may hold the new value: restore from the "
-                         f"backup if the app is down{where}.")
+                         f"backup if the app is down{where}." if j.changed
+                         else "Interrupted before Styx wrote anything. Nothing was changed.")
+        j.steps = [{**s, "state": "failed"} if s.get("state") == "running" else s for s in j.steps or []]
         j.finished_at = datetime.now(timezone.utc)
         session.add(j)
     await session.commit()

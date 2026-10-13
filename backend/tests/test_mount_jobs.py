@@ -95,7 +95,7 @@ async def test_keeps_last_five_backups(session, tmp_path, monkeypatch, factory):
 
 
 async def test_sweep_marks_running_failed(session):
-    session.add(MountJob(service_id="s", state="running", backup_dir="/b"))
+    session.add(MountJob(service_id="s", state="running", changed=True, backup_dir="/b"))
     await session.commit()
     assert await sweep_interrupted(session) == 1
     j = (await session.exec(select(MountJob))).first()
@@ -240,8 +240,23 @@ async def test_backup_dirs_never_collide_in_one_second(session, tmp_path, monkey
 
 
 async def test_sweep_note_warns_file_may_hold_new_value(session):
-    session.add(MountJob(service_id="s", state="running", backup_dir="/b"))
+    session.add(MountJob(service_id="s", state="running", changed=True, backup_dir="/b"))
     await session.commit()
     await sweep_interrupted(session)
     j = (await session.exec(select(MountJob))).first()
     assert "restore from the backup" in j.log_excerpt and "/b" in j.log_excerpt
+
+
+async def test_sweep_note_and_steps_follow_changed(session):
+    steps = [{"id": "backup", "label": "b", "state": "done", "detail": ""},
+             {"id": "write", "label": "w", "state": "running", "detail": ""},
+             {"id": "verify", "label": "v", "state": "pending", "detail": ""}]
+    session.add_all([MountJob(service_id="a", state="running", changed=False, steps=steps),
+                     MountJob(service_id="b", state="running", changed=True, backup_dir="/b", steps=steps)])
+    await session.commit()
+    await sweep_interrupted(session)
+    rows = {j.service_id: j for j in (await session.exec(select(MountJob))).all()}
+    assert "new value" not in rows["a"].log_excerpt and "Nothing was changed" in rows["a"].log_excerpt
+    assert "new value" in rows["b"].log_excerpt
+    for j in rows.values():
+        assert [s["state"] for s in j.steps] == ["done", "failed", "pending"]
