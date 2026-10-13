@@ -134,3 +134,11 @@ it("markDragging toggles the body flag the iframe CSS keys on", () => {
   markDragging(false);
   expect(document.body.hasAttribute("data-ferry-drag")).toBe(false);
 });
+it("the edge tab arms the iframe guard on pointer down and releases it on pointer up", () => {
+  render(<EdgeTab onOpen={() => {}} />);
+  const btn = screen.getByRole("button");
+  fireEvent.pointerDown(btn);
+  expect(document.body.hasAttribute("data-ferry-drag")).toBe(true);
+  fireEvent.pointerUp(window);
+  expect(document.body.hasAttribute("data-ferry-drag")).toBe(false);
+});

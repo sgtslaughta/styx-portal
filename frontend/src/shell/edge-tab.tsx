@@ -46,8 +46,15 @@ export function EdgeTab({ onOpen, open = false, tabRef }:
         style={{ x, y, width: SIZE_X, height: SIZE_Y }}
         animate={{ opacity: idle ? 0.35 : 1 }}
         onPointerEnter={wake} onFocus={wake} onTouchStart={wake}
-        onPointerDown={() => { dragged.current = false; wake(); }}
-        onDragStart={() => { dragged.current = true; markDragging(true); }}
+        onPointerDown={() => {
+          dragged.current = false; wake();
+          // Arm at press, not at drag start: the first moves can already be over the app frame.
+          markDragging(true);
+          const release = () => { markDragging(false); window.removeEventListener("pointerup", release); window.removeEventListener("pointercancel", release); };
+          window.addEventListener("pointerup", release);
+          window.addEventListener("pointercancel", release);
+        }}
+        onDragStart={() => { dragged.current = true; }}
         onDragEnd={(_, info) => {
           markDragging(false);
           const next: FerryPos = { side: snapSide(info.point.x, window.innerWidth), y: clampY(info.point.y / window.innerHeight) };
