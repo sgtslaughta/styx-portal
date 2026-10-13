@@ -164,3 +164,14 @@ async def test_write_raises_restores(session, tmp_path, monkeypatch, factory):
     await run_job(job.id, svc.id, PLAN, d, factory, http_get=ok)
     await session.refresh(job)
     assert job.state == "rolled_back" and d.write_file.call_count == 2
+
+
+async def test_default_getter_uses_probe_container(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    d.probe_http.return_value = 200
+    await run_job(job.id, svc.id, PLAN, d, factory)
+    await session.refresh(job)
+    assert job.state == "done"
+    args, kw = d.probe_http.call_args
+    assert args[0] == "http://sonarr:8989/sonarr" and args[1] == "styx-services"
+    assert kw["extra_hosts"] is None

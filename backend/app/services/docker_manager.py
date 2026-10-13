@@ -2,6 +2,7 @@ import io
 import logging
 import os
 import posixpath
+import re
 import tarfile
 import time
 from pathlib import Path
@@ -63,6 +64,9 @@ def detect_gpu() -> dict:
         result["devices"] = ["/dev/nvidia0"]
 
     return result
+
+
+_PROBE_URL = re.compile(r"https?://[A-Za-z0-9._:/@%+=~-]+")
 
 
 class DockerManager:
@@ -279,6 +283,37 @@ class DockerManager:
             tf.addfile(info, io.BytesIO(data))
         self._client.containers.get(container).put_archive(
             posixpath.dirname(path), buf.getvalue())
+
+    def probe_http(self, url: str, network: str, timeout_s: int = 5,
+                   extra_hosts: dict | None = None) -> int:
+        """HTTP status of `url` fetched from a throwaway container on `network`; 0 on failure."""
+        if not _PROBE_URL.fullmatch(url):
+            raise ValueError("probe url must be plain http(s) with no shell metacharacters")
+        image = Settings().MOUNT_PROBE_IMAGE
+        try:
+            self._client.images.get(image)
+        except docker.errors.ImageNotFound:
+            self._client.images.pull(image)
+        c = None
+        try:
+            c = self._client.containers.create(
+                image, ["wget", "-q", "-S", "-O", "/dev/null", "-T", str(timeout_s), url],
+                network=network, read_only=True, cap_drop=["ALL"], mem_limit="32m",
+                labels={"styx.probe": "true"}, extra_hosts=extra_hosts)
+            c.start()
+            c.wait(timeout=timeout_s + 10)
+            out = c.logs(stdout=True, stderr=True).decode("utf-8", "replace")
+            codes = re.findall(r"HTTP/1\.[01] (\d{3})", out)
+            return int(codes[-1]) if codes else 0
+        except Exception:  # noqa: BLE001 - unreachable app == status 0
+            logger.debug("probe of %s failed", url, exc_info=True)
+            return 0
+        finally:
+            if c is not None:
+                try:
+                    c.remove(force=True)
+                except Exception:  # noqa: BLE001
+                    logger.warning("could not remove probe container", exc_info=True)
 
     def container_labels(self, container: str) -> dict:
         return self._client.containers.get(container).labels or {}

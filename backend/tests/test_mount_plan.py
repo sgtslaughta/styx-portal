@@ -49,7 +49,7 @@ def test_already_set_gives_no_changes():
 
 def test_no_file_found_is_manual():
     p = plan_mount(_svc(), _preset(), _docker({}))
-    assert p.method is None and "can't find" in p.reason
+    assert p.method is None and "can't find" in p.reason and "tmpfs" in p.reason
 
 
 def test_url_kind_or_no_subpath_is_manual():

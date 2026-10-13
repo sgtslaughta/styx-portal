@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     SCREENSHOT_CACHE_DIR: str = "/app/data/screenshots"
     SCREENSHOT_INTERVAL_SECONDS: int = 30
     MOUNT_BACKUP_DIR: str = "./data/mount-backups"
+    MOUNT_PROBE_IMAGE: str = "busybox:1.36"
     TRAEFIK_DYNAMIC_DIR: str = "/app/traefik-dynamic"
     AUTHENTIK_MIDDLEWARE: str = "authentik@file"
     DEPLOY_MODE: str = "tunnel"   # tunnel | direct

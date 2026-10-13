@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-import httpx
 from sqlmodel import select
 
 from app.config import Settings
@@ -54,7 +53,8 @@ def plan_mount(svc: ProxiedService, preset: ServicePreset | None, docker) -> Mou
                 plan.changes = [{"target": path, "key": m["key"], "old": old, "new": new}]
             return plan
     return MountPlan(needs_consent=needs_consent,
-                     reason=f"Styx can't find {preset.name}'s settings file in the container.")
+                     reason=f"Styx can't find {preset.name}'s settings file in the container "
+                             "(settings on a tmpfs mount can't be read).")
 
 
 STEPS = [("backup", "Back up settings"), ("apply", "Apply base path"),
@@ -64,12 +64,13 @@ VERIFY_INTERVAL_S = 2
 KEEP_BACKUPS = 5
 
 
-async def _default_get(url: str) -> int:
-    async with httpx.AsyncClient(timeout=5, follow_redirects=False) as c:
-        try:
-            return (await c.get(url)).status_code
-        except httpx.HTTPError:
-            return 0
+def _probe_getter(docker, svc):
+    hosts = {"host.docker.internal": "host-gateway"} if svc.upstream_fallback else None
+
+    async def get(url: str) -> int:
+        return await asyncio.to_thread(docker.probe_http, url, _settings.SERVICES_NETWORK,
+                                       extra_hosts=hosts)
+    return get
 
 
 async def _verify(get, url: str) -> bool:
@@ -98,7 +99,6 @@ async def _set_managed(session_factory, svc_id):
 
 async def run_job(job_id, svc_id, plan, docker, session_factory, http_get=None,
                   verify_path=None, old_verify_path=None) -> None:
-    get = http_get or _default_get
     steps = [{"id": i, "label": label, "state": "pending", "detail": None} for i, label in STEPS]
 
     async def save(state=None, **kw):
@@ -128,6 +128,7 @@ async def run_job(job_id, svc_id, plan, docker, session_factory, http_get=None,
         async with session_factory() as s:
             svc = await s.get(ProxiedService, svc_id)
         base = upstream_base(svc)
+        get = http_get or _probe_getter(docker, svc)
         verify_path = verify_path or f"/{svc.slug}"
         if not plan.changes:
             for i, _ in STEPS:
