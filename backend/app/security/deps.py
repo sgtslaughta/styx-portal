@@ -41,9 +41,37 @@ def require_owner_or_admin(owner_id: str | None, user: User) -> None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not the owner")
 
 
+async def refresh_user_or_none(request: Request, session: AsyncSession) -> User | None:
+    """User behind a valid, unrevoked refresh_token cookie, else None. Read-only.
+
+    Same validation as POST /api/auth/refresh (signature, exp, type, stored row
+    not revoked, active user) but never rotates: forwardAuth cannot set cookies.
+    Reuse detection (family kill) stays in /refresh, where rotation happens.
+    """
+    from app.models import RefreshToken
+    raw = request.cookies.get("refresh_token")
+    if not raw:
+        return None
+    try:
+        claims = tokens.decode_token(raw)
+    except tokens.TokenError:
+        return None
+    if claims.get("type") != "refresh":
+        return None
+    stored = await session.get(RefreshToken, claims.get("jti"))
+    if not stored or stored.revoked or stored.user_id != claims.get("sub"):
+        return None
+    user = await session.get(User, claims["sub"])
+    return user if user and user.is_active else None
+
+
 async def session_user_or_none(request: Request, session: AsyncSession) -> User | None:
-    """Same checks as get_current_user, but None instead of 401 (forwardAuth use)."""
+    """get_current_user, else a valid refresh token; None instead of 401 (forwardAuth).
+
+    Path-mode apps never call /api/auth/refresh, so without the fallback every
+    service would bounce to /login when the 15-min access token expires.
+    """
     try:
         return await get_current_user(request, session)
     except HTTPException:
-        return None
+        return await refresh_user_or_none(request, session)
