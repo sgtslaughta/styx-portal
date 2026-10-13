@@ -46,6 +46,8 @@ describe("ServiceList", () => {
     expect(await screen.findByRole("link", { name: "Exit Immich" })).toHaveAttribute("href", "/_styx/exit?next=/");
     expect(screen.queryByRole("link", { name: "Exit Sonarr" })).toBeNull();
     expect(screen.getByRole("link", { name: "Exit Immich" }).parentElement).toHaveClass("ring-obol");
+    expect(screen.getByRole("link", { name: "Open Immich" })).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("link", { name: "Open Sonarr" })).not.toHaveAttribute("aria-current");
     expect(screen.getByRole("link", { name: "Exit Immich" })).toHaveClass("min-h-11");
   });
 

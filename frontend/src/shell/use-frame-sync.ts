@@ -1,6 +1,9 @@
 import { useLayoutEffect, useState } from "react";
 import type { ServiceTile } from "@/api/client";
-import { isFrameBlocked, shellPathFor } from "./url";
+import { isFrameBlocked, isFrameLocationForbidden, shellPathFor } from "./url";
+
+const POLL_MS = 500;
+const POLL_MAX_MS = 10_000;
 
 type Patched = { cw: Window; doc: Document; restore: () => void };
 
@@ -51,9 +54,17 @@ export function useFrameSync(
       };
       sync();
     };
-    frame.addEventListener("load", attach);
+    // Chromium fires no load event for a frame refused by CSP frame-ancestors; its error page is cross-origin.
+    const started = Date.now();
+    const poll = window.setInterval(() => {
+      if (!first || Date.now() - started > POLL_MAX_MS) { window.clearInterval(poll); return; }
+      if (isFrameLocationForbidden(frame)) { first = false; window.clearInterval(poll); setBlocked(true); }
+    }, POLL_MS);
+    const onLoad = () => { window.clearInterval(poll); attach(); };
+    frame.addEventListener("load", onLoad);
     return () => {
-      frame.removeEventListener("load", attach);
+      window.clearInterval(poll);
+      frame.removeEventListener("load", onLoad);
       const p = patched as Patched | null;
       try { if (p && p.cw.document === p.doc) p.restore(); } catch { /* frame gone */ }
     };

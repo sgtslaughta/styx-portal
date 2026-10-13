@@ -11,3 +11,7 @@ export function readPos(): FerryPos {
   return DEFAULT;
 }
 export function writePos(p: FerryPos) { try { localStorage.setItem(KEY, JSON.stringify(p)); } catch { /* ignore */ } }
+
+/** While the edge tab is dragged, body[data-ferry-drag] turns the iframe's pointer events off (see globals.css),
+ *  so the pointer stream stays on the shell document instead of entering the app. */
+export function markDragging(on: boolean) { document.body.toggleAttribute("data-ferry-drag", on); }

@@ -22,7 +22,7 @@ function Tile({ s, focused }: { s: ServiceTile; focused: boolean }) {
   // Unhealthy tiles stay clickable: health is advisory, the app may still work.
   return (
     <div className={cn("flex items-center gap-2 rounded-lg", focused && "ring-2 ring-obol")}>
-      <a href={href} className={tileCls} aria-label={`Open ${s.name}`} title={href}>
+      <a href={href} className={tileCls} aria-label={`Open ${s.name}`} aria-current={focused ? "true" : undefined} title={href}>
         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-base leading-none text-primary" aria-hidden>
           {s.icon ?? <Link2 className="h-3.5 w-3.5" />}
         </span>

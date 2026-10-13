@@ -39,3 +39,10 @@ export function isFrameBlocked(frame: { contentWindow: { location: { href: strin
   try { return !frame.contentWindow || frame.contentWindow.location.href === "about:blank"; }
   catch { return true; }
 }
+
+/** True when reading the frame's location throws: a cross-origin document, i.e. the browser's own
+ *  error page for a refused frame. about:blank (not committed yet) is deliberately not flagged. */
+export function isFrameLocationForbidden(frame: { contentWindow: { location: { href: string } } | null }): boolean {
+  try { void frame.contentWindow?.location.href; return false; }
+  catch { return true; }
+}

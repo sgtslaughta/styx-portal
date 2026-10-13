@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
-import { readPos, snapSide, writePos } from "../ferry-pos";
+import { markDragging, readPos, snapSide, writePos } from "../ferry-pos";
 import { Dock } from "../dock";
 import { useHotkey } from "../use-hotkey";
 
@@ -96,14 +96,32 @@ it("hotkey re-attaches after a frame load", () => {
   fresh.dispatchEvent(Object.assign(new Event("keydown"), { code: "KeyS", altKey: true, shiftKey: true, ctrlKey: true }));
   expect(toggle).toHaveBeenCalledTimes(1);
 });
+const dockProps = { onOpenChange: () => {}, tiles, current: "sonarr", focusSlug: null, side: "right" as const };
 it("focus moves into the dock on open and back to the tab on close", async () => {
   const tab = document.createElement("button");
   document.body.appendChild(tab);
-  const tabRef = { current: tab };
-  const props = { onOpenChange: () => {}, tiles, current: "sonarr", focusSlug: null, side: "right" as const, tabRef };
-  const { rerender } = render(<Dock open {...props} />);
-  await waitFor(() => expect(screen.getByRole("dialog")).toContainElement(document.activeElement as HTMLElement));
-  rerender(<Dock open={false} {...props} />);
-  await waitFor(() => expect(tab).toHaveFocus());
-  tab.remove();
+  try {
+    const props = { ...dockProps, tabRef: { current: tab } };
+    const { rerender } = render(<Dock open {...props} />);
+    await waitFor(() => expect(screen.getByRole("dialog")).toContainElement(document.activeElement as HTMLElement));
+    rerender(<Dock open={false} {...props} />);
+    await waitFor(() => expect(tab).toHaveFocus());
+  } finally { tab.remove(); }
+});
+it("takes focus away from an iframe that held it when the dock opens", async () => {
+  const frame = document.createElement("iframe");
+  document.body.appendChild(frame);
+  try {
+    frame.focus();
+    expect(document.activeElement).toBe(frame);
+    const { rerender } = render(<Dock open={false} {...dockProps} />);
+    rerender(<Dock open {...dockProps} />);
+    await waitFor(() => expect(screen.getByRole("dialog")).toContainElement(document.activeElement as HTMLElement));
+  } finally { frame.remove(); }
+});
+it("markDragging toggles the body flag the iframe CSS keys on", () => {
+  markDragging(true);
+  expect(document.body.hasAttribute("data-ferry-drag")).toBe(true);
+  markDragging(false);
+  expect(document.body.hasAttribute("data-ferry-drag")).toBe(false);
 });

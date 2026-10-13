@@ -40,7 +40,7 @@ export function ShellApp() {
     <LazyMotion features={domMax}> {/* domMax: the edge tab needs drag */}
       <MotionConfig reducedMotion="user">
         <div className="h-dvh w-screen">
-          <Frame key={tile.slug} tile={tile} inner={target.inner} onTitle={onTitle} onFrame={setFrameEl} />
+          <Frame key={tile.slug} tile={tile} inner={target.inner} onTitle={onTitle} onFrame={setFrameEl} inert={open} />
           <EdgeTab onOpen={toggle} open={open} tabRef={tabRef} />
           <Dock open={open} onOpenChange={setOpen} tiles={tiles} current={tile.slug} focusSlug={focus?.slug ?? null} side={side} tabRef={tabRef} />
         </div>

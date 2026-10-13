@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { animate, m, useMotionValue, useReducedMotion } from "framer-motion";
 import { spring } from "@/lib/motion";
-import { clampY, readPos, snapSide, writePos, type FerryPos } from "./ferry-pos";
+import { clampY, markDragging, readPos, snapSide, writePos, type FerryPos } from "./ferry-pos";
 
 const SIZE_X = 44;
 const SIZE_Y = 56;
@@ -47,8 +47,9 @@ export function EdgeTab({ onOpen, open = false, tabRef }:
         animate={{ opacity: idle ? 0.35 : 1 }}
         onPointerEnter={wake} onFocus={wake} onTouchStart={wake}
         onPointerDown={() => { dragged.current = false; wake(); }}
-        onDragStart={() => { dragged.current = true; }}
+        onDragStart={() => { dragged.current = true; markDragging(true); }}
         onDragEnd={(_, info) => {
+          markDragging(false);
           const next: FerryPos = { side: snapSide(info.point.x, window.innerWidth), y: clampY(info.point.y / window.innerHeight) };
           writePos(next);
           setPos(next);

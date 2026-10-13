@@ -264,3 +264,6 @@
   --obol-foreground: #D2A657;
   background: #0F1C22;
 }
+
+/* Shell: keep the pointer on the shell document while the edge tab is dragged over the app frame. */
+body[data-ferry-drag] iframe { pointer-events: none; }
