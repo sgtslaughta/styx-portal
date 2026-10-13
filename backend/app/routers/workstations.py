@@ -17,6 +17,7 @@ from app.schemas import (
     WorkstationUpdate, WorkstationUpdateCommandOut,
 )
 from app.security.cookies import clean_cookie_header
+from app.security.nav import is_navigation, no_access
 from app.security.safe_next import safe_next
 from app.security.deps import require_admin, get_current_user
 from app.services.audit import audit_request
@@ -158,9 +159,7 @@ def _unauthenticated(request: Request, msg: str):
     """401 for ws/XHR; 302 to the login page for browser navigations —
     Traefik relays a forwardAuth non-2xx response (incl. Location) verbatim,
     so without this an expired cookie shows raw JSON at /w/{sub}/."""
-    is_nav = (request.headers.get("sec-fetch-mode") == "navigate"
-              or "text/html" in request.headers.get("accept", ""))
-    if not is_nav:
+    if not is_navigation(request):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, msg)
     uri = request.headers.get("x-forwarded-uri", "")
     # Absolute URL required: Traefik resolves a relative Location against
@@ -193,10 +192,10 @@ async def auth_check(ws_id: str, request: Request,
     uri = request.headers.get("x-forwarded-uri", "")
     ws = await session.get(Workstation, ws_id)
     if ws is None:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Unknown workstation")
+        return no_access(request, "Unknown workstation")
     allowed = await _allowed_ids(session, ws.id)
     if not (user.role == "admin" or ws.all_users or user.id in allowed):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "No access")
+        return no_access(request, "No access")
     # A websocket upgrade passing auth = someone is (re)taking the desktop.
     # Record who; the agent's connection count decides whether it's live.
     if "/websocket" in uri:

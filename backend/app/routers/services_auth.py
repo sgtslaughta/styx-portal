@@ -12,11 +12,14 @@ from app.database import get_session
 from app.models import ProxiedService, User
 from app.routers.groups import user_group_names
 from app.routers.workstations import _redirect_host
+from app.config import Settings
 from app.security.cookies import clean_cookie_header
+from app.security.nav import is_navigation, no_access
 from app.security.deps import get_current_user, proxy_user_or_none
 from app.security.safe_next import safe_next
 from app.services.service_routes import COOKIE_NAME
 
+_settings = Settings()
 router = APIRouter()
 # Mounted at /internal: no Traefik router matches it, so only Traefik's
 # forwardAuth (backend:8000 on the docker network) can reach auth-check.
@@ -75,9 +78,7 @@ async def user_may_open(session: AsyncSession, user: User, svc: ProxiedService) 
 def login_redirect(request: Request, uri: str | None, cookie_root: bool = False):
     """forwardAuth denial for an anonymous request: 302 to /login (next= only
     when safe_next allows it) for navigations, 401 for XHR/websocket."""
-    is_nav = (request.headers.get("sec-fetch-mode") == "navigate"
-              or "text/html" in request.headers.get("accept", ""))
-    if not is_nav:
+    if not is_navigation(request):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated")
     proto = request.headers.get("x-forwarded-proto", "https")
     if proto not in ("http", "https"):
@@ -105,7 +106,7 @@ async def auth_check(slug: str, request: Request,
     if user is None:
         return login_redirect(request, uri, svc.mount_mode == "cookie-root")
     if not await user_may_open(session, user, svc):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this service")
+        return no_access(request, "No access to this service")
     groups = await user_group_names(session, user.id)
     return Response(status_code=200,
                     headers={"X-Styx-User": user.username, "X-Styx-Groups": ",".join(groups),
@@ -131,7 +132,8 @@ async def enter_service(slug: str, user: User = Depends(get_current_user),
     if not await user_may_open(session, user, svc):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this service")
     resp = Response(status_code=200)
-    resp.set_cookie(COOKIE_NAME, svc.slug, path="/", httponly=True, secure=True, samesite="lax")
+    resp.set_cookie(COOKIE_NAME, svc.slug, path="/", httponly=True,
+                    secure=_settings.COOKIE_SECURE, samesite="lax")
     return resp
 
 

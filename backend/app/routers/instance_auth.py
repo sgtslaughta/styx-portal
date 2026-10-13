@@ -15,6 +15,7 @@ from app.database import get_session
 from app.models import Instance
 from app.routers.services_auth import login_redirect
 from app.security.cookies import clean_cookie_header
+from app.security.nav import no_access
 from app.security.deps import proxy_user_or_none, require_owner_or_admin
 
 internal_router = APIRouter()
@@ -33,7 +34,12 @@ async def auth_check(instance_id: str, request: Request,
     # 5xx → instance-unavailable-errors serves the same page instances_fallback does.
     if inst is None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Instance unavailable")
-    require_owner_or_admin(inst.owner_id, user)
+    try:
+        require_owner_or_admin(inst.owner_id, user)
+    except HTTPException as e:
+        if e.status_code != status.HTTP_403_FORBIDDEN:
+            raise
+        return no_access(request, e.detail)
     if inst.status not in ("running", "idle"):
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Instance unavailable")
     return Response(status_code=200, headers=clean_cookie_header(request))
