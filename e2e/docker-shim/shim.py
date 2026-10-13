@@ -69,13 +69,19 @@ class Handler(socketserver.StreamRequestHandler):
         method, target, _ = line.split(" ", 2)
         headers = []
         length = 0
+        chunked = False
         while (h := self.rfile.readline().decode()) not in ("\r\n", "\n", ""):
             k, _, v = h.partition(":")
+            if k.lower() == "transfer-encoding":
+                chunked = True
             if k.lower() == "content-length":
                 length = int(v.strip())
             if k.lower() in ("connection", "content-length", "transfer-encoding"):
                 continue
             headers.append(h.rstrip("\r\n"))
+        if chunked and method in ("POST", "PUT"):
+            self.reply(411, "e2e shim: Transfer-Encoding bodies not supported, send Content-Length")
+            return
         body = self.rfile.read(length) if length else b""
         url = urllib.parse.urlsplit(target)
         path = VER.sub("", url.path)
@@ -110,7 +116,8 @@ class Handler(socketserver.StreamRequestHandler):
             return target, body
         m = re.fullmatch(r"/containers/([^/]+)/(archive|restart)", path)
         if m and ((method == "PUT" and m.group(2) == "archive") or (method == "POST" and m.group(2) == "restart")):
-            info = inspect(urllib.parse.unquote(m.group(1)))
+            cid = urllib.parse.unquote(m.group(1))
+            info = None if "/" in cid else inspect(cid)
             if not info or info["Config"]["Labels"].get("com.docker.compose.project") != PROJECT:
                 return 403, "e2e shim: container outside the e2e project"
             return target, body

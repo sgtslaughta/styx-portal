@@ -31,15 +31,14 @@ async function invite(page: Page, browser: Browser, u: { username: string; passw
 }
 
 type Svc = Record<string, unknown> & { id: string; slug: string };
-const SVC_FIELDS = ["name", "icon", "kind", "upstream_url", "container", "container_port", "mount_mode", "auth_mode",
-  "bypass_rules", "allowed_groups", "verify_tls", "health_path", "preset_id", "enabled", "frame_ok"];
 
-/** PUT replaces every field, so resend the current ones with the overrides applied. */
+/** PUT replaces every field: GET the service, merge the patch, PUT it back. */
 async function updateService(ctx: BrowserContext, slug: string, patch: Record<string, unknown>) {
   const all: Svc[] = await apiCall(ctx, "GET", "/api/services");
-  const cur = all.find((s) => s.slug === slug)!;
-  const body = Object.fromEntries(SVC_FIELDS.map((k) => [k, cur[k]]));
-  return apiCall(ctx, "PUT", `/api/services/${cur.id}`, { ...body, ...patch });
+  const { id, slug: _slug, ...cur } = all.find((x) => x.slug === slug)!;
+  const writable = Object.fromEntries(Object.entries(cur).filter(([k]) =>
+    !["health_status", "health_checked_at", "mount_managed", "upstream_fallback", "created_at", "updated_at"].includes(k)));
+  return apiCall(ctx, "PUT", `/api/services/${id}`, { ...writable, ...patch });
 }
 
 const echo = async (p: Page, path: string) => {
@@ -146,41 +145,44 @@ test("c. member opens the tile; upstream sees identity headers but no Styx cooki
     name: "Plain", slug: "plain", kind: "url", upstream_url: "http://whoami-url:80", mount_mode: "path", auth_mode: "sso",
     allowed_groups: ["media"],
   });
-  const tile = p.getByRole("link", { name: "Open Whoami" });
-  await expect(tile).toBeVisible();
-  await expect(tile).toHaveAttribute("href", "/_styx/app/whoami/");
-  const cookieNames = (await member.ctx.cookies()).map((c) => c.name);
-  expect(cookieNames).toEqual(expect.arrayContaining(["styx_proxy", "csrf_token", "app_pref"]));
+  try {
+    const tile = p.getByRole("link", { name: "Open Whoami" });
+    await expect(tile).toBeVisible();
+    await expect(tile).toHaveAttribute("href", "/_styx/app/whoami/");
+    const cookieNames = (await member.ctx.cookies()).map((c) => c.name);
+    expect(cookieNames).toEqual(expect.arrayContaining(["styx_proxy", "csrf_token", "app_pref"]));
 
-  await tile.click();
-  await p.waitForURL(/\/_styx\/app\/whoami\/$/);
-  // The shell renders the app in an iframe.
-  const app = p.frameLocator("iframe");
-  await eventually(async () => expect(isWhoami(await app.locator("body").innerText())).toBe(true));
-  const body = await app.locator("body").innerText();
-  expect(body).toMatch(/^GET \/whoami\/ HTTP/m);
-  const cookies = headerLines(body, "Cookie").join("; ");
-  for (const name of STYX_COOKIES) expect(cookies).not.toContain(`${name}=`);
-  expect(cookies).toContain("app_pref=keep-me");
-  expect(headerLines(body, "X-Styx-User")).toEqual([MEMBER.username]);
-  expect(headerLines(body, "X-Styx-Groups")).toEqual(["media"]);
+    await tile.click();
+    await p.waitForURL(/\/_styx\/app\/whoami\/$/);
+    // The shell renders the app in an iframe.
+    const app = p.frameLocator("iframe");
+    await eventually(async () => expect(isWhoami(await app.locator("body").innerText())).toBe(true));
+    const body = await app.locator("body").innerText();
+    expect(body).toMatch(/^GET \/whoami\/ HTTP/m);
+    const cookies = headerLines(body, "Cookie").join("; ");
+    for (const name of STYX_COOKIES) expect(cookies).not.toContain(`${name}=`);
+    expect(cookies).toContain("app_pref=keep-me");
+    expect(headerLines(body, "X-Styx-User")).toEqual([MEMBER.username]);
+    expect(headerLines(body, "X-Styx-Groups")).toEqual(["media"]);
 
-  // Client-supplied identity headers are replaced, not appended.
-  const spoof = await p.request.get("/whoami/", {
-    headers: { "X-Styx-User": "root", "X-Styx-Groups": "admins", "X-authentik-username": "root" },
-  });
-  const sb = await spoof.text();
-  expect(headerLines(sb, "X-Styx-User")).toEqual([MEMBER.username]);
-  expect(headerLines(sb, "X-Styx-Groups")).toEqual(["media"]);
-  expect(headerLines(sb, "X-Authentik-Username").filter(Boolean)).toEqual([]);
+    // Client-supplied identity headers are replaced, not appended.
+    const spoof = await p.request.get("/whoami/", {
+      headers: { "X-Styx-User": "root", "X-Styx-Groups": "admins", "X-authentik-username": "root" },
+    });
+    const sb = await spoof.text();
+    expect(headerLines(sb, "X-Styx-User")).toEqual([MEMBER.username]);
+    expect(headerLines(sb, "X-Styx-Groups")).toEqual(["media"]);
+    expect(headerLines(sb, "X-Authentik-Username").filter(Boolean)).toEqual([]);
 
-  // A service without pass_identity gets no identity headers at all.
-  const sl = (plain as Svc).slug;
-  await eventually(async () => expect(isWhoami((await echo(p, `/${sl}/`)).body)).toBe(true));
-  const pb = (await echo(p, `/${sl}/`)).body;
-  expect(headerLines(pb, "X-Styx-User")).toEqual([]);
-  expect(headerLines(pb, "X-Styx-Groups")).toEqual([]);
-  await apiCall(admin.ctx, "DELETE", `/api/services/${(plain as Svc).id}`);
+    // A service without pass_identity gets no identity headers at all.
+    const sl = (plain as Svc).slug;
+    await eventually(async () => expect(isWhoami((await echo(p, `/${sl}/`)).body)).toBe(true));
+    const pb = (await echo(p, `/${sl}/`)).body;
+    expect(headerLines(pb, "X-Styx-User")).toEqual([]);
+    expect(headerLines(pb, "X-Styx-Groups")).toEqual([]);
+  } finally {
+    await apiCall(admin.ctx, "DELETE", `/api/services/${(plain as Svc).id}`);
+  }
 });
 
 test("d. non-member: no tile, direct access denied", async () => {
@@ -276,6 +278,13 @@ test("h. cookie-root service: enter, takeover, Styx API via X-Styx-Client, exit"
   for (const name of STYX_COOKIES) expect(headerLines(body, "Cookie").join(";")).not.toContain(`${name}=`);
   expect(headerLines(body, "X-Styx-User")).toEqual([MEMBER.username]);
 
+  // Takeover: with styx_svc set, a top-level GET / is the app, not the Styx SPA.
+  expect((await member.ctx.cookies()).some((c) => c.name === "styx_svc")).toBe(true);
+  const root = await member.ctx.request.get("/");
+  const rootBody = await root.text();
+  expect(isWhoami(rootBody)).toBe(true);
+  expect(rootBody).not.toContain('<div id="root">');
+
   const fromPage = await m.evaluate(async () => {
     const styx = await fetch("/api/auth/me", { headers: { "X-Styx-Client": "1" } });
     const app = await fetch("/api/anything");
@@ -289,6 +298,10 @@ test("h. cookie-root service: enter, takeover, Styx API via X-Styx-Client, exit"
   await expect(m).toHaveURL("http://127.0.0.1:18080/");
   await expect(m.getByRole("link", { name: "Open Whoami" })).toBeVisible();
   expect((await member.ctx.cookies()).some((c) => c.name === "styx_svc")).toBe(false);
+  // After exit, / serves Styx again.
+  const after = await (await member.ctx.request.get("/")).text();
+  expect(isWhoami(after)).toBe(false);
+  expect(after).toContain('<div id="root">');
 });
 
 test("i. bypass rule: only the exact prefix on a segment boundary skips login", async ({ browser }) => {
