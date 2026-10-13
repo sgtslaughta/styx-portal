@@ -98,9 +98,12 @@ const BASE = "/api";
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** Raw `detail` from the response (string, or FastAPI's 422 list). */
+  detail?: unknown;
+  constructor(message: string, status: number, detail?: unknown) {
     super(message);
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -150,7 +153,11 @@ async function request<T>(path: string, init?: RequestInit, retried = false): Pr
   }
   if (!res.ok) {
     const detail = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new ApiError(detail.detail || res.statusText, res.status);
+    const d = detail.detail;
+    const msg = Array.isArray(d)
+      ? d.map((x: { msg?: string }) => x?.msg ?? "invalid").join("; ")
+      : d || res.statusText;
+    throw new ApiError(msg, res.status, d);
   }
   if (res.status === 204) return undefined as T;
   const text = await res.text();

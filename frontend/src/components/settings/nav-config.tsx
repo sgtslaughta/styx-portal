@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 import {
   Activity, Terminal, Cpu, ScrollText, Users, KeyRound, HardDrive,
-  Link2, UsersRound, BarChart3, Shield, UserCircle, Heart, MonitorSmartphone, SlidersHorizontal,
+  Link2, UsersRound, BarChart3, Shield, UserCircle, Heart, MonitorSmartphone, SlidersHorizontal, Globe,
 } from "lucide-react";
 import { MetricsOverview } from "@/components/system/metrics-overview";
 import { MetricsSessions } from "@/components/system/metrics-sessions";
@@ -10,6 +10,7 @@ import { MetricsLogs } from "@/components/system/metrics-logs";
 import { HealthPanel } from "@/components/system/health-panel";
 import { UsersPanel } from "@/components/system/users-panel";
 import { GroupsPanel } from "@/components/system/groups-panel";
+import { ServicesPanel } from "@/components/system/services-panel";
 import { WorkstationsPanel } from "@/components/system/workstations-panel";
 import { OAuthProvidersPanel } from "@/components/system/oauth-providers-panel";
 import { ImageManager } from "@/components/system/image-manager";
@@ -66,6 +67,9 @@ export const CATEGORIES: SettingsCategory[] = [
       { id: "workstations", label: "Workstations", icon: MonitorSmartphone,
         description: "Enroll and manage physical Linux machines.",
         tooltip: "Stream physical workstations via the Styx agent", Component: WorkstationsPanel },
+      { id: "services", label: "Services", icon: Globe,
+        description: "Proxy internal apps (Jellyfin, *arr, Nextcloud) through this host.",
+        tooltip: "Add and configure proxied services", Component: ServicesPanel },
       { id: "sso", label: "SSO Providers", icon: KeyRound,
         description: "Configure OIDC / OAuth identity providers.",
         tooltip: "Add and manage single sign-on providers", Component: OAuthProvidersPanel },
