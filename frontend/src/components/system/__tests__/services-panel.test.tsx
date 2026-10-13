@@ -35,7 +35,8 @@ describe("ServicesPanel", () => {
     render(<ServicesPanel />);
     expect(await screen.findByText("Jellyfin")).toBeInTheDocument();
     expect(screen.getByText("/jellyfin")).toBeInTheDocument();
-    expect(screen.getByText(/bypass/i)).toBeInTheDocument();
+    expect(screen.getByText("SSO, 1 bypass")).toBeInTheDocument();
+    expect(screen.getByText("Disabled")).toBeInTheDocument();
     expect(screen.getByLabelText("Health: healthy")).toBeInTheDocument();
     expect(screen.getByLabelText("Health: unhealthy")).toBeInTheDocument();
   });
@@ -113,5 +114,13 @@ describe("ServicesPanel", () => {
     expect(id).toBe("s1");
     expect(body).not.toHaveProperty("slug");
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  test("risky choices get explicit badges", async () => {
+    a.listServices.mockResolvedValue([svc({ mount_mode: "cookie-root", auth_mode: "app-native", verify_tls: false })]);
+    render(<ServicesPanel />);
+    expect(await screen.findByText("Cookie root")).toBeInTheDocument();
+    expect(screen.getByText("No Styx login")).toBeInTheDocument();
+    expect(screen.getByText("TLS unverified")).toBeInTheDocument();
   });
 });

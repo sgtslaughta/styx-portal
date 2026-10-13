@@ -18,42 +18,66 @@ function ago(iso: string | null): string {
   return `checked ${Math.floor(s / 86400)} d ago`;
 }
 
+const RISKY = "border-warning/50 bg-warning/15 text-foreground";
+const DANGER = "border-destructive/40 bg-destructive/10 text-foreground";
+
+/** One badge per decision: mount, auth, then TLS/fallback only when they deviate. */
+function badges(s: ProxiedService): { key: string; label: string; cls?: string; title: string }[] {
+  const out: { key: string; label: string; cls?: string; title: string }[] = [
+    s.mount_mode === "cookie-root"
+      ? { key: "mount", label: "Cookie root", cls: RISKY, title: "Mount mode: cookie root (takes over the browser)" }
+      : { key: "mount", label: "Path", title: "Mount mode: path" },
+  ];
+  if (s.auth_mode === "sso") out.push({ key: "auth", label: "SSO", title: "Styx login required" });
+  if (s.auth_mode === "sso-with-bypass") {
+    const n = s.bypass_rules.length;
+    out.push({ key: "auth", label: `SSO, ${n} ${n === 1 ? "bypass" : "bypasses"}`, cls: RISKY, title: "Some paths skip the Styx login" });
+  }
+  if (s.auth_mode === "app-native") out.push({ key: "auth", label: "No Styx login", cls: DANGER, title: "The app enforces its own login" });
+  if (!s.verify_tls) out.push({ key: "tls", label: "TLS unverified", cls: RISKY, title: "Upstream certificate is not verified" });
+  if (s.upstream_fallback) out.push({ key: "fb", label: "Host fallback", title: "Container unreachable by name; using the host address" });
+  return out;
+}
+
 export function ServiceRow({ s, busy, onToggle, onEdit, onDelete }: {
   s: ProxiedService; busy: boolean; onToggle: (v: boolean) => void; onEdit: () => void; onDelete: () => void;
 }) {
   const label = s.health_status === "unknown" ? "Not checked yet" : s.health_status === "healthy" ? "Healthy" : "Unhealthy";
   const target = s.kind === "url" ? s.upstream_url : `${s.container}:${s.container_port}`;
   return (
-    <li className={cn("flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface p-3", !s.enabled && "opacity-60")}>
+    <li className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-3 sm:items-center">
       <Tooltip>
         <TooltipTrigger asChild>
-          <span tabIndex={0} role="img" aria-label={`Health: ${s.health_status}`} className="flex h-5 w-5 items-center justify-center">
+          <span tabIndex={0} role="img" aria-label={`Health: ${s.health_status}`}
+            className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-ring sm:mt-0">
             <span className={cn("h-2.5 w-2.5 rounded-full", DOT[s.health_status])} />
           </span>
         </TooltipTrigger>
         <TooltipContent>{label}, {ago(s.health_checked_at)}</TooltipContent>
       </Tooltip>
-      <div className="min-w-0 flex-1 basis-56">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="font-medium">{s.icon ? `${s.icon} ` : ""}{s.name}</span>
-          <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">/{s.slug}</code>
+      <div className={cn("min-w-0 flex-1", !s.enabled && "opacity-60")}>
+        <div className="flex flex-wrap items-baseline gap-x-2">
+          <span className="truncate font-medium">{s.icon ? `${s.icon} ` : ""}{s.name}</span>
+          <code className="text-xs text-muted-foreground">/{s.slug}</code>
+          {!s.enabled && <span className="text-xs text-muted-foreground">Disabled</span>}
         </div>
-        <p className="truncate text-xs text-muted-foreground" title={target ?? undefined}>{target}</p>
-        <div className="mt-1.5 flex flex-wrap gap-1.5">
-          <Badge variant={s.mount_mode === "cookie-root" ? "destructive" : "secondary"}>{s.mount_mode === "path" ? "path" : "cookie-root"}</Badge>
-          {s.auth_mode === "sso" && <Badge variant="secondary">SSO</Badge>}
-          {s.auth_mode === "sso-with-bypass" && (
-            <Badge variant="outline" className="border-warning/60 text-warning">SSO + bypass ({s.bypass_rules.length})</Badge>
-          )}
-          {s.auth_mode === "app-native" && <Badge variant="destructive">app-native auth</Badge>}
-          {!s.verify_tls && <Badge variant="outline" className="border-warning/60 text-warning">TLS not verified</Badge>}
-          {s.upstream_fallback && <Badge variant="outline">host fallback</Badge>}
+        <p className="truncate font-mono text-xs text-muted-foreground" title={target ?? undefined}>{target}</p>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {badges(s).map((b) => (
+            <Badge key={b.key} variant={b.cls ? "outline" : "secondary"} className={b.cls} title={b.title}>{b.label}</Badge>
+          ))}
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        <Switch size="sm" checked={s.enabled} disabled={busy} aria-label={`Enable ${s.name}`} onCheckedChange={onToggle} />
-        <Button variant="ghost" size="icon-sm" aria-label={`Edit ${s.name}`} title="Edit" onClick={onEdit}><Pencil className="h-4 w-4" /></Button>
-        <Button variant="destructive" size="icon-sm" aria-label={`Delete ${s.name}`} title="Delete" onClick={onDelete}><Trash2 className="h-4 w-4" /></Button>
+      <div className="flex shrink-0 flex-col-reverse items-end gap-1 sm:flex-row sm:items-center">
+        <Switch size="sm" checked={s.enabled} disabled={busy} aria-label={`Enable ${s.name}`} title={s.enabled ? "Enabled" : "Disabled"}
+          className="sm:mr-1" onCheckedChange={onToggle} />
+        <div className="flex">
+          <Button variant="ghost" size="icon-sm" aria-label={`Edit ${s.name}`} title="Edit" onClick={onEdit}><Pencil className="h-4 w-4" /></Button>
+          <Button variant="ghost" size="icon-sm" aria-label={`Delete ${s.name}`} title="Delete"
+            className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={onDelete}>
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
     </li>
   );

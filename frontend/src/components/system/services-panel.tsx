@@ -71,18 +71,18 @@ export function ServicesPanel() {
   return (
     <TooltipProvider>
       <Card className="styx-card">
-        <CardHeader className="pb-4">
+        <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-primary/10 p-2"><Globe className="h-5 w-5 text-primary" /></div>
-              <div>
-                <CardTitle>Services</CardTitle>
-                <CardDescription>Internal apps proxied through this host. Each one is reachable from the internet through Styx.</CardDescription>
+            <div className="flex min-w-0 flex-1 basis-64 items-center gap-3">
+              <div className="shrink-0 rounded-lg bg-primary/10 p-2"><Globe className="h-5 w-5 text-primary" /></div>
+              <div className="min-w-0">
+                <CardTitle>Proxied services</CardTitle>
+                <CardDescription>Each service is public on this hostname, behind the Styx login unless you say otherwise.</CardDescription>
               </div>
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" disabled={pickerBusy} onClick={() => void openPicker()}>
-                <Boxes className="h-4 w-4" /> Add from container
+            <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto">
+              <Button variant="outline" size="sm" disabled={pickerBusy} aria-busy={pickerBusy} onClick={() => void openPicker()}>
+                <Boxes className="h-4 w-4" /> {pickerBusy ? "Looking..." : "Add from container"}
               </Button>
               <Button size="sm" onClick={() => setEditing({ kind: "new" })}><Plus className="h-4 w-4" /> Add service</Button>
             </div>
@@ -97,15 +97,18 @@ export function ServicesPanel() {
           ) : services === null ? (
             <p className="text-sm text-muted-foreground">Loading services...</p>
           ) : services.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 rounded-lg border border-border px-4 py-10 text-center">
-              <Globe className="h-8 w-8 text-muted-foreground/40" />
-              <div>
+            <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border px-4 py-10 text-center">
+              <Globe className="h-8 w-8 text-muted-foreground/50" />
+              <div className="max-w-sm space-y-1">
                 <p className="text-sm font-medium">No services yet</p>
                 <p className="text-sm text-muted-foreground">
                   Start from a preset (Jellyfin, Sonarr, Nextcloud and more) or expose a running container.
                 </p>
               </div>
-              <Button size="sm" onClick={() => setEditing({ kind: "new" })}>Browse presets</Button>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button size="sm" onClick={() => setEditing({ kind: "new" })}>Browse presets</Button>
+                <Button size="sm" variant="outline" disabled={pickerBusy} onClick={() => void openPicker()}>Pick a container</Button>
+              </div>
             </div>
           ) : (
             <ul className="space-y-2">
@@ -119,23 +122,30 @@ export function ServicesPanel() {
       </Card>
 
       <Dialog open={picker !== null} onOpenChange={(o) => { if (!o) setPicker(null); }}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Running containers</DialogTitle>
             <DialogDescription>Pick a container on this host to expose. Styx's own containers are hidden.</DialogDescription>
           </DialogHeader>
           <ul className="max-h-80 divide-y divide-border overflow-y-auto text-sm">
             {(picker ?? []).map((c) => (
-              <li key={c.name} className="flex items-center justify-between gap-3 py-2">
+              <li key={c.name} className="flex items-center justify-between gap-3 py-2.5">
                 <div className="min-w-0">
-                  <div className="font-medium">{c.name}</div>
-                  <div className="truncate text-xs text-muted-foreground">{c.image} · ports {c.ports.join(", ") || "none"}</div>
+                  <div className="truncate font-medium" title={c.name}>{c.name}</div>
+                  <div className="truncate text-xs text-muted-foreground" title={c.image}>
+                    <span className="font-mono">{c.image}</span>
+                    <span className="ml-2 font-sans">{c.ports.length ? `${c.ports.length > 1 ? "Ports" : "Port"} ${c.ports.join(", ")}` : "No published ports"}</span>
+                  </div>
                 </div>
                 <Button size="sm" disabled={c.ports.length === 0} aria-label={`Expose ${c.name}`}
                   onClick={() => { setPicker(null); setEditing({ kind: "discovered", c }); }}>Expose</Button>
               </li>
             ))}
-            {picker?.length === 0 && <li className="py-3 text-muted-foreground">No eligible containers are running.</li>}
+            {picker?.length === 0 && (
+              <li className="py-6 text-center text-muted-foreground">
+                No eligible containers are running. Start one, or add it by URL with Add service.
+              </li>
+            )}
           </ul>
         </DialogContent>
       </Dialog>
