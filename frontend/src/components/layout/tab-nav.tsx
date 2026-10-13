@@ -6,8 +6,8 @@ interface TabNavProps {
 }
 
 const TABS = [
-  { id: "instances", label: "My Instances" },
-  { id: "templates", label: "Template Gallery" },
+  { id: "instances", label: "My instances" },
+  { id: "templates", label: "Template gallery" },
   { id: "system", label: "Settings" },
 ];
 

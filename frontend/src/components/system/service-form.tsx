@@ -186,7 +186,7 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
           <SwitchRow id="verify-tls" label="Verify upstream TLS" hint="Turn off only for self-signed certificates on your LAN.">
             <Switch id="verify-tls" aria-label="Verify upstream TLS" checked={f.verify_tls} onCheckedChange={(v) => set("verify_tls", v)} />
           </SwitchRow>
-          {!f.verify_tls && <RiskCallout title="TLS not verified">{RISK.tls}</RiskCallout>}
+          {!f.verify_tls && <RiskCallout tone="warning" title="TLS not verified">{RISK.tls}</RiskCallout>}
         </Section>
 
         <AccessSection f={f} set={set} preset={preset ?? undefined} groups={groups} errors={errors} />
@@ -207,7 +207,7 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
         )}
       </DrawerBody>
       <DrawerFooter>
-        {!ack && <p className="mr-auto self-center text-xs text-muted-foreground">Confirm the acknowledgement to save.</p>}
+        {!ack && <p className="mr-auto self-center text-xs text-muted-foreground">Tick “I understand” under Before you save to turn on Save.</p>}
         <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
         <Button type="submit" disabled={!valid || !ack || saving} aria-busy={saving}>Save</Button>
       </DrawerFooter>

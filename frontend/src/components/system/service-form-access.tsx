@@ -41,7 +41,7 @@ export function AccessSection({ f, set, preset, groups, errors }: Props) {
         <p className="text-xs text-muted-foreground">App setting: {preset.base_url_hint}</p>
       )}
       {f.mount_mode === "cookie-root" && (
-        <RiskCallout title="Takes over this browser" details={RISK_DETAIL.cookieRoot}>{RISK.cookieRoot}</RiskCallout>
+        <RiskCallout tone="warning" title="Takes over this browser" details={RISK_DETAIL.cookieRoot}>{RISK.cookieRoot}</RiskCallout>
       )}
       {preset && hasRules && (
         <SwitchRow id="native-apps" label="Allow native apps" hint={`Let ${preset.name}'s own apps sign in without Styx login.`}>
