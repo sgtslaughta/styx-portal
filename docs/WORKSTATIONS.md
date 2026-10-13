@@ -110,7 +110,7 @@ Enrollment runs 8 preflight checks. If any fail, the script prints an error code
 
 1. **In the Styx Portal dashboard,** the **Workstations** section shows cards for each machine you have access to.
 2. **When online:** The card shows a green "Online" badge and a **Connect** button. Click to open the stream in a new browser tab.
-3. **Stream quality:** The agent sends the desktop at the configured framerate (default 60 fps). Adjust framerate in the admin Workstations panel; bitrate_kbps is accepted but not yet applied by the v2 engine.
+3. **Stream quality:** The agent sends the desktop at the configured framerate (default 60 fps). Adjust framerate in the admin Workstations panel; bitrate_kbps is the bitrate ceiling (default and maximum; viewers may lower it in the stream panel).
 
 ### Checking Workstation Status
 
@@ -147,7 +147,7 @@ Use the venv interpreter — the system `python3` lacks the agent's audio/displa
 
 **Current v2 engine capabilities:**
 - **framerate** (e.g., 30, 60): Takes effect immediately on heartbeat. Adjust for network conditions.
-- **bitrate_kbps** and **encoder** fields are accepted but not yet applied by the v2 agent. These are reserved for future enhancements.
+- **bitrate_kbps** is the bitrate ceiling (see Stream panel on the GNOME seat). The **encoder** field is accepted but not yet applied by the v2 agent.
 - **Hardware acceleration:** Automatic. Pixelflux uses NVENC (NVIDIA) or VA-API (AMD/Intel) when a GPU render node (`/dev/dri/renderD*`) is present; falls back to CPU x264 otherwise. No manual encoder selection is available.
 
 ### Dashboard Features
@@ -275,6 +275,16 @@ Agent 0.5.0 runs upstream selkies 2.0.0 + pixelflux 2.1.0 + pcmflux 2.1.0. In se
 - **Watchdog:** a stream stall restarts only selkies (apps survive); 3 stalls in 10 minutes restart the GNOME session and report the workstation degraded.
 
 The GNOME seat needs no screen-share consent since agent 0.6.0.
+
+### Stream panel on the GNOME seat
+
+The selkies sidebar display controls work on the seat:
+
+- **Resolution:** presets and manual sizes resize the seat in place. Sizes below 640x480 are clamped; the maximum seat size is 4096x2304.
+- **UI scaling / HiDPI:** switches the seat between GNOME scale 1 and 2 without restarting the stream.
+- **Ownership:** the first viewer owns the size. Other viewers see the desktop letterboxed at the owner's size until they press **Fit to my window**. If the owner closes the tab, the newest viewer takes over after ~5 s.
+- **Admin defaults:** the workstation's stream settings (framerate, CRF, etc.) are defaults that viewers can change from the panel. Bitrate is a ceiling: the admin value is the default and the maximum; viewers may lower it (floor 1000 kbps). Codec and CPU encode are locked.
+- **Applying changes:** admin changes apply the next time nobody is connected, so they never kick an active session.
 
 ### Upgrade and rollback
 
