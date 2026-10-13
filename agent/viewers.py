@@ -20,6 +20,7 @@ def split_vid(raw_qs: str, fallback: str):
 
 @dataclass
 class Viewer:
+    vid: str = ""
     socks: set = field(default_factory=set)
     size: tuple | None = None     # last (w, h) from `r,`
     dpi: float | None = None      # last scaling_dpi from SETTINGS
@@ -34,7 +35,7 @@ class Viewers:
     def connect(self, vid, ws) -> Viewer:
         rec = self.by_vid.get(vid)
         if rec is None:
-            rec = self.by_vid[vid] = Viewer()
+            rec = self.by_vid[vid] = Viewer(vid)
         elif not rec.socks:       # returning after a full close: newest again
             self.by_vid[vid] = self.by_vid.pop(vid)
         if rec.gone:

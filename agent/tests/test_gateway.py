@@ -833,9 +833,12 @@ async def test_refit_announces_to_every_viewer_and_hands_owner_over(tmp_path):
     received = []
     up, client = await _refit_pair(tmp_path, received, str(tmp_path))
     hdr = {"Authorization": _basic("styx", "pw")}
+    # patched before any socket closes: the refit's closes arm the grace timers
+    saved = (gateway.refit.MIN_INTERVAL_S, gateway.REFIT_HOLD_S, gateway.OWNER_GRACE_S)
+    gateway.refit.MIN_INTERVAL_S, gateway.REFIT_HOLD_S, gateway.OWNER_GRACE_S = 0.0, 0.0, 0.2
     try:
-        owner = await client.ws_connect("/websocket", headers=hdr)
-        other = await client.ws_connect("/websocket?role=viewer", headers=hdr)
+        owner = await client.ws_connect("/websocket?styx_vid=own1", headers=hdr)
+        other = await client.ws_connect("/websocket?role=viewer&styx_vid=oth1", headers=hdr)
         assert (await owner.receive()).data == "styx-owner,1"
         assert (await other.receive()).data == "styx-owner,0"
         await owner.send_str("r,1920x1080,primary")          # claims, no change
@@ -852,29 +855,23 @@ async def test_refit_announces_to_every_viewer_and_hands_owner_over(tmp_path):
         # Seat rebuilt at the owner's size; the owner leaves, the other takes over.
         (tmp_path / "refit-request").unlink()
         (tmp_path / "seat-size").write_text("2552x1294")
-        gateway.refit.MIN_INTERVAL_S, saved = 0.0, gateway.refit.MIN_INTERVAL_S
-        gateway.REFIT_HOLD_S, saved_hold = 0.0, gateway.REFIT_HOLD_S
-        gateway.OWNER_GRACE_S, saved_grace = 0.2, gateway.OWNER_GRACE_S
-        try:
-            await asyncio.sleep(0.5)                         # old viewers' grace lapses
-            owner2 = await client.ws_connect("/websocket", headers=hdr)
-            other2 = await client.ws_connect("/websocket?role=viewer", headers=hdr)
-            assert (await owner2.receive()).data == "styx-owner,1"
-            assert (await other2.receive()).data == "styx-owner,0"
-            await owner2.send_str("r,2552x1294,primary")     # claims, no change
-            await other2.send_str("r,1280x720,primary")
-            await asyncio.sleep(0.6)
-            assert not (tmp_path / "refit-request").exists()
-            await owner2.close()
-            msg = await asyncio.wait_for(other2.receive(), timeout=3)
-            assert msg.data == "styx-owner,1"                # handed over after the grace
-            msg = await asyncio.wait_for(other2.receive(), timeout=3)
-            assert msg.type == aiohttp.WSMsgType.TEXT and msg.data == "styx-refit"
-            assert (tmp_path / "refit-request").read_text() == "1280x720"
-        finally:
-            gateway.refit.MIN_INTERVAL_S = saved
-            gateway.REFIT_HOLD_S, gateway.OWNER_GRACE_S = saved_hold, saved_grace
+        await asyncio.sleep(0.5)                         # old viewers' grace lapses
+        owner2 = await client.ws_connect("/websocket?styx_vid=own2", headers=hdr)
+        other2 = await client.ws_connect("/websocket?role=viewer&styx_vid=oth2", headers=hdr)
+        assert (await owner2.receive()).data == "styx-owner,1"
+        assert (await other2.receive()).data == "styx-owner,0"
+        await owner2.send_str("r,2552x1294,primary")     # claims, no change
+        await other2.send_str("r,1280x720,primary")
+        await asyncio.sleep(0.6)
+        assert not (tmp_path / "refit-request").exists()
+        await owner2.close()
+        msg = await asyncio.wait_for(other2.receive(), timeout=3)
+        assert msg.data == "styx-owner,1"                # handed over after the grace
+        msg = await asyncio.wait_for(other2.receive(), timeout=3)
+        assert msg.type == aiohttp.WSMsgType.TEXT and msg.data == "styx-refit"
+        assert (tmp_path / "refit-request").read_text() == "1280x720"
     finally:
+        gateway.refit.MIN_INTERVAL_S, gateway.REFIT_HOLD_S, gateway.OWNER_GRACE_S = saved
         await client.close()
         await up.close()
 
