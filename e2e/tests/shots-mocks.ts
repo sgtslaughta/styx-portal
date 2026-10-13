@@ -41,3 +41,15 @@ export const CHIP_JOBS = {
   done: job("done", steps(["done", "done", "done", "done"])),
   failed: job("failed", steps(["done", "failed", "skipped", "skipped"])),
 };
+
+const inst = (n: number, name: string, status: string, more: object = {}) => ({
+  id: `mock-inst-${n}`, template_id: "mock-tpl", name, subdomain: `mock${n}`, container_id: `c${n}`, status,
+  error_message: null, env_overrides: {}, volume_names: [], created_at: "2026-10-13T08:00:00Z",
+  started_at: "2026-10-13T08:01:00Z", stopped_at: null, last_activity: "2026-10-13T09:30:00Z", session_config: null, ...more,
+});
+/** Running, paused, stopped and errored instances: fills every header count chip. */
+export const INSTANCES = [
+  inst(1, "Dev desktop", "running"), inst(2, "Browser", "running"), inst(3, "Notes", "paused"),
+  inst(4, "Old build", "stopped", { started_at: null }),
+  inst(5, "Broken app", "error", { error_message: "Container exited with code 1" }),
+];

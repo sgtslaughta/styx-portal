@@ -40,7 +40,7 @@ test.afterAll(async () => { for (const c of [admin, member, anon]) await c?.ctx.
 async function setSize(w: number, h: number) { for (const c of [admin, member, anon]) await c.page.setViewportSize({ width: w, height: h }); }
 async function setTheme(p: Page, t: Theme) {
   await p.evaluate((v) => localStorage.setItem("theme", v), t); // read by the SPA and the shell on load
-  await p.emulateMedia({ colorScheme: t });
+  await p.emulateMedia({ colorScheme: t, reducedMotion: "reduce" }); // no mid-transition frames in shots
 }
 /** Every size x theme combination; `fn` navigates and shoots. */
 async function each(fn: (w: number, t: Theme, name: (screen: string) => string) => Promise<void>) {
@@ -53,6 +53,7 @@ const shotsId = async () => ((await apiCall(admin.ctx, "GET", "/api/services")) 
 
 test("login", async () => {
   await anon.page.goto("/login");
+  await anon.page.mouse.move(0, 0); // keep the pointer ripple out of the shots
   await each(async (_w, t, file) => {
     await setTheme(anon.page, t);
     await anon.page.goto("/login");
@@ -399,6 +400,7 @@ test("empty states: services, discover, home tiles", async () => {
       await setTheme(m, t);
       await m.goto("/");
       await expect(m.getByRole("button", { name: "Log out" })).toBeVisible();
+      await expect(m.getByText("No instances yet")).toBeVisible(); // the real empty state, not the skeleton
       await m.screenshot({ path: file("home-no-tiles-member") });
     });
   } finally { await m.unrouteAll({ behavior: "ignoreErrors" }); }
