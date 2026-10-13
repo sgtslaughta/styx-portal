@@ -26,7 +26,7 @@ const BLOCKED = new Set(["api", "internal", "_styx", "login", "logout", "setup",
 
 function blockedInner(inner: string): boolean {
   const first = inner.split(/[?#]/, 1)[0]!.split("/")[1] ?? "";
-  try { return BLOCKED.has(decodeURIComponent(first).toLowerCase()); } catch { return true; }
+  try { return BLOCKED.has(decodeURIComponent(first).split(";", 1)[0]!.toLowerCase()); } catch { return true; }
 }
 
 export const frameSrc = (mode: Mode, slug: string, inner: string) =>

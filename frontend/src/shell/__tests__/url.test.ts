@@ -10,7 +10,7 @@ describe("parseShellPath", () => {
 });
 describe("frameSrc cookie-root never reaches Styx control paths", () => {
   it.each(["/_styx/exit", "/api/auth/me", "/API/x", "/internal/strip", "/login", "/logout", "/setup",
-    "/accept-invite?t=1", "/change-password", "/%61pi/x"])("%s falls back to /", (inner) =>
+    "/accept-invite?t=1", "/change-password", "/%61pi/x", "/api;/y", "/_STYX;a/exit"])("%s falls back to /", (inner) =>
     expect(frameSrc("cookie-root", "immich", inner)).toBe("/"));
   it("keeps app paths", () => expect(frameSrc("cookie-root", "immich", "/web/index.html?a=1")).toBe("/web/index.html?a=1"));
   it("path mode keeps the app's own /api and /login (they live under /<slug>)", () => {

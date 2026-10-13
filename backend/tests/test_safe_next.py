@@ -43,5 +43,6 @@ def test_shell_paths_allowed_other_styx_paths_not():
     for p in ("/_styx/app/", "/_styx/exit", "/_styx/open/x", "/_styx/application", "/_styx/app",
               "/_styx/app/../exit", "/_styx/app/%2e%2e/exit", "/_styx/app/X/..",
               "/_styx/app/x/_styx/exit", "/_styx/app/x/api/auth/me", "/_styx/app/x/login",
-              "/_styx/app/x/API/y?a=1", "/_styx/app/x/%61pi/y"):
+              "/_styx/app/x/API/y?a=1", "/_styx/app/x/%61pi/y",
+              "/_styx/app/x/api;/y", "/api;x/y", "/_styx/app/x/_styx/app/y/", "/_STYX;a/app/x/"):
         assert safe_next(p) is None, p
