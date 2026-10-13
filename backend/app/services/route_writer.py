@@ -238,7 +238,7 @@ def build_routes_config(instances: list[dict], domain: str,
     # Add shared forwardAuth middleware if any workstations exist
     if has_workstations:
         middlewares["ws-forward-auth"] = {"forwardAuth": {
-            "address": "http://backend:8000/api/workstations/auth-check"}}
+            "address": "http://backend:8000/internal/workstations/auth-check"}}
 
     if has_https:
         config["http"]["serversTransports"] = {

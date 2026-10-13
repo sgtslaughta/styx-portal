@@ -26,7 +26,7 @@ def test_workstation_route_emitted():
     # Check forwardAuth middleware
     assert "ws-forward-auth" in cfg["http"]["middlewares"]
     assert cfg["http"]["middlewares"]["ws-forward-auth"]["forwardAuth"]["address"] == \
-        "http://backend:8000/api/workstations/auth-check"
+        "http://backend:8000/internal/workstations/auth-check"
     svc = cfg["http"]["services"]["ws-ws1"]["loadBalancer"]
     assert svc["servers"] == [{"url": "http://192.168.1.50:8443"}]
 

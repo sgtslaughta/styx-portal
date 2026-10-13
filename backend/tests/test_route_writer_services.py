@@ -157,3 +157,6 @@ def test_auth_check_is_internal_and_unrouted(tmp_path, monkeypatch):
             continue
         assert "Path" in r["rule"], name  # every backend router is path-scoped
         assert not _path_matches(r["rule"], "/internal/services/sonarr/auth-check"), name
+        assert not _path_matches(r["rule"], "/internal/workstations/auth-check"), name
+    wfa = cfg["http"]["middlewares"]["ws-forward-auth"]["forwardAuth"]
+    assert wfa["address"] == "http://backend:8000/internal/workstations/auth-check"

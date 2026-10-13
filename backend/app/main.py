@@ -290,6 +290,8 @@ app.include_router(oauth_router.router, prefix="/api/auth/oauth", tags=["oauth"]
 app.include_router(oauth_admin_router.router, prefix="/api/oauth-providers", tags=["oauth-admin"])
 app.include_router(audit_router.router, prefix="/api/audit", tags=["audit"])
 app.include_router(workstations_router.router, prefix="/api/workstations", tags=["workstations"])
+app.include_router(workstations_router.internal_router, prefix="/internal/workstations",
+                   tags=["workstations"])
 app.include_router(enroll_router.router, prefix="/api/enroll", tags=["enroll"])
 app.include_router(agent_router.router, prefix="/api/agent", tags=["agent"])
 app.include_router(system_settings_router.router, prefix="/api/system-settings", tags=["system-settings"])

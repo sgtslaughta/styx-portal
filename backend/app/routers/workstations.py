@@ -24,6 +24,8 @@ from app.services.workstations import (
 )
 
 router = APIRouter()
+# Mounted at /internal/workstations: reachable only by Traefik's forwardAuth.
+internal_router = APIRouter()
 _settings = Settings()
 
 
@@ -171,24 +173,18 @@ def _unauthenticated(request: Request, msg: str):
     return RedirectResponse(target, status_code=302)
 
 
-@router.get("/auth-check")
+@internal_router.get("/auth-check")
 async def auth_check(request: Request,
                      session: AsyncSession = Depends(get_session)):
-    """Traefik forwardAuth target gating /w/ stream routes. 200 = allow."""
-    from app.security import tokens as _tokens
-    raw = request.cookies.get("access_token")
-    if not raw:
+    """Traefik forwardAuth target gating /w/ stream routes. 200 = allow.
+
+    Served under /internal (never routed by Traefik) and authenticated only by
+    the styx_proxy cookie: it mutates seat occupancy, so it must not be public.
+    """
+    from app.security.deps import proxy_user_or_none
+    user = await proxy_user_or_none(request, session)
+    if user is None:
         return _unauthenticated(request, "Not authenticated")
-    try:
-        claims = _tokens.decode_token(raw)
-    except _tokens.TokenError:
-        return _unauthenticated(request, "Invalid token")
-    from app.services import token_denylist
-    if await token_denylist.is_access_revoked(session, claims.get("jti")):
-        return _unauthenticated(request, "Token revoked")
-    user = await session.get(User, claims.get("sub"))
-    if not user or not user.is_active:
-        return _unauthenticated(request, "User inactive")
     uri = request.headers.get("x-forwarded-uri", "")
     m = re.match(r"^/w/([a-z0-9-]+)", uri)
     if not m:
