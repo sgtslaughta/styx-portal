@@ -4,7 +4,7 @@ import { ADMIN, SHOTS, STYX_COOKIES, apiCall, eventually, jellyfinSeedNetworkXml
 
 test.describe.configure({ mode: "serial" });
 
-const BASE = "http://127.0.0.1:18080";
+const BASE = process.env.E2E_BASE_URL ?? "http://127.0.0.1:18080";
 let ctx: BrowserContext;
 let page: Page;
 
@@ -84,13 +84,15 @@ test("m1 sonarr: adopted container, consent, managed base path", async () => {
   await expect(consent.getByRole("cell", { name: "/config/config.xml" })).toBeVisible();
   await expect(consent.getByRole("cell", { name: "/Config/UrlBase" })).toBeVisible();
   await expect(consent.getByRole("cell", { name: "/sonarr", exact: true })).toBeVisible();
+  const row = consent.getByRole("row").filter({ hasText: "/config/config.xml" });
+  await expect(row.getByRole("cell").nth(2)).toHaveText(/^\s*(\(not set\))?\s*$/);
   await page.screenshot({ path: `${SHOTS}/mount-consent-sonarr.png` });
   await consent.getByRole("button", { name: "Restart Sonarr and apply" }).click();
 
   const section = drawer.getByRole("region", { name: "Base path" });
   await expect(section.getByText("Base path set. Sonarr answers at /sonarr.")).toBeVisible({ timeout: 120_000 });
   for (const step of ["Back up settings", "Apply base path", "Restart app", "Check it answers"])
-    await expect(section.getByText(step)).toBeVisible();
+    await expect(section.getByText(new RegExp(`^${step}\\s*\\(Done\\)`))).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/mount-done-sonarr.png` });
   await eventually(async () => expect((await page.request.get("/sonarr/ping")).status()).toBe(200), 60_000);
 });
@@ -100,7 +102,7 @@ test("m2 jellyfin: managed base path", async () => {
   await addFromContainer("styx-e2e-jellyfin-1", "jellyfin", "Jellyfin", "jellyfin");
   const id = await serviceId("jellyfin");
   // network.xml only exists once Jellyfin has saved network settings.
-  await expect(async () => { jellyfinSeedNetworkXml(); }).toPass({ timeout: 120_000, intervals: [3000] });
+  jellyfinSeedNetworkXml();
   await expect.poll(async () => (await apiCall(ctx, "POST", `/api/services/${id}/mount/plan`)).method,
     { timeout: 180_000, intervals: [3000] }).toBe("config_file");
 
@@ -112,19 +114,30 @@ test("m2 jellyfin: managed base path", async () => {
 });
 
 test.describe("m3 jellyfin native client", () => {
-  let anon: APIRequestContext;
-  test.beforeAll(async () => { anon = await request.newContext(); });
-  test.afterAll(async () => { await anon?.dispose(); });
-
-  const get = (path: string, headers: Record<string, string> = {}) =>
-    anon.get(`${BASE}${path}`, { headers, maxRedirects: 0, failOnStatusCode: false });
-  const stolen = (h: Record<string, string>) =>
-    Object.entries(h).filter(([k, v]) => k === "set-cookie" && STYX_COOKIES.some((c) => v.includes(`${c}=`)));
+  /** Fresh cookie-less context per probe; asserts it holds no Styx cookies before and after. */
+  async function probe(path: string, headers: Record<string, string> = {}) {
+    const anon = await request.newContext();
+    try {
+      const noStyxCookies = async () =>
+        expect((await anon.storageState()).cookies.filter((c) => STYX_COOKIES.includes(c.name))).toEqual([]);
+      await noStyxCookies();
+      const res = await anon.get(`${BASE}${path}`, { headers, maxRedirects: 0, failOnStatusCode: false });
+      const text = await res.text();
+      await noStyxCookies();
+      expect(res.headers()["set-cookie"] ?? "").not.toMatch(new RegExp(`(${STYX_COOKIES.join("|")})=`));
+      return { res, text };
+    } finally { await anon.dispose(); }
+  }
+  /** A Styx denial: 302 to /login (navigation) or Styx's own 401 JSON; never Jellyfin's answer. */
+  async function expectStyxDenied(path: string, headers: Record<string, string> = {}) {
+    const { res, text } = await probe(path, headers);
+    if (res.status() === 302) expect(res.headers()["location"]).toContain("/login");
+    else { expect(res.status()).toBe(401); expect(JSON.parse(text)).toMatchObject({ detail: "Not authenticated" }); }
+  }
 
   test("native apps off: Styx login required; on: Jellyfin's own auth works", async () => {
     test.setTimeout(240_000);
-    const closed = await get("/jellyfin/System/Info", { Authorization: 'MediaBrowser Token="x"' });
-    expect([302, 401]).toContain(closed.status());
+    await expectStyxDenied("/jellyfin/System/Info", { Authorization: 'MediaBrowser Token="x"' });
 
     const drawer = await openDrawer("Jellyfin");
     await drawer.getByLabel("Allow native apps").click();
@@ -134,22 +147,22 @@ test.describe("m3 jellyfin native client", () => {
     await drawer.getByRole("button", { name: "Save" }).click();
     await expect(drawer).toBeHidden();
 
-    // Wait for Traefik to load the bypass routers; sign in with no Styx cookies (wizard was done in m2).
+    // Wait for Traefik to load the bypass routers (wizard was done in m2).
     let token = "";
-    await eventually(async () => { token = await jellyfinToken(anon, `${BASE}/jellyfin`); expect(token).toBeTruthy(); }, 60_000);
+    await eventually(async () => {
+      const anon = await request.newContext();
+      try { token = await jellyfinToken(anon, `${BASE}/jellyfin`); } finally { await anon.dispose(); }
+      expect(token).toBeTruthy();
+    }, 60_000);
 
-    const me = await get("/jellyfin/Users/Me", { Authorization: `MediaBrowser Token="${token}"` });
-    expect(me.status()).toBe(200);
-    expect((await me.json()).Name).toBe("e2e");
-    expect(stolen(me.headers())).toEqual([]);
+    const me = await probe("/jellyfin/Users/Me", { Authorization: `MediaBrowser Token="${token}"` });
+    expect(me.res.status()).toBe(200);
+    expect(JSON.parse(me.text).Name).toBe("e2e");
 
-    const qs = await get(`/jellyfin/System/Info?api_key=${token}`);
-    expect(qs.status()).toBe(200);
-    expect(stolen(qs.headers())).toEqual([]);
+    expect((await probe(`/jellyfin/System/Info?api_key=${token}`)).res.status()).toBe(200);
 
-    const bearer = await get("/jellyfin/Users/Me", { Authorization: `Bearer ${token}` });
-    expect([302, 401]).toContain(bearer.status());
-    expect(stolen(bearer.headers())).toEqual([]);
+    await expectStyxDenied("/jellyfin/Users/Me", { Authorization: `Bearer ${token}` });
+    await expectStyxDenied("/jellyfin/Users/Me");
   });
 });
 
@@ -159,7 +172,7 @@ test("m4 rollback: broken app gets its settings back", async () => {
   const { drawer } = await applyViaUi("Broken app", "brokenapp", "brokenapp");
   const section = drawer.getByRole("region", { name: "Base path" });
   await expect(section.getByText(/Styx put its settings back/)).toBeVisible({ timeout: 150_000 });
-  await expect(section.getByText("Check it answers")).toBeVisible();
+  await expect(section.getByText(/^Check it answers\s*\(Failed\)/)).toBeVisible();
   await section.getByText("App log").click();
   await expect(section.locator("pre")).not.toBeEmpty();
   await expect(section.getByRole("button", { name: "Try again" })).toBeVisible();

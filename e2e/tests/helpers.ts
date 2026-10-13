@@ -75,18 +75,28 @@ export async function jellyfinToken(req: APIRequestContext, base: string): Promi
   return (await r.json()).AccessToken;
 }
 
-/** Jellyfin only writes config/network.xml once network settings are saved. Complete the wizard
- *  from inside the container (the apps network is internal; the base path is not set yet, so Styx
- *  cannot reach it) and re-save the network config so the file exists for the mount plan. */
+/** Jellyfin only writes config/network.xml once network settings are saved. Run once, after the
+ *  service is up: waits for /health, completes the wizard from inside the container (the apps
+ *  network is internal and the base path is not set yet, so Styx cannot reach it; skipped when the
+ *  wizard is already done) and re-saves the network config so the file exists for the mount plan. */
 export function jellyfinSeedNetworkXml(container = "jellyfin") {
-  const script = String.raw`set -e
+  const script = String.raw`set -eu
 A='${JF_AUTH}'; U=http://localhost:8096; J='Content-Type: application/json'
-curl -sf -XPOST $U/Startup/Configuration -H "Authorization: $A" -H "$J" -d '{"UICulture":"en-US","MetadataCountryCode":"US","PreferredMetadataLanguage":"en"}'
-curl -sf $U/Startup/User -H "Authorization: $A" >/dev/null
-curl -sf -XPOST $U/Startup/User -H "Authorization: $A" -H "$J" -d '{"Name":"e2e","Password":"e2e-Jelly-Pass-42"}'
-curl -sf -XPOST $U/Startup/Complete -H "Authorization: $A"
-T=$(curl -sf -XPOST $U/Users/AuthenticateByName -H "Authorization: $A" -H "$J" -d '{"Username":"e2e","Pw":"e2e-Jelly-Pass-42"}' | sed 's/.*"AccessToken":"\([^"]*\)".*/\1/')
-curl -sf $U/System/Configuration/network -H "X-Emby-Token: $T" > /tmp/n.json
-curl -sf -XPOST $U/System/Configuration/network -H "X-Emby-Token: $T" -H "$J" --data @/tmp/n.json`;
-  execFileSync("docker", ["compose", "-p", "styx-e2e", "exec", "-T", container, "sh", "-c", script], { stdio: "pipe" });
+i=0; until curl -sf $U/health >/dev/null; do i=$((i+1)); [ $i -gt 60 ] && { echo "jellyfin /health never answered" >&2; exit 1; }; sleep 2; done
+code=$(curl -s -o /dev/null -w '%{http_code}' $U/Startup/Configuration -H "Authorization: $A")
+if [ "$code" = 200 ]; then
+  curl -sSf -XPOST $U/Startup/Configuration -H "Authorization: $A" -H "$J" -d '{"UICulture":"en-US","MetadataCountryCode":"US","PreferredMetadataLanguage":"en"}'
+  curl -sSf $U/Startup/User -H "Authorization: $A" >/dev/null
+  curl -sSf -XPOST $U/Startup/User -H "Authorization: $A" -H "$J" -d '{"Name":"e2e","Password":"e2e-Jelly-Pass-42"}'
+  curl -sSf -XPOST $U/Startup/Complete -H "Authorization: $A"
+fi
+T=$(curl -sSf -XPOST $U/Users/AuthenticateByName -H "Authorization: $A" -H "$J" -d '{"Username":"e2e","Pw":"e2e-Jelly-Pass-42"}' | sed 's/.*"AccessToken":"\([^"]*\)".*/\1/')
+curl -sSf $U/System/Configuration/network -H "X-Emby-Token: $T" > /tmp/n.json
+curl -sSf -XPOST $U/System/Configuration/network -H "X-Emby-Token: $T" -H "$J" --data @/tmp/n.json`;
+  try {
+    execFileSync("docker", ["compose", "-p", "styx-e2e", "exec", "-T", container, "sh", "-c", script], { stdio: "pipe" });
+  } catch (e) {
+    const err = e as { stderr?: Buffer; message: string };
+    throw new Error(`jellyfin seeding failed: ${err.stderr?.toString() || err.message}`);
+  }
 }
