@@ -18,7 +18,7 @@ def test_path_mode_router():
         assert mw in r["middlewares"]
     fa = cfg["http"]["middlewares"]["svc-auth-sonarr"]["forwardAuth"]
     assert fa["address"] == "http://backend:8000/internal/services/sonarr/auth-check"
-    assert fa["authResponseHeaders"] == ["X-Styx-User", "X-Styx-Groups", "Cookie"]
+    assert fa["authResponseHeaders"] == ["X-Styx-User", "X-Styx-Email", "X-Styx-Groups", "Cookie"]
     assert cfg["http"]["services"]["svc-sonarr"]["loadBalancer"]["servers"] == [
         {"url": "http://192.168.1.10:8989"}]
     # no cookie-root service: /api router untouched

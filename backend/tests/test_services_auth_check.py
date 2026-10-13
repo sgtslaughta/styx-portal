@@ -47,7 +47,7 @@ async def test_bypass_with_header_allows_anonymous(client, session):
 
 @pytest.mark.asyncio
 async def test_member_allowed_when_no_groups_required(member_client, session):
-    await _svc(session)
+    await _svc(session, pass_identity=True)
     r = await member_client.get("/internal/services/sonarr/auth-check", headers=_fwd("/sonarr/"))
     assert r.status_code == 200
     assert r.headers["x-styx-user"] == "member"
@@ -55,7 +55,7 @@ async def test_member_allowed_when_no_groups_required(member_client, session):
 
 @pytest.mark.asyncio
 async def test_member_denied_then_allowed_by_group(member_client, session):
-    await _svc(session, allowed_groups=["media"])
+    await _svc(session, allowed_groups=["media"], pass_identity=True)
     r = await member_client.get("/internal/services/sonarr/auth-check", headers=_fwd("/sonarr/"))
     assert r.status_code == 403
     g = Group(name="media")

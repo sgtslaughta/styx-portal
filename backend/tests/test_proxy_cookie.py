@@ -28,7 +28,8 @@ def _cookie(r, name: str, path: str) -> str | None:
 
 async def _svc(session):
     session.add(ProxiedService(slug="sonarr", name="Sonarr", kind="url",
-                               upstream_url="http://10.0.0.2:8989", auth_mode="sso"))
+                               upstream_url="http://10.0.0.2:8989", auth_mode="sso",
+                               pass_identity=True))
     await session.commit()
 
 

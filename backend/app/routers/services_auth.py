@@ -1,7 +1,8 @@
 """Traefik forwardAuth target, cookie-root enter/exit, unavailable page (spec §4.2, §5)."""
+import html
 import posixpath
 import re
-from urllib.parse import quote, unquote
+from urllib.parse import parse_qs, quote, unquote
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -15,6 +16,7 @@ from app.routers.workstations import _redirect_host
 from app.config import Settings
 from app.security.cookies import clean_cookie_header
 from app.security.nav import is_navigation, no_access
+from app.security.csrf import CSRF_COOKIE, csrf_valid
 from app.security.deps import get_current_user, proxy_user_or_none
 from app.security.safe_next import safe_next
 from app.services.service_routes import COOKIE_NAME
@@ -62,8 +64,18 @@ def bypass_matches(rules: list[dict], uri: str, headers) -> bool:
         prefix = rule.get("path_prefix", "/")
         if not (path == prefix or path.startswith(prefix.rstrip("/") + "/")):
             continue
+        q = rule.get("required_query")
+        if q:
+            vals = parse_qs(uri.split("#", 1)[0].split("?", 1)[1] if "?" in uri else "").get(q, [])
+            if any(v.strip() for v in vals):
+                return True
+            continue
         hdr = rule.get("required_header")
-        if not hdr or hdr.lower() in headers:
+        if not hdr:
+            return True
+        val = (headers.get(hdr.lower()) or "").strip()
+        pre = rule.get("header_prefix")
+        if val and (not pre or val.lower().startswith(pre.lower())):
             return True
     return False
 
@@ -107,10 +119,12 @@ async def auth_check(slug: str, request: Request,
         return login_redirect(request, uri, svc.mount_mode == "cookie-root")
     if not await user_may_open(session, user, svc):
         return no_access(request, "No access to this service")
-    groups = await user_group_names(session, user.id)
-    return Response(status_code=200,
-                    headers={"X-Styx-User": user.username, "X-Styx-Groups": ",".join(groups),
-                             **clean_cookie_header(request)})
+    hdrs = clean_cookie_header(request)
+    if svc.pass_identity:
+        groups = await user_group_names(session, user.id)
+        hdrs |= {"X-Styx-User": user.username, "X-Styx-Email": user.email or "",
+                 "X-Styx-Groups": ",".join(groups)}
+    return Response(status_code=200, headers=hdrs)
 
 
 @internal_router.get("/strip")
@@ -137,11 +151,70 @@ async def enter_service(slug: str, user: User = Depends(get_current_user),
     return resp
 
 
+@router.get("/focus")
+async def current_focus(request: Request, user: User = Depends(get_current_user)):
+    return {"slug": request.cookies.get(COOKIE_NAME)}
+
+
 @exit_router.get("/exit")
 async def exit_service(next: str = "/"):
     resp = RedirectResponse(safe_next(next, allow_login=True) or "/", status_code=302)
     resp.delete_cookie(COOKIE_NAME, path="/")
     return resp
+
+
+_CONFIRM_HTML = """<!doctype html><html><head><meta charset="utf-8">
+<title>Open {name}?</title></head><body>
+<h1>Open {name}?</h1>
+<p>A link from another site wants to switch the app you have open.</p>
+<form method="post"><input type="hidden" name="csrf_token" value="{csrf}">
+<button>Open {name}</button></form>
+<p><a href="/">Stay in Styx</a></p></body></html>"""
+
+
+def _focus_response(svc: ProxiedService) -> RedirectResponse:
+    # frame_ok=False ("Open without overlay"): straight to the bare app at /
+    resp = RedirectResponse(f"/_styx/app/{svc.slug}/" if svc.frame_ok else "/", status_code=302)
+    resp.set_cookie(COOKIE_NAME, svc.slug, path="/", httponly=True,
+                    secure=_settings.COOKIE_SECURE, samesite="lax")
+    resp.headers["Clear-Site-Data"] = '"cache"'
+    return resp
+
+
+async def _open_target(slug: str, request: Request, session: AsyncSession):
+    user = await proxy_user_or_none(request, session)
+    if user is None:
+        return None, login_redirect(request, f"/_styx/open/{slug}")
+    svc = await get_service_by_slug(session, slug)
+    if svc is None or not svc.enabled or svc.mount_mode != "cookie-root":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown service")
+    if not await user_may_open(session, user, svc):
+        return None, no_access(request, "No access to this service")
+    return svc, None
+
+
+@exit_router.get("/open/{slug}")
+async def open_service(slug: str, request: Request,
+                       session: AsyncSession = Depends(get_session)):
+    svc, deny = await _open_target(slug, request, session)
+    if deny:
+        return deny
+    if request.headers.get("sec-fetch-site", "none") in ("same-origin", "none"):
+        return _focus_response(svc)
+    csrf = request.cookies.get(CSRF_COOKIE, "")
+    return HTMLResponse(_CONFIRM_HTML.format(name=html.escape(svc.name), csrf=html.escape(csrf)),
+                        headers={"Cache-Control": "no-store"})
+
+
+@exit_router.post("/open/{slug}")
+async def open_service_confirm(slug: str, request: Request,
+                               session: AsyncSession = Depends(get_session)):
+    # python-multipart is not a dependency; the confirm form is urlencoded.
+    form = parse_qs((await request.body()).decode("utf-8", "replace"))
+    if not csrf_valid(request.cookies.get(CSRF_COOKIE), (form.get("csrf_token") or [None])[0]):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "CSRF check failed")
+    svc, deny = await _open_target(slug, request, session)
+    return deny or _focus_response(svc)
 
 
 _UNAVAILABLE_HTML = """<!doctype html><html><head><meta charset="utf-8">
