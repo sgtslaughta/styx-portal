@@ -136,5 +136,5 @@ def test_svg_csp_has_sandbox():
 @pytest.mark.parametrize("fill", ["url('#g')", "url( #a )", 'url("#a")', "url(#a) url(#b)"])
 def test_quoted_local_url_and_xml_space_accepted(fill):
     svg = (f'<svg xmlns="http://www.w3.org/2000/svg" xml:space="preserve" xml:lang="en">'
-           f'<rect fill='{fill}'/></svg>').encode()
+           f'<rect fill="{fill.replace(chr(34), "&quot;")}"/></svg>').encode()
     ws_icon.validate_icon("image", uri(svg, "image/svg+xml"))
