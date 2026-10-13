@@ -2,6 +2,7 @@
 import html
 
 _CSS = """
+@font-face{font-family:"Commissioner Variable";src:url(/_styx/app/assets/commissioner-wght.woff2) format("woff2");font-weight:100 900;font-display:swap}
 :root{--bg:#EDF1EF;--fg:#0F1C22;--muted:#4A5A60;--link:#2A767C;--btn:#2A767C;--btn-fg:#EDF1EF}
 @media (prefers-color-scheme:dark){:root{--bg:#0F1C22;--fg:#EDF1EF;--muted:#9FB0B4;--link:#6FB7BC;--btn:#6FB7BC;--btn-fg:#0F1C22}}
 *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:16px;
