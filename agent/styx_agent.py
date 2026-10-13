@@ -35,31 +35,13 @@ import seat_gnome  # noqa: E402
 import seat_labwc  # noqa: E402
 from portal_api import api, check_pin  # noqa: E402
 from health import (  # noqa: E402
-    active_connections, gw_state_path, host_tuning_checks, idle_seconds,
+    active_connections, host_tuning_checks, idle_seconds,
     rollback, seat_advisories, stream_starving_seconds)
+from health import gw_state_path  # noqa: E402, F401
 from seat_gnome import Escalation, pick_seat_shell  # noqa: E402
-
-
-def build_gateway_cmd(cfg: dict, upstream_port: int,
-                      seat_dir: str = "") -> tuple[list[str], dict]:
-    install = Path(cfg["install_dir"])
-    # Idle timeout rides in stream_settings (resolved by the backend each
-    # heartbeat: per-workstation override else system default). The gateway is
-    # the idle authority; these env vars configure it.
-    ss = cfg.get("stream_settings") or {}
-    env = {
-        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        "STYX_GW_USER": cfg["selkies_user"],
-        "STYX_GW_PASSWORD": cfg["selkies_password"],
-        "STYX_GW_STATE": str(gw_state_path(cfg)),
-        "STYX_GW_IDLE_TIMEOUT_S": str(ss.get("idle_timeout_s", 0)),
-        "STYX_GW_IDLE_WARN_S": str(ss.get("idle_warn_lead_s", 60)),
-        "STYX_GW_IDLE_ENABLED": "1" if ss.get("idle_timeout_enabled") else "",
-        "STYX_GW_SEAT_DIR": seat_dir,
-    }
-    cmd = [str(install / "venv/bin/python"), str(install / "gateway.py"),
-           str(cfg["port"]), str(upstream_port)]
-    return cmd, env
+from agent_procs import (  # noqa: E402
+    FRAME_START_TIMEOUT_S, _restart_engine, _terminate,
+    _check, build_gateway_cmd, drop_clients, settings_restart_keys)
 
 
 def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool,
@@ -83,64 +65,6 @@ def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool,
 def _write_state(d: dict) -> None:
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     STATE_PATH.write_text(json.dumps(d))
-
-
-def _terminate(p, timeout: int = 10) -> None:
-    """Graceful stop of a child, escalating to kill on timeout (0 = kill now)."""
-    if p is not None and p.poll() is None:
-        if timeout <= 0:
-            p.kill()
-            p.wait()
-            return
-        p.terminate()
-        try:
-            p.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            p.kill()
-
-
-def _restart_engine(procs: dict) -> None:
-    """Tear down the engine and (seat mode) its shell + clipboard so the
-    supervisor loop rebuilds all three fresh. In seat mode selkies IS the
-    Wayland compositor: restarting it changes the socket, so labwc/clipboard
-    must come back too or they cling to the dead socket. The gateway is left
-    running — it's the viewer's link home, and the browser reconnects through it.
-    """
-    for key in ("selkies", "shell", "clipboard"):
-        _terminate(procs.get(key))
-        procs[key] = None
-
-
-def drop_clients(procs: dict) -> None:
-    """Force live stream clients to disconnect by restarting the gateway.
-
-    Set None so the supervisor loop respawns it next pass. Browsers reconnect
-    through the portal's forward-auth, which fails once the user has logged out
-    — so the session genuinely ends rather than silently resuming.
-    """
-    _terminate(procs.get("gateway"))
-    procs["gateway"] = None
-
-
-# --- stream watchdogs ------------------------------------------------------
-# Stream-start watchdog: how long a connected viewer may sit frameless before
-# the engine is restarted. Must exceed connect->first-frame time (NVENC init +
-# first FullFrame is a few seconds); 15s leaves margin. ponytail: bump if slow
-# hosts trip it on legitimately cold starts.
-FRAME_START_TIMEOUT_S = 15
-
-SEAT_DEFAULTS = {"seat_shell": "gnome", "seat_width": 2560, "seat_height": 1440}
-
-
-def settings_restart_keys(old: dict, new: dict) -> tuple[str, ...]:
-    """Procs to relaunch on a stream_settings push. The gateway is always in:
-    idle-timeout config reaches it only through its launch env (STYX_GW_IDLE_*).
-    The GNOME seat restarts only when its shell/geometry changed."""
-    keys = ("selkies", "standby", "shell", "clipboard", "gateway")
-    if any((old.get(k) or d) != (new.get(k) or d)
-           for k, d in SEAT_DEFAULTS.items()):
-        keys += ("seat",)
-    return keys
 
 
 def run(cfg: dict) -> int:
@@ -457,11 +381,6 @@ def run(cfg: dict) -> int:
 
 
 # --- Diagnostics -----------------------------------------------------------
-def _check(label: str, ok: bool, detail: str = "") -> bool:
-    print(f"  [{'OK' if ok else 'FAIL'}] {label}" + (f" — {detail}" if detail else ""))
-    return ok
-
-
 def doctor(cfg: dict) -> int:
     print("styx-agent doctor:")
     ok = True
