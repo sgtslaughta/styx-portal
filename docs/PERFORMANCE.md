@@ -20,7 +20,7 @@ The workstation agent (`styx_agent.py doctor`) checks and advises on the followi
 
 ## Operational Tips
 
-- **Seat resolution:** GNOME seats follow the owning browser's window size (device pixels), so a large HiDPI window streams a large frame; shrink the window or turn on the client's **HiDPI off** (CSS pixels) option to cut encode cost. 4:4:4 chroma (default, crisp text) roughly doubles bitrate against 4:2:0; the per-workstation **Full colour** toggle turns it off.
+- **Seat resolution:** GNOME seats follow the owning browser's window size (device pixels), so a large HiDPI window streams a large frame; shrink the window or turn on the client's **HiDPI off** (CSS pixels) option to cut encode cost. The per-workstation **Full colour (4:4:4)** toggle sharpens text but runs on software x264 on VA-API GPUs (CPU, larger frames); leave it off on slow uplinks.
 - **Tab visibility:** The stream pauses when its tab is backgrounded and resumes on return (by design — prevents long-session memory growth). Refresh if a stream ever sticks.
 - **Audio latency:** Audio adds 100–250 ms pipeline latency after settling; disable audio for competitive play.
 - **GPU acceleration:** NVENC engages automatically when a render node exists; `doctor` shows `GPU render node`. CPU x264 fallback costs latency and quality.
