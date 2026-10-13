@@ -888,7 +888,6 @@ async def test_live_port_file_overrides_upstream(tmp_path):
     assert "SETTINGS,{}" in received
 
 
-
 @pytest.mark.asyncio
 async def test_styx_favicon_served_and_injected(tmp_path):
     from aiohttp import web
@@ -913,9 +912,10 @@ async def test_styx_favicon_served_and_injected(tmp_path):
         assert r.status == 200 and await r.read() == b"\x89PNGxx"
         assert r.headers["Content-Type"] == "image/png"
         assert r.headers["Cache-Control"] == "no-cache"
+        assert r.headers["Content-Security-Policy"].endswith("sandbox")
         assert r.headers["X-Content-Type-Options"] == "nosniff"
         assert (await client.get("/styx-favicon")).status == 401
-        assert "/styx-favicon?v=abc123" in await (await client.get("/", headers=auth)).text()
+        assert "\"styx-favicon?v=abc123\"" in await (await client.get("/", headers=auth)).text()
     finally:
         await client.close()
         await up.close()

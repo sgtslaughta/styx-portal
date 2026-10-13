@@ -59,7 +59,7 @@ def test_read_missing_is_none(tmp_path):
 
 def test_inject_favicon_shim_and_json_escaping():
     out = inject_favicon("<html><head></head></html>", 'a"</script><b>')
-    assert '/styx-favicon?v=' in out
+    assert '"styx-favicon?v=' in out and '"/styx-favicon' not in out
     assert '</script><b>' not in out and '\\u003c' in out
     assert out.index("<script>") < out.index("</head>")
     assert "MutationObserver" in out and "apple-touch-icon" in out
@@ -67,3 +67,19 @@ def test_inject_favicon_shim_and_json_escaping():
 
 def test_inject_favicon_without_head():
     assert inject_favicon("<p>x</p>", "e").startswith("<script>")
+
+
+def test_on_heartbeat_passes_install_dir_and_hb_etag(tmp_path):
+    from unittest.mock import patch
+    cfg = {"install_dir": str(tmp_path)}
+    with patch.object(favicon, "sync", return_value=True) as m:
+        favicon.on_heartbeat(cfg, {"icon_etag": "h9"})
+        favicon.on_heartbeat(cfg, {})
+    assert m.call_args_list[0].args == (cfg, tmp_path, "h9")
+    assert m.call_args_list[1].args == (cfg, tmp_path, "")
+
+
+def test_inject_title_escapes_lt():
+    from gateway_html import inject_title
+    out = inject_title("<head></head>", "</script><x>")
+    assert "</script><x>" not in out

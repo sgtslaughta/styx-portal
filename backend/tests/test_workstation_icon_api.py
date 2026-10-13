@@ -52,7 +52,8 @@ async def test_auto_svg_headers_and_reset(admin_client, session):
     ws = await _ws(session, icon="emoji:\U0001F680")
     g = await admin_client.get(f"/api/workstations/{ws.id}/icon")
     assert g.headers["content-type"].startswith("image/svg+xml")
-    assert g.headers["content-security-policy"] == "default-src 'none'; style-src 'unsafe-inline'"
+    assert g.headers["content-security-policy"] == (
+        "default-src 'none'; style-src 'unsafe-inline'; sandbox")
     r = await admin_client.put(f"/api/workstations/{ws.id}/icon", json={"kind": "auto"})
     assert r.json()["icon_kind"] == "auto"
     await session.refresh(ws)
@@ -113,3 +114,13 @@ async def test_agent_icon_requires_agent_token(client, session):
     assert (await client.get("/api/agent/icon")).status_code == 401
     r = await client.get("/api/agent/icon", headers={"Authorization": "Bearer wrong"})
     assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fmt", ["W/{e}", "{e}", '"zz", {e}', "*"])
+async def test_if_none_match_variants(admin_client, session, fmt):
+    ws = await _ws(session)
+    e = (await admin_client.get(f"/api/workstations/{ws.id}/icon")).headers["etag"]
+    r = await admin_client.get(f"/api/workstations/{ws.id}/icon",
+                               headers={"If-None-Match": fmt.format(e=e)})
+    assert r.status_code == 304

@@ -16,12 +16,15 @@ from fastapi import Request, Response
 MAX_IMAGE_BYTES = 256 * 1024
 MAX_EMOJI_BYTES = 16
 PALETTE = ["#2A767C", "#B88A3E", "#4F9A6C", "#B8432A", "#3D5A80", "#6B5B95"]
-SVG_HEADERS = {"Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'"}
+SVG_HEADERS = {"Content-Security-Policy":
+               "default-src 'none'; style-src 'unsafe-inline'; sandbox"}
 
 _DATA_URI = re.compile(r"^data:([a-z0-9.+/-]+);base64,([A-Za-z0-9+/=\s]+)$")
 _SVG_NS = "{http://www.w3.org/2000/svg}"
-_BAD_TAGS = {"script", "foreignobject", "iframe", "object", "embed"}
-_BAD_URL = re.compile(r"@import|url\(\s*['\"]?\s*(?!#|data:image/)", re.I)
+_BAD_TAGS = {"script", "foreignobject", "iframe", "object", "embed", "animate", "set"}
+_ATTR_NS = {"http://www.w3.org/1999/xlink", "http://www.w3.org/XML/1998/namespace"}
+_IMG_DATA = re.compile(r"^data:image/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]*$")
+_BAD_URL = re.compile(r"@import|url\(\s*['\"]?\s*(?!#)", re.I)
 _DOCTYPE = re.compile(rb"<!\s*(DOCTYPE|ENTITY)", re.I)
 
 
@@ -50,18 +53,25 @@ def _check_svg(data: bytes) -> None:
     if root.tag not in (f"{_SVG_NS}svg", "svg"):
         raise ValueError("Image is not valid SVG")
     for el in root.iter():
-        tag = el.tag.rsplit("}", 1)[-1].lower() if isinstance(el.tag, str) else ""
+        if not isinstance(el.tag, str) or not el.tag.startswith(_SVG_NS):
+            raise ValueError("SVG may only contain SVG elements")
+        tag = el.tag[len(_SVG_NS):].lower()
         if tag in _BAD_TAGS:
             raise ValueError("SVG may not contain scripts or embedded content")
-        if tag == "style" and _BAD_URL.search(el.text or ""):
+        if tag == "style" and ("\\" in (el.text or "") or _BAD_URL.search(el.text or "")):
             raise ValueError("SVG may not reference external resources")
         for name, val in el.attrib.items():
-            local = name.rsplit("}", 1)[-1].lower()
+            ns, _, local = name.rpartition("}")
+            local = local.lower()
+            if ns and ns[1:] not in _ATTR_NS:
+                raise ValueError("SVG contains an unsupported attribute")
             squashed = re.sub(r"\s", "", val).lower()
             if local.startswith("on") or "javascript:" in squashed:
                 raise ValueError("SVG may not contain scripts")
-            if local == "href" and not (val.startswith("#")
-                                        or val.startswith("data:image/")):
+            if local == "href":
+                if not (val.startswith("#") or (tag == "image" and _IMG_DATA.match(val))):
+                    raise ValueError("SVG may not reference external resources")
+            elif local == "style" and "\\" in val:
                 raise ValueError("SVG may not reference external resources")
             if _BAD_URL.search(val):
                 raise ValueError("SVG may not reference external resources")
@@ -145,7 +155,9 @@ def icon_response(request: Request, icon: str | None, name: str, ws_id: str) -> 
     etag = f'"{icon_etag(icon, name, ws_id)}"'
     headers = {"ETag": etag, "Cache-Control": "private, max-age=300",
                "X-Content-Type-Options": "nosniff"}
-    if request.headers.get("if-none-match") == etag:
+    inm = [t.strip().removeprefix("W/") for t in
+           request.headers.get("if-none-match", "").split(",")]
+    if etag in inm or "*" in inm:
         return Response(status_code=304, headers=headers)
     body, mime = render_icon(icon, name, ws_id)
     if mime == "image/svg+xml":
