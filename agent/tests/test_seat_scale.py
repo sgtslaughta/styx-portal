@@ -1,3 +1,4 @@
+import pytest
 import sys
 from pathlib import Path
 
@@ -42,3 +43,57 @@ def test_monitors_config():
         5, 1, [(0, 0, 2.0, 0, True, [('Meta-0', '2560x1252@60.000', {})])], {})
     assert seat_scale.monitors_config(_state(), 1) is None
     assert seat_scale.monitors_config(_state(scales=(1.0,)), 2) is None
+
+
+class _Bus:
+    def __init__(self, state, err=None):
+        self.state, self.err, self.applied = state, err, []
+
+    def get_object(self, *_):
+        return self
+
+    def GetCurrentState(self):
+        if self.err:
+            raise self.err
+        return self.state
+
+    def ApplyMonitorsConfig(self, *a):
+        self.applied.append(a)
+
+
+@pytest.fixture
+def fake_dbus(monkeypatch):
+    import types
+    m = types.ModuleType("dbus")
+    m.Interface = lambda obj, _n: obj
+    for n in ("Array", "Struct", "Dictionary"):
+        setattr(m, n, lambda v=(), **_k: v)
+    for n in ("Int32", "UInt32", "Double", "Boolean"):
+        setattr(m, n, lambda v: v)
+    monkeypatch.setitem(sys.modules, "dbus", m)
+
+
+def _run(bus, scale):
+    out = []
+    seat_scale.apply_scale(bus, scale, lambda *a: out.append(" ".join(map(str, a))))
+    return out
+
+
+def test_apply_scale_applies(fake_dbus):
+    bus = _Bus(_state())
+    assert _run(bus, 2) == ["scale 2 applied"] and len(bus.applied) == 1
+
+
+def test_apply_scale_already_at_scale_is_silent(fake_dbus):
+    bus = _Bus(_state(cur=2.0))
+    assert _run(bus, 2) == [] and bus.applied == []
+
+
+def test_apply_scale_logs_unsupported(fake_dbus):
+    out = _run(_Bus(_state(scales=(1.0,))), 2)
+    assert len(out) == 1 and "unsupported" in out[0]
+
+
+def test_apply_scale_never_raises(fake_dbus):
+    out = _run(_Bus(_state(), err=RuntimeError("bus gone")), 2)
+    assert len(out) == 1 and "bus gone" in out[0]
