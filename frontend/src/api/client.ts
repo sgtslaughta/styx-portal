@@ -59,6 +59,9 @@ export type ServicePreset = {
 export type DiscoveredContainer = {
   name: string; image: string; ports: number[]; networks: string[]; suggested_preset: string | null;
 };
+export type OpenMode = "new_tab" | "same_tab";
+export type Me = { id: string; username: string; email: string | null; role: string;
+  open_workspaces: OpenMode | null; open_apps: OpenMode | null };
 export type Group = { id: string; name: string; description: string | null; member_count: number };
 
 export type MountChange = { target: string; key: string; old: string | null; new: string; created?: boolean };
@@ -333,7 +336,9 @@ export const api = {
       { method: "POST" },
     ),
   refreshSession: () => request<{ ok: boolean }>("/auth/refresh", { method: "POST" }),
-  me: () => request<{ id: string; username: string; email: string | null; role: string }>("/auth/me"),
+  me: () => request<Me>("/auth/me"),
+  setOpenPrefs: (p: Partial<Pick<Me, "open_workspaces" | "open_apps">>) =>
+    request<Me>("/auth/me/preferences", { method: "PUT", body: JSON.stringify(p) }),
   acceptInvite: (data: { token: string; username: string; password: string }) =>
     request<{ id: string; username: string; role: string }>("/auth/accept-invite", {
       method: "POST", body: JSON.stringify(data) }),
