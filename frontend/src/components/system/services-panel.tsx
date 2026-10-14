@@ -5,7 +5,7 @@ import { api, type DiscoveredContainer, type Group, type ProxiedService, type Pr
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
+import { Drawer, DrawerBody, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { ServiceForm } from "./service-form";
@@ -13,7 +13,8 @@ import { ServiceMount } from "./service-mount";
 import { ServiceRow } from "./service-row";
 import { serverFieldErrors, type FieldErrors } from "./service-validation";
 
-type Editing = { kind: "new" } | { kind: "edit"; svc: ProxiedService } | { kind: "discovered"; c: DiscoveredContainer } | null;
+type Editing = { kind: "new" } | { kind: "edit"; svc: ProxiedService }
+  | { kind: "setup"; svc: ProxiedService; auto: boolean } | { kind: "discovered"; c: DiscoveredContainer } | null;
 const errMsg = (e: unknown, fb: string) => (e instanceof Error && e.message ? e.message : fb);
 
 export function ServicesPanel() {
@@ -42,7 +43,7 @@ export function ServicesPanel() {
     const svc = services.find((x) => x.id === setupId.current);
     setupId.current = null;
     window.history.replaceState(null, "", window.location.pathname + window.location.hash);
-    if (svc) setEditing({ kind: "edit", svc });
+    if (svc) setEditing({ kind: "setup", svc, auto: false });
   }, [services]);
 
   const openPicker = async () => {
@@ -63,9 +64,9 @@ export function ServicesPanel() {
       return fields;
     }
     if (created?.needs_setup) {
-      // The base path step lives in the edit drawer; closing now would hide it (it 404s until set).
+      // The app 404s until its base path is set: stay in the drawer on that step, consent opens itself.
       toast.success("Service saved. Next: set its base path.");
-      setEditing({ kind: "edit", svc: created });
+      setEditing({ kind: "setup", svc: created, auto: true });
     } else {
       toast.success("Service saved");
       setEditing(null);
@@ -172,10 +173,22 @@ export function ServicesPanel() {
       <Drawer open={editing !== null} onOpenChange={(o) => { if (!o) setEditing(null); }}>
         <DrawerContent className="w-full sm:w-[620px] sm:max-w-[620px]">
           <DrawerHeader>
-            <DrawerTitle>{editing?.kind === "edit" ? `Edit ${editing.svc.name}` : "Add service"}</DrawerTitle>
-            <DrawerDescription>Services are published on this hostname. Review each warning before saving.</DrawerDescription>
+            <DrawerTitle>{editing?.kind === "setup" ? `Set up ${editing.svc.name}` : editing?.kind === "edit" ? `Edit ${editing.svc.name}` : "Add service"}</DrawerTitle>
+            <DrawerDescription>{editing?.kind === "setup"
+              ? "Styx changes the app's own settings so it works under its path."
+              : "Services are published on this hostname. Review each warning before saving."}</DrawerDescription>
           </DrawerHeader>
-          {editing && (
+          {editing?.kind === "setup" && (
+            <>
+              <DrawerBody>
+                <ServiceMount key={editing.svc.id} service={editing.svc} autoOpenConsent={editing.auto}
+                  onChanged={(svc) => { setEditing({ kind: "setup", svc, auto: false }); void load(); }}
+                  onDone={() => void load()} />
+              </DrawerBody>
+              <DrawerFooter><Button onClick={() => { setEditing(null); void load(); }}>Done</Button></DrawerFooter>
+            </>
+          )}
+          {editing && editing.kind !== "setup" && (
             <ServiceForm
               key={editing.kind === "edit" ? `${editing.svc.id}:${editing.svc.updated_at}:${editing.svc.mount_mode}` : editing.kind === "discovered" ? editing.c.name : "new"}
               initial={editing.kind === "edit" ? editing.svc : undefined}
