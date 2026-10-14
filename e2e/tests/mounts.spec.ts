@@ -31,7 +31,7 @@ test.beforeAll(async ({ browser }) => {
 });
 test.afterAll(async () => { await ctx?.close(); });
 
-/** Services -> Add from container -> pick a preset -> save. Leaves the Services panel open. */
+/** Services -> Add from container -> pick a preset -> save -> close the base path step. Leaves the Services panel open. */
 async function addFromContainer(container: string, preset: string, name: string, slug: string) {
   await openSettings(page, "Services");
   await page.getByRole("button", { name: "Add from container" }).click();
@@ -43,6 +43,10 @@ async function addFromContainer(container: string, preset: string, name: string,
   await form.locator("#slug").fill(slug);
   await form.locator("#ack-origin").check();
   await form.getByRole("button", { name: "Save" }).click();
+  // A new app that still needs its base path keeps the drawer open on that step.
+  await expect(page.getByText("Service saved. Next: set its base path.")).toBeVisible();
+  await expect(form.getByRole("region", { name: "Base path" })).toBeVisible({ timeout: 30_000 });
+  await page.keyboard.press("Escape");
   await expect(form).toBeHidden();
   await expect(page.getByRole("listitem").filter({ hasText: `/${slug}` })).toBeVisible();
 }
