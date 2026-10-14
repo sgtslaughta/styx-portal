@@ -33,6 +33,9 @@ export function OpenPrefProvider({ children }: { children: ReactNode }) {
   const [ask, setAsk] = useState<{ group: OpenGroup; name: string; run: Run } | null>(null);
   const [remember, setRemember] = useState(true);
   const primary = useRef<HTMLButtonElement>(null);
+  const last = useRef(ask);
+  if (ask) last.current = ask;
+  const shown = ask ?? last.current; // keeps the text steady through the close fade
 
   const choose = useCallback<Choose>((group, name, run) => {
     const pref = me?.[KEY[group]]; // ponytail: not loaded yet = ask (harmless)
@@ -57,13 +60,13 @@ export function OpenPrefProvider({ children }: { children: ReactNode }) {
         <DialogContent className="sm:max-w-sm"
           onOpenAutoFocus={(e) => { e.preventDefault(); primary.current?.focus(); }}>
           <DialogHeader>
-            <DialogTitle>Open {ask?.name}</DialogTitle>
+            <DialogTitle>Open {shown?.name}</DialogTitle>
             <DialogDescription>Choose where it opens.</DialogDescription>
           </DialogHeader>
           <label className="flex min-h-11 items-center gap-2 text-sm">
             <input type="checkbox" className="size-4 accent-primary" checked={remember}
               onChange={(e) => setRemember(e.target.checked)} />
-            Remember for all {ask?.group === "workspaces" ? "workspaces" : "apps"}
+            Remember for all {shown?.group === "workspaces" ? "workspaces" : "apps"}
           </label>
           <DialogFooter>
             <Button variant="outline" onClick={() => pick("same_tab")}>Open here</Button>

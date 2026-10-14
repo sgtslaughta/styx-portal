@@ -27,7 +27,6 @@ export function Dock({ open, onOpenChange, tiles, current, focusSlug, side, tabR
   // Radix autofocus skips forceMount+AnimatePresence; focus by hand so Esc works after an iframe hotkey
   useEffect(() => {
     if (open) {
-      setView("apps");
       let id = 0;
       let tries = 0;
       const focusIn = () => {
@@ -55,7 +54,7 @@ export function Dock({ open, onOpenChange, tiles, current, focusSlug, side, tabR
   const cur = tiles.find((t) => t.slug === current);
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
-      <AnimatePresence>
+      <AnimatePresence onExitComplete={() => setView("apps")}>
         {open && (
           <DialogPrimitive.Portal forceMount>
             <DialogPrimitive.Overlay forceMount asChild>

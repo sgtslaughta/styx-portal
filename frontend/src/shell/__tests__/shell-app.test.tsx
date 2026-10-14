@@ -6,7 +6,7 @@ const listServiceTiles = vi.fn();
 vi.mock("@/api/client", () => ({ api: { listServiceTiles: () => listServiceTiles(), serviceFocus: () => Promise.resolve({ slug: null }),
   me: () => Promise.resolve({ id: "u", username: "a", email: null, role: "user", open_workspaces: null, open_apps: null }),
   myWorkstations: () => Promise.resolve([]), listInstances: () => Promise.resolve([]) } }));
-vi.mock("sonner", () => ({ Toaster: () => null, toast: Object.assign(vi.fn(), { error: vi.fn() }) }));
+vi.mock("sonner", () => ({ Toaster: ({ theme }: { theme?: string }) => <i data-testid="toaster">{theme}</i>, toast: Object.assign(vi.fn(), { error: vi.fn() }) }));
 import { ShellApp } from "../shell-app";
 
 const mk = () => [{ id: "1", slug: "sonarr", name: "Sonarr", icon: null, mount_mode: "path", enabled: true, up: true, frame_ok: true, needs_setup: false }];
@@ -66,4 +66,12 @@ it("dock opens on Apps; Workspaces tab shows the workspaces list; app links neve
   fireEvent.mouseDown(getByRole("tab", { name: "Workspaces" }), { button: 0 });
   expect(await findByRole("tab", { name: "Workspaces" })).toHaveAttribute("aria-selected", "true");
   expect(queryByRole("dialog", { name: /^Open / })).toBeNull();
+});
+
+it("shell toaster follows the html dark class", async () => {
+  listServiceTiles.mockResolvedValue(mk());
+  document.documentElement.classList.add("dark");
+  const { findByTestId } = setup();
+  expect((await findByTestId("toaster")).textContent).toBe("dark");
+  document.documentElement.classList.remove("dark");
 });
