@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { expect, request, test, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
-import { ADMIN, SHOTS, STYX_COOKIES, apiCall, eventually, jellyfinSeedNetworkXml, jellyfinToken, openSettings, uiLogin } from "./helpers";
+import { ADMIN, SHOTS, STYX_COOKIES, apiCall, eventually, jellyfinToken, openSettings, uiLogin } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -62,12 +62,16 @@ async function openDrawer(name: string) {
 const serviceId = async (slug: string): Promise<string> =>
   (await apiCall(ctx, "GET", "/api/services") as { id: string; slug: string }[]).find((s) => s.slug === slug)!.id;
 
-async function applyViaUi(name: string, slug: string, tag: string) {
+async function applyViaUi(name: string, slug: string, tag: string, newFile = false) {
   const drawer = await openDrawer(name);
   await drawer.getByRole("button", { name: `Set base path to /${slug}` }).click();
   const consent = page.getByRole("dialog", { name: `Change ${name}'s settings?` });
   await expect(consent).toBeVisible();
   for (const h of ["File", "Setting", "Now", "After"]) await expect(consent.getByRole("columnheader", { name: h })).toBeVisible();
+  if (newFile) {
+    await expect(consent.getByText(/\(new file\)/).first()).toBeVisible();
+    await expect(consent.getByText("(no file yet)").first()).toBeVisible();
+  }
   await page.screenshot({ path: `${SHOTS}/mount-consent-${tag}.png` });
   await consent.getByRole("button", { name: `Restart ${name} and apply` }).click();
   return { drawer, consent };
@@ -105,12 +109,11 @@ test("m2 jellyfin: managed base path", async () => {
   test.setTimeout(420_000);
   await addFromContainer("styx-e2e-jellyfin-1", "jellyfin", "Jellyfin", "jellyfin");
   const id = await serviceId("jellyfin");
-  // network.xml only exists once Jellyfin has saved network settings.
-  jellyfinSeedNetworkXml();
+  // A fresh Jellyfin has no network.xml (only system.xml); Styx creates it, so no seeding here.
   await expect.poll(async () => (await apiCall(ctx, "POST", `/api/services/${id}/mount/plan`)).method,
     { timeout: 180_000, intervals: [3000] }).toBe("config_file");
 
-  const { drawer } = await applyViaUi("Jellyfin", "jellyfin", "jellyfin");
+  const { drawer } = await applyViaUi("Jellyfin", "jellyfin", "jellyfin", true);
   await expect(drawer.getByRole("region", { name: "Base path" }).getByText("Base path set. Jellyfin answers at /jellyfin."))
     .toBeVisible({ timeout: 180_000 });
   await page.screenshot({ path: `${SHOTS}/mount-done-jellyfin.png` });
