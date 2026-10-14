@@ -1,6 +1,8 @@
 import { useCallback, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Toaster } from "sonner";
 import { api } from "@/api/client";
+import { OpenPrefProvider } from "@/components/open-prompt";
 import { toTile } from "@/lib/service-tiles";
 import { LazyMotion, MotionConfig, domMax } from "framer-motion";
 import { Dock } from "./dock";
@@ -39,11 +41,14 @@ export function ShellApp() {
   return (
     <LazyMotion features={domMax}> {/* domMax: the edge tab needs drag */}
       <MotionConfig reducedMotion="user">
+        <OpenPrefProvider>
         <div className="h-dvh w-screen">
           <Frame key={tile.slug} tile={tile} inner={target.inner} onTitle={onTitle} onFrame={setFrameEl} />
           <EdgeTab onOpen={toggle} open={open} tabRef={tabRef} />
           <Dock open={open} onOpenChange={setOpen} tiles={tiles} current={tile.slug} focusSlug={focus?.slug ?? null} side={side} tabRef={tabRef} />
+          <Toaster position="bottom-center" />
         </div>
+        </OpenPrefProvider>
       </MotionConfig>
     </LazyMotion>
   );

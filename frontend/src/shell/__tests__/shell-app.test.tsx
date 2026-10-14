@@ -3,7 +3,10 @@ import { fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 const listServiceTiles = vi.fn();
-vi.mock("@/api/client", () => ({ api: { listServiceTiles: () => listServiceTiles(), serviceFocus: () => Promise.resolve({ slug: null }) } }));
+vi.mock("@/api/client", () => ({ api: { listServiceTiles: () => listServiceTiles(), serviceFocus: () => Promise.resolve({ slug: null }),
+  me: () => Promise.resolve({ id: "u", username: "a", email: null, role: "user", open_workspaces: null, open_apps: null }),
+  myWorkstations: () => Promise.resolve([]), listInstances: () => Promise.resolve([]) } }));
+vi.mock("sonner", () => ({ Toaster: () => null, toast: Object.assign(vi.fn(), { error: vi.fn() }) }));
 import { ShellApp } from "../shell-app";
 
 const mk = () => [{ id: "1", slug: "sonarr", name: "Sonarr", icon: null, mount_mode: "path", enabled: true, up: true, frame_ok: true, needs_setup: false }];
@@ -50,4 +53,17 @@ it("clicking the edge tab opens the dock", async () => {
   const { findByRole } = setup();
   fireEvent.click(await findByRole("button", { name: /open the styx menu/i }));
   expect(await findByRole("dialog")).toBeTruthy();
+});
+
+it("dock opens on Apps; Workspaces tab shows the workspaces list; app links never prompt", async () => {
+  listServiceTiles.mockImplementation(() => Promise.resolve(mk()));
+  const { container, getByRole, findByRole, queryByRole } = setup();
+  await waitFor(() => expect(container.querySelector("iframe")).toBeTruthy());
+  fireEvent.click(getByRole("button", { name: /open the styx menu/i }));
+  expect(await findByRole("tab", { name: "Apps" })).toHaveAttribute("aria-selected", "true");
+  const app = getByRole("link", { name: /Sonarr/ });
+  expect(app.getAttribute("href")).toBe("/_styx/app/sonarr/");
+  fireEvent.mouseDown(getByRole("tab", { name: "Workspaces" }), { button: 0 });
+  expect(await findByRole("tab", { name: "Workspaces" })).toHaveAttribute("aria-selected", "true");
+  expect(queryByRole("dialog", { name: /^Open / })).toBeNull();
 });
