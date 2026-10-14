@@ -33,11 +33,16 @@ describe("ServiceForm upstream reverse proxy", () => {
     expect(screen.getByText("Links may leave Styx")).toBeInTheDocument();
   });
 
-  test("warning names the hostname", () => {
+  test("warning text is static, links to the proxy docs, and focus moves to the field", () => {
     setup();
     fireEvent.click(screen.getByLabelText(SW));
+    expect(screen.getByLabelText("Site hostname")).toHaveFocus();
+    const before = screen.getByText(/The app will think its address is the site hostname\./);
     change("Site hostname", "unraid.home.lan");
-    expect(screen.getByText(/The app will think its address is unraid\.home\.lan\./)).toBeInTheDocument();
+    expect(screen.getByText(/The app will think its address is the site hostname\./).textContent).toBe(before.textContent);
+    const alert = screen.getByText("Links may leave Styx").closest("[role=alert]") as HTMLElement;
+    expect(alert.querySelector("a")).toHaveAttribute("href", "/docs/SERVICES/#apps-behind-a-reverse-proxy");
+    expect(screen.getByText(/punycode/)).toBeInTheDocument();
   });
 
   test("invalid hostname shows the message and blocks save", () => {

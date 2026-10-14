@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { DrawerBody, DrawerFooter } from "@/components/ui/drawer";
-import { RISK, RISK_DETAIL, RiskCallout } from "@/components/common/risk-callout";
+import { PROXY_DOCS, RISK, RISK_DETAIL, RiskCallout } from "@/components/common/risk-callout";
 import { Field, Section, SwitchRow, selectCls } from "./service-form-parts";
 import { AccessSection, checkCls } from "./service-form-access";
 import { validateService, type FieldErrors } from "./service-validation";
@@ -60,6 +60,7 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
   const [touched, setTouched] = useState<Set<string>>(new Set());
   const [srv, setSrv] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
+  const [hostFocus, setHostFocus] = useState(false); // focus the hostname only after the user turns the switch on
   const [ack, setAck] = useState(false); // never pre-checked, not even on edit
   const [containers, setContainers] = useState<DiscoveredContainer[] | null>(null);
   const [discoverErr, setDiscoverErr] = useState<string | null>(null);
@@ -200,16 +201,16 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
               <SwitchRow id="upstream-proxy" label="Upstream is a reverse proxy"
                 hint="Turn on when the address above is Nginx Proxy Manager, Caddy or another proxy that picks the site by hostname.">
                 <Switch id="upstream-proxy" aria-label="Upstream is a reverse proxy" checked={f.upstream_host != null}
-                  onCheckedChange={(v) => set("upstream_host", v ? "" : null)} />
+                  onCheckedChange={(v) => { setHostFocus(v); set("upstream_host", v ? "" : null); }} />
               </SwitchRow>
               {f.upstream_host != null && (
                 <>
-                  <Field id="upstream-host" label="Site hostname" error={err("upstream_host")} hint="The hostname your proxy uses for this app.">
-                    <Input id="upstream-host" placeholder="unraid.home.lan" value={f.upstream_host} autoComplete="off" {...aria("upstream_host")}
+                  <Field id="upstream-host" label="Site hostname" error={err("upstream_host")} hint="The hostname your proxy uses for this app. Use punycode for non-ASCII names (xn--…).">
+                    <Input id="upstream-host" autoFocus={hostFocus} placeholder="unraid.home.lan" value={f.upstream_host} autoComplete="off" {...aria("upstream_host")}
                       onChange={(e) => set("upstream_host", e.target.value)} />
                   </Field>
-                  <RiskCallout tone="warning" title="Links may leave Styx">
-                    {`The app will think its address is ${f.upstream_host || "that hostname"}. If it sends full-address redirects, your browser follows them to that hostname, which only works where it resolves. Connect Styx straight to the app when you can.`}
+                  <RiskCallout tone="warning" title="Links may leave Styx" docs={PROXY_DOCS}>
+                    The app will think its address is the site hostname. If it sends full-address redirects, your browser follows them to that hostname, which only works where it resolves. Connect Styx straight to the app when you can.
                   </RiskCallout>
                 </>
               )}

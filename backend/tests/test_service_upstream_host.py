@@ -136,3 +136,31 @@ async def test_favicon_probes_send_host_and_sni():
     out = await sf.fetch_favicon(svc, None, transport=httpx.MockTransport(handler))
     assert out and out.startswith("data:image/svg")      # same-origin filter still resolves it
     assert seen and set(seen) == {("g.jmolabs.dev", "g.jmolabs.dev")}
+
+
+@pytest.mark.asyncio
+async def test_api_round_trip(admin_client, monkeypatch):
+    async def noop(session, **kw):
+        return None
+    monkeypatch.setattr("app.services.route_writer.refresh_routes_from_db", noop)
+    body = _body(upstream_host="G.JmoLabs.dev")
+    r = await admin_client.post("/api/services", json=body)
+    assert r.status_code == 201, r.text
+    assert r.json()["upstream_host"] == "g.jmolabs.dev"
+    sid = r.json()["id"]
+    put = {k: v for k, v in body.items() if k != "slug"}
+    r = await admin_client.put(f"/api/services/{sid}", json={**put, "upstream_host": None})
+    assert r.status_code == 200 and r.json()["upstream_host"] is None
+    r = await admin_client.put(f"/api/services/{sid}", json={**put, "upstream_host": "a.lan"})
+    assert r.json()["upstream_host"] == "a.lan"
+    r = await admin_client.put(f"/api/services/{sid}", json={
+        **put, "kind": "docker-local", "upstream_url": None, "container": "c",
+        "container_port": 80, "upstream_host": "a.lan"})
+    assert r.status_code == 422
+
+
+def test_route_writer_drops_host_for_non_url_kind():
+    from app.services.route_writer import _service_dict
+    s = ProxiedService(slug="c", name="C", kind="docker-local", container="c", container_port=80,
+                       upstream_host="stale.lan")
+    assert _service_dict(s)["upstream_host"] is None

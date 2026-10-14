@@ -306,11 +306,21 @@ def write_routes(instances: list[dict], domain: str | None = None,
             raise
 
 
+def _service_dict(s) -> dict:
+    from app.models import upstream_base
+    return {
+        "slug": s.slug, "upstream": upstream_base(s), "mount_mode": s.mount_mode,
+        "auth_mode": s.auth_mode, "verify_tls": s.verify_tls, "enabled": s.enabled,
+        # only url services are name-routed; ignore a stale host on any other kind
+        "upstream_host": s.upstream_host if s.kind == "url" else None,
+    }
+
+
 async def refresh_routes_from_db(session, strict: bool = False):
     """Query running/idle instances and (re)write the Traefik routes file."""
     from sqlmodel import select
     from app.models import (
-        Instance, ProxiedService, ServiceTemplate, Workstation, upstream_base)
+        Instance, ProxiedService, ServiceTemplate, Workstation)
     from app.security.crypto import decrypt_secret
 
     result = await session.exec(
@@ -342,9 +352,5 @@ async def refresh_routes_from_db(session, strict: bool = False):
         ws_data.append(ws_dict)
     svc_result = await session.exec(
         select(ProxiedService).where(ProxiedService.enabled == True))  # noqa: E712
-    svc_data = [{
-        "slug": s.slug, "upstream": upstream_base(s), "mount_mode": s.mount_mode,
-        "auth_mode": s.auth_mode, "verify_tls": s.verify_tls, "enabled": s.enabled,
-        "upstream_host": s.upstream_host,
-    } for s in svc_result.all()]
+    svc_data = [_service_dict(s) for s in svc_result.all()]
     write_routes(data, workstations=ws_data, services=svc_data, strict=strict)

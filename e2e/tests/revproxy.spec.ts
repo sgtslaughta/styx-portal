@@ -27,6 +27,8 @@ test("url service behind a name-based reverse proxy gets the site hostname as Ho
     });
     const body = await (await p.request.get("/revproxy/")).text();
     expect(headerLines(body, "Host")).toEqual(["app.proxy.test"]);
+    // docs/SERVICES.md promises the Styx (browser) name survives in X-Forwarded-Host
+    expect(headerLines(body, "X-Forwarded-Host")).toEqual(["127.0.0.1:18080"]);
   } finally {
     const all: { id: string; slug: string }[] = await apiCall(ctx, "GET", "/api/services");
     const svc = all.find((x) => x.slug === "revproxy");

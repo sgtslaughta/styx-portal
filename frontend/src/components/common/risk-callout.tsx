@@ -30,15 +30,18 @@ export const RISK_DETAIL = {
 } as const;
 
 const DOCS = "/docs/SERVICES/#security-model";
+export const PROXY_DOCS = "/docs/SERVICES/#apps-behind-a-reverse-proxy";
 const linkCls =
   "rounded-sm text-muted-foreground underline underline-offset-2 hover:text-foreground " +
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 
-export function RiskCallout({ title, children, details, footer, tone = "danger", className }: {
+export function RiskCallout({ title, children, details, footer, tone = "danger", className, docs = DOCS }: {
   /** Short scannable label, e.g. "No Styx login". */
   title?: string;
   /** The mandated risk text: always visible. */
   children: ReactNode;
+  /** Docs link target for "Learn more"; defaults to the security model. */
+  docs?: string;
   /** Optional secondary text, collapsed behind "Details". */
   details?: ReactNode;
   /** Extra content under the text (e.g. an acknowledgement checkbox). */
@@ -69,7 +72,7 @@ export function RiskCallout({ title, children, details, footer, tone = "danger",
               <button type="button" className={linkCls} aria-expanded={open} aria-controls={detailsId}
                 onClick={() => setOpen((o) => !o)}>{open ? "Hide details" : "Details"}</button>
             )}
-            <a className={linkCls} href={DOCS} target="_blank" rel="noreferrer">
+            <a className={linkCls} href={docs} target="_blank" rel="noreferrer">
               Learn more<span className="sr-only"> (opens in a new tab)</span>
             </a>
           </div>
