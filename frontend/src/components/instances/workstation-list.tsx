@@ -3,6 +3,7 @@ import { ChevronDown, Search } from "lucide-react";
 import { api, ApiError, type Workstation } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { WorkstationIcon } from "@/components/system/workstation-icon";
 import { WorkstationSpecs } from "@/components/system/workstation-specs";
 import { openConnectWipe } from "@/lib/connect-wipe";
 import { cn } from "@/lib/utils";
@@ -196,6 +197,7 @@ export function WorkstationList() {
             <li key={ws.id} className="px-3 py-2">
               <div className="flex items-center gap-3">
                 <LedDot led={led} />
+                <WorkstationIcon ws={ws} />
                 {osBadge(ws)}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{ws.name}</p>

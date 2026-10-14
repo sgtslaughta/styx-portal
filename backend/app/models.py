@@ -243,6 +243,8 @@ class Workstation(SQLModel, table=True):
         sa_column=Column(JSON),
     )
     all_users: bool = False
+    # None = auto badge; "emoji:<char>" or a "data:<mime>;base64,..." image.
+    icon: str | None = None
     last_heartbeat: datetime | None = None
     last_error: str | None = None
     # Occupancy: live stream-connection count reported by the agent's

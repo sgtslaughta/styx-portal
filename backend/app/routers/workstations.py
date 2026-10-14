@@ -13,13 +13,14 @@ from app.config import Settings
 from app.database import get_session
 from app.models import User, WorkstationEnrollmentToken, Workstation, WorkstationAccess
 from app.schemas import (
-    EnrollTokenOut, WorkstationAccessUpdate, WorkstationConnectOut, WorkstationOut,
+    EnrollTokenOut, WorkstationAccessUpdate, WorkstationIconUpdate, WorkstationConnectOut, WorkstationOut,
     WorkstationUpdate, WorkstationUpdateCommandOut,
 )
 from app.security.cookies import clean_cookie_header
 from app.security.nav import is_navigation, no_access
 from app.security.safe_next import safe_next
 from app.security.deps import require_admin, get_current_user
+from app.services import ws_icon
 from app.services.audit import audit_request
 from app.services.workstations import (
     build_enroll_command, build_update_command, get_latest_agent_version, lan_ca_pin,
@@ -99,7 +100,9 @@ def _out(ws: Workstation, allowed: list[str],
         allowed_user_ids=allowed,
         in_use=in_use,
         in_use_by=occupant.username if (in_use and occupant) else None,
-        in_use_self=bool(in_use and viewer_id and ws.occupied_by == viewer_id))
+        in_use_self=bool(in_use and viewer_id and ws.occupied_by == viewer_id),
+        icon_kind=ws_icon.icon_kind(ws.icon),
+        icon_etag=ws_icon.icon_etag(ws.icon, ws.name, ws.id))
 
 
 async def _occupant(session, ws: Workstation) -> User | None:
@@ -270,6 +273,34 @@ async def update_workstation(ws_id: str, body: WorkstationUpdate,
                         user_id=admin.id, resource=ws.id)
     await session.commit()
     return _out(ws, await _allowed_ids(session, ws.id))
+
+
+@router.put("/{ws_id}/icon", response_model=WorkstationOut)
+async def set_icon(ws_id: str, body: WorkstationIconUpdate, request: Request,
+                   admin: User = Depends(require_admin),
+                   session: AsyncSession = Depends(get_session)):
+    ws = await _get_or_404(session, ws_id)
+    try:
+        ws.icon = ws_icon.validate_icon(body.kind, body.value)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+    session.add(ws)
+    await audit_request(session, request, "workstation.icon_change",
+                        user_id=admin.id, resource=ws.id,
+                        detail={"kind": body.kind})
+    await session.commit()
+    return _out(ws, await _allowed_ids(session, ws.id))
+
+
+@router.get("/{ws_id}/icon")
+async def get_icon(ws_id: str, request: Request,
+                   user: User = Depends(get_current_user),
+                   session: AsyncSession = Depends(get_session)):
+    ws = await _get_or_404(session, ws_id)
+    allowed = await _allowed_ids(session, ws.id)
+    if not (user.role == "admin" or ws.all_users or user.id in allowed):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this workstation")
+    return ws_icon.icon_response(request, ws.icon, ws.name, ws.id)
 
 
 @router.put("/{ws_id}/access", response_model=WorkstationOut)

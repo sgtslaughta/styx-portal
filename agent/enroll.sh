@@ -262,10 +262,10 @@ if [[ "$UPGRADE" == 1 ]]; then
 fi
 mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$UNIT_DIR" "$INSTALL_DIR/logs"
 for pair in "agent.py styx_agent.py" "engine.py engine.py" \
-            "gateway.py gateway.py" "seat_gnome.py seat_gnome.py" \
+            "gateway.py gateway.py" "gateway_html.py gateway_html.py" "agent_procs.py agent_procs.py" "seat_systemd.py seat_systemd.py" "seat_gnome.py seat_gnome.py" \
             "seat_labwc.py seat_labwc.py" "health.py health.py" \
-            "refit.py refit.py" "seat_portal.py seat_portal.py" "seat_clipboard.py seat_clipboard.py" "portal_api.py portal_api.py" \
-            "clipboard_bridge.py clipboard_bridge.py" "uninstall uninstall.sh"; do
+            "refit.py refit.py" "seat_scale.py seat_scale.py" "viewers.py viewers.py" "seat_portal.py seat_portal.py" "seat_clipboard.py seat_clipboard.py" "portal_api.py portal_api.py" \
+            "clipboard_bridge.py clipboard_bridge.py" "favicon.py favicon.py" "uninstall uninstall.sh"; do
   read -r remote local_name <<<"$pair"
   fetch "$SERVER/api/enroll/$remote" -o "$INSTALL_DIR/$local_name" \
     || fail E05 "Could not download $remote from $SERVER/api/enroll/. Server may be mid-restart or missing its ./agent mount (AGENT_DIR) — retry, then check server logs."

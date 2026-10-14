@@ -7,7 +7,7 @@ import refit  # noqa: E402
 
 def test_clamp_bounds_and_even():
     assert refit.clamp(320, 200) == (640, 480)
-    assert refit.clamp(7680, 4320) == (3840, 2160)
+    assert refit.clamp(7680, 4320) == (4096, 2304)
     assert refit.clamp(2553, 1295) == (2552, 1294)
 
 
@@ -26,8 +26,9 @@ def test_decide_tolerance_and_unknown_current():
 
 
 def test_decide_rate_limited():
-    assert refit.decide((2552, 1294), (1920, 1080), 98, 100) is None      # 2 s after last
+    assert refit.decide((2552, 1294), (1920, 1080), 98, 100) == 1.0       # 2 s after last: wait 1 s
     assert refit.decide((2552, 1294), (1920, 1080), 96, 100) == (2552, 1294)
+    assert refit.decide((1920, 1080), (1920, 1080), 98, 100) is None       # same size: nothing
 
 
 def test_size_file_roundtrip_and_request(tmp_path):
@@ -70,7 +71,9 @@ def test_inject_reload():
     html = "<html><head></head><body></body></html>"
     out = refit.inject_reload(html, True)
     assert 'id="styx-refit"' in out and "4002" in out and "styx-resizing" in out and refit.MARKER in out
-    assert "styx-resizing" in refit.HOLD_HTML and "Resizing" in refit.HOLD_HTML and out.index("styx-refit") < out.index("</head>")
+    assert "window.WebSocket=S" in out and "self.WebSocket=S" in out and out.index("styx-refit") < out.index("</head>")
+    assert "q.delete('socket_worker')" in out    # an older shim pinned the page socket; undo it
+    assert "Resizing" in refit.HOLD_HTML
     assert refit.inject_reload(html, False) == html
     assert refit.inject_reload("<p>no head</p>", True) == "<p>no head</p>"
 
@@ -91,3 +94,23 @@ def test_wait_for_request_stops_early(tmp_path):
     assert refit.wait_for_request(tmp_path / "r", 30, sleep=lambda s: t.update(now=t["now"] + s),
                                   clock=lambda: t["now"], stop=lambda: True) is None
     assert t["now"] == 0.0
+
+
+def test_shim_reconnects_transparently():
+    out = refit.inject_reload("<html><head></head><body></body></html>", True)
+    assert "_resume" in out and "START_VIDEO" in out and "X-Styx-Hold" in out and "location.reload()" in out
+    assert "new WebSocket(m.url)" in out and "styx-pill" in out   # worker source hook + page pill relay
+
+
+def test_size_owner_first_viewer_wins_until_it_leaves():
+    o = refit.SizeOwner()
+    assert o.claim("a") and not o.claim("b") and o.claim("a")
+    o.release("b")
+    assert o.owner == "a"
+    o.release("a")
+    assert o.claim("b")
+
+
+def test_reload_js_has_viewer_id_and_no_takeover():
+    assert "styx_vid" in refit.RELOAD_JS
+    assert "styx-takeover" not in refit.RELOAD_JS and "Fit to my window" not in refit.RELOAD_JS

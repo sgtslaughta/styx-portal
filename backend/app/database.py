@@ -107,6 +107,7 @@ async def _run_migrations(conn):
         ("workstations", "occupied_at", "TIMESTAMP"),
         ("workstations", "disconnect_pending", "BOOLEAN"),
         ("workstations", "idle_disconnect_sent", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("workstations", "icon", "TEXT"),
         ("users", "failed_count", "INTEGER DEFAULT 0"),
         ("service_presets", "subpath", "JSON"),
         ("proxied_services", "mount_managed", "BOOLEAN NOT NULL DEFAULT 0"),

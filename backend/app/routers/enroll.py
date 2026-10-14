@@ -18,11 +18,15 @@ from app.schemas import WorkstationRegisterRequest, WorkstationRegisterResponse
 from app.security.crypto import encrypt_secret
 from app.services.audit import audit_request
 from app.services.workstations import (
-    SELKIES_USER, sha256_hex, unique_subdomain,
+    AGENT_UPDATE_FILES, SELKIES_USER, sha256_hex, unique_subdomain,
 )
 
 router = APIRouter()
 _settings = Settings()
+
+# Allowlist: URL name -> file in the agent dir. Only these keys are served.
+_SERVED = {remote: local for remote, local in AGENT_UPDATE_FILES} | {
+    "script": "enroll.sh", "uninstall": "uninstall.sh"}
 
 
 def _agent_dir() -> Path:
@@ -40,71 +44,6 @@ def _serve(filename: str) -> PlainTextResponse:
                             f"Agent file {filename} missing on server — "
                             f"check the ./agent mount (AGENT_DIR).")
     return PlainTextResponse(path.read_text())
-
-
-@router.get("/script")
-async def enroll_script():
-    return _serve("enroll.sh")
-
-
-@router.get("/agent.py")
-async def agent_py():
-    return _serve("styx_agent.py")
-
-
-@router.get("/engine.py")
-async def engine_py():
-    return _serve("engine.py")
-
-
-@router.get("/gateway.py")
-async def gateway_py():
-    return _serve("gateway.py")
-
-
-@router.get("/seat_gnome.py")
-async def seat_gnome_py():
-    return _serve("seat_gnome.py")
-
-
-@router.get("/seat_labwc.py")
-async def seat_labwc_py():
-    return _serve("seat_labwc.py")
-
-
-@router.get("/health.py")
-async def health_py():
-    return _serve("health.py")
-
-
-@router.get("/refit.py")
-async def refit_py():
-    return _serve("refit.py")
-
-
-@router.get("/seat_portal.py")
-async def seat_portal_py():
-    return _serve("seat_portal.py")
-
-
-@router.get("/seat_clipboard.py")
-async def seat_clipboard_py():
-    return _serve("seat_clipboard.py")
-
-
-@router.get("/portal_api.py")
-async def portal_api_py():
-    return _serve("portal_api.py")
-
-
-@router.get("/clipboard_bridge.py")
-async def clipboard_bridge_py():
-    return _serve("clipboard_bridge.py")
-
-
-@router.get("/uninstall")
-async def uninstall_script():
-    return _serve("uninstall.sh")
 
 
 @router.get("/artifacts/{name}")
@@ -164,3 +103,11 @@ async def register(body: WorkstationRegisterRequest, request: Request,
         selkies_user=SELKIES_USER, selkies_password=selkies_password,
         port=ws.port, stream_settings=ws.stream_settings,
         heartbeat_interval_s=_settings.WORKSTATION_HEARTBEAT_S)
+
+
+# Must stay LAST: catch-all would shadow any route registered after it.
+@router.get("/{name}")
+async def agent_file(name: str):
+    if name not in _SERVED:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"No such file: {name}")
+    return _serve(_SERVED[name])

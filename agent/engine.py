@@ -325,14 +325,21 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
     streaming = s.get("video_streaming_mode", s.get("h264_streaming_mode"))
     # 2.0 defaults streaming mode ON; keep today's default (off) unless asked.
     env["SELKIES_VIDEO_STREAMING_MODE"] = "true" if streaming is True else "false"
-    # Locked server-side: stale 1.x client storage sends video_bitrate=8 (Mbps
-    # there), which 2.0 reads as kbps and clamps to 100 kbps -> blurry stream.
-    kbps = _int_in(s.get("video_bitrate_kbps"), 500, 200000) or 16000
-    cmd.append(f"--video-bitrate={kbps}-{kbps}")
+    # Admin bitrate is the default AND the ceiling; viewers may lower it. Floor
+    # 1000 kbps: stale 1.x storage sends 8 (Mbps) which would otherwise mean 8 kbps.
+    kbps = _int_in(s.get("video_bitrate_kbps", s.get("bitrate_kbps")), 500, 200000) or 16000
+    lo = min(1000, kbps)
+    cmd.append(f"--video-bitrate={kbps},{lo}-{kbps}")
     # Caps compression under motion so screen text stays legible.
     cmd.append("--video-max-qp=28")
     env["SELKIES_USE_PAINT_OVER_QUALITY"] = (
         "false" if s.get("use_paint_over_quality") is False else "true")
+    # 4:4:4 chroma is opt-in: crisp text, but no AMD/Intel VA-API driver
+    # encodes H.264 4:4:4, so selkies drops to software x264 (bigger frames,
+    # CPU) — on the EliteMini that starved audio. Initial value only; the
+    # panel can still switch it per browser.
+    env["SELKIES_VIDEO_FULLCOLOR"] = (
+        "true" if s.get("video_fullcolor") is True else "false")
     pcrf = _int_in(s.get("video_paintover_crf", s.get("h264_paintover_crf")), 5, 50)
     env["SELKIES_VIDEO_PAINTOVER_CRF"] = str(12 if pcrf is None else pcrf)
 

@@ -17,19 +17,27 @@ import posixpath
 import socket
 import sys
 import time
+import uuid
+from pathlib import Path
 
 import aiohttp
+import favicon
 import refit
+import seat_scale
 import yarl
 from aiohttp import web
 from multidict import CIMultiDict
+from viewers import Viewers, split_vid
+from gateway_html import (  # noqa: F401  (re-exported for tests)
+    CURSOR_HIDE_CSS,
+    VIS_GRACE_MS,
+    inject_cursor_hide,
+    inject_idle_watchdog,
+    inject_title,
+    inject_favicon,
+    is_activity,
+)
 
-
-# How long the injected shim reports the tab as visible after load: long
-# enough for the selkies client to connect and send START_VIDEO even when
-# loaded in a hidden tab, short enough that a backgrounded tab stops
-# decoding (its frame queue is unbounded) soon after.
-VIS_GRACE_MS = 12000
 
 # How long a session that already streamed may go frameless, with the user
 # still driving it, before the stream counts as wedged again. Covers the
@@ -40,131 +48,13 @@ VIS_GRACE_MS = 12000
 # link ever trips it mid-session.
 STALL_REARM_S = 2.0
 
+# A viewer that lost its last socket keeps ownership this long: a refit closes
+# every socket at once and the owner returns with the same styx_vid.
+OWNER_GRACE_S = 5.0
+REFIT_HOLD_S = 30.0     # no handoff this soon after a refit (clients are reconnecting)
+
 # Proxied downloads may run arbitrarily long: no total cap, only connect/idle.
 PROXY_TIMEOUT = aiohttp.ClientTimeout(total=None, sock_connect=10)
-
-
-def inject_title(html: str, hostname: str) -> str:
-    """Inject a <head> shim that (1) pins the tab title to the workstation
-    hostname and (2) forces the stream to stay live during connection, then
-    restores native visibility semantics.
-
-    Title: the selkies client hardcodes `document.title="Selkies"` at init (and
-    re-sets it on reconnect), so a one-shot title loses the race. ponytail: a 1s
-    poll re-asserts it; drop the interval if upstream stops clobbering it.
-
-    Visibility: the selkies client sends STOP_VIDEO whenever `document.hidden`
-    is true and only resumes on a `visibilitychange` back to visible. A page
-    that (re)connects while already hidden fires no visibilitychange, so the
-    seat stayed on a black "Waiting for stream". Fix: report visible during a
-    short connect grace so START_VIDEO always flows, then RESTORE native
-    visibility and fire a synthetic visibilitychange. Restoring matters: the
-    client's decoded-frame queue is unbounded and only its document.hidden
-    check drops frames when the tab is backgrounded — lying forever made
-    hidden tabs accumulate VideoFrames for hours (session went sluggish until
-    a refresh). With native semantics back, a hidden tab pauses cleanly and
-    the next real visibilitychange resumes it.
-
-    Hostname goes through json.dumps -> safe JS string literal (XSS-safe)."""
-    script = ("<script>(function(){var t=%s;document.title=t;"
-              "setInterval(function(){if(document.title!==t)document.title=t;},1000);"
-              "try{Object.defineProperty(document,'hidden',"
-              "{configurable:true,get:function(){return false;}});"
-              "Object.defineProperty(document,'visibilityState',"
-              "{configurable:true,get:function(){return 'visible';}});"
-              "window.styxRestoreVisibility=function(){"
-              "delete document.hidden;delete document.visibilityState;"
-              "document.dispatchEvent(new Event('visibilitychange'));};"
-              "setTimeout(window.styxRestoreVisibility,%d);"
-              "}catch(e){}})();</script>") % (json.dumps(hostname), VIS_GRACE_MS)
-    if "</head>" in html:
-        return html.replace("</head>", script + "</head>", 1)
-    return script + html
-
-
-def inject_idle_watchdog(html: str, timeout_s: int, lead_s: int,
-                         enabled: bool) -> str:
-    """Inject the inactivity overlay: a countdown warning at T-lead and a
-    terminal 'timed out — Reconnect' screen at T. UX only — the gateway is the
-    authority and closes the socket server-side (see create_app), so this needs
-    no access to Selkies' WebSocket. The local clock and the server clock both
-    start from the same last input, so they fire together without coordination;
-    the gateway backstops a throttled/frozen background tab.
-
-    No-op when disabled or timeout_s <= 0 (never times out). `lead_s` is clamped
-    below timeout_s/2 so the warning can't outlive the timeout. Values are ints
-    -> safe to interpolate into the script."""
-    if not enabled or timeout_s <= 0:
-        return html
-    lead = max(1, min(int(lead_s), int(timeout_s) // 2))
-    script = ("<script>(function(){"
-              "var T=%d,LEAD=%d,last=Date.now(),ov=null,dead=false;"
-              "function mk(){var d=document.createElement('div');"
-              "d.style.cssText='position:fixed;inset:0;z-index:2147483647;"
-              "display:flex;align-items:center;justify-content:center;"
-              "flex-direction:column;font:600 20px system-ui,sans-serif;"
-              "color:#e6e9ef;background:rgba(17,20,28,.85);text-align:center';"
-              "document.body.appendChild(d);return d;}"
-              "function hide(){if(ov&&!dead){ov.remove();ov=null;}}"
-              "function reset(){last=Date.now();hide();}"
-              "['mousemove','mousedown','keydown','wheel','touchstart']"
-              ".forEach(function(e){addEventListener(e,reset,"
-              "{capture:true,passive:true});});"
-              "setInterval(function(){if(dead)return;"
-              "var idle=(Date.now()-last)/1000;"
-              "if(idle>=T){dead=true;if(!ov)ov=mk();"
-              "ov.innerHTML='<div>Session timed out due to inactivity</div>"
-              "<button id=\"styx-rc\" style=\"margin-top:16px;padding:8px 20px;"
-              "font:inherit;cursor:pointer;border-radius:8px;border:0;"
-              "background:#2b3650;color:#fff\">Reconnect</button>';"
-              "document.getElementById('styx-rc').onclick=function(){"
-              "location.reload();};}"
-              "else if(idle>=T-LEAD){if(!ov)ov=mk();"
-              "ov.textContent='Disconnecting in '+Math.ceil(T-idle)+"
-              "'s due to inactivity — move to stay';}"
-              "else hide();},1000);})();</script>") % (int(timeout_s), lead)
-    if "</head>" in html:
-        return html.replace("</head>", script + "</head>", 1)
-    return script + html
-
-
-CURSOR_HIDE_CSS = ("<style id=\"styx-cursor\">video,canvas,#videoContainer,"
-                   "#overlayInput{cursor:none !important}"
-                   # selkies 2.0 client-drawn cursor: an id-less fixed canvas
-                   # appended to <body> with z-index 999999.
-                   'body>canvas[style*="999999"]{display:none !important}'
-                   "</style>")
-
-
-def inject_cursor_hide(html: str, enabled: bool) -> str:
-    """GNOME portal capture bakes the cursor into the video and sends no cursor
-    metadata, so the browser cursor doubles it (flicker, stale cursor on leave).
-    Hide the browser one; the in-video cursor is the only cursor (spec 5.2)."""
-    if not enabled or "</head>" not in html:
-        return html
-    return html.replace("</head>", CURSOR_HIDE_CSS + "</head>", 1)
-
-
-def is_activity(data) -> bool:
-    """Whether a client->server message counts as user activity for idle timing.
-
-    Selkies multiplexes protocol/telemetry with input on one channel; counting
-    the automated traffic resets the idle clock continuously so the seat never
-    times out. The command token (text before the first comma) tells them apart:
-      - ALL-CAPS commands are protocol, all automated: CLIENT_FRAME_ACK (one per
-        video frame — the dominant resetter), START_AUDIO, START/STOP_VIDEO,
-        SETTINGS, SESSION, SET_NATIVE_CURSOR_RENDERING, FILE_UPLOAD_ERROR.
-      - '_'-prefixed are internal stats on a timer (_f framerate ~5s, _crf, _rc).
-      - 'pong' is the keepalive reply to the server ping.
-    Real user input uses lowercase codes — mouse 'm2', keyboard, clipboard 'cw',
-    resize 'r'/'s' — and binary frames. Those count.
-
-    Caps-token rule (not an explicit blocklist) so a new protocol command can't
-    silently re-break idle."""
-    if not isinstance(data, str):
-        return True
-    cmd = data.split(",", 1)[0]
-    return not (cmd.isupper() or cmd.startswith("_") or cmd == "pong")
 
 
 def check_auth(header: str, user: str, password: str) -> bool:
@@ -182,8 +72,19 @@ def create_app(user: str, password: str,
                upstream_port: int, files_dir: str = "",
                state_file: str = "", idle_timeout_s: int = 0,
                idle_lead_s: int = 60, idle_enabled: bool = False,
-               seat_dir: str = "") -> web.Application:
-    UPSTREAM = f"http://127.0.0.1:{upstream_port}"
+               seat_dir: str = "", icon_dir: str = "") -> web.Application:
+    # The supervisor can promote a warm standby selkies on a refit: the live
+    # port is then in <seat_dir>/selkies-port, re-read per request.
+    port_file = os.path.join(seat_dir, "selkies-port") if seat_dir else ""
+
+    def live_port() -> int:
+        try:
+            return int(open(port_file).read().strip())
+        except (OSError, ValueError):
+            return upstream_port
+
+    def upstream() -> str:
+        return f"http://127.0.0.1:{live_port()}"
     HOP = {"host", "connection", "keep-alive", "transfer-encoding", "upgrade",
            "authorization", "origin", "content-length", "accept-encoding"}
 
@@ -206,6 +107,69 @@ def create_app(user: str, password: str,
     size_file = os.path.join(seat_dir, "seat-size") if seat_dir else ""
     refit_file = os.path.join(seat_dir, "refit-request") if seat_dir else ""
     last_refit = {"ts": float("-inf")}
+    scale_file = os.path.join(seat_dir, "seat-scale") if seat_dir else ""
+    size_owner = refit.SizeOwner()
+    viewers = Viewers()     # per styx_vid: sockets, last size/dpi, timers
+
+    def publish_scale(rec):
+        """Owner's HiDPI choice -> <install>/seat-scale (the seat helper applies it)."""
+        if scale_file and rec.dpi is not None:
+            want = seat_scale.scale_for_dpi(rec.dpi)
+            if want != seat_scale.read_scale(scale_file):
+                seat_scale.write_scale(scale_file, want)
+
+    async def announce_and_close(w):
+        if w.closed:
+            return
+        await w.send_str(refit.MARKER)   # shim shows the pill
+        await w.close(code=refit.CLOSE_CODE, message=b"refit")
+
+    def fire_refit(rec):
+        if rec.size is None or size_owner.owner != rec.vid:
+            return                  # a stale timer of a previous owner
+        target = refit.decide(rec.size, refit.read_size(size_file),
+                              last_refit["ts"], time.time())
+        if target is None or not any(not w.closed for w in rec.socks):
+            return
+        if isinstance(target, float):      # too soon: keep the size, retry later
+            rec.timer = asyncio.get_running_loop().call_later(target, fire_refit, rec)
+            return
+        last_refit["ts"] = time.time()
+        refit.request(refit_file, *target)
+        # Every viewer's upstream socket dies with the old selkies: announce to
+        # all so each shim holds and reconnects instead of surfacing a plain
+        # close (selkies' client reloads on it).
+        for r in viewers.live():
+            for w in list(r.socks):
+                asyncio.ensure_future(announce_and_close(w))
+
+    def set_owner(vid):
+        """Ownership moves to `vid`: publish its scale, refit to its size."""
+        prev, rec = size_owner.owner, viewers.by_vid.get(vid)
+        if rec is None or prev == vid:
+            return
+        size_owner.owner = vid
+        if prev in viewers.by_vid:
+            old = viewers.by_vid[prev]
+            old.timer and old.timer.cancel()
+        publish_scale(rec)
+        rec.timer and rec.timer.cancel()
+        fire_refit(rec)
+
+    def expire(vid):
+        """Grace over for a viewer with no socket: forget it; hand the size to the newest."""
+        rec = viewers.by_vid.get(vid)
+        if rec is None or rec.socks:
+            return
+        if time.time() - last_refit["ts"] < REFIT_HOLD_S:   # refit reconnect still in flight
+            rec.gone = asyncio.get_running_loop().call_later(OWNER_GRACE_S, expire, vid)
+            return
+        viewers.drop(vid)
+        if size_owner.owner == vid:
+            size_owner.release(vid)
+            nxt = viewers.newest()
+            if nxt is not None:
+                set_owner(nxt)
 
     def _write_state():
         if not state_file:
@@ -260,14 +224,14 @@ def create_app(user: str, password: str,
         return await handler(request)
 
     async def ws_proxy(request):
-        qs = request.rel_url.raw_query_string
+        qs, vid = split_vid(request.rel_url.raw_query_string, f"ws{uuid.uuid4().hex}")
         if request.headers.get("Upgrade", "").lower() != "websocket":
             # 2.0 client probes api/websockets over plain HTTP (409 = mode flip)
             return await forward(request, "/api/websockets" + (f"?{qs}" if qs else ""))
         async with aiohttp.ClientSession() as session:
             try:
                 ws_client = await session.ws_connect(
-                    f"ws://127.0.0.1:{upstream_port}/api/websockets"
+                    f"ws://127.0.0.1:{live_port()}/api/websockets"
                     + (f"?{qs}" if qs else ""),
                     max_msg_size=0)
             except aiohttp.ClientError:
@@ -280,6 +244,7 @@ def create_app(user: str, password: str,
                 stream["starve_start"] = now
                 stream["last_frame"] = now
             _write_state()
+            rec = None
             try:
                 # compress=False: frames are H264 — permessage-deflate would
                 # re-DEFLATE every frame in Python for no gain.
@@ -319,40 +284,54 @@ def create_app(user: str, password: str,
 
                 # client->upstream: input (idle tracking). upstream->client:
                 # video frames are BINARY -> mark_frame disarms the watchdog.
-                resize = {"size": None, "timer": None}
-
-                def fire_refit():
-                    target = refit.decide(resize["size"], refit.read_size(size_file),
-                                          last_refit["ts"], time.time())
-                    if target is None or ws_server.closed:
-                        return
-                    last_refit["ts"] = time.time()
-                    refit.request(refit_file, *target)
-                    asyncio.ensure_future(announce_and_close())
-
-                async def announce_and_close():
-                    await ws_server.send_str(refit.MARKER)   # shim shows the overlay
-                    await ws_server.close(code=refit.CLOSE_CODE, message=b"refit")
+                rec = viewers.connect(vid, ws_server)
+                rec.vid = vid
 
                 def on_client(data) -> bool:
-                    """Input tracking + settle-then-refit. Refit-bound sizes are
-                    swallowed: selkies would restart capture at them (black)."""
+                    """Input tracking + settle-then-refit. Every seat `r,` is
+                    swallowed: selkies cannot resize a GNOME host (it would only
+                    restart capture / log "resize refused"); the agent refits
+                    instead, and only for the size owner."""
                     mark_input(data)
-                    req = refit.parse_resize(data) if seat_dir else None
+                    if not seat_dir or not isinstance(data, str):
+                        return False
+                    if data.startswith("SETTINGS,"):
+                        try:
+                            rec.dpi = float(json.loads(data[9:]).get("scaling_dpi"))
+                        except (ValueError, TypeError, AttributeError):
+                            return False
+                        if size_owner.owner == vid:
+                            publish_scale(rec)
+                        return False
+                    req = refit.parse_resize(data)
                     if not req:
                         return False
-                    resize["size"] = req
-                    resize["timer"] and resize["timer"].cancel()
-                    resize["timer"] = asyncio.get_running_loop().call_later(refit.SETTLE_S, fire_refit)
-                    return refit.differs(req, refit.read_size(size_file))
+                    rec.size = req
+                    if size_owner.claim(vid):
+                        rec.timer and rec.timer.cancel()
+                        rec.timer = asyncio.get_running_loop().call_later(refit.SETTLE_S, fire_refit, rec)
+                    return True
+
+                # selkies keeps one controller and kills the previous one, so a
+                # controller owns the size at once. Shared (`role=viewer`) sockets
+                # never send `r,` and never own.
+                rec.shared = "role=viewer" in qs.split("&")
+                if seat_dir and not rec.shared:
+                    if size_owner.owner and size_owner.owner != vid:
+                        set_owner(vid)
+                    else:
+                        size_owner.claim(vid)
 
                 await asyncio.gather(pump(ws_server, ws_client, on_activity=on_client),
                                      pump(ws_client, ws_server, on_binary=mark_frame),
                                      idle_closer(),
                                      return_exceptions=True)
-                resize["timer"] and resize["timer"].cancel()
             finally:
                 conns["n"] -= 1
+                if rec and viewers.disconnect(vid, ws_server):
+                    rec.timer and rec.timer.cancel()
+                    # Not released at once: a refit reconnect brings the same vid back.
+                    rec.gone = asyncio.get_running_loop().call_later(OWNER_GRACE_S, expire, vid)
                 _write_state()
                 await ws_client.close()
         return ws_server
@@ -364,7 +343,7 @@ def create_app(user: str, password: str,
             return hold
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as s, \
-                    s.get(UPSTREAM + "/", allow_redirects=False) as r:
+                    s.get(upstream() + "/", allow_redirects=False) as r:
                 if r.status != 200:
                     hdr = {"Location": r.headers["Location"]} if "Location" in r.headers else {}
                     return web.Response(status=r.status, body=await r.read(), headers=hdr)
@@ -376,10 +355,22 @@ def create_app(user: str, password: str,
         except asyncio.TimeoutError:
             return web.Response(status=504, text="stream backend timed out")
         html = inject_title(html, socket.gethostname())
+        icon = favicon.read(Path(icon_dir)) if icon_dir else None
+        if icon:
+            html = inject_favicon(html, icon[2])
         html = inject_idle_watchdog(html, idle_timeout_s, idle_lead_s, idle_enabled)
         html = inject_cursor_hide(html, bool(seat_dir))
         html = refit.inject_reload(html, bool(seat_dir))
         return web.Response(text=html, content_type="text/html")
+
+    async def styx_favicon(_request):
+        icon = favicon.read(Path(icon_dir)) if icon_dir else None
+        if not icon:
+            return web.Response(status=404)
+        return web.Response(body=icon[0], content_type=icon[1], headers={
+            "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy":
+                "default-src 'none'; style-src 'unsafe-inline'; sandbox"})
 
     def _relative_location(request, loc):
         """Absolute-path redirects would escape a /w/<slug> prefix; make them
@@ -398,7 +389,7 @@ def create_app(user: str, password: str,
         headers.extend((k, v) for k, v in request.headers.items()
                        if k.lower() not in HOP)
         body = await request.read() if request.body_exists else None
-        url = yarl.URL(UPSTREAM + raw_path_qs, encoded=True)
+        url = yarl.URL(upstream() + raw_path_qs, encoded=True)
         resp = None
         try:
             async with aiohttp.ClientSession(
@@ -470,6 +461,7 @@ def create_app(user: str, password: str,
     for path in ("/api/websockets", "/websockets", "/websocket"):
         app.router.add_get(path, ws_proxy)
     app.router.add_get("/", index)
+    app.router.add_get("/styx-favicon", styx_favicon)
     if files_dir and os.path.isdir(files_dir):
         app.router.add_get("/files", files)
         app.router.add_get("/files/{path:.*}", files)
@@ -488,10 +480,11 @@ def main() -> None:
     idle_lead_s = int(os.environ.get("STYX_GW_IDLE_WARN_S", "60") or "60")
     idle_enabled = os.environ.get("STYX_GW_IDLE_ENABLED", "") == "1"
     seat_dir = os.environ.get("STYX_GW_SEAT_DIR", "")
+    icon_dir = os.environ.get("STYX_GW_ICON_DIR", "")
     web.run_app(create_app(user, password, upstream_port, files_dir,
                            state_file=state_file, idle_timeout_s=idle_timeout_s,
                            idle_lead_s=idle_lead_s, idle_enabled=idle_enabled,
-                           seat_dir=seat_dir),
+                           seat_dir=seat_dir, icon_dir=icon_dir),
                 host="0.0.0.0", port=listen_port)
 
 

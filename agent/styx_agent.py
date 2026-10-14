@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-AGENT_VERSION = "0.6.14"
+AGENT_VERSION = "0.8.0"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -29,37 +29,21 @@ def load_config(path: Path = CONFIG_PATH) -> dict:
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import favicon  # noqa: E402
 import refit  # noqa: E402
 import engine  # noqa: E402  (installed next to this file by enroll.sh)
 import seat_gnome  # noqa: E402
 import seat_labwc  # noqa: E402
 from portal_api import api, check_pin  # noqa: E402
 from health import (  # noqa: E402
-    active_connections, gw_state_path, host_tuning_checks, idle_seconds,
+    active_connections, host_tuning_checks, idle_seconds,
     rollback, seat_advisories, stream_starving_seconds)
+from health import gw_state_path  # noqa: E402, F401
 from seat_gnome import Escalation, pick_seat_shell  # noqa: E402
-
-
-def build_gateway_cmd(cfg: dict, upstream_port: int,
-                      seat_dir: str = "") -> tuple[list[str], dict]:
-    install = Path(cfg["install_dir"])
-    # Idle timeout rides in stream_settings (resolved by the backend each
-    # heartbeat: per-workstation override else system default). The gateway is
-    # the idle authority; these env vars configure it.
-    ss = cfg.get("stream_settings") or {}
-    env = {
-        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-        "STYX_GW_USER": cfg["selkies_user"],
-        "STYX_GW_PASSWORD": cfg["selkies_password"],
-        "STYX_GW_STATE": str(gw_state_path(cfg)),
-        "STYX_GW_IDLE_TIMEOUT_S": str(ss.get("idle_timeout_s", 0)),
-        "STYX_GW_IDLE_WARN_S": str(ss.get("idle_warn_lead_s", 60)),
-        "STYX_GW_IDLE_ENABLED": "1" if ss.get("idle_timeout_enabled") else "",
-        "STYX_GW_SEAT_DIR": seat_dir,
-    }
-    cmd = [str(install / "venv/bin/python"), str(install / "gateway.py"),
-           str(cfg["port"]), str(upstream_port)]
-    return cmd, env
+from agent_procs import (  # noqa: E402
+    FRAME_START_TIMEOUT_S, _restart_engine, _terminate,
+    _check, build_gateway_cmd, drop_clients, settings_restart_keys,  # noqa: F401
+    viewers_connected, merge_pending, must_apply_now, restart_plan)
 
 
 def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool,
@@ -83,60 +67,6 @@ def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool,
 def _write_state(d: dict) -> None:
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     STATE_PATH.write_text(json.dumps(d))
-
-
-def _terminate(p, timeout: int = 10) -> None:
-    """Graceful stop of a child, escalating to kill on timeout."""
-    if p is not None and p.poll() is None:
-        p.terminate()
-        try:
-            p.wait(timeout=timeout)
-        except subprocess.TimeoutExpired:
-            p.kill()
-
-
-def _restart_engine(procs: dict) -> None:
-    """Tear down the engine and (seat mode) its shell + clipboard so the
-    supervisor loop rebuilds all three fresh. In seat mode selkies IS the
-    Wayland compositor: restarting it changes the socket, so labwc/clipboard
-    must come back too or they cling to the dead socket. The gateway is left
-    running — it's the viewer's link home, and the browser reconnects through it.
-    """
-    for key in ("selkies", "shell", "clipboard"):
-        _terminate(procs.get(key))
-        procs[key] = None
-
-
-def drop_clients(procs: dict) -> None:
-    """Force live stream clients to disconnect by restarting the gateway.
-
-    Set None so the supervisor loop respawns it next pass. Browsers reconnect
-    through the portal's forward-auth, which fails once the user has logged out
-    — so the session genuinely ends rather than silently resuming.
-    """
-    _terminate(procs.get("gateway"))
-    procs["gateway"] = None
-
-
-# --- stream watchdogs ------------------------------------------------------
-# Stream-start watchdog: how long a connected viewer may sit frameless before
-# the engine is restarted. Must exceed connect->first-frame time (NVENC init +
-# first FullFrame is a few seconds); 15s leaves margin. ponytail: bump if slow
-# hosts trip it on legitimately cold starts.
-FRAME_START_TIMEOUT_S = 15
-
-SEAT_DEFAULTS = {"seat_shell": "gnome", "seat_width": 2560, "seat_height": 1440}
-
-
-def settings_restart_keys(old: dict, new: dict) -> tuple[str, ...]:
-    """Procs to relaunch on a stream_settings push. The gateway is always in:
-    idle-timeout config reaches it only through its launch env (STYX_GW_IDLE_*).
-    The GNOME seat restarts only when its shell/geometry changed."""
-    keys = ("selkies", "shell", "clipboard", "gateway")
-    if any((old.get(k) or d) != (new.get(k) or d)
-           for k, d in SEAT_DEFAULTS.items()):
-        keys += ("seat",)
-    return keys
 
 
 def run(cfg: dict) -> int:
@@ -169,12 +99,48 @@ def run(cfg: dict) -> int:
     last_engine_restart = float("-inf")   # watchdog grace after a restart
     exit_code = 0
     procs: dict[str, subprocess.Popen | None] = {
-        "selkies": None, "gateway": None, "shell": None, "clipboard": None}
+        "selkies": None, "gateway": None, "shell": None, "clipboard": None,
+        "standby": None}
     seat_socket: str | None = None
     app_socket: str | None = None
     interval, backoff, stopping = 30, 2, False
     last_error: str | None = None
     internal_port = engine.pick_free_port()
+    port_file = INSTALL_DIR / "selkies-port"   # gateway reads it per request
+
+    def publish_port(why: str = "") -> None:
+        """<install>/selkies-port = the port of the live selkies. Re-published
+        every loop pass from the active process itself, so a stale value heals
+        within one pass; writes are logged because a stale port means the
+        gateway serves the hold page to everyone."""
+        proc = procs["selkies"]
+        port = getattr(proc, "styx_port", internal_port) if proc is not None else internal_port
+        try:
+            current = port_file.read_text().strip()
+        except OSError:
+            current = ""
+        if current == str(port):
+            return
+        tmp = port_file.with_suffix(".tmp")
+        tmp.write_text(str(port))
+        os.replace(tmp, port_file)
+        print(f"selkies port published: {port} (was {current or 'unset'}; {why})", flush=True)
+
+    def spawn_standby():
+        """GNOME seat only: a booted, idle selkies on its own port. A refit
+        promotes it, so the viewer never waits for a process start (~0.5 s of
+        the hold). Idle cost: one more selkies (~190 MB RSS)."""
+        if not gseat or not gseat.alive():
+            return None
+        port = engine.pick_free_port()
+        try:
+            cmd, env = engine.build_selkies_cmd(cfg, port, gseat.info())
+        except Exception as e:
+            print(f"standby selkies not started: {e}", flush=True)
+            return None
+        proc = subprocess.Popen(cmd, env=env, stdout=selkies_log, stderr=selkies_log)
+        proc.styx_port = port
+        return proc
 
     def _stop(*_):
         nonlocal stopping
@@ -278,12 +244,33 @@ def run(cfg: dict) -> int:
                           "manager. Install: sudo apt install labwc")
         return proc
 
+    pending = None       # deferred settings-push restart (see merge_pending)
+    pending_exit = False
+    apply_now = False    # security setting changed: restart even with viewers
     while not stopping:
+        if (pending or pending_exit) and (apply_now or not viewers_connected(gw_state_path(cfg))):
+            if pending_exit:
+                # Shell is chosen once per process; systemd (Restart=always)
+                # brings the agent back up on the new one.
+                print("seat_shell changed; restarting agent", flush=True)
+                exit_code = 1
+                break
+            keys_now, pending = restart_plan(
+                pending, apply_now, viewers_connected(gw_state_path(cfg)))
+            for key in keys_now:
+                if key in procs:
+                    _terminate(procs[key])
+                    procs[key] = None
+            if "seat" in keys_now and gseat:
+                gseat.stop()
+            apply_now = False
         if gseat and not gseat.alive():
-            # Seat died: selkies is captured against a dead portal session.
-            # The next branch restarts it, which brings the seat back first.
+            # Seat died: selkies (and the standby) are captured against a dead
+            # portal session. The next branch restarts, seat first.
             _terminate(procs["selkies"])
             procs["selkies"] = None
+            _terminate(procs["standby"], timeout=0)
+            procs["standby"] = None
         if procs["selkies"] is None or procs["selkies"].poll() is not None:
             if procs["selkies"] is not None:
                 print(f"selkies exited rc={procs['selkies'].returncode}; "
@@ -291,6 +278,14 @@ def run(cfg: dict) -> int:
                 time.sleep(min(backoff, 60))
                 backoff *= 2
             procs["selkies"] = start_selkies()
+            if procs["selkies"] is not None:
+                procs["selkies"].styx_port = internal_port
+            publish_port("selkies started")
+        elif gseat:
+            publish_port("heal")
+        if gseat and procs["selkies"] is not None and (
+                procs["standby"] is None or procs["standby"].poll() is not None):
+            procs["standby"] = spawn_standby()
         if procs["gateway"] is None or procs["gateway"].poll() is not None:
             cmd, env = build_gateway_cmd(
                 cfg, internal_port, str(INSTALL_DIR) if gseat else "")
@@ -329,6 +324,8 @@ def run(cfg: dict) -> int:
                 if escalation.record(time.time()):
                     print("watchdog: 3 restarts in 10 min — restarting GNOME "
                           "seat", flush=True)
+                    _terminate(procs["standby"], timeout=0)   # bound to the old seat
+                    procs["standby"] = None
                     gseat.stop()
                     degraded = True
             else:
@@ -349,6 +346,7 @@ def run(cfg: dict) -> int:
                       f"  python3 {INSTALL_DIR / 'styx_agent.py'} uninstall",
                       flush=True)
                 break
+            favicon.on_heartbeat(cfg, hb)
             if hb.get("disconnect_clients"):
                 print("server requested client disconnect (logout); "
                       "restarting gateway", flush=True)
@@ -357,36 +355,35 @@ def run(cfg: dict) -> int:
                 old_ss = cfg["stream_settings"]
                 cfg["stream_settings"] = hb["stream_settings"]
                 CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
-                new_shell = pick_seat_shell(cfg)
-                if new_shell != shell_kind:
-                    # Shell is chosen once per process; systemd (Restart=always)
-                    # brings the agent back up on the new one.
-                    print(f"seat_shell changed to {new_shell}; restarting agent",
-                          flush=True)
-                    exit_code = 1
-                    break
-                keys = settings_restart_keys(old_ss, hb["stream_settings"])
-                for key in keys:
-                    if key in procs:
-                        _terminate(procs[key])
-                        procs[key] = None
-                if "seat" in keys and gseat:
-                    gseat.stop()
+                if pick_seat_shell(cfg) != shell_kind:
+                    pending_exit = True
+                pending = merge_pending(pending, old_ss, hb["stream_settings"])
+                apply_now = apply_now or must_apply_now(old_ss, hb["stream_settings"])
+                if not apply_now and viewers_connected(gw_state_path(cfg)):
+                    print("settings changed; applying when the last viewer "
+                          "disconnects", flush=True)
                 continue
             interval = hb.get("heartbeat_interval_s", 30)
             backoff = 2
         except (urllib.error.URLError, OSError, TimeoutError) as e:
             _write_state({"ts": time.time(), "ok": False, "error": str(e)})
             print(f"heartbeat failed: {e}", flush=True)
-        req = (refit.wait_for_request(refit_req, interval, stop=lambda: not gseat.alive())
+        req = (refit.wait_for_request(refit_req, interval, poll=0.05, stop=lambda: not gseat.alive())
                if gseat else time.sleep(interval))  # GNOME: wake on refit or seat death
         if req:
             if gseat.alive():
                 print(f"refit: rebuilding seat monitor at {req[0]}x{req[1]}", flush=True)
-                _terminate(procs["selkies"])
+                # SIGKILL: selkies has nothing to flush and its portal session is
+                # closed by the frontend when the peer vanishes; SIGTERM took 10 s.
+                _terminate(procs["selkies"], timeout=0)
                 procs["selkies"] = None
-                if not gseat.refit(*req):
+                if not (gseat.resize_live(*req) or gseat.refit(*req)):
                     last_error = f"refit to {req[0]}x{req[1]} failed — kept previous size"
+                standby = procs["standby"]
+                if standby is not None and standby.poll() is None:
+                    procs["selkies"], procs["standby"] = standby, None
+                    internal_port = standby.styx_port
+                    publish_port("promoted standby")
                 last_engine_restart = time.monotonic()
             refit.clear_request(refit_req)
 
@@ -398,11 +395,6 @@ def run(cfg: dict) -> int:
 
 
 # --- Diagnostics -----------------------------------------------------------
-def _check(label: str, ok: bool, detail: str = "") -> bool:
-    print(f"  [{'OK' if ok else 'FAIL'}] {label}" + (f" — {detail}" if detail else ""))
-    return ok
-
-
 def doctor(cfg: dict) -> int:
     print("styx-agent doctor:")
     ok = True

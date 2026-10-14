@@ -16,6 +16,7 @@ import os
 import signal
 import subprocess
 import sys
+import time
 
 import dbus
 import dbus.bus
@@ -27,6 +28,9 @@ gi.require_version("Gst", "1.0")
 from gi.repository import GLib, Gst  # noqa: E402
 
 from seat_clipboard import ClipboardServer  # noqa: E402
+from seat_scale import apply_scale, read_scale  # noqa: E402
+import seat_systemd  # noqa: E402
+from seat_systemd import SD_NAME, SystemdStub, snap_scope_props  # noqa: E402, F401
 
 BUS_NAME = "org.freedesktop.impl.portal.desktop.styx"
 PATH = "/org/freedesktop/portal/desktop"
@@ -43,7 +47,7 @@ sessions = {}
 
 
 def log(*a):
-    print("[seat-portal]", *a, flush=True)
+    print("[seat-portal]", time.strftime("%H:%M:%S") + f".{int(time.time()*1000)%1000:03d}", *a, flush=True)
 
 
 def parse_size(arg: str) -> tuple[int, int]:
@@ -61,7 +65,7 @@ class Session(dbus.service.Object):
     def __init__(self, handle):
         super().__init__(bus, handle)
         self.handle = str(handle)
-        self.rd = self.rd_path = self.stream_path = self.clip = None
+        self.rd = self.rd_path = self.stream_path = self.clip = self.sc = None
         self.devices = 3
         self.want_screen = True
 
@@ -81,6 +85,24 @@ class Session(dbus.service.Object):
     @dbus.service.signal(SESS_IFACE)
     def Closed(self):
         pass
+
+    def lost(self):
+        """Mutter ended the session under us: tell the client and forget it."""
+        if self.handle not in sessions:
+            return
+        log("session lost (Mutter closed it)", self.handle)
+        if self.clip is not None:
+            self.clip.stop()
+        for m in (self.sc, self.rd):      # tear the Mutter side down: its PipeWire
+            try:                          # node must die, not just pause
+                if m is not None:
+                    m.Stop()
+            except dbus.DBusException as e:
+                log("stop failed:", e)
+        self.sc = self.rd = None
+        sessions.pop(self.handle, None)
+        self.Closed()
+        self.remove_from_connection()
 
 
 class Portal(dbus.service.Object):
@@ -106,13 +128,20 @@ class Portal(dbus.service.Object):
                 s.rd_path = _mutter("RemoteDesktop", "/org/gnome/Mutter/RemoteDesktop",
                                     "RemoteDesktop").CreateSession()
                 s.rd = _mutter("RemoteDesktop", s.rd_path, "RemoteDesktop.Session")
+                # Mutter closes the monitor stream (and with it this session) when
+                # the monitor changes resolution. Relay that to the portal client so
+                # pixelflux drops the dead stream and re-creates its session.
+                bus.add_signal_receiver(lambda: s.lost(), "Closed",
+                                        M + "RemoteDesktop.Session", path=s.rd_path)
             if s.want_screen:
                 sid = dbus.Interface(bus.get_object(M + "RemoteDesktop", s.rd_path),
                                      dbus.PROPERTIES_IFACE).Get(
                     M + "RemoteDesktop.Session", "SessionId")
                 scp = _mutter("ScreenCast", "/org/gnome/Mutter/ScreenCast",
                               "ScreenCast").CreateSession({"remote-desktop-session-id": sid})
-                sc = _mutter("ScreenCast", scp, "ScreenCast.Session")
+                sc = s.sc = _mutter("ScreenCast", scp, "ScreenCast.Session")
+                bus.add_signal_receiver(lambda: s.lost(), "Closed",
+                                        M + "ScreenCast.Session", path=scp)
                 s.stream_path = sc.RecordMonitor("", {"cursor-mode": dbus.UInt32(EMBEDDED)})
                 sobj = bus.get_object(M + "ScreenCast", s.stream_path)
 
@@ -257,93 +286,6 @@ ScreenCastLevel = type("ScreenCastLevel", (Portal,), SC_METHODS)
 Seat = type("Seat", (ScreenCastLevel,), RD_METHODS)
 
 
-SD_NAME = "org.freedesktop.systemd1"
-SD_IFACE = SD_NAME + ".Manager"
-SD_PATH = "/org/freedesktop/systemd1"
-
-
-def snap_scope_props(name, props, aux, caller_pid):
-    """Filter StartTransientUnit args from an untrusted seat app down to what
-    `snap run` needs: a snap.*.scope holding only the caller's PID (plus a
-    Description). Raises ValueError for anything else."""
-    if not (name.startswith("snap.") and name.endswith(".scope")):
-        raise ValueError("only snap.*.scope units may be started")
-    if aux:
-        raise ValueError("auxiliary units are not allowed")
-    pids = [int(p) for k, v in props if k == "PIDs" for p in v]
-    if pids != [caller_pid]:
-        raise ValueError("PIDs must be exactly the caller")
-    return [(k, v) for k, v in props if k in ("PIDs", "Description")]
-
-
-class SystemdStub(dbus.service.Object):
-    """gnome-shell runs inside the agent's systemd user unit, so before it lets
-    Xwayland start it asks the session bus's systemd for
-    gnome-session-x11-services-ready.target, and any failure but NOT_SUPPORTED
-    aborts X11: X11-only apps (GIMP 2.10, JetBrains IDEs) never open. The
-    seat's private bus has no systemd, so answer every job as done.
-    ponytail: the X11 services (gsd-xsettings) are not started, so X11 apps
-    get toolkit-default theme/scaling; spawn gsd-xsettings here if that matters."""
-    def __init__(self):
-        super().__init__(bus, SD_PATH)
-        self.jobs = 0
-        self.real = None
-        try:
-            self.real = dbus.bus.BusConnection(
-                f"unix:path={os.environ.get('XDG_RUNTIME_DIR', '/run/user/%d' % os.getuid())}/bus")
-            self.real.call_blocking(SD_NAME, SD_PATH, SD_IFACE, "Subscribe", "", [])
-            self.real.add_signal_receiver(self._relay, "JobRemoved", SD_IFACE, SD_NAME, SD_PATH)
-        except dbus.exceptions.DBusException as e:
-            log("systemd stub: no real user systemd, snap apps will not start:", e)
-
-    def _relay(self, id_, job, unit, result):
-        if unit.startswith("snap."):
-            self.JobRemoved(id_, job, unit, result)
-
-    def _job(self, unit):
-        self.jobs += 1
-        job = dbus.ObjectPath(f"{SD_PATH}/job/{self.jobs}")
-        log("systemd stub: job done for", unit)
-        # After the method reply: gnome-shell matches JobRemoved to the returned path.
-        n = dbus.UInt32(self.jobs)
-        GLib.timeout_add(50, lambda: self.JobRemoved(n, job, unit, "done") and False)
-        return job
-
-    @dbus.service.method(SD_IFACE, in_signature="ss", out_signature="o")
-    def StartUnit(self, unit, mode):
-        return self._job(unit)
-
-    @dbus.service.method(SD_IFACE, in_signature="ss", out_signature="o")
-    def StopUnit(self, unit, mode):
-        return self._job(unit)
-
-    @dbus.service.method(SD_IFACE, in_signature="ssa(sv)a(sa(sv))", out_signature="o",
-                         sender_keyword="sender")
-    def StartTransientUnit(self, name, mode, props, aux, sender=None):
-        # snap run must land in a real snap.<app>.*.scope or snap-confine aborts
-        # ("... is not a snap cgroup"), so forward those to the user's systemd;
-        # _relay passes its JobRemoved back. Others keep the old fork fallback.
-        # Seat apps reach this stub, so only a snap scope that moves the
-        # caller's own PID is forwarded: no ExecStart/Slice/aux units smuggled
-        # into the real user systemd.
-        if not self.real:
-            raise dbus.exceptions.DBusException(
-                name, name="org.freedesktop.DBus.Error.UnknownMethod")
-        caller = bus.get_object("org.freedesktop.DBus", "/org/freedesktop/DBus").GetConnectionUnixProcessID(
-            sender, dbus_interface="org.freedesktop.DBus")
-        try:
-            safe = snap_scope_props(name, props, aux, int(caller))
-        except ValueError as e:
-            raise dbus.exceptions.DBusException(
-                str(e), name="org.freedesktop.DBus.Error.AccessDenied")
-        return self.real.call_blocking(SD_NAME, SD_PATH, SD_IFACE, "StartTransientUnit",
-                                       "ssa(sv)a(sa(sv))", [name, mode, safe, []])
-
-    @dbus.service.signal(SD_IFACE, signature="uoss")
-    def JobRemoved(self, id_, job, unit, result):
-        pass
-
-
 class Monitor:
     """Mutter virtual monitor held at w x h by a fakesink consumer.
     ponytail: always-copy costs one copy per painted frame (unmeasurable in the
@@ -365,13 +307,30 @@ class Monitor:
         self.sess.Start()
 
     def _added(self, node):
+        self.node = int(node)
         self.pipe = Gst.parse_launch(
             f"pipewiresrc path={int(node)} always-copy=true ! "
-            f"video/x-raw,width={self.w},height={self.h},max-framerate=60/1 ! "
+            f"capsfilter name=cf caps=video/x-raw,width={self.w},height={self.h},max-framerate=60/1 ! "
             "fakesink sync=false")
         self.pipe.set_state(Gst.State.PLAYING)
         self.playing = True
         log("virtual monitor stream", int(node), f"{self.w}x{self.h}")
+
+    def resize(self, w, h):
+        """In-place resize: pipewiresrc negotiates its format only at connect, so
+        a fresh consumer on the same node makes Mutter renegotiate
+        (notify_params_updated -> meta_virtual_monitor_set_mode) and resize the
+        SAME virtual monitor (~100 ms, windows reflow, no monitor removal).
+        Mutter then closes every RecordMonitor stream of the old size, which
+        pixelflux never recovers from: the agent restarts selkies."""
+        self.w, self.h = w, h
+        self.pipe.set_state(Gst.State.NULL)
+        self.pipe = Gst.parse_launch(
+            f"pipewiresrc path={self.node} always-copy=true ! "
+            f"capsfilter name=cf caps=video/x-raw,width={w},height={h},max-framerate=60/1 ! "
+            "fakesink sync=false")
+        self.pipe.set_state(Gst.State.PLAYING)
+        log("resize: reconnected consumer at", f"{w}x{h}")
 
     def is_current(self) -> bool:
         dc = _mutter("DisplayConfig", "/org/gnome/Mutter/DisplayConfig", "DisplayConfig")
@@ -417,6 +376,7 @@ def main(argv) -> int:
     DBusGMainLoop(set_as_default=True)
     Gst.init(None)
     bus = dbus.SessionBus()
+    seat_systemd.bus, seat_systemd.log = bus, log
     name = dbus.service.BusName(BUS_NAME, bus)  # noqa: F841 — held for life
     Seat()
     sd_name = dbus.service.BusName(SD_NAME, bus)  # noqa: F841 — private bus only
@@ -444,6 +404,8 @@ def main(argv) -> int:
             if ready:
                 _write_ready(ready, f"{w}x{h}")
             log("ready", f"{w}x{h}")
+            GLib.timeout_add(25, watch_resize)
+            GLib.timeout_add(250, watch_scale)
             return False
         st["tries"] += 1
         if st["tries"] >= LIVE_TRIES:
@@ -451,6 +413,47 @@ def main(argv) -> int:
             st["rc"] = 1
             loop.quit()
             return False
+        return True
+
+    rq = {"path": os.path.join(os.path.dirname(ready), "seat-resize-request") if ready else "",
+          "pending": None, "tries": 0}
+
+    sc = {"path": os.environ.get("STYX_SEAT_SCALE_FILE", ""), "mtime": None, "first": True}
+
+    def watch_scale():
+        """<install>/seat-scale = 1|2 -> logical scale; applied at startup, on
+        file change and after each resize."""
+        try:
+            m = os.stat(sc["path"]).st_mtime_ns if sc["path"] else -1
+        except OSError:
+            m = -1
+        if m != sc["mtime"] or sc["first"]:
+            sc["mtime"], sc["first"] = m, False
+            apply_scale(bus, read_scale(sc["path"]) if sc["path"] else 1, log)
+        return True
+
+    def watch_resize():
+        """<runtime>/seat-resize-request = WxH -> in-place resize; the ready
+        file follows once Mutter reports the new mode current (seat_gnome
+        resize_live waits on it)."""
+        if rq["pending"] is None:
+            try:
+                size = parse_size(open(rq["path"]).read().strip())
+            except (OSError, ValueError, IndexError):
+                return True
+            os.unlink(rq["path"])
+            rq["pending"], rq["tries"] = size, 0
+            mon.resize(*size)
+            return True
+        rq["tries"] += 1
+        if mon.is_current():
+            _write_ready(ready, f"{mon.w}x{mon.h}")
+            log("resized live", f"{mon.w}x{mon.h}", f"after {rq['tries']*25} ms")
+            sc["mtime"] = None      # a resize can reset the scale: re-apply
+            rq["pending"] = None
+        elif rq["tries"] >= LIVE_TRIES * 8:        # 10 s at 25 ms
+            log("resize never became current", f"{mon.w}x{mon.h}")
+            rq["pending"] = None
         return True
 
     def on_term():

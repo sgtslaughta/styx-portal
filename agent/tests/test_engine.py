@@ -116,6 +116,7 @@ def test_quality_env_ignores_bad_values(tmp_path, monkeypatch):
     assert "SELKIES_VIDEO_CRF" not in env
     assert env["SELKIES_VIDEO_PAINTOVER_CRF"] == "12"          # bad value -> default
     assert env["SELKIES_VIDEO_STREAMING_MODE"] == "false"   # 2.0 default is true; keep ours
+    assert env["SELKIES_VIDEO_FULLCOLOR"] == "false"         # 4:4:4 is opt-in (software x264 on VA-API)
 
 
 def test_every_flag_exists_in_installed_selkies(tmp_path, monkeypatch):
@@ -243,15 +244,19 @@ def _seat_cmd(tmp_path, monkeypatch, ss, seat=None, mode="seat"):
     return engine.build_selkies_cmd(cfg, 1, seat)[0]
 
 
-def test_bitrate_locked_server_side(tmp_path, monkeypatch):
-    """Stale 1.x client storage sends video_bitrate=8 (meant Mbps); 2.0 reads
-    kbps and clamps to 100 kbps -> blurry stream. Lock it server-side."""
-    cmd = _seat_cmd(tmp_path, monkeypatch, {})
-    assert "--video-bitrate=16000-16000" in cmd
+def test_bitrate_is_viewer_adjustable_ceiling(tmp_path, monkeypatch):
+    """Admin bitrate is the default AND the ceiling; viewers may lower it.
+    Floor is min(1000, kbps) so a stale 1.x value of 8 (Mbps) cannot mean 8 kbps."""
     cmd = _seat_cmd(tmp_path, monkeypatch, {"video_bitrate_kbps": 20000})
-    assert "--video-bitrate=20000-20000" in cmd
+    assert "--video-bitrate=20000,1000-20000" in cmd
+    cmd = _seat_cmd(tmp_path, monkeypatch, {})
+    assert "--video-bitrate=16000,1000-16000" in cmd
+    cmd = _seat_cmd(tmp_path, monkeypatch, {"video_bitrate_kbps": 800})
+    assert "--video-bitrate=800,800-800" in cmd
+    cmd = _seat_cmd(tmp_path, monkeypatch, {"bitrate_kbps": 12000})   # admin form key
+    assert "--video-bitrate=12000,1000-12000" in cmd
     cmd = _seat_cmd(tmp_path, monkeypatch, {"video_bitrate_kbps": "junk"})
-    assert "--video-bitrate=16000-16000" in cmd
+    assert "--video-bitrate=16000,1000-16000" in cmd
 
 
 def test_gnome_seat_always_disables_client_cursor(tmp_path, monkeypatch):
