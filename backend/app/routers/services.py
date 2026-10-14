@@ -15,6 +15,7 @@ from app.routers.services_auth import user_may_open
 from app.schemas import (DiscoveredContainer, ProxiedServiceCreate, ProxiedServiceOut,
                          ProxiedServiceUpdate, ServicePresetOut, ServiceTileOut)
 from app.security.deps import get_current_user, require_admin
+from app.services import service_favicon, ws_icon
 from app.services.audit import audit_request
 from app.services.docker_manager import DockerManager
 
@@ -45,7 +46,8 @@ async def _preset_map(session: AsyncSession) -> dict[str, ServicePreset]:
 
 def _out(s: ProxiedService, presets: dict[str, ServicePreset]) -> ProxiedServiceOut:
     return ProxiedServiceOut(
-        id=s.id, slug=s.slug, name=s.name, icon=s.icon, kind=s.kind,
+        id=s.id, slug=s.slug, name=s.name, kind=s.kind,
+        icon_kind=ws_icon.icon_kind(s.icon), icon_etag=ws_icon.icon_etag(s.icon, s.name, s.id),
         upstream_url=s.upstream_url, container=s.container, container_port=s.container_port,
         upstream_fallback=s.upstream_fallback, mount_mode=s.mount_mode, auth_mode=s.auth_mode,
         bypass_rules=s.bypass_rules, allowed_groups=s.allowed_groups, verify_tls=s.verify_tls,
@@ -145,7 +147,9 @@ async def discover(admin: User = Depends(require_admin),
 
 def _tile(s: ProxiedService, presets: dict[str, ServicePreset]) -> ServiceTileOut:
     up = {"healthy": True, "unhealthy": False}.get(s.health_status)
-    return ServiceTileOut(id=s.id, slug=s.slug, name=s.name, icon=s.icon,
+    return ServiceTileOut(id=s.id, slug=s.slug, name=s.name,
+                          icon_kind=ws_icon.icon_kind(s.icon),
+                          icon_etag=ws_icon.icon_etag(s.icon, s.name, s.id),
                           mount_mode=s.mount_mode, enabled=s.enabled, up=up, frame_ok=s.frame_ok,
                           needs_setup=_needs_setup(s, presets))
 
@@ -171,8 +175,14 @@ async def create_service(body: ProxiedServiceCreate, request: Request,
     if (await session.exec(select(ProxiedService).where(ProxiedService.slug == body.slug))).first():
         raise HTTPException(status.HTTP_409_CONFLICT, "Slug already in use")
     await _check_groups(session, body.allowed_groups)
-    s = ProxiedService(**body.model_dump(exclude={"bypass_rules"}),
+    try:
+        icon = service_favicon.normalise_icon(body.icon)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e))
+    s = ProxiedService(**body.model_dump(exclude={"bypass_rules", "icon"}), icon=icon,
                        bypass_rules=[r.model_dump() for r in body.bypass_rules])
+    # a preset emoji is only a placeholder until the app's own icon is fetched; an image is a choice
+    s.icon_custom = ws_icon.icon_kind(icon) == "image"
     await _attach_docker(s, docker)
     session.add(s)
     await audit_request(session, request, "service.create", user_id=admin.id,
@@ -181,6 +191,8 @@ async def create_service(body: ProxiedServiceCreate, request: Request,
     await session.commit()
     await session.refresh(s)
     await _refresh(session)
+    if not s.icon_custom:
+        service_favicon.schedule_favicon(s.id, docker)
     return _out(s, await _preset_map(session))
 
 
@@ -192,7 +204,13 @@ async def update_service(sid: str, body: ProxiedServiceUpdate, request: Request,
     s = await _get_or_404(session, sid)
     await _check_groups(session, body.allowed_groups)
     prev = s.container if s.kind == "docker-local" and not s.upstream_fallback else None
-    for k, v in body.model_dump(exclude={"bypass_rules"}).items():
+    if body.icon is not None:     # omitted = keep; icons otherwise change via PUT /{id}/icon
+        try:
+            s.icon = service_favicon.normalise_icon(body.icon)
+        except ValueError as e:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(e))
+        s.icon_custom = True
+    for k, v in body.model_dump(exclude={"bypass_rules", "icon"}).items():
         setattr(s, k, v)
     s.bypass_rules = [r.model_dump() for r in body.bypass_rules]
     s.updated_at = datetime.now(timezone.utc)

@@ -167,6 +167,26 @@ async def fetch_favicon(svc: ProxiedService, docker, transport=None) -> str | No
     return None
 
 
+def normalise_icon(value: str | None) -> str | None:
+    """Request icon -> stored form. Bare emoji (presets), "emoji:<c>" or a data: image; else ValueError."""
+    if not value:
+        return None
+    if value.startswith("data:"):
+        return ws_icon.validate_icon("image", value)
+    return ws_icon.validate_icon("emoji", value.removeprefix("emoji:"))
+
+
+_tasks: set[asyncio.Task] = set()
+
+
+def schedule_favicon(svc_id: str, docker) -> None:
+    """Fire-and-forget fetch_and_store on the app's own DB sessions."""
+    from app.database import async_session
+    t = asyncio.create_task(fetch_and_store(async_session, svc_id, docker))
+    _tasks.add(t)
+    t.add_done_callback(_tasks.discard)
+
+
 async def fetch_and_store(session_factory, svc_id: str, docker) -> None:
     """Background job: fetch for a non-custom service and store it (skipped if it became custom)."""
     try:
@@ -174,8 +194,8 @@ async def fetch_and_store(session_factory, svc_id: str, docker) -> None:
             svc = await s.get(ProxiedService, svc_id)
             if svc is None or svc.icon_custom:
                 return
-            s.expunge(svc)
-        icon = await fetch_favicon(svc, docker)
+            snap = ProxiedService(**svc.model_dump())     # plain copy: no ORM row across awaits
+        icon = await fetch_favicon(snap, docker)
         if icon is None:
             return
         async with session_factory() as s:

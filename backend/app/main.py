@@ -30,6 +30,7 @@ from app.routers import system_settings as system_settings_router
 from app.routers import groups as groups_router
 from app.routers import services as services_router
 from app.routers import service_mounts as service_mounts_router
+from app.routers import service_icons as service_icons_router
 from app.routers import services_auth as services_auth_router
 from app.security.deps import get_current_user, require_admin
 from app.services.docker_manager import DockerManager
@@ -313,6 +314,7 @@ app.include_router(system_settings_router.router, prefix="/api/system-settings",
 app.include_router(groups_router.router, prefix="/api/groups", tags=["groups"])
 app.include_router(groups_router.users_router, prefix="/api/users", tags=["groups"])
 app.include_router(service_mounts_router.router, prefix="/api/services", tags=["services"])
+app.include_router(service_icons_router.router, prefix="/api/services", tags=["services"])
 app.include_router(services_router.router, prefix="/api/services", tags=["services"])
 app.include_router(services_auth_router.router, prefix="/api/services", tags=["services"])
 app.include_router(services_auth_router.internal_router, prefix="/internal", tags=["services"])

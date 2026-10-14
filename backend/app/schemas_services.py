@@ -43,7 +43,7 @@ class BypassRule(BaseModel):
 
 class _ServiceFields(BaseModel):
     name: str = Field(min_length=1, max_length=255)
-    icon: str | None = Field(default=None, max_length=255)
+    icon: str | None = Field(default=None, max_length=400_000)   # same cap as workstation icons
     kind: str = "url"
     upstream_url: str | None = None
     container: str | None = Field(default=None, max_length=255, pattern=CONTAINER_NAME_RE)
@@ -132,7 +132,8 @@ class ProxiedServiceOut(BaseModel):
     id: str
     slug: str
     name: str
-    icon: str | None
+    icon_kind: str = "auto"        # auto | emoji | image (bytes are served by GET /{id}/icon)
+    icon_etag: str = ""            # cache-buster for /{id}/icon?v=
     kind: str
     upstream_url: str | None
     container: str | None
@@ -161,7 +162,8 @@ class ServiceTileOut(BaseModel):
     id: str
     slug: str
     name: str
-    icon: str | None
+    icon_kind: str = "auto"
+    icon_etag: str = ""
     mount_mode: str
     enabled: bool
     up: bool | None          # None = unknown
