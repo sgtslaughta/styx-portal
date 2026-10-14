@@ -222,7 +222,7 @@ async def open_service(slug: str, request: Request,
 _UNAVAILABLE_HTML = styx_page(
     "Service unavailable",
     "<h1>Service unavailable</h1><p>Styx could not reach this service. It may be stopped or "
-    'still starting.</p><div class="actions"><a class="btn" href="/_styx/exit">Back to Styx</a></div>')
+    'still starting.</p><div class="actions"><a class="btn" href="/_styx/exit" target="_top">Back to Styx</a></div>')
 
 
 @pages_router.get("/service-unavailable", include_in_schema=False)

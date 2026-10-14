@@ -9,4 +9,4 @@ def test_pages_carry_the_styx_mark():
 
 def test_back_links_are_buttons():
     for page in (_UNAVAILABLE_HTML, _NO_ACCESS_HTML):
-        assert '<div class="actions"><a class="btn" href="/_styx/exit">Back to Styx</a></div>' in page
+        assert '<div class="actions"><a class="btn" href="/_styx/exit" target="_top">Back to Styx</a></div>' in page
