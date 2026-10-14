@@ -8,7 +8,7 @@ import re
 import tarfile
 import time
 from collections.abc import Callable
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 import docker
 import docker.errors
@@ -33,8 +33,66 @@ def _join_capped(stream) -> bytes:
     return buf.getvalue()
 
 MAX_FETCH_REDIRECTS = 3
-_LOCATION = re.compile(r"^\s*location:\s*(\S+)", re.I | re.M)
+_HEADER_ROOM = 16384          # response headers ride in the same capped stream as the body
+_HOST = re.compile(r"[A-Za-z0-9.-]+")
+_REQ_PATH = re.compile(r"[A-Za-z0-9._~!$&'()*+,;=:@%/?-]*")
 _PROBE_URL = re.compile(r"https?://[A-Za-z0-9._:/@%+=~-]+")
+
+
+def _build_request(url: str) -> tuple[str, str, int] | None:
+    """(request text, host, port) for a plain-http URL, or None if anything looks off."""
+    try:
+        p = urlsplit(url)
+        port = 80 if p.port is None else p.port
+        host = p.hostname or ""
+    except ValueError:
+        return None
+    if (p.scheme != "http" or "@" in p.netloc or not _HOST.fullmatch(host)
+            or not 1 <= port <= 65535):
+        return None
+    target = (p.path or "/") + ("?" + p.query if p.query else "")
+    if not _REQ_PATH.fullmatch(target):
+        return None
+    hdr_host = host if port == 80 else f"{host}:{port}"
+    text = (f"GET {target} HTTP/1.0\r\nHost: {hdr_host}\r\nUser-Agent: styx-favicon\r\n"
+            "Accept: */*\r\nConnection: close\r\n\r\n")
+    return text, host, port
+
+
+def _parse_response(raw: bytes) -> tuple[int, dict[str, str], bytes] | None:
+    head, sep, body = raw.partition(b"\r\n\r\n")
+    if not sep:
+        return None
+    lines = head.decode("latin-1").split("\r\n")
+    m = re.fullmatch(r"HTTP/1\.[01] (\d{3})(?: .*)?", lines[0])
+    if not m:
+        return None
+    headers: dict[str, str] = {}
+    for ln in lines[1:]:
+        k, colon, v = ln.partition(":")
+        if colon:
+            headers.setdefault(k.strip().lower(), v.strip())
+    return int(m.group(1)), headers, body
+
+
+def _dechunk(body: bytes) -> bytes:
+    """Decode a chunked body; a malformed one yields b"" (treated as no body)."""
+    out, pos = bytearray(), 0
+    while True:
+        end = body.find(b"\r\n", pos)
+        if end < 0:
+            return b""
+        try:
+            size = int(body[pos:end].split(b";")[0].strip(), 16)
+        except ValueError:
+            return b""
+        if size == 0:
+            return bytes(out)
+        chunk = body[end + 2:end + 2 + size]
+        if len(chunk) < size:       # cut off by the size cap: keep what arrived
+            return bytes(out + chunk)
+        out += chunk
+        pos = end + 2 + size + 2
 
 
 class ContainerFilesMixin:
@@ -121,45 +179,64 @@ class ContainerFilesMixin:
         finally:
             self._rm_probe(c)
 
-    def probe_fetch(self, url: str, network: str, max_bytes: int, timeout_s: int = 5,
-                    extra_hosts: dict | None = None,
-                    allow_redirect_to: Callable[[str], bool] | None = None) -> bytes | None:
-        """First `max_bytes` of the body of `url`, fetched from a throwaway container; None on failure.
-
-        The URL is an argv entry ($1), never part of the shell string. The body travels back
-        base64-encoded on stdout; wget's response headers (-S) arrive on stderr and are the only
-        place redirects are read from. Any Location failing `allow_redirect_to` (or more than
-        MAX_FETCH_REDIRECTS hops) discards the body.
-        """
-        # ponytail: busybox wget follows redirects itself, so a refused hop was still requested
-        # before Styx can say no. Upgrade path: fetch hop by hop with redirects disabled
-        # (e.g. a tiny curl image with --max-redirs 0).
-        if not _PROBE_URL.fullmatch(url):
-            raise ValueError("probe url must be plain http(s) with no shell metacharacters")
-        c = self._start_probe(
-            ["sh", "-c", 'wget -q -S -O - -T "$2" "$1" | head -c "$3" | base64',
-             "probe", url, str(timeout_s), str(max_bytes)], network, extra_hosts)
+    def _run_probe(self, cmd: list[str], network: str, extra_hosts: dict | None,
+                   timeout_s: int) -> bytes | None:
+        """stdout of one hardened throwaway container run (always removed); None on any failure."""
+        c = self._start_probe(cmd, network, extra_hosts)
         if c is None:
             return None
         try:
             c.wait(timeout=timeout_s + 10)
-            out = c.logs(stdout=True, stderr=False)
-            headers = c.logs(stdout=False, stderr=True).decode("utf-8", "replace")
-            cur, hops = url, _LOCATION.findall(headers)
-            if len(hops) > MAX_FETCH_REDIRECTS:
-                return None
-            for loc in hops:
-                cur = urljoin(cur, loc)
-                if allow_redirect_to is not None and not allow_redirect_to(cur):
-                    return None
-            return base64.b64decode(b"".join(out.split()), validate=True) or None
-        except (binascii.Error, ValueError):
-            return None
+            return c.logs(stdout=True, stderr=False)
         except Exception:  # noqa: BLE001 - unreachable app == no body
-            logger.debug("fetch of %s failed", url, exc_info=True)
+            logger.debug("probe run failed", exc_info=True)
             return None
         finally:
             self._rm_probe(c)
+
+    def probe_fetch(self, url: str, network: str, max_bytes: int, timeout_s: int = 5,
+                    extra_hosts: dict | None = None,
+                    allow_redirect_to: Callable[[str], bool] | None = None) -> bytes | None:
+        """First `max_bytes` of the body of `url` over plain http from a throwaway container.
+
+        Styx makes every hop itself: the request is built here from one urlsplit of the URL, sent
+        by `nc` in a fresh container, and the raw response is parsed here. A redirect is followed
+        (max MAX_FETCH_REDIRECTS) only if `allow_redirect_to` accepts it, and that is decided
+        before any request for it exists. Every value reaches the container as a positional
+        argument, never inside the shell string. None on any failure.
+        """
+        # ponytail: ceiling = HTTP/1.0 only, no TLS on this path (docker-local apps on
+        # styx-services speak plain http). Upgrade path: a curl image with --max-redirs 0.
+        cur = url
+        for hop in range(MAX_FETCH_REDIRECTS + 1):
+            req = _build_request(cur)
+            if req is None:
+                return None
+            text, host, port = req
+            out = self._run_probe(
+                ["sh", "-c", 'printf "%s" "$1" | nc -w "$2" "$3" "$4" | head -c "$5" | base64',
+                 "probe", text, str(timeout_s), host, str(port), str(max_bytes + _HEADER_ROOM)],
+                network, extra_hosts, timeout_s)
+            try:
+                raw = base64.b64decode(b"".join((out or b"").split()), validate=True)
+            except (binascii.Error, ValueError):
+                return None
+            parsed = _parse_response(raw)
+            if parsed is None:
+                return None
+            status, headers, body = parsed
+            if 300 <= status < 400 and "location" in headers:
+                nxt = urljoin(cur, headers["location"])
+                if allow_redirect_to is None or not allow_redirect_to(nxt):
+                    return None
+                cur = nxt
+                continue
+            if not 200 <= status < 300:
+                return None
+            if headers.get("transfer-encoding", "").lower() == "chunked":
+                body = _dechunk(body)
+            return body[:max_bytes] if body else None
+        return None
 
     @staticmethod
     def _rm_probe(c) -> None:

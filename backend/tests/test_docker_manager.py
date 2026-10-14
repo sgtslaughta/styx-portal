@@ -497,77 +497,108 @@ def test_remove_probe_containers(mock_docker):
     a.remove.assert_called_once_with(force=True)
 
 
-def test_probe_fetch_hardened_no_shell_interpolation(mock_docker):
+def _raw(status: str, headers: str = "", body: bytes = b"") -> bytes:
     import base64
-    manager, client = mock_docker
-    c = _fetch(client, base64.encodebytes(b"PNGDATA" * 20))
-    assert manager.probe_fetch("http://app:80/x/", "styx-services", 1000) == b"PNGDATA" * 20
-    args, kw = client.containers.create.call_args
-    cmd = args[1]
-    assert cmd[:2] == ["sh", "-c"] and "http://app:80/x/" not in cmd[2]
-    assert "-S" in cmd[2] and "2>&1" not in cmd[2]
-    assert cmd[3:] == ["probe", "http://app:80/x/", "5", "1000"]
-    assert "$1" in cmd[2] and "base64" in cmd[2]
-    assert kw["network"] == "styx-services" and kw["read_only"] is True
-    assert kw["cap_drop"] == ["ALL"] and kw["user"] == "65534:65534"
-    assert kw["security_opt"] == ["no-new-privileges"] and kw["labels"] == {"styx.probe": "true"}
-    c.remove.assert_called_once_with(force=True)
+    return base64.encodebytes(f"HTTP/1.0 {status}\r\n{headers}\r\n".encode() + body)
 
 
-def test_probe_fetch_failures_return_none(mock_docker):
-    manager, client = mock_docker
-    c = _probe(client, b"")
-    assert manager.probe_fetch("http://a:1/", "n", 10) is None
-    _probe(client, b"!!not base64!!")
-    assert manager.probe_fetch("http://a:1/", "n", 10) is None
-    c = _probe(client)
-    c.wait.side_effect = RuntimeError("t")
-    assert manager.probe_fetch("http://a:1/", "n", 10) is None
-    c.remove.assert_called_once_with(force=True)
-    with pytest.raises(ValueError):
-        manager.probe_fetch("http://a;rm/", "n", 10)
-
-
-def _fetch(client, body: bytes, headers: bytes = b""):
-    c = MagicMock()
-    c.logs.side_effect = lambda stdout=True, stderr=True, **kw: (
-        body if stdout and not stderr else headers if stderr and not stdout else body + headers)
-    client.containers.create.return_value = c
-    return c
-
-
-def _b64(b: bytes) -> bytes:
-    import base64
-    return base64.b64encode(b)
+def _hops(client, *responses: bytes):
+    """One container per hop, each answering with the next canned raw response."""
+    made = []
+    for r in responses:
+        c = MagicMock()
+        c.logs.return_value = r
+        made.append(c)
+    client.containers.create.side_effect = list(made)
+    return made
 
 
 def _same(u):
     return u.startswith("http://app:80/")
 
 
-def test_probe_fetch_cross_origin_redirect_discards_body(mock_docker):
+def test_probe_fetch_hardened_request_built_in_python(mock_docker):
     manager, client = mock_docker
-    _fetch(client, _b64(b"secret"), b"  HTTP/1.1 302 Found\n  Location: http://169.254.169.254/x\n")
-    assert manager.probe_fetch("http://app:80/a", "n", 100, allow_redirect_to=_same) is None
+    made = _hops(client, _raw("200 OK", "", b"PNGDATA"))
+    assert manager.probe_fetch("http://app:80/x/y?a=1", "styx-services", 1000) == b"PNGDATA"
+    args, kw = client.containers.create.call_args
+    cmd = args[1]
+    assert cmd[:2] == ["sh", "-c"] and "$1" in cmd[2] and "nc" in cmd[2]
+    assert "app" not in cmd[2] and "/x/y" not in cmd[2]
+    req = cmd[4]
+    assert cmd[3] == "probe" and req.startswith("GET /x/y?a=1 HTTP/1.0\r\nHost: app\r\n")
+    assert req.endswith("\r\n\r\n") and "styx-favicon" in req
+    assert cmd[5:] == ["5", "app", "80", str(1000 + 16384)]
+    assert kw["network"] == "styx-services" and kw["read_only"] is True
+    assert kw["cap_drop"] == ["ALL"] and kw["user"] == "65534:65534"
+    assert kw["security_opt"] == ["no-new-privileges"] and kw["labels"] == {"styx.probe": "true"}
+    made[0].remove.assert_called_once_with(force=True)
 
 
-def test_probe_fetch_same_origin_relative_redirect_ok(mock_docker):
+def test_probe_fetch_caps_body_and_failures_return_none(mock_docker):
     manager, client = mock_docker
-    _fetch(client, _b64(b"icon"), b"  HTTP/1.1 301 Moved\n  location: /b\n  HTTP/1.1 200 OK\n")
+    _hops(client, _raw("200 OK", "", b"x" * 50))
+    assert manager.probe_fetch("http://a:1/", "n", 10) == b"x" * 10
+    _hops(client, b"")
+    assert manager.probe_fetch("http://a:1/", "n", 10) is None
+    _hops(client, b"!!not base64!!")
+    assert manager.probe_fetch("http://a:1/", "n", 10) is None
+    _hops(client, _raw("404 Not Found", "", b"x"))
+    assert manager.probe_fetch("http://a:1/", "n", 10) is None
+    made = _hops(client, _raw("200 OK", "", b"x"))
+    made[0].wait.side_effect = RuntimeError("t")
+    assert manager.probe_fetch("http://a:1/", "n", 10) is None
+    made[0].remove.assert_called_once_with(force=True)
+
+
+@pytest.mark.parametrize("url", ["https://a/x", "ftp://a/", "http://a b/", "http://a;rm/",
+                                 "http://a/p a", "http://a/p\r\nX: y", "http://a:0/", "http://a:99999/",
+                                 "http://a/`x`", "http://a/p\"q"])
+def test_probe_fetch_rejects_bad_urls_without_a_container(mock_docker, url):
+    manager, client = mock_docker
+    assert manager.probe_fetch(url, "n", 10) is None
+    client.containers.create.assert_not_called()
+
+
+def test_probe_fetch_decodes_chunked_and_rejects_malformed(mock_docker):
+    manager, client = mock_docker
+    chunked = b"5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n"
+    _hops(client, _raw("200 OK", "Transfer-Encoding: chunked\r\n", chunked))
+    assert manager.probe_fetch("http://a:1/", "n", 100) == b"hello world"
+    _hops(client, _raw("200 OK", "transfer-encoding: Chunked\r\n", b"zz\r\nhello"))
+    assert manager.probe_fetch("http://a:1/", "n", 100) is None
+
+
+def test_probe_fetch_follows_same_origin_redirect_from_python_parse(mock_docker):
+    manager, client = mock_docker
+    made = _hops(client, _raw("301 Moved", "location: /b/c\r\n"), _raw("200 OK", "", b"icon"))
     assert manager.probe_fetch("http://app:80/a", "n", 100, allow_redirect_to=_same) == b"icon"
+    second = client.containers.create.call_args_list[1].args[1]
+    assert second[4].startswith("GET /b/c HTTP/1.0\r\nHost: app\r\n") and second[6:8] == ["app", "80"]
+    assert all(m.remove.called for m in made)
 
 
-def test_probe_fetch_too_many_redirects(mock_docker):
+def test_probe_fetch_rejected_location_makes_no_second_container(mock_docker):
     manager, client = mock_docker
-    hdr = b"".join(b"  HTTP/1.1 302 Found\n  Location: /h%d\n" % i for i in range(4))
-    _fetch(client, _b64(b"icon"), hdr)
+    _hops(client, _raw("302 Found", "Location: http://169.254.169.254/x\r\n"), _raw("200 OK", "", b"s"))
     assert manager.probe_fetch("http://app:80/a", "n", 100, allow_redirect_to=_same) is None
+    assert client.containers.create.call_count == 1
+    _hops(client, _raw("302 Found", "Location: /ok\r\n"))
+    client.containers.create.reset_mock()
+    assert manager.probe_fetch("http://app:80/a", "n", 100) is None      # no predicate: refuse
+    assert client.containers.create.call_count == 1
 
 
-def test_probe_fetch_ignores_location_in_stdout_body(mock_docker):
+def test_probe_fetch_more_than_three_redirects_is_refused(mock_docker):
     manager, client = mock_docker
-    body = b"Location: http://evil.test/\n"
-    _fetch(client, _b64(body), b"  HTTP/1.1 200 OK\n")
+    hop = lambda i: _raw("302 Found", f"Location: /h{i}\r\n")  # noqa: E731
+    _hops(client, *(hop(i) for i in range(5)))
+    assert manager.probe_fetch("http://app:80/a", "n", 100, allow_redirect_to=_same) is None
+    assert client.containers.create.call_count == 4          # first request + 3 redirects
+
+
+def test_probe_fetch_location_in_body_is_ignored(mock_docker):
+    manager, client = mock_docker
+    body = b"Location: http://evil.test/\r\n\r\n"
+    _hops(client, _raw("200 OK", "", body))
     assert manager.probe_fetch("http://app:80/a", "n", 100, allow_redirect_to=_same) == body
-    calls = [c.kwargs for c in client.containers.create.return_value.logs.call_args_list]
-    assert {"stdout": True, "stderr": False} in calls and {"stdout": False, "stderr": True} in calls
