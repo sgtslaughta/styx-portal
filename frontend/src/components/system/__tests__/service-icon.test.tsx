@@ -29,20 +29,30 @@ describe("ServiceIcon", () => {
 });
 
 describe("ServiceIconSection", () => {
-  test("shows the current icon and saves an emoji through the service endpoint", async () => {
-    const onChanged = vi.fn();
-    const { container } = render(<ServiceIconSection service={svc()} onChanged={onChanged} />);
+  test("has no Save button; choosing an emoji only stages it", () => {
+    const onStage = vi.fn();
+    const { container } = render(<ServiceIconSection service={svc()} onChanged={vi.fn()} onStage={onStage} />);
     expect(container.querySelector("img")!.getAttribute("src")).toBe("/api/services/s1/icon?v=e1");
     fireEvent.click(screen.getByRole("button", { name: "Emoji" }));
+    expect(screen.queryByRole("button", { name: /^save/i })).toBeNull();
+    expect(onStage).toHaveBeenLastCalledWith(null);          // nothing valid typed yet
     fireEvent.change(screen.getByLabelText("Emoji"), { target: { value: "📺" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save icon" }));
-    await waitFor(() => expect(set).toHaveBeenCalledWith("s1", "emoji", "📺"));
-    expect(onChanged).toHaveBeenCalled();
+    expect(onStage).toHaveBeenLastCalledWith({ kind: "emoji", value: "📺" });
+    expect(set).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Auto" }));
+    expect(onStage).toHaveBeenLastCalledWith(null);          // auto == what it already is
   });
 
-  test("refresh button names the service, toasts success and reports the new row", async () => {
+  test("auto stages only when the icon isn't already auto", () => {
+    const onStage = vi.fn();
+    render(<ServiceIconSection service={svc({ icon_kind: "emoji" })} onChanged={vi.fn()} onStage={onStage} />);
+    fireEvent.click(screen.getByRole("button", { name: "Auto" }));
+    expect(onStage).toHaveBeenLastCalledWith({ kind: "auto" });
+  });
+
+  test("refresh button is an action, names the service, toasts and reports the new row", async () => {
     const onChanged = vi.fn();
-    render(<ServiceIconSection service={svc()} onChanged={onChanged} />);
+    render(<ServiceIconSection service={svc()} onChanged={onChanged} onStage={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Use Sonarr's own icon" }));
     await waitFor(() => expect(refresh).toHaveBeenCalledWith("s1"));
     await waitFor(() => expect(toast.success).toHaveBeenCalled());
@@ -52,7 +62,7 @@ describe("ServiceIconSection", () => {
   test("refresh failure shows the server message", async () => {
     refresh.mockRejectedValue(new Error("Couldn't find an icon for Sonarr."));
     const onChanged = vi.fn();
-    render(<ServiceIconSection service={svc()} onChanged={onChanged} />);
+    render(<ServiceIconSection service={svc()} onChanged={onChanged} onStage={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Use Sonarr's own icon" }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Couldn't find an icon for Sonarr."));
     expect(onChanged).not.toHaveBeenCalled();

@@ -2,7 +2,7 @@ import { render, screen, waitFor, fireEvent, within } from "@testing-library/rea
 import { describe, test, expect, vi, beforeEach } from "vitest";
 
 const { a, toast } = vi.hoisted(() => ({ toast: { error: vi.fn(), success: vi.fn() }, a: { listServices: vi.fn(), listServicePresets: vi.fn(), listGroups: vi.fn(), discoverContainers: vi.fn(),
-  createService: vi.fn(), updateService: vi.fn(), deleteService: vi.fn(), setServiceEnabled: vi.fn(), mountPlan: vi.fn(), mountLatest: vi.fn(), mountApply: vi.fn() } }));
+  createService: vi.fn(), updateService: vi.fn(), deleteService: vi.fn(), setServiceEnabled: vi.fn(), mountPlan: vi.fn(), mountLatest: vi.fn(), mountApply: vi.fn(), setServiceIcon: vi.fn(), refreshServiceIcon: vi.fn() } }));
 vi.mock("@/api/client", () => ({
   api: new Proxy({}, { get: (_t, k: string) => (...args: unknown[]) => (a as unknown as Record<string, (...x: unknown[]) => unknown>)[k]?.(...args) }),
   ApiError: class extends Error { status = 0; detail: unknown; constructor(m: string, s: number, d?: unknown) { super(m); this.status = s; this.detail = d; } },
@@ -265,6 +265,58 @@ describe("ServicesPanel", () => {
     const drawer = await screen.findByRole("dialog");
     expect(within(drawer).getByRole("group", { name: "Icon type" })).toBeInTheDocument();
     expect(within(drawer).getByRole("button", { name: "Use Jellyfin's own icon" })).toBeInTheDocument();
+  });
+
+  describe("edit drawer icon", () => {
+    const open = async () => {
+      render(<ServicesPanel />);
+      fireEvent.click(await screen.findByRole("button", { name: "Edit Jellyfin" }));
+      return await screen.findByRole("dialog");
+    };
+    const stageEmoji = (drawer: HTMLElement) => {
+      fireEvent.click(within(drawer).getByRole("button", { name: "Emoji" }));
+      fireEvent.change(within(drawer).getByLabelText("Emoji"), { target: { value: "📺" } });
+    };
+    const ack = (drawer: HTMLElement) =>
+      fireEvent.click(within(drawer).getByLabelText(/I understand that this app runs on the same origin/));
+
+    test("exactly one Save button", async () => {
+      const drawer = await open();
+      stageEmoji(drawer);
+      expect(within(drawer).getAllByRole("button", { name: /^save/i })).toHaveLength(1);
+    });
+
+    test("Save persists the update and the staged icon", async () => {
+      a.updateService.mockResolvedValue(svc());
+      a.setServiceIcon.mockResolvedValue(svc());
+      const drawer = await open();
+      stageEmoji(drawer); ack(drawer);
+      expect(a.setServiceIcon).not.toHaveBeenCalled();
+      fireEvent.click(within(drawer).getByRole("button", { name: /^save$/i }));
+      await waitFor(() => expect(a.setServiceIcon).toHaveBeenCalledWith("s1", "emoji", "📺"));
+      expect(a.updateService).toHaveBeenCalled();
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    });
+
+    test("no icon PUT when the icon wasn't touched", async () => {
+      a.updateService.mockResolvedValue(svc());
+      const drawer = await open();
+      ack(drawer);
+      fireEvent.click(within(drawer).getByRole("button", { name: /^save$/i }));
+      await waitFor(() => expect(a.updateService).toHaveBeenCalled());
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      expect(a.setServiceIcon).not.toHaveBeenCalled();
+    });
+
+    test("icon PUT failure shows the error and keeps the drawer open", async () => {
+      a.updateService.mockResolvedValue(svc());
+      a.setServiceIcon.mockRejectedValue(new Error("Image is not valid"));
+      const drawer = await open();
+      stageEmoji(drawer); ack(drawer);
+      fireEvent.click(within(drawer).getByRole("button", { name: /^save$/i }));
+      await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Image is not valid"));
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
   });
 
   test("?setup=<unknown id> opens nothing", async () => {

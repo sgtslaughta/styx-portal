@@ -6,7 +6,11 @@ import { IconSettings } from "@/components/system/icon-settings";
 import { Section } from "./service-form-parts";
 
 /** Drawer section: pick an emoji / image / auto badge, or re-fetch the app's own favicon. */
-export function ServiceIconSection({ service, onChanged }: { service: ProxiedService; onChanged: (s: ProxiedService) => void }) {
+type Staged = { kind: "auto" | "emoji" | "image"; value?: string } | null;
+
+export function ServiceIconSection({ service, onChanged, onStage }: {
+  service: ProxiedService; onChanged: (s: ProxiedService) => void; onStage: (c: Staged) => void;
+}) {
   const [busy, setBusy] = useState(false);
   const useOwn = async () => {
     setBusy(true);
@@ -21,12 +25,12 @@ export function ServiceIconSection({ service, onChanged }: { service: ProxiedSer
     }
   };
   return (
-    <Section title="Icon" hint="Styx fetches the app's own icon once. Pick another one to keep it.">
+    <Section title="Icon" hint="Styx fetches the app's own icon once. A different choice is saved with the service.">
       <IconSettings
         id={service.id}
         kind={service.icon_kind}
         iconUrl={`/api/services/${service.id}/icon?v=${service.icon_etag}`}
-        onSave={async (kind, value) => onChanged(await api.setServiceIcon(service.id, kind, value))}
+        onStage={onStage}
         extra={
           <Button size="sm" variant="secondary" onClick={() => void useOwn()} disabled={busy} aria-busy={busy}>
             {`Use ${service.name}'s own icon`}

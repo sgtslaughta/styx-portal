@@ -33,12 +33,14 @@ type Props = {
   /** Distinguishes the error element ids when several editors are on one page. */
   id: string;
   /** Persist the icon; reject with an Error to have its message shown. */
-  onSave: (kind: IconKind, value?: string) => Promise<unknown>;
+  onSave?: (kind: IconKind, value?: string) => Promise<unknown>;
+  /** Staged mode (no Save/Reset buttons): report the pending change, or null for "no change". */
+  onStage?: (change: { kind: IconKind; value?: string } | null) => void;
   /** Extra buttons, e.g. "Use the app's own icon". */
   extra?: ReactNode;
 };
 
-export function IconSettings({ iconUrl, kind, id, onSave, extra }: Props) {
+export function IconSettings({ iconUrl, kind, id, onSave, onStage, extra }: Props) {
   const [mode, setMode] = useState<Kind>(kind);
   const [emoji, setEmoji] = useState("");
   const [image, setImage] = useState<string | null>(null);
@@ -51,13 +53,23 @@ export function IconSettings({ iconUrl, kind, id, onSave, extra }: Props) {
     setMode(kind);
   }, [kind, iconUrl]);
 
+  const stageRef = useRef(onStage);
+  stageRef.current = onStage;
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    if (mode === "auto") stage(kind === "auto" ? null : { kind: "auto" });
+    else if (mode === "emoji") stage(emojiError(emoji) === null ? { kind: "emoji", value: emoji } : null);
+    else stage(image ? { kind: "image", value: image } : null);
+  }, [mode, emoji, image, kind]);
+
   const emojiErr = mode === "emoji" && emoji ? emojiError(emoji) : null;
   const canSave = !saving && (mode === "emoji" ? emojiError(emoji) === null : image !== null);
 
   const send = async (k: Kind, value?: string): Promise<boolean> => {
     setSaving(true);
     try {
-      await onSave(k, value);
+      await onSave?.(k, value);
       setEmoji("");
       setImage(null);
       setFileError(null);
@@ -151,12 +163,12 @@ export function IconSettings({ iconUrl, kind, id, onSave, extra }: Props) {
             {image && <img src={image} alt="" data-testid="icon-preview" className="h-6 w-6 rounded-md" />}
           </>
         )}
-        {mode !== "auto" && (
+        {mode !== "auto" && !onStage && (
           <Button size="sm" onClick={save} disabled={!canSave}>
             Save icon
           </Button>
         )}
-        {kind !== "auto" && (
+        {kind !== "auto" && !onStage && (
           <Button size="sm" variant="secondary" onClick={reset} disabled={saving}>
             Reset to auto
           </Button>

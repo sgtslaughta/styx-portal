@@ -28,6 +28,8 @@ export function ServicesPanel() {
   const [editing, setEditing] = useState<Editing>(null);
   const [toDelete, setToDelete] = useState<ProxiedService | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Icon choice made in the edit drawer; saved together with the form's single Save.
+  const stagedIcon = useRef<{ kind: "auto" | "emoji" | "image"; value?: string } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -57,8 +59,15 @@ export function ServicesPanel() {
   const submit = async (data: ProxiedServiceInput): Promise<FieldErrors | void> => {
     let created: ProxiedService | null = null;
     try {
-      if (editing?.kind === "edit") { const { slug: _s, ...rest } = data; await api.updateService(editing.svc.id, rest); }
-      else created = await api.createService(data);
+      if (editing?.kind === "edit") {
+        const { slug: _s, ...rest } = data;
+        await api.updateService(editing.svc.id, rest);
+        const icon = stagedIcon.current;
+        if (icon) {
+          try { await api.setServiceIcon(editing.svc.id, icon.kind, icon.value); }
+          catch (e) { toast.error(errMsg(e, "Icon not saved")); await load(); return {}; }
+        }
+      } else created = await api.createService(data);
     } catch (e) {
       const { fields, rest } = serverFieldErrors(e);
       if (rest.length || Object.keys(fields).length === 0) toast.error(rest.join("; ") || "Save failed");
@@ -200,8 +209,8 @@ export function ServicesPanel() {
                 <ServiceMount service={editing.svc}
                   onChanged={(svc) => { setEditing({ kind: "edit", svc }); void load(); }}
                   onDone={() => void load()} />
-                <ServiceIconSection service={editing.svc}
-                  onChanged={(svc) => { setEditing({ kind: "edit", svc }); void load(); }} />
+                <ServiceIconSection service={editing.svc} onStage={(c) => { stagedIcon.current = c; }}
+                  onChanged={(svc) => { stagedIcon.current = null; setEditing({ kind: "edit", svc }); void load(); }} />
               </> : undefined}
               onSubmit={submit} onCancel={() => setEditing(null)} />
           )}
