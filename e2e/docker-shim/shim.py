@@ -59,8 +59,16 @@ def network_name(ref: str) -> str | None:
     return json.loads(body)["Name"] if code == 200 else None
 
 
+# The favicon fetch (probe_fetch) runs this exact script; its values arrive as positional args.
+FETCH_SCRIPT = '{ printf "%s" "$1"; sleep "$2"; } | nc -w "$2" "$3" "$4" | head -c "$5" | base64'
+
+
+def probe_cmd_ok(cmd: list) -> bool:
+    return (cmd or [""])[0] == "wget" or cmd[:3] == ["sh", "-c", FETCH_SCRIPT]
+
+
 def probe_create_ok(d: dict) -> bool:
-    """The create body must be exactly the hardened mount-probe shape."""
+    """The create body must be exactly the hardened probe shape (mount check or favicon fetch)."""
     h = d.get("HostConfig") or {}
     nets = (d.get("NetworkingConfig") or {}).get("EndpointsConfig") or {}
     return (d.get("Image") == PROBE_IMAGE
@@ -72,7 +80,7 @@ def probe_create_ok(d: dict) -> bool:
             and not (h.get("PidMode") or h.get("IpcMode") or h.get("UsernsMode") or h.get("UTSMode"))
             and h.get("ReadonlyRootfs") is True
             and h.get("CapDrop") == ["ALL"]
-            and (d.get("Cmd") or [""])[0] == "wget")
+            and probe_cmd_ok(d.get("Cmd") or []))
 
 
 class Handler(socketserver.StreamRequestHandler):

@@ -70,10 +70,44 @@ def _svc(**kw):
     return ProxiedService(**d)
 
 
-def _docker(pages: dict):
+def _docker(pages: dict, moved: dict | None = None):
+    """pages: url -> body. moved: url -> final url after (allowed) redirects."""
     d = MagicMock()
-    d.probe_fetch.side_effect = lambda url, net, cap, **kw: pages.get(url)
+
+    def fetch(url, net, cap, with_url=False, **kw):
+        final = (moved or {}).get(url, url)
+        body = pages.get(final)
+        return (None if body is None else (body, final)) if with_url else body
+    d.probe_fetch.side_effect = fetch
     return d
+
+
+@pytest.mark.asyncio
+async def test_fetch_docker_resolves_icons_against_the_page_after_redirects():
+    # Jellyfin: / -> 302 web/, whose icon links are relative to /web/
+    html = _html('<link rel="icon" href="f5.png">').encode()
+    d = _docker({"http://app:8080/web/": html, "http://app:8080/web/f5.png": PNG},
+                moved={"http://app:8080/": "http://app:8080/web/"})
+    out = await sf.fetch_favicon(_svc(mount_mode="cookie-root"), d)
+    assert out and base64.b64decode(out.split(",")[1]) == PNG
+
+
+@pytest.mark.asyncio
+async def test_fetch_url_kind_resolves_icons_against_the_page_after_redirects():
+    import httpx
+
+    def handler(req: httpx.Request):
+        if req.url.path == "/":
+            return httpx.Response(302, headers={"location": "web/"})
+        if req.url.path == "/web/":
+            return httpx.Response(200, html=_html('<link rel="icon" href="f5.png">'))
+        if req.url.path == "/web/f5.png":
+            return httpx.Response(200, content=PNG)
+        return httpx.Response(404)
+    svc = _svc(kind="url", upstream_url="http://app.test:8080", container=None,
+               mount_mode="cookie-root")
+    out = await sf.fetch_favicon(svc, None, transport=httpx.MockTransport(handler))
+    assert out and base64.b64decode(out.split(",")[1]) == PNG
 
 
 @pytest.mark.asyncio

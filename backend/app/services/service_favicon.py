@@ -97,8 +97,8 @@ def page_url(svc: ProxiedService) -> str:
 
 
 async def _get_httpx(url: str, cap: int, verify: bool, origin_of: str,
-                     transport: httpx.AsyncBaseTransport | None) -> bytes | None:
-    """GET with a streamed body cap; redirects are followed only inside the original origin."""
+                     transport: httpx.AsyncBaseTransport | None) -> tuple[bytes, str] | None:
+    """(body, final url) of a GET with a streamed body cap; redirects stay inside the origin."""
     # verify=False is the per-service admin opt-in (verify_tls toggle).
     async with httpx.AsyncClient(verify=verify, timeout=TIMEOUT,  # nosec B501
                                  follow_redirects=False, transport=transport) as c:
@@ -116,7 +116,7 @@ async def _get_httpx(url: str, cap: int, verify: bool, origin_of: str,
                     buf += chunk
                     if len(buf) > cap:
                         break
-                return bytes(buf[:cap]) or None
+                return (bytes(buf[:cap]), url) if buf else None
     return None
 
 
@@ -125,13 +125,13 @@ def _getter(svc: ProxiedService, docker, transport):
         hosts = {"host.docker.internal": "host-gateway"} if svc.upstream_fallback else None
         origin = page_url(svc)
 
-        async def get(url: str, cap: int) -> bytes | None:
+        async def get(url: str, cap: int) -> tuple[bytes, str] | None:
             return await asyncio.to_thread(
                 docker.probe_fetch, url, Settings().SERVICES_NETWORK, cap, extra_hosts=hosts,
-                allow_redirect_to=lambda u: same_origin(u, origin))
+                allow_redirect_to=lambda u: same_origin(u, origin), with_url=True)
         return get
 
-    async def get(url: str, cap: int) -> bytes | None:
+    async def get(url: str, cap: int) -> tuple[bytes, str] | None:
         return await _get_httpx(url, cap, svc.verify_tls, page_url(svc), transport)
     return get
 
@@ -149,16 +149,16 @@ async def fetch_favicon(svc: ProxiedService, docker, transport=None) -> str | No
     """A validated icon data URI for the service, or None. Never raises."""
     try:
         get = _getter(svc, docker, transport)
-        url = page_url(svc)
-        page = await get(url, PAGE_CAP)
-        html = page.decode("utf-8", "replace") if page else ""
+        got = await get(page_url(svc), PAGE_CAP)
+        # icon links are relative to where the page ended up (Jellyfin: / -> /web/)
+        html, url = (got[0].decode("utf-8", "replace"), got[1]) if got else ("", page_url(svc))
         for cand in candidates(html, url):
             try:
                 if cand.startswith("data:"):
                     m = re.match(r"data:[^;,]*;base64,(.*)$", cand, re.S)
                     data = base64.b64decode(m.group(1), validate=True) if m else None
                 else:
-                    data = await get(cand, ws_icon.MAX_IMAGE_BYTES + 1)
+                    data = (await get(cand, ws_icon.MAX_IMAGE_BYTES + 1) or (None,))[0]
             except Exception:  # noqa: BLE001 - bad candidate: try the next
                 log.debug("favicon candidate %s failed", cand[:80], exc_info=True)
                 continue

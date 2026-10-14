@@ -569,6 +569,23 @@ def test_probe_fetch_decodes_chunked_and_rejects_malformed(mock_docker):
     assert manager.probe_fetch("http://a:1/", "n", 100) is None
 
 
+def test_probe_fetch_with_url_returns_the_final_url_after_redirects(mock_docker):
+    manager, client = mock_docker
+    _hops(client, _raw("302 Found", "Location: web/\r\n"), _raw("200 OK", "", b"page"))
+    assert manager.probe_fetch("http://app:80/", "n", 100, allow_redirect_to=_same,
+                               with_url=True) == (b"page", "http://app:80/web/")
+
+
+def test_probe_fetch_keeps_its_send_side_open_until_the_reply(mock_docker):
+    # Kestrel (Sonarr, Jellyfin) drops a request whose client half-closes right after
+    # sending it, which busybox nc does on stdin EOF: stdin must stay open for the timeout.
+    manager, client = mock_docker
+    _hops(client, _raw("200 OK", "", b"x"))
+    manager.probe_fetch("http://a:1/", "n", 100)
+    script = client.containers.create.call_args_list[0].args[1][2]
+    assert script.startswith('{ printf "%s" "$1"; sleep "$2"; } | nc -w "$2" "$3" "$4"')
+
+
 @pytest.mark.parametrize("size", [b"-10", b"-6", b"+5", b"0x5", b" 5 5", b"1" * 9])
 def test_dechunk_rejects_signed_or_odd_sizes_without_looping(size):
     import threading

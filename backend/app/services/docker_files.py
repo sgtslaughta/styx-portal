@@ -75,6 +75,7 @@ def _parse_response(raw: bytes) -> tuple[int, dict[str, str], bytes] | None:
     return int(m.group(1)), headers, body
 
 
+FETCH_SCRIPT = '{ printf "%s" "$1"; sleep "$2"; } | nc -w "$2" "$3" "$4" | head -c "$5" | base64'
 _CHUNK_SIZE = re.compile(rb"([0-9A-Fa-f]{1,8})[ \t]*(?:;[^\r\n]*)?")
 
 
@@ -201,7 +202,8 @@ class ContainerFilesMixin:
 
     def probe_fetch(self, url: str, network: str, max_bytes: int, timeout_s: int = 5,
                     extra_hosts: dict | None = None,
-                    allow_redirect_to: Callable[[str], bool] | None = None) -> bytes | None:
+                    allow_redirect_to: Callable[[str], bool] | None = None,
+                    with_url: bool = False) -> bytes | tuple[bytes, str] | None:
         """First `max_bytes` of the body of `url` over plain http from a throwaway container.
 
         Styx makes every hop itself: the request is built here from one urlsplit of the URL, sent
@@ -219,7 +221,9 @@ class ContainerFilesMixin:
                 return None
             text, host, port = req
             out = self._run_probe(
-                ["sh", "-c", 'printf "%s" "$1" | nc -w "$2" "$3" "$4" | head -c "$5" | base64',
+                # stdin stays open: busybox nc half-closes on EOF and Kestrel apps then drop the
+                # request. ponytail: each hop takes the full timeout; fine for a background fetch.
+                ["sh", "-c", FETCH_SCRIPT,
                  "probe", text, str(timeout_s), host, str(port), str(max_bytes + _HEADER_ROOM)],
                 network, extra_hosts, timeout_s)
             try:
@@ -240,7 +244,9 @@ class ContainerFilesMixin:
                 return None
             if headers.get("transfer-encoding", "").lower() == "chunked":
                 body = _dechunk(body)
-            return body[:max_bytes] if body else None
+            if not body:
+                return None
+            return (body[:max_bytes], cur) if with_url else body[:max_bytes]  # cur = after redirects
         return None
 
     @staticmethod
