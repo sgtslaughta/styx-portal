@@ -22,6 +22,7 @@ export default defineConfig({
   // logs in (or bootstraps itself when run alone with -g).
   projects: [
     { name: "services", testMatch: "services.spec.ts" },
+    { name: "revproxy", testMatch: "revproxy.spec.ts", dependencies: ["services"] },
     { name: "mounts", testMatch: "mounts.spec.ts", dependencies: ["services"] },
     { name: "shell", testMatch: "shell.spec.ts", dependencies: ["mounts"] },
     { name: "shots", testMatch: "shots.spec.ts", dependencies: ["shell"] },
