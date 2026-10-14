@@ -24,7 +24,7 @@ async function scrollDialogs(page: Page) {
 async function serviceDrawer(page: Page, tag: string) {
   await openSettings(page, "Services");
   await shot(page, `services-list-${tag}`);
-  await page.getByRole("button", { name: "Add from container" }).click();
+  await page.getByRole("button", { name: "Add from running container" }).click();
   await expect(page.getByRole("dialog", { name: "Running containers" })).toBeVisible();
   await shot(page, `services-discover-${tag}`, false);
   await page.keyboard.press("Escape");

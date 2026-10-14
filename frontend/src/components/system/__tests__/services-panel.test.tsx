@@ -51,6 +51,18 @@ describe("ServicesPanel", () => {
     expect(screen.getByRole("button", { name: /browse presets/i })).toBeInTheDocument();
   });
 
+  test("discovery buttons read Add from running container", async () => {
+    render(<ServicesPanel />);
+    expect(await screen.findByRole("button", { name: "Add from running container" })).toBeInTheDocument();
+  });
+
+  test("empty state discovery button is renamed too", async () => {
+    a.listServices.mockResolvedValue([]);
+    render(<ServicesPanel />);
+    await screen.findByText(/no services yet/i);
+    expect(screen.getAllByRole("button", { name: "Add from running container" })).toHaveLength(2);
+  });
+
   test("error with retry", async () => {
     a.listServices.mockRejectedValueOnce(new Error("boom"));
     render(<ServicesPanel />);

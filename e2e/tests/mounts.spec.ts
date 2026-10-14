@@ -31,10 +31,10 @@ test.beforeAll(async ({ browser }) => {
 });
 test.afterAll(async () => { await ctx?.close(); });
 
-/** Services -> Add from container -> pick a preset -> save -> close the base path step. Leaves the Services panel open. */
+/** Services -> Add from running container -> pick a preset -> save -> close the base path step. Leaves the Services panel open. */
 async function addFromContainer(container: string, preset: string, name: string, slug: string) {
   await openSettings(page, "Services");
-  await page.getByRole("button", { name: "Add from container" }).click();
+  await page.getByRole("button", { name: "Add from running container" }).click();
   await page.getByRole("dialog", { name: "Running containers" })
     .getByRole("button", { name: `Expose ${container}` }).click();
   const form = page.getByRole("dialog").filter({ has: page.locator("#ack-origin") });

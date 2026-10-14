@@ -100,7 +100,7 @@ export function ServicesPanel() {
             </div>
             <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto">
               <Button variant="outline" size="sm" disabled={pickerBusy} aria-busy={pickerBusy} onClick={() => void openPicker()}>
-                <Boxes className="h-4 w-4" /> {pickerBusy ? "Looking..." : "Add from container"}
+                <Boxes className="h-4 w-4" /> {pickerBusy ? "Looking..." : "Add from running container"}
               </Button>
               <Button size="sm" onClick={() => setEditing({ kind: "new" })}><Plus className="h-4 w-4" /> Add service</Button>
             </div>
@@ -125,7 +125,7 @@ export function ServicesPanel() {
               </div>
               <div className="flex flex-wrap justify-center gap-2">
                 <Button size="sm" onClick={() => setEditing({ kind: "new" })}>Browse presets</Button>
-                <Button size="sm" variant="outline" disabled={pickerBusy} onClick={() => void openPicker()}>Pick a container</Button>
+                <Button size="sm" variant="outline" disabled={pickerBusy} onClick={() => void openPicker()}>Add from running container</Button>
               </div>
             </div>
           ) : (
