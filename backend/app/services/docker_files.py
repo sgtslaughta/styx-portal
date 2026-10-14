@@ -1,4 +1,6 @@
 """Container file archive access and throwaway HTTP probes (mixin for DockerManager)."""
+import base64
+import binascii
 import io
 import logging
 import posixpath
@@ -72,11 +74,8 @@ class ContainerFilesMixin:
         self._client.containers.get(container).put_archive(
             posixpath.dirname(path), buf.getvalue())
 
-    def probe_http(self, url: str, network: str, timeout_s: int = 5,
-                   extra_hosts: dict | None = None) -> int:
-        """HTTP status of `url` fetched from a throwaway container on `network`; 0 on failure."""
-        if not _PROBE_URL.fullmatch(url):
-            raise ValueError("probe url must be plain http(s) with no shell metacharacters")
+    def _start_probe(self, cmd: list[str], network: str, extra_hosts: dict | None = None):
+        """Create + start the hardened throwaway container; returns it (None if it couldn't run)."""
         image = Settings().MOUNT_PROBE_IMAGE
         c = None
         try:
@@ -85,7 +84,7 @@ class ContainerFilesMixin:
             except docker.errors.ImageNotFound:
                 self._client.images.pull(image)
             c = self._client.containers.create(
-                image, ["wget", "-q", "-S", "-O", "/dev/null", "-T", str(timeout_s), url],
+                image, cmd,
                 network=network, read_only=True, user="65534:65534", cap_drop=["ALL"], mem_limit="32m", pids_limit=32,
                 security_opt=["no-new-privileges"], labels={"styx.probe": "true"},
                 extra_hosts=extra_hosts)
@@ -93,6 +92,17 @@ class ContainerFilesMixin:
         except Exception as e:  # noqa: BLE001 - the probe itself could not run
             logger.warning("Couldn't run the probe image %s: %s", image, e)
             self._rm_probe(c)
+            return None
+        return c
+
+    def probe_http(self, url: str, network: str, timeout_s: int = 5,
+                   extra_hosts: dict | None = None) -> int:
+        """HTTP status of `url` fetched from a throwaway container on `network`; 0 on failure."""
+        if not _PROBE_URL.fullmatch(url):
+            raise ValueError("probe url must be plain http(s) with no shell metacharacters")
+        c = self._start_probe(["wget", "-q", "-S", "-O", "/dev/null", "-T", str(timeout_s), url],
+                              network, extra_hosts)
+        if c is None:
             return -1
         try:
             c.wait(timeout=timeout_s + 10)
@@ -104,6 +114,32 @@ class ContainerFilesMixin:
         except Exception:  # noqa: BLE001 - unreachable app == status 0
             logger.debug("probe of %s failed", url, exc_info=True)
             return 0
+        finally:
+            self._rm_probe(c)
+
+    def probe_fetch(self, url: str, network: str, max_bytes: int, timeout_s: int = 5,
+                    extra_hosts: dict | None = None) -> bytes | None:
+        """First `max_bytes` of the body of `url`, fetched from a throwaway container; None on failure.
+
+        The URL is an argv entry ($1), never part of the shell string. The body travels back
+        base64-encoded through the container logs.
+        """
+        if not _PROBE_URL.fullmatch(url):
+            raise ValueError("probe url must be plain http(s) with no shell metacharacters")
+        c = self._start_probe(
+            ["sh", "-c", 'wget -q -O - -T "$2" "$1" | head -c "$3" | base64',
+             "probe", url, str(timeout_s), str(max_bytes)], network, extra_hosts)
+        if c is None:
+            return None
+        try:
+            c.wait(timeout=timeout_s + 10)
+            out = c.logs(stdout=True, stderr=False)
+            return base64.b64decode(b"".join(out.split()), validate=True) or None
+        except (binascii.Error, ValueError):
+            return None
+        except Exception:  # noqa: BLE001 - unreachable app == no body
+            logger.debug("fetch of %s failed", url, exc_info=True)
+            return None
         finally:
             self._rm_probe(c)
 

@@ -495,3 +495,33 @@ def test_remove_probe_containers(mock_docker):
     assert manager.remove_probe_containers() == 2
     client.containers.list.assert_called_once_with(all=True, filters={"label": "styx.probe=true"})
     a.remove.assert_called_once_with(force=True)
+
+
+def test_probe_fetch_hardened_no_shell_interpolation(mock_docker):
+    import base64
+    manager, client = mock_docker
+    c = _probe(client, base64.encodebytes(b"PNGDATA" * 20))
+    assert manager.probe_fetch("http://app:80/x/", "styx-services", 1000) == b"PNGDATA" * 20
+    args, kw = client.containers.create.call_args
+    cmd = args[1]
+    assert cmd[:2] == ["sh", "-c"] and "http://app:80/x/" not in cmd[2]
+    assert cmd[3:] == ["probe", "http://app:80/x/", "5", "1000"]
+    assert "$1" in cmd[2] and "base64" in cmd[2]
+    assert kw["network"] == "styx-services" and kw["read_only"] is True
+    assert kw["cap_drop"] == ["ALL"] and kw["user"] == "65534:65534"
+    assert kw["security_opt"] == ["no-new-privileges"] and kw["labels"] == {"styx.probe": "true"}
+    c.remove.assert_called_once_with(force=True)
+
+
+def test_probe_fetch_failures_return_none(mock_docker):
+    manager, client = mock_docker
+    c = _probe(client, b"")
+    assert manager.probe_fetch("http://a:1/", "n", 10) is None
+    _probe(client, b"!!not base64!!")
+    assert manager.probe_fetch("http://a:1/", "n", 10) is None
+    c = _probe(client)
+    c.wait.side_effect = RuntimeError("t")
+    assert manager.probe_fetch("http://a:1/", "n", 10) is None
+    c.remove.assert_called_once_with(force=True)
+    with pytest.raises(ValueError):
+        manager.probe_fetch("http://a;rm/", "n", 10)
