@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type BrowserContext } from "@playwright/test";
 import { ADMIN, apiCall, uiLogin } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
@@ -52,4 +52,57 @@ test("dock switches between Apps and Workspaces", async ({ browser }) => {
   await dock.getByRole("tab", { name: "Apps" }).click();
   await expect(dock.getByRole("link", { name: /Sonarr/ })).toBeVisible();
   await ctx.close();
+});
+
+const DESK = {
+  id: "desk-1", template_id: "t", name: "Desk", subdomain: "desk", container_id: null, status: "running",
+  error_message: null, env_overrides: {}, volume_names: [], created_at: "2026-01-01T00:00:00",
+  started_at: null, stopped_at: null, last_activity: null, session_config: null,
+};
+
+/** One running instance, no workstations; /i/desk/ is a plain page (the e2e stack has no container). */
+async function stubDesk(ctx: BrowserContext) {
+  await ctx.route("**/api/instances", (r) => r.request().method() === "GET" ? r.fulfill({ json: [DESK] }) : r.fallback());
+  await ctx.route("**/api/workstations/mine", (r) => r.fulfill({ json: [] }));
+  await ctx.route("**/i/desk/**", (r) => r.fulfill({ contentType: "text/html", body: "<title>desk</title><p>desk stream</p>" }));
+}
+
+test("workspace Connect: prompt, new tab goes via /connecting to the stream; dock does the same", async ({ browser }) => {
+  const ctx = await browser.newContext();
+  const p = await ctx.newPage();
+  await uiLogin(p, ADMIN);
+  await expect(p.getByRole("button", { name: "Log out" })).toBeVisible();
+  try {
+    await apiCall(ctx, "PUT", "/api/auth/me/preferences", { open_apps: null, open_workspaces: null });
+    await stubDesk(ctx);
+    // a) home
+    await p.goto("/");
+    await p.getByRole("tab", { name: "Workspaces" }).click();
+    await p.getByRole("button", { name: "Connect" }).first().click();
+    const dlg = p.getByRole("dialog", { name: "Open Desk" });
+    const [tab] = await Promise.all([ctx.waitForEvent("page"), dlg.getByRole("button", { name: "Open in new tab" }).click()]);
+    await expect(tab).toHaveURL(/\/i\/desk\/$/, { timeout: 15_000 });
+    await expect(tab.getByText("desk stream")).toBeVisible();
+    await expect(p).toHaveURL(/\/$/);
+    await tab.close();
+    // b) dock; prefs back to Ask first
+    await apiCall(ctx, "PUT", "/api/auth/me/preferences", { open_workspaces: null });
+    // Real Sonarr keeps stealing focus into its iframe while loading; a static frame keeps the focus assertion honest.
+    await ctx.route((u) => u.pathname.startsWith("/sonarr/"), (r) => r.request().resourceType() === "document"
+      ? r.fulfill({ contentType: "text/html", body: "<title>sonarr</title><p>sonarr</p>" }) : r.fallback());
+    await p.goto("/_styx/app/sonarr/");
+    await expect.poll(() => p.frames().some((f) => f.url().includes("/sonarr/"))).toBe(true);
+    await p.waitForLoadState("load");
+    await p.locator('[aria-label="Open the Styx menu (Alt+Shift+S)"]').click();
+    const dock = p.getByRole("dialog");
+    await dock.getByRole("tab", { name: "Workspaces" }).click();
+    await dock.getByRole("button", { name: /Desk/ }).click();
+    const prompt = p.getByRole("dialog", { name: "Open Desk" });
+    await expect(prompt).toBeVisible();
+    await expect(p.getByRole("dialog")).toHaveCount(1); // the dock closed
+    await expect(prompt.getByRole("button", { name: "Open in new tab" })).toBeFocused();
+  } finally {
+    await apiCall(ctx, "PUT", "/api/auth/me/preferences", { open_apps: null, open_workspaces: null });
+    await ctx.close();
+  }
 });
