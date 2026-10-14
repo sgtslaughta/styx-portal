@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { expect, request, test, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
-import { ADMIN, SHOTS, STYX_COOKIES, apiCall, eventually, jellyfinToken, openSettings, uiLogin } from "./helpers";
+import { ADMIN, SHOTS, STYX_COOKIES, eventually, jellyfinToken, openSettings, uiLogin } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -31,8 +31,17 @@ test.beforeAll(async ({ browser }) => {
 });
 test.afterAll(async () => { await ctx?.close(); });
 
-/** Services -> Add from running container -> pick a preset -> save -> close the base path step. Leaves the Services panel open. */
-async function addFromContainer(container: string, preset: string, name: string, slug: string) {
+/** The app writes its settings file on first boot; Styx only plans a change once it exists. */
+const waitForFile = (container: string, path: string) => eventually(async () => {
+  execFileSync("docker", ["compose", "-p", "styx-e2e", "exec", "-T", container, "test", "-f", path]);
+}, 180_000);
+
+/**
+ * Services -> Add from running container -> pick a preset -> Save and set base path. Returns with the
+ * drawer in setup mode and the consent dialog already open (it opens by itself once the plan loads).
+ */
+async function addFromContainer(container: string, preset: string, name: string, slug: string, readyFile: string) {
+  await waitForFile(container.replace(/^styx-e2e-|-1$/g, ""), readyFile);
   await openSettings(page, "Services");
   await page.getByRole("button", { name: "Add from running container" }).click();
   await page.getByRole("dialog", { name: "Running containers" })
@@ -42,13 +51,14 @@ async function addFromContainer(container: string, preset: string, name: string,
   await form.locator("#name").fill(name);
   await form.locator("#slug").fill(slug);
   await form.locator("#ack-origin").check();
-  await form.getByRole("button", { name: "Save" }).click();
-  // A new app that still needs its base path keeps the drawer open on that step.
+  await form.getByRole("button", { name: "Save and set base path" }).click();
   await expect(page.getByText("Service saved. Next: set its base path.")).toBeVisible();
-  await expect(form.getByRole("region", { name: "Base path" })).toBeVisible({ timeout: 30_000 });
-  await page.keyboard.press("Escape");
-  await expect(form).toBeHidden();
-  await expect(page.getByRole("listitem").filter({ hasText: `/${slug}` })).toBeVisible();
+  const drawer = page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: `Set up ${name}` }) });
+  await expect(drawer.getByRole("region", { name: "Base path" })).toBeVisible({ timeout: 30_000 });
+  await expect(drawer.getByRole("button", { name: /^Save/ })).toHaveCount(0);
+  const consent = page.getByRole("dialog", { name: `Change ${name}'s settings?` });
+  await expect(consent).toBeVisible({ timeout: 30_000 });
+  return { drawer, consent };
 }
 
 async function openDrawer(name: string) {
@@ -59,14 +69,8 @@ async function openDrawer(name: string) {
   return drawer;
 }
 
-const serviceId = async (slug: string): Promise<string> =>
-  (await apiCall(ctx, "GET", "/api/services") as { id: string; slug: string }[]).find((s) => s.slug === slug)!.id;
-
-async function applyViaUi(name: string, slug: string, tag: string, newFile = false) {
-  const drawer = await openDrawer(name);
-  await drawer.getByRole("button", { name: `Set base path to /${slug}` }).click();
-  const consent = page.getByRole("dialog", { name: `Change ${name}'s settings?` });
-  await expect(consent).toBeVisible();
+async function applyViaUi(name: string, tag: string, added: Awaited<ReturnType<typeof addFromContainer>>, newFile = false) {
+  const { drawer, consent } = added;
   for (const h of ["File", "Setting", "Now", "After"]) await expect(consent.getByRole("columnheader", { name: h })).toBeVisible();
   if (newFile) {
     await expect(consent.getByText(/\(new file\)/).first()).toBeVisible();
@@ -79,15 +83,7 @@ async function applyViaUi(name: string, slug: string, tag: string, newFile = fal
 
 test("m1 sonarr: adopted container, consent, managed base path", async () => {
   test.setTimeout(300_000);
-  await addFromContainer("styx-e2e-sonarr-1", "sonarr", "Sonarr", "sonarr");
-  // Sonarr writes /config/config.xml on first boot.
-  const id = await serviceId("sonarr");
-  await expect.poll(async () => (await apiCall(ctx, "POST", `/api/services/${id}/mount/plan`)).method,
-    { timeout: 180_000, intervals: [3000] }).toBe("config_file");
-
-  const drawer = await openDrawer("Sonarr");
-  await drawer.getByRole("button", { name: "Set base path to /sonarr" }).click();
-  const consent = page.getByRole("dialog", { name: "Change Sonarr's settings?" });
+  const { drawer, consent } = await addFromContainer("styx-e2e-sonarr-1", "sonarr", "Sonarr", "sonarr", "/config/config.xml");
   for (const h of ["File", "Setting", "Now", "After"]) await expect(consent.getByRole("columnheader", { name: h })).toBeVisible();
   await expect(consent.getByRole("cell", { name: "/config/config.xml" })).toBeVisible();
   await expect(consent.getByRole("cell", { name: "/Config/UrlBase" })).toBeVisible();
@@ -103,21 +99,21 @@ test("m1 sonarr: adopted container, consent, managed base path", async () => {
     await expect(section.getByText(new RegExp(`^${step}\\s*\\(Done\\)`))).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/mount-done-sonarr.png` });
   await eventually(async () => expect((await page.request.get("/sonarr/ping")).status()).toBe(200), 60_000);
+  await drawer.getByRole("button", { name: "Done" }).click();
+  await expect(drawer).toBeHidden();
 });
 
 test("m2 jellyfin: managed base path", async () => {
   test.setTimeout(420_000);
-  await addFromContainer("styx-e2e-jellyfin-1", "jellyfin", "Jellyfin", "jellyfin");
-  const id = await serviceId("jellyfin");
   // A fresh Jellyfin has no network.xml (only system.xml); Styx creates it, so no seeding here.
-  await expect.poll(async () => (await apiCall(ctx, "POST", `/api/services/${id}/mount/plan`)).method,
-    { timeout: 180_000, intervals: [3000] }).toBe("config_file");
-
-  const { drawer } = await applyViaUi("Jellyfin", "jellyfin", "jellyfin", true);
+  const added = await addFromContainer("styx-e2e-jellyfin-1", "jellyfin", "Jellyfin", "jellyfin", "/config/config/system.xml");
+  const { drawer } = await applyViaUi("Jellyfin", "jellyfin", added, true);
   await expect(drawer.getByRole("region", { name: "Base path" }).getByText("Base path set. Jellyfin answers at /jellyfin."))
     .toBeVisible({ timeout: 180_000 });
   await page.screenshot({ path: `${SHOTS}/mount-done-jellyfin.png` });
   await eventually(async () => expect((await page.request.get("/jellyfin/health")).status()).toBe(200), 60_000);
+  await drawer.getByRole("button", { name: "Done" }).click();
+  await expect(drawer).toBeHidden();
 });
 
 test.describe("m3 jellyfin native client", () => {
@@ -175,8 +171,8 @@ test.describe("m3 jellyfin native client", () => {
 
 test("m4 rollback: broken app gets its settings back", async () => {
   test.setTimeout(240_000);
-  await addFromContainer("styx-e2e-brokenapp-1", "brokenapp", "Broken app", "brokenapp");
-  const { drawer } = await applyViaUi("Broken app", "brokenapp", "brokenapp");
+  const added = await addFromContainer("styx-e2e-brokenapp-1", "brokenapp", "Broken app", "brokenapp", "/config/config.xml");
+  const { drawer } = await applyViaUi("Broken app", "brokenapp", added);
   const section = drawer.getByRole("region", { name: "Base path" });
   await expect(section.getByText(/Styx put its settings back/)).toBeVisible({ timeout: 150_000 });
   await expect(section.getByText(/^Check the app responds\s*\(Failed\)/)).toBeVisible();
@@ -189,6 +185,8 @@ test("m4 rollback: broken app gets its settings back", async () => {
   const xml = execFileSync("docker", ["compose", "-p", "styx-e2e", "exec", "-T", "brokenapp", "cat", "/config/config.xml"],
     { encoding: "utf8" });
   expect(xml).toContain("<UrlBase></UrlBase>");
+  await page.keyboard.press("Escape");
+  await expect(drawer).toBeHidden();
 });
 
 test("m5 already set: no apply button", async () => {
