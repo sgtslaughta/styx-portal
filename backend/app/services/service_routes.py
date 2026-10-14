@@ -26,6 +26,7 @@ def add_service_routes(config: dict, middlewares: dict, services: list[dict],
     lbs = config["http"]["services"]
     has_cookie_root = False
     has_insecure = False
+    transports: dict = {}
     emitted = 0
     for s in services:
         if not s.get("enabled", True):
@@ -55,7 +56,15 @@ def add_service_routes(config: dict, middlewares: dict, services: list[dict],
         routers[rid] = {"rule": rule, "service": rid, "priority": priority,
                         "middlewares": mws, **transport}
         lb: dict = {"servers": [{"url": s["upstream"]}]}
-        if not s.get("verify_tls", True):
+        if uh := s.get("upstream_host"):
+            # Name-based proxy upstream (NPM, Caddy): it routes by Host and TLS SNI. The
+            # Host header is swapped here; X-Forwarded-Host keeps the browser's name.
+            middlewares[f"svc-host-{slug}"] = {"headers": {"customRequestHeaders": {"Host": uh}}}
+            mws.append(f"svc-host-{slug}")
+            transports[f"styx-up-{slug}"] = {"serverName": uh,
+                                             "insecureSkipVerify": not s.get("verify_tls", True)}
+            lb["serversTransport"] = f"styx-up-{slug}"
+        elif not s.get("verify_tls", True):
             lb["serversTransport"] = "styx-insecure-upstream"
             has_insecure = True
         lbs[rid] = {"loadBalancer": lb}
@@ -83,5 +92,6 @@ def add_service_routes(config: dict, middlewares: dict, services: list[dict],
             "service": "api", "priority": 100,
             "middlewares": ["ip-ban-gate", "styx-ratelimit"], **transport}
     if has_insecure:
-        config["http"].setdefault("serversTransports", {})["styx-insecure-upstream"] = {
-            "insecureSkipVerify": True}
+        transports["styx-insecure-upstream"] = {"insecureSkipVerify": True}
+    if transports:
+        config["http"].setdefault("serversTransports", {}).update(transports)

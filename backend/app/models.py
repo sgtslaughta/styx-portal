@@ -338,6 +338,7 @@ class ProxiedService(SQLModel, table=True):
     bypass_rules: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
     allowed_groups: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     verify_tls: bool = True
+    upstream_host: str | None = None           # url kind: Host/SNI for name-based proxies
     health_path: str | None = None
     health_status: str = "unknown"             # healthy | unhealthy | unknown
     health_checked_at: datetime | None = None

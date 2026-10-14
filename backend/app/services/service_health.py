@@ -35,8 +35,15 @@ async def _forbidden_target(url: str) -> str | None:
     return f"{host} resolves to link-local/metadata address {bad[0]}" if bad else None
 
 
-async def check_url(url: str, verify: bool, transport: httpx.AsyncBaseTransport | None = None
-                    ) -> str:
+def host_override(upstream_host: str | None) -> dict:
+    """httpx kwargs that make a probe look like the proxied request: Host header + TLS SNI."""
+    if not upstream_host:
+        return {}
+    return {"headers": {"Host": upstream_host}, "extensions": {"sni_hostname": upstream_host}}
+
+
+async def check_url(url: str, verify: bool, transport: httpx.AsyncBaseTransport | None = None,
+                    upstream_host: str | None = None) -> str:
     """One GET, never follows redirects (so it cannot be steered off-host)."""
     reason = await _forbidden_target(url)
     if reason:
@@ -46,15 +53,16 @@ async def check_url(url: str, verify: bool, transport: httpx.AsyncBaseTransport 
         # verify=False is the per-service admin opt-in (verify_tls toggle).
         async with httpx.AsyncClient(verify=verify, timeout=CHECK_TIMEOUT,  # nosec B501
                                      follow_redirects=False, transport=transport) as c:
-            r = await c.get(url)
+            r = await c.get(url, **host_override(upstream_host))
         return "healthy" if r.status_code < 400 else "unhealthy"
     except httpx.HTTPError:
         return "unhealthy"
 
 
-async def _safe_check(checker, url: str, verify: bool) -> str:
+async def _safe_check(checker, url: str, verify: bool, upstream_host: str | None = None) -> str:
     try:
-        return await checker(url, verify)
+        return await (checker(url, verify, upstream_host=upstream_host) if upstream_host
+                      else checker(url, verify))
     except Exception:  # one bad service must never stop the pass
         log.warning("health check crashed for %s", url, exc_info=True)
         return "unhealthy"
@@ -83,14 +91,14 @@ async def run_health_pass(session: AsyncSession, checker=check_url, docker=None)
     remote = [s for s in rows if s.kind != "docker-local" and s.health_path]
     ids = [s.id for s in local] + [s.id for s in remote]
     containers = [s.container for s in local]
-    probes = [(upstream_base(s) + s.health_path, s.verify_tls) for s in remote]
+    probes = [(upstream_base(s) + s.health_path, s.verify_tls, s.upstream_host) for s in remote]
     await session.commit()          # end the read txn; don't hold ORM rows across awaits
     if containers and docker is None:
         docker = _default_docker()
     # Concurrent, so N slow services cost one timeout, not N.
     results = await asyncio.gather(
         *(_docker_check(docker, c) for c in containers),
-        *(_safe_check(checker, u, v) for u, v in probes))
+        *(_safe_check(checker, u, v, h) for u, v, h in probes))
     now = datetime.now(timezone.utc)
     # Column-level UPDATE by id: a row deleted (or edited) by an admin while the
     # checks ran is skipped (0 rows) instead of failing the pass or clobbering edits.

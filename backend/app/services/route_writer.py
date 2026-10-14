@@ -345,5 +345,6 @@ async def refresh_routes_from_db(session, strict: bool = False):
     svc_data = [{
         "slug": s.slug, "upstream": upstream_base(s), "mount_mode": s.mount_mode,
         "auth_mode": s.auth_mode, "verify_tls": s.verify_tls, "enabled": s.enabled,
+        "upstream_host": s.upstream_host,
     } for s in svc_result.all()]
     write_routes(data, workstations=ws_data, services=svc_data, strict=strict)

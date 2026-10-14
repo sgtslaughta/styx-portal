@@ -12,7 +12,7 @@ from sqlmodel import update
 from app.config import Settings
 from app.models import ProxiedService, upstream_base
 from app.services import ws_icon
-from app.services.service_health import _forbidden_target
+from app.services.service_health import _forbidden_target, host_override
 
 log = logging.getLogger(__name__)
 PAGE_CAP = 512 * 1024
@@ -97,7 +97,8 @@ def page_url(svc: ProxiedService) -> str:
 
 
 async def _get_httpx(url: str, cap: int, verify: bool, origin_of: str,
-                     transport: httpx.AsyncBaseTransport | None) -> tuple[bytes, str] | None:
+                     transport: httpx.AsyncBaseTransport | None,
+                     upstream_host: str | None = None) -> tuple[bytes, str] | None:
     """(body, final url) of a GET with a streamed body cap; redirects stay inside the origin."""
     # verify=False is the per-service admin opt-in (verify_tls toggle).
     async with httpx.AsyncClient(verify=verify, timeout=TIMEOUT,  # nosec B501
@@ -105,7 +106,7 @@ async def _get_httpx(url: str, cap: int, verify: bool, origin_of: str,
         for _ in range(MAX_REDIRECTS + 1):
             if not same_origin(url, origin_of) or await _forbidden_target(url):
                 return None
-            async with c.stream("GET", url) as r:
+            async with c.stream("GET", url, **host_override(upstream_host)) as r:
                 if r.is_redirect:
                     url = urljoin(url, r.headers.get("location", ""))
                     continue
@@ -132,7 +133,8 @@ def _getter(svc: ProxiedService, docker, transport):
         return get
 
     async def get(url: str, cap: int) -> tuple[bytes, str] | None:
-        return await _get_httpx(url, cap, svc.verify_tls, page_url(svc), transport)
+        return await _get_httpx(url, cap, svc.verify_tls, page_url(svc), transport,
+                                 svc.upstream_host)
     return get
 
 
