@@ -31,3 +31,27 @@ test("cross-origin url is rejected", () => {
   render(<ConnectingPage />);
   expect(screen.getByText("Invalid connection link.")).toBeInTheDocument();
 });
+
+test("hashchange to a cross-origin url is rejected, no navigation", () => {
+  vi.useFakeTimers();
+  at(enc({ label: "x" }));
+  render(<ConnectingPage />);
+  at(enc({ url: "https://evil.test/x", label: "x" }));
+  act(() => { window.dispatchEvent(new HashChangeEvent("hashchange")); });
+  act(() => { vi.advanceTimersByTime(5000); });
+  expect(replace).not.toHaveBeenCalled();
+  expect(screen.getByText("Invalid connection link.")).toBeInTheDocument();
+});
+
+test("a tab that never gets a url gives up after 30s with a Close button", () => {
+  vi.useFakeTimers();
+  const close = vi.spyOn(window, "close").mockImplementation(() => {});
+  at(enc({ label: "x" }));
+  render(<ConnectingPage />);
+  act(() => { vi.advanceTimersByTime(29_000); });
+  expect(screen.queryByText("This connection didn't start.")).toBeNull();
+  act(() => { vi.advanceTimersByTime(1500); });
+  expect(screen.getByText("This connection didn't start.")).toBeInTheDocument();
+  screen.getByRole("button", { name: "Close" }).click();
+  expect(close).toHaveBeenCalled();
+});
