@@ -25,8 +25,10 @@ const shortSteps = (steps: MountJob["steps"]) => steps.map((s) =>
 export const fetchLatestMount = (id: string): Promise<MountJob | null> =>
   api.mountLatest(id).catch((e: { status?: number }) => (e?.status === 404 ? null : Promise.reject(e)));
 
-export function ServiceMount({ service, onChanged, onDone }: {
+export function ServiceMount({ service, onChanged, onDone, autoOpenConsent }: {
   service: ProxiedService; onChanged?: (svc: ProxiedService) => void; onDone?: () => void;
+  /** Open the consent dialog once as soon as the plan has changes to apply (add flow). */
+  autoOpenConsent?: boolean;
 }) {
   const { id, name, slug } = service;
   const qc = useQueryClient();
@@ -76,6 +78,14 @@ export function ServiceMount({ service, onChanged, onDone }: {
     if (jobState && !ACTIVE.includes(jobState)) void qc.invalidateQueries({ queryKey: ["mount-plan", id] });
     if (jobState === "done") onDone?.();
   }, [jobKey, jobState, qc, id, onDone]);
+
+  const autoOpened = useRef(false);
+  const autoReady = ready && (plan.data?.changes.length ?? 0) > 0 && jobState !== "done" && !ACTIVE.includes(jobState ?? "");
+  useEffect(() => {
+    if (!autoOpenConsent || !autoReady || autoOpened.current) return;
+    autoOpened.current = true;
+    setAsking(true);
+  }, [autoOpenConsent, autoReady]);
 
   if (!enabled) return null;
   if (plan.isError) return (

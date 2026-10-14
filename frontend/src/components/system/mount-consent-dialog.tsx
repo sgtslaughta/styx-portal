@@ -55,7 +55,7 @@ export function MountConsentDialog({ open, appName, changes, backupHint, onConfi
         </p>
         <p className="text-sm text-muted-foreground">{appName} restarts (about 30 seconds).</p>
         <DialogFooter>
-          <Button variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button variant="outline" onClick={onCancel}>Not now</Button>
           <Button onClick={onConfirm}>{`Restart ${appName} and apply`}</Button>
         </DialogFooter>
       </DialogContent>

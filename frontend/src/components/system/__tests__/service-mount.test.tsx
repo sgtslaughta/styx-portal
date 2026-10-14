@@ -94,12 +94,12 @@ it("409 on apply toasts the backend detail", async () => {
   await waitFor(() => expect(toast.error).toHaveBeenCalledWith("A change is already running for this service"));
 });
 
-it("consent Cancel closes without applying", async () => {
+it("consent Not now closes without applying", async () => {
   vi.mocked(api.mountPlan).mockResolvedValue({ method: "config_file", changes: CH, needs_consent: true, reason: null });
   vi.mocked(api.mountLatest).mockRejectedValue(notFound);
   wrap(<ServiceMount service={svc} />);
   fireEvent.click(await screen.findByRole("button", { name: "Set base path to /sonarr" }));
-  fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Not now" }));
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect(api.mountApply).not.toHaveBeenCalled();
 });
@@ -177,4 +177,31 @@ it("calls onDone once when a job finishes done", async () => {
   const onDone = vi.fn();
   wrap(<ServiceMount service={svc} onDone={onDone} />);
   await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+});
+
+it("autoOpenConsent opens the dialog once the plan has changes, and Not now does not reopen it", async () => {
+  vi.mocked(api.mountPlan).mockResolvedValue({ method: "config_file", changes: CH, needs_consent: true, reason: null });
+  vi.mocked(api.mountLatest).mockRejectedValue(notFound);
+  wrap(<ServiceMount service={svc} autoOpenConsent />);
+  fireEvent.click(await screen.findByRole("button", { name: "Not now" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(screen.getByRole("button", { name: "Set base path to /sonarr" })).toBeInTheDocument();
+  await new Promise((r) => setTimeout(r, 50));
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("autoOpenConsent does nothing when the plan has no changes", async () => {
+  vi.mocked(api.mountPlan).mockResolvedValue({ method: "config_file", changes: [], needs_consent: false, reason: null });
+  vi.mocked(api.mountLatest).mockRejectedValue(notFound);
+  wrap(<ServiceMount service={svc} autoOpenConsent />);
+  await screen.findByText("Base path is set to /sonarr");
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("without autoOpenConsent the dialog stays closed", async () => {
+  vi.mocked(api.mountPlan).mockResolvedValue({ method: "config_file", changes: CH, needs_consent: true, reason: null });
+  vi.mocked(api.mountLatest).mockRejectedValue(notFound);
+  wrap(<ServiceMount service={svc} />);
+  await screen.findByRole("button", { name: "Set base path to /sonarr" });
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
