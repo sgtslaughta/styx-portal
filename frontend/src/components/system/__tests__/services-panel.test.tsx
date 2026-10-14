@@ -15,7 +15,7 @@ const ServicesPanel = () => <QueryClientProvider client={new QueryClient()}><Pan
 import { ApiError } from "@/api/client";
 
 const svc = (o: Record<string, unknown> = {}) => ({
-  id: "s1", slug: "jellyfin", name: "Jellyfin", icon: null, kind: "url", upstream_url: "http://10.0.0.2:8096",
+  id: "s1", slug: "jellyfin", name: "Jellyfin", icon_kind: "auto", icon_etag: "e", kind: "url", upstream_url: "http://10.0.0.2:8096",
   container: null, container_port: null, upstream_fallback: null, mount_mode: "path", auth_mode: "sso",
   bypass_rules: [], allowed_groups: [], verify_tls: true, health_path: null, health_status: "healthy",
   health_checked_at: "2026-10-12T10:00:00Z", preset_id: null, enabled: true, created_at: "", updated_at: "", needs_setup: false, ...o,

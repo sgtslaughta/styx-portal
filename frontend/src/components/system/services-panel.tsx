@@ -9,6 +9,7 @@ import { Drawer, DrawerBody, DrawerContent, DrawerDescription, DrawerFooter, Dra
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { ServiceForm } from "./service-form";
+import { ServiceIconSection } from "./service-icon-section";
 import { ServiceMount } from "./service-mount";
 import { ServiceRow } from "./service-row";
 import { serverFieldErrors, type FieldErrors } from "./service-validation";
@@ -184,6 +185,8 @@ export function ServicesPanel() {
                 <ServiceMount key={editing.svc.id} service={editing.svc} autoOpenConsent={editing.auto}
                   onChanged={(svc) => { setEditing({ kind: "setup", svc, auto: false }); void load(); }}
                   onDone={() => void load()} />
+                <ServiceIconSection service={editing.svc}
+                  onChanged={(svc) => { setEditing({ kind: "setup", svc, auto: false }); void load(); }} />
               </DrawerBody>
               <DrawerFooter><Button onClick={() => { setEditing(null); void load(); }}>Done</Button></DrawerFooter>
             </>
@@ -195,9 +198,13 @@ export function ServicesPanel() {
               discovered={editing.kind === "discovered"
                 ? { name: editing.c.name, port: editing.c.ports[0], preset: editing.c.suggested_preset } : null}
               presets={presets} groups={groups} loadContainers={api.discoverContainers}
-              lead={editing.kind === "edit" ? <ServiceMount service={editing.svc}
-                onChanged={(svc) => { setEditing({ kind: "edit", svc }); void load(); }}
-                onDone={() => void load()} /> : undefined}
+              lead={editing.kind === "edit" ? <>
+                <ServiceMount service={editing.svc}
+                  onChanged={(svc) => { setEditing({ kind: "edit", svc }); void load(); }}
+                  onDone={() => void load()} />
+                <ServiceIconSection service={editing.svc}
+                  onChanged={(svc) => { setEditing({ kind: "edit", svc }); void load(); }} />
+              </> : undefined}
               onSubmit={submit} onCancel={() => setEditing(null)} />
           )}
         </DrawerContent>

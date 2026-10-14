@@ -25,7 +25,9 @@ export type BypassRule = {
   header_prefix?: string | null; required_query?: string | null;
 };
 export type ProxiedService = {
-  id: string; slug: string; name: string; icon: string | null;
+  id: string; slug: string; name: string;
+  /** Server-owned: bytes are served by /api/services/{id}/icon?v=icon_etag. */
+  icon_kind: "auto" | "emoji" | "image"; icon_etag: string;
   kind: "url" | "docker-local";
   upstream_url: string | null; container: string | null; container_port: number | null;
   upstream_fallback: string | null;
@@ -40,12 +42,13 @@ export type ProxiedService = {
 };
 /** Non-admin view of GET /services. `up` null = unknown. Admins receive the full ProxiedService instead. */
 export type ServiceTile = {
-  id: string; slug: string; name: string; icon: string | null;
+  id: string; slug: string; name: string; icon_kind: ProxiedService["icon_kind"]; icon_etag: string;
   mount_mode: ProxiedService["mount_mode"]; enabled: boolean; up: boolean | null; frame_ok: boolean;
   needs_setup: boolean;
 };
+/** `icon` is only for create (a preset emoji); omit it on update, icons change via setServiceIcon. */
 export type ProxiedServiceInput = Omit<ProxiedService,
-  "id" | "upstream_fallback" | "health_status" | "health_checked_at" | "created_at" | "updated_at" | "mount_managed" | "needs_setup">;
+  "icon_kind" | "icon_etag" | "id" | "upstream_fallback" | "health_status" | "health_checked_at" | "created_at" | "updated_at" | "mount_managed" | "needs_setup"> & { icon?: string | null };
 export type ServicePreset = {
   id: string; name: string; icon: string | null; default_port: number | null;
   mount_mode: ProxiedService["mount_mode"]; auth_mode: ProxiedService["auth_mode"];
@@ -212,6 +215,10 @@ export const api = {
   updateService: (id: string, data: Omit<ProxiedServiceInput, "slug">) =>
     request<ProxiedService>(`/services/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteService: (id: string) => request<void>(`/services/${id}`, { method: "DELETE" }),
+  setServiceIcon: (id: string, kind: "auto" | "emoji" | "image", value?: string) =>
+    request<ProxiedService>(`/services/${id}/icon`, { method: "PUT", body: JSON.stringify({ kind, value }) }),
+  refreshServiceIcon: (id: string) =>
+    request<ProxiedService>(`/services/${id}/icon/refresh`, { method: "POST" }),
   setServiceEnabled: (id: string, enabled: boolean) =>
     request<ProxiedService>(`/services/${id}/${enabled ? "enable" : "disable"}`, { method: "POST" }),
   mountPlan: (id: string) => request<MountPlan>(`/services/${id}/mount/plan`, { method: "POST" }),

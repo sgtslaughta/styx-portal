@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { Info, Link2, X } from "lucide-react";
+import { Info, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api, type ServiceTile } from "@/api/client";
+import { ServiceIcon } from "@/components/system/service-icon";
 import { useAuth } from "@/hooks/use-auth";
 import { HEALTH, shellHref, toTile } from "@/lib/service-tiles";
 import { cn } from "@/lib/utils";
@@ -25,9 +26,7 @@ function Tile({ s, focused }: { s: ServiceTile; focused: boolean }) {
   return (
     <div className="flex w-full items-stretch gap-2">
       <a href={href} className={cn(tileCls, focused && "border-obol-foreground dark:border-obol")} aria-label={s.needs_setup ? `Set up ${s.name}` : `Open ${s.name}`} aria-current={focused ? "true" : undefined} title={href}>
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-base leading-none text-primary" aria-hidden>
-          {s.icon ?? <Link2 className="h-3.5 w-3.5" />}
-        </span>
+        <ServiceIcon s={s} />
         <span className="min-w-0 flex-1">
           <span className="block truncate font-medium">{s.name}</span>
           {s.mount_mode === "cookie-root" && <span className="block text-xs text-muted-foreground">Opens full screen</span>}

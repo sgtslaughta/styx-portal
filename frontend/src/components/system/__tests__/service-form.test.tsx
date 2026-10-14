@@ -24,7 +24,7 @@ function fillUrl() {
 }
 
 const existing: ProxiedService = {
-  id: "s1", slug: "jf", name: "Jellyfin", icon: null, kind: "url", upstream_url: "http://10.0.0.2:8096",
+  id: "s1", slug: "jf", name: "Jellyfin", icon_kind: "auto", icon_etag: "e", kind: "url", upstream_url: "http://10.0.0.2:8096",
   container: null, container_port: null, upstream_fallback: null, mount_mode: "path", auth_mode: "sso",
   bypass_rules: [], allowed_groups: [], verify_tls: true, health_path: null, health_status: "healthy",
   health_checked_at: null, preset_id: null, enabled: true, created_at: "", updated_at: "",
@@ -319,5 +319,28 @@ describe("submit label", () => {
   test("preset without subpath keeps Save", () => {
     render(<ServiceForm presets={[{ ...jf, subpath: null }]} groups={[]} discovered={dock} onSubmit={vi.fn()} onCancel={() => {}} />);
     expect(btn(/^save$/i)).toBeInTheDocument();
+  });
+});
+
+describe("ServiceForm icon payload", () => {
+  test("create sends the preset's emoji for the server to normalise", async () => {
+    const withIcon = [{ ...presets[0]!, icon: "📺" }];
+    const onSubmit = setup({ presets: withIcon });
+    change("Preset", "sonarr");
+    change("Upstream URL", "http://10.0.0.1:8989");
+    fireEvent.click(save());
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0]![0].icon).toBe("📺");
+  });
+
+  test("edit never sends an icon, even after picking a preset", async () => {
+    const withIcon = [{ ...presets[0]!, icon: "📺" }];
+    const onSubmit = setup({ presets: withIcon, initial: existing });
+    change("Preset", "sonarr");
+    fireEvent.click(save());
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    const sent = onSubmit.mock.calls[0]![0];
+    expect("icon" in sent).toBe(false);
+    expect("icon_kind" in sent || "icon_etag" in sent).toBe(false);
   });
 });

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { ServiceIcon } from "./service-icon";
 import { fetchLatestMount } from "./service-mount";
 
 const DOT = { healthy: "bg-success", unhealthy: "bg-transparent ring-2 ring-inset ring-destructive", unknown: "bg-transparent ring-1 ring-inset ring-muted-foreground" } as const;
@@ -71,7 +72,8 @@ export function ServiceRow({ s, busy, onToggle, onEdit, onDelete }: {
       </Tooltip>
       <div className={cn("min-w-0 flex-1", !s.enabled && "opacity-60")}>
         <div className="flex min-w-0 items-baseline gap-x-2">
-          <span className="max-w-full shrink-0 truncate font-medium">{s.icon ? `${s.icon} ` : ""}{s.name}</span>
+          <ServiceIcon s={s} className="size-5 self-center" />
+          <span className="max-w-full shrink-0 truncate font-medium">{s.name}</span>
           <code className="min-w-0 truncate text-xs text-muted-foreground">/{s.slug}</code>
           {!s.enabled && <span className="text-xs text-muted-foreground">Disabled</span>}
         </div>

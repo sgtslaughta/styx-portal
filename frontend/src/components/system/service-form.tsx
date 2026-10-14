@@ -40,7 +40,7 @@ function withPreset(f: ProxiedServiceInput, p: ServicePreset): ProxiedServiceInp
 
 function initialState(initial: Props["initial"], discovered: Props["discovered"], presets: ServicePreset[]) {
   if (initial) {
-    const { id: _i, upstream_fallback: _u, health_status: _h, health_checked_at: _c, created_at: _a, updated_at: _b, mount_managed: _m, needs_setup: _n, ...rest } = initial;
+    const { id: _i, icon_kind: _k, icon_etag: _e, upstream_fallback: _u, health_status: _h, health_checked_at: _c, created_at: _a, updated_at: _b, mount_managed: _m, needs_setup: _n, ...rest } = initial;
     return rest;
   }
   if (discovered) {
@@ -106,7 +106,9 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
     if (!valid || !ack || saving) return;
     setSaving(true);
     try {
-      const res = await onSubmit({ ...f, name: f.name.trim(), bypass_rules: f.auth_mode === "sso-with-bypass" ? f.bypass_rules : [] });
+      // Icons change through their own endpoints once the service exists: never send one on edit.
+      const { icon: _icon, ...rest } = f;
+      const res = await onSubmit({ ...(isEdit ? rest : f), name: f.name.trim(), bypass_rules: f.auth_mode === "sso-with-bypass" ? f.bypass_rules : [] });
       if (res) setSrv(res);
     } finally { setSaving(false); }
   };

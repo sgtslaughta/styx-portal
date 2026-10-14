@@ -3,7 +3,7 @@ import { HEALTH, shellHref, toTile } from "../service-tiles";
 import type { ServiceTile } from "@/api/client";
 
 const t = (o: Partial<ServiceTile> = {}): ServiceTile => ({
-  id: "1", slug: "sonarr", name: "Sonarr", icon: null, mount_mode: "path",
+  id: "1", slug: "sonarr", name: "Sonarr", icon_kind: "auto" as const, icon_etag: "e", mount_mode: "path",
   enabled: true, up: true, frame_ok: true, needs_setup: false, ...o,
 });
 describe("shellHref", () => {

@@ -13,8 +13,8 @@ it("readPos survives a throwing storage", () => {
 it("writePos/readPos roundtrip", () => { writePos({ side: "left", y: 0.3 }); expect(readPos()).toEqual({ side: "left", y: 0.3 }); });
 
 const tiles = [
-  { id: "1", slug: "sonarr", name: "Sonarr", icon: null, mount_mode: "path" as const, enabled: true, up: true, frame_ok: true, needs_setup: false },
-  { id: "2", slug: "immich", name: "Immich", icon: null, mount_mode: "cookie-root" as const, enabled: true, up: null, frame_ok: true, needs_setup: false },
+  { id: "1", slug: "sonarr", name: "Sonarr", icon_kind: "auto" as const, icon_etag: "e", mount_mode: "path" as const, enabled: true, up: true, frame_ok: true, needs_setup: false },
+  { id: "2", slug: "immich", name: "Immich", icon_kind: "auto" as const, icon_etag: "e", mount_mode: "cookie-root" as const, enabled: true, up: null, frame_ok: true, needs_setup: false },
 ];
 it("lists apps, marks the current one, focus exit only for focus app", () => {
   render(<Dock open onOpenChange={() => {}} tiles={tiles} current="immich" focusSlug="immich" side="right" />);
@@ -146,11 +146,10 @@ it("the edge tab arms the iframe guard on pointer down and releases it on pointe
   fireEvent.pointerUp(window);
   expect(document.body.hasAttribute("data-ferry-drag")).toBe(false);
 });
-it("renders an emoji icon as text, never as an img src", () => {
-  const t = tiles.slice(0, 1).map((x) => ({ ...x, icon: "🎬" }));
+it("renders the server icon by id and etag, never raw icon text", () => {
+  const t = tiles.slice(0, 1).map((x) => ({ ...x, icon_kind: "emoji" as const, icon_etag: "abc" }));
   const { baseElement } = render(<Dock open onOpenChange={() => {}} tiles={t} current="x" focusSlug={null} side="right" />);
-  expect(baseElement.querySelector("img")).toBeNull();
-  expect(screen.getByText("🎬")).toBeInTheDocument();
+  expect(baseElement.querySelector("img")!.getAttribute("src")).toBe("/api/services/1/icon?v=abc");
 });
 
 it("a needs_setup app links to its setup step, not into the shell", () => {

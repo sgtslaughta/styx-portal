@@ -62,9 +62,9 @@ export function ServiceMount({ service, onChanged, onDone, autoOpenConsent }: {
   });
   const focus = useMutation({
     mutationFn: () => {
-      const { name: n, icon, kind, upstream_url, container, container_port, auth_mode, bypass_rules, allowed_groups,
+      const { name: n, kind, upstream_url, container, container_port, auth_mode, bypass_rules, allowed_groups,
         verify_tls, health_path, preset_id, enabled: en, pass_identity, frame_ok } = service;
-      return api.updateService(id, { name: n, icon, kind, upstream_url, container, container_port, mount_mode: "cookie-root",
+      return api.updateService(id, { name: n, kind, upstream_url, container, container_port, mount_mode: "cookie-root",
         auth_mode, bypass_rules, allowed_groups, verify_tls, health_path, preset_id, enabled: en, pass_identity, frame_ok });
     },
     onSuccess: (svc) => { toast.success(`${name} now opens in focus mode.`); onChanged?.(svc); },

@@ -16,7 +16,7 @@ import { ServiceList } from "../service-list";
 const renderList = (props: { onOpenSettings?: () => void } = {}) =>
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ServiceList {...props} /></QueryClientProvider>);
 
-const tile = (o: object) => ({ id: "1", slug: "sonarr", name: "Sonarr", icon: "📺", mount_mode: "path", frame_ok: true, enabled: true, up: true, ...o });
+const tile = (o: object) => ({ id: "1", slug: "sonarr", name: "Sonarr", icon_kind: "image", icon_etag: "e9", mount_mode: "path", frame_ok: true, enabled: true, up: true, ...o });
 
 beforeEach(() => {
   role.current = "user";
@@ -27,6 +27,13 @@ beforeEach(() => {
 });
 
 describe("ServiceList", () => {
+  test("tile shows the server icon by id and etag", async () => {
+    listServiceTiles.mockResolvedValue([tile({})]);
+    const { container } = renderList();
+    await screen.findByRole("link", { name: /open sonarr/i });
+    expect(container.querySelector("img")!.getAttribute("src")).toBe("/api/services/1/icon?v=e9");
+  });
+
   test("path tile is a plain link, even when down; unknown is neutral", async () => {
     listServiceTiles.mockResolvedValue([tile({ up: false }), tile({ id: "3", slug: "x", name: "X", up: null })]);
     renderList();

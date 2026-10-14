@@ -5,7 +5,7 @@ export function toTile(s: ServiceTile | ProxiedService): ServiceTile {
   if (!("health_status" in s)) return s;
   const up = s.health_status === "healthy" ? true : s.health_status === "unhealthy" ? false : null;
   return {
-    id: s.id, slug: s.slug, name: s.name, icon: s.icon, mount_mode: s.mount_mode,
+    id: s.id, slug: s.slug, name: s.name, icon_kind: s.icon_kind, icon_etag: s.icon_etag, mount_mode: s.mount_mode,
     enabled: s.enabled, up, frame_ok: s.frame_ok, needs_setup: s.needs_setup,
   };
 }

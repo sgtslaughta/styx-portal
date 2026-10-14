@@ -1,8 +1,9 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { AnimatePresence, m, type Variants } from "framer-motion";
-import { ExternalLink, House, Link2, LogOut } from "lucide-react";
+import { ExternalLink, House, LogOut } from "lucide-react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 import type { ServiceTile } from "@/api/client";
+import { ServiceIcon } from "@/components/system/service-icon";
 import { spring } from "@/lib/motion";
 import { HEALTH, shellHref } from "@/lib/service-tiles";
 import { frameSrc } from "./url";
@@ -75,7 +76,7 @@ export function Dock({ open, onOpenChange, tiles, current, focusSlug, side, tabR
                         <m.li key={t.id} custom={i} variants={item}>
                           <a href={shellHref(t)} target="_top" aria-current={active ? "page" : undefined}
                             className={`flex min-h-12 items-center gap-3 rounded-md border px-3 hover:bg-foreground/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${active ? "border-obol-foreground dark:border-obol" : "border-transparent"}`}>
-                            <span aria-hidden className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-base leading-none text-primary">{t.icon ?? <Link2 className="h-3.5 w-3.5" />}</span>
+                            <ServiceIcon s={t} />
                             <span className="flex-1 truncate">{t.name}</span>
                             <span className={`size-2.5 rounded-full ${h.dot}`} aria-hidden />
                             <span className="sr-only">{h.label}</span>

@@ -4,7 +4,7 @@ import { Frame } from "../frame";
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); Reflect.deleteProperty(navigator, "serviceWorker"); });
 
-const tile = { id: "1", slug: "sonarr", name: "Sonarr", icon: null, mount_mode: "path", enabled: true, up: true, frame_ok: true, needs_setup: false } as const;
+const tile = { id: "1", slug: "sonarr", name: "Sonarr", icon_kind: "auto" as const, icon_etag: "e", mount_mode: "path", enabled: true, up: true, frame_ok: true, needs_setup: false } as const;
 
 it("shows the fallback when the frame refuses to load", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("")));
