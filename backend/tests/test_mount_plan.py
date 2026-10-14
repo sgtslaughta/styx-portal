@@ -89,3 +89,50 @@ def test_read_file_errors_become_a_reason_not_a_500():
         d.read_file.side_effect = err
         p = plan_mount(_svc(), _preset(), d)
         assert p.method is None and "couldn't read" in p.reason
+
+
+TEMPLATE = ('<?xml version="1.0" encoding="utf-8"?>\n<NetworkConfiguration>\n  <BaseUrl />\n'
+            '</NetworkConfiguration>\n')
+CREATE = {"path": "/config/config/network.xml", "owner_from": "/config/config/system.xml",
+          "template": TEMPLATE}
+
+
+def _create_preset(create=CREATE):
+    sub = {**SUB, "methods": [{**SUB["methods"][0], **({"create": create} if create else {})}]}
+    return ServicePreset(id="jellyfin", name="Jellyfin", subpath=sub)
+
+
+def test_missing_file_with_create_plans_a_new_file():
+    p = plan_mount(_svc(), _create_preset(), _docker({"/config/config/system.xml": "<x/>"}))
+    assert p.method == "config_file" and p.create is True and p.path == CREATE["path"]
+    assert p.changes == [{"target": CREATE["path"], "key": "/NetworkConfiguration/BaseUrl",
+                          "old": "", "new": "/jellyfin", "created": True}]
+    assert p.reason is None
+
+
+def test_missing_file_with_create_but_no_owner_keeps_reason():
+    p = plan_mount(_svc(), _create_preset(), _docker({}))
+    assert p.method is None and p.create is False and "can't find" in p.reason
+
+
+def test_missing_file_without_create_unchanged():
+    p = plan_mount(_svc(), _create_preset(None), _docker({"/config/config/system.xml": "<x/>"}))
+    assert p.method is None and p.create is False
+
+
+def test_owner_read_error_keeps_reason():
+    d = _docker({})
+    d.read_file.side_effect = lambda c, path: (_ for _ in ()).throw(ValueError("x")) \
+        if path == CREATE["owner_from"] else None
+    p = plan_mount(_svc(), _create_preset(), d)
+    assert p.method is None and "can't find" in p.reason
+
+
+def test_jellyfin_preset_creates_network_xml():
+    import json
+    from pathlib import Path
+    data = json.loads((Path(__file__).parents[2] / "templates/services/jellyfin.json").read_text())
+    c = data["subpath"]["methods"][0]["create"]
+    assert c["path"] == "/config/config/network.xml" and c["owner_from"] == "/config/config/system.xml"
+    assert c["template"].endswith("<BaseUrl />\n</NetworkConfiguration>\n")
+    assert c["path"] in data["subpath"]["methods"][0]["paths"]

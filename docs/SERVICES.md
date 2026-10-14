@@ -157,8 +157,9 @@ Special cases:
 - A settings file that is a single-file bind mount can't be replaced. The job fails with
   "This settings file is mounted on its own, so Styx can't replace it" and nothing is
   written or restored. Mount the file's folder instead, or set the base path by hand.
-- Jellyfin only writes its network settings after you save them once. If Styx can't find
-  the file, open Jellyfin, go to Dashboard › Networking, click Save, then try again.
+- A fresh Jellyfin has no `network.xml` yet. Styx creates a minimal one (the consent dialog
+  shows it as a new file). For other apps whose settings file is missing, the drawer shows
+  the app's hint, for example saving the app's settings once.
 - Switching a service to focus or manual later does not undo the app's base path. Styx
   has no revert button.
 

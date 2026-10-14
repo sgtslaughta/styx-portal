@@ -58,7 +58,7 @@ export type DiscoveredContainer = {
 };
 export type Group = { id: string; name: string; description: string | null; member_count: number };
 
-export type MountChange = { target: string; key: string; old: string | null; new: string };
+export type MountChange = { target: string; key: string; old: string | null; new: string; created?: boolean };
 export type MountPlan = {
   method: "config_file" | null; changes: MountChange[]; needs_consent: boolean; reason: string | null;
 };
