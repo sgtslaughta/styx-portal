@@ -569,6 +569,20 @@ def test_probe_fetch_decodes_chunked_and_rejects_malformed(mock_docker):
     assert manager.probe_fetch("http://a:1/", "n", 100) is None
 
 
+@pytest.mark.parametrize("size", [b"-10", b"-6", b"+5", b"0x5", b" 5 5", b"1" * 9])
+def test_dechunk_rejects_signed_or_odd_sizes_without_looping(size):
+    import threading
+    from app.services.docker_files import _dechunk
+    # a negative size used to move the read position backwards: an endless loop
+    got = []
+    t = threading.Thread(target=lambda: got.append(
+        _dechunk(b"5\r\nhello\r\n" + size + b"\r\nabcdefghijklmnop\r\n0\r\n\r\n")), daemon=True)
+    t.start()
+    t.join(2)
+    assert not t.is_alive(), "dechunk looped"
+    assert got == [b""]
+
+
 def test_probe_fetch_follows_same_origin_redirect_from_python_parse(mock_docker):
     manager, client = mock_docker
     made = _hops(client, _raw("301 Moved", "location: /b/c\r\n"), _raw("200 OK", "", b"icon"))

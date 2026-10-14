@@ -75,6 +75,9 @@ def _parse_response(raw: bytes) -> tuple[int, dict[str, str], bytes] | None:
     return int(m.group(1)), headers, body
 
 
+_CHUNK_SIZE = re.compile(rb"([0-9A-Fa-f]{1,8})[ \t]*(?:;[^\r\n]*)?")
+
+
 def _dechunk(body: bytes) -> bytes:
     """Decode a chunked body; a malformed one yields b"" (treated as no body)."""
     out, pos = bytearray(), 0
@@ -82,10 +85,12 @@ def _dechunk(body: bytes) -> bytes:
         end = body.find(b"\r\n", pos)
         if end < 0:
             return b""
-        try:
-            size = int(body[pos:end].split(b";")[0].strip(), 16)
-        except ValueError:
+        # Plain hex only: int() alone accepts "-6" / "+5" / "0x5", and a negative size moves pos
+        # backwards (an endless loop on a hostile app's body).
+        m = _CHUNK_SIZE.fullmatch(body[pos:end])
+        if not m:
             return b""
+        size = int(m.group(1), 16)
         if size == 0:
             return bytes(out)
         chunk = body[end + 2:end + 2 + size]
