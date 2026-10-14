@@ -13,6 +13,7 @@ from app.routers.services import _get_or_404, _iso, get_docker_manager
 from app.security.deps import require_admin
 from app.services.audit import audit_request
 from app.services.docker_manager import DockerManager
+from app.services import service_favicon
 from app.services.mount_jobs import plan_mount, run_job
 
 logger = logging.getLogger("styx-portal")
@@ -32,8 +33,15 @@ def _log_failure(t: asyncio.Task) -> None:
         logger.error("mount job crashed", exc_info=t.exception())
 
 
+def _refetch_icon(docker):
+    """The app's address changed: re-fetch its own icon (custom icons are left alone)."""
+    async def hook(svc_id: str) -> None:
+        service_favicon.schedule_favicon(svc_id, docker)
+    return hook
+
+
 def _start(*args, **kw) -> None:
-    t = asyncio.create_task(run_job(*args, **kw))
+    t = asyncio.create_task(run_job(*args, after_done=_refetch_icon(args[3]), **kw))
     _tasks.add(t)
     t.add_done_callback(_tasks.discard)
     t.add_done_callback(_log_failure)

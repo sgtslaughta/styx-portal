@@ -131,6 +131,16 @@ def _prune(svc_dir: Path) -> None:
         shutil.rmtree(old, ignore_errors=True)
 
 
+async def _finish_ok(session_factory, svc_id, after_done):
+    """Base path confirmed: mark managed, then let the caller react (e.g. re-fetch the favicon)."""
+    await _set_managed(session_factory, svc_id)
+    if after_done:
+        try:
+            await after_done(svc_id)
+        except Exception:  # noqa: BLE001 - a follow-up must never break a finished job
+            logger.warning("after-done hook failed for %s", svc_id, exc_info=True)
+
+
 async def _set_managed(session_factory, svc_id):
     async with session_factory() as s:
         svc = await s.get(ProxiedService, svc_id)
@@ -140,7 +150,7 @@ async def _set_managed(session_factory, svc_id):
 
 
 async def run_job(job_id, svc_id, plan, docker, session_factory, http_get=None,
-                  verify_path=None, old_verify_path=None) -> None:
+                  verify_path=None, old_verify_path=None, after_done=None) -> None:
     steps = [{"id": i, "label": label, "state": "pending", "detail": None} for i, label in STEPS]
 
     async def save(state=None, **kw):
@@ -176,7 +186,7 @@ async def run_job(job_id, svc_id, plan, docker, session_factory, http_get=None,
             for i, _ in STEPS:
                 mark(i, "skipped")
             await save("done", changes=[])
-            await _set_managed(session_factory, svc_id)
+            await _finish_ok(session_factory, svc_id, after_done)
             return
         await save("running", changes=plan.changes)
     except Exception as e:  # noqa: BLE001 - never leave the job pending
@@ -242,7 +252,7 @@ async def run_job(job_id, svc_id, plan, docker, session_factory, http_get=None,
         if res == "ok":
             mark("verify", "done")
             await save("done")
-            await _set_managed(session_factory, svc_id)
+            await _finish_ok(session_factory, svc_id, after_done)
             return
         mark("verify", "failed", PROBE_DETAIL if res == "probe"
              else f"No answer at {verify_path} after {VERIFY_BUDGET_S}s")

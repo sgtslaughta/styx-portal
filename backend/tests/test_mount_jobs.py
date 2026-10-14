@@ -308,3 +308,43 @@ async def test_create_without_owner_fails_backup_and_writes_nothing(session, tmp
     await session.refresh(job)
     assert job.state == "failed" and "system.xml" in job.steps[0]["detail"]
     d.write_file.assert_not_called()
+
+
+async def test_after_done_called_only_on_done(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    seen = []
+
+    async def after(sid):
+        seen.append(sid)
+
+    async def ok(url):
+        return 200
+
+    await run_job(job.id, svc.id, PLAN, d, factory, http_get=ok, after_done=after)
+    assert seen == [svc.id]
+
+
+async def test_after_done_not_called_on_rollback(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    seen = []
+
+    async def after(sid):
+        seen.append(sid)
+
+    async def down(url):
+        return 500
+    await run_job(job.id, svc.id, PLAN, d, factory, http_get=down, after_done=after)
+    assert seen == []
+
+
+async def test_after_done_failure_does_not_break_job(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+
+    async def boom(sid):
+        raise RuntimeError("x")
+
+    async def ok(url):
+        return 200
+    await run_job(job.id, svc.id, PLAN, d, factory, http_get=ok, after_done=boom)
+    await session.refresh(job)
+    assert job.state == "done"
