@@ -50,6 +50,14 @@ export function Frame({ tile, inner, onTitle, onFrame }: FrameProps) {
       text={`Styx still needs to set its base path to /${tile.slug}.`}
       href={`/?setup=${tile.id}`} action="Set it up" />;
   }
+  if (blocked?.kind === "error") {
+    const { status } = blocked;
+    return <Card title={`${tile.name} returned an error (${status})`}
+      text={status === 404
+        ? `It answered 404 at /${tile.slug}/. Its base path may not be set to /${tile.slug}.`
+        : `It answered ${status}. Open it on its own to see the details.`}
+      href={src} action={`Open ${tile.name} on its own`} />;
+  }
   if (blocked) {
     return <Card title={`${tile.name} can't run inside Styx`}
       text="This app blocks being shown inside another page." href={src} action={`Open ${tile.name} on its own`} />;
