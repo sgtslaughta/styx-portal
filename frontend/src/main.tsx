@@ -53,16 +53,14 @@ createRoot(document.getElementById("root")!).render(
         <ThemeProvider>
         <AuthProvider>
           <WaveTransitionProvider>
-          <OpenPrefProvider>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/change-password" element={<ChangePasswordPage />} />
             <Route path="/setup" element={<SetupWizard />} />
             <Route path="/accept-invite/:token" element={<AcceptInvitePage />} />
             <Route path="/connecting" element={<ConnectingPage />} />
-            <Route path="/*" element={<ProtectedRoute><App /></ProtectedRoute>} />
+            <Route path="/*" element={<ProtectedRoute><OpenPrefProvider><App /></OpenPrefProvider></ProtectedRoute>} />
           </Routes>
-          </OpenPrefProvider>
           </WaveTransitionProvider>
         </AuthProvider>
         </ThemeProvider>

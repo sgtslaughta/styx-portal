@@ -7,7 +7,7 @@ const setOpenPrefs = vi.fn();
 vi.mock("@/api/client", () => ({ api: { me: () => me(), setOpenPrefs: (p: unknown) => setOpenPrefs(p) } }));
 const toastError = vi.fn();
 vi.mock("sonner", () => ({ toast: { error: (m: string) => toastError(m) } }));
-import { OpenPrefProvider, useOpenChoice } from "../open-prompt";
+import { OpenPrefProvider, useOpenChoice, useOpenPrefs } from "../open-prompt";
 
 const base = { id: "u", username: "a", email: null, role: "user", open_workspaces: null, open_apps: null };
 const run = vi.fn();
@@ -15,18 +15,17 @@ function Btn() {
   const choose = useOpenChoice();
   return <button onClick={() => choose("apps", "Sonarr", run)}>go</button>;
 }
+function Pref() { return <span>{useOpenPrefs().data?.open_apps ?? "loading"}</span>; }
 function setup() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={qc}><OpenPrefProvider><Btn /></OpenPrefProvider></QueryClientProvider>);
-  return qc;
+  return render(<QueryClientProvider client={qc}><OpenPrefProvider><Pref /><Btn /></OpenPrefProvider></QueryClientProvider>);
 }
-beforeEach(() => { run.mockReset(); setOpenPrefs.mockReset(); toastError.mockReset(); me.mockResolvedValue(base); });
+beforeEach(() => { me.mockReset(); run.mockReset(); setOpenPrefs.mockReset(); toastError.mockReset(); me.mockResolvedValue(base); });
 
 test("set preference runs directly, no dialog", async () => {
   me.mockResolvedValue({ ...base, open_apps: "same_tab" });
   setup();
-  await waitFor(() => expect(me).toHaveBeenCalled());
-  await new Promise((r) => setTimeout(r));
+  await screen.findByText("same_tab");
   fireEvent.click(screen.getByText("go"));
   expect(run).toHaveBeenCalledWith("same_tab");
   expect(screen.queryByRole("dialog")).toBeNull();
@@ -86,4 +85,17 @@ test("without a provider: runs new_tab", () => {
   render(<Btn />);
   fireEvent.click(screen.getByText("go"));
   expect(run).toHaveBeenCalledWith("new_tab");
+});
+
+test("mounting after auth applies saved prefs (a 401 before login must not stick)", async () => {
+  me.mockRejectedValueOnce(new Error("Unauthorized"));
+  const first = setup();
+  await waitFor(() => expect(me).toHaveBeenCalledTimes(1));
+  first.unmount();
+  me.mockResolvedValue({ ...base, open_apps: "same_tab" });
+  setup();
+  await screen.findByText("same_tab");
+  fireEvent.click(screen.getByText("go"));
+  expect(run).toHaveBeenCalledWith("same_tab");
+  expect(screen.queryByRole("dialog")).toBeNull();
 });
