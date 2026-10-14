@@ -105,3 +105,19 @@ async def test_apply_accepts_matching_changes(admin_client, session, dk):
     r = await admin_client.post(f"/api/services/{s.id}/mount/apply",
                                 json={"consent": True, "changes": seen})
     assert r.status_code == 202
+
+
+async def test_plan_already_set_marks_managed(admin_client, session, dk):
+    s = await _svc(session)
+    dk[0].read_file.return_value = (b"<Config><UrlBase>/sonarr</UrlBase></Config>", tarfile.TarInfo("c"))
+    r = await admin_client.post(f"/api/services/{s.id}/mount/plan")
+    assert r.json()["changes"] == []
+    await session.refresh(s)
+    assert s.mount_managed is True
+
+
+async def test_plan_with_changes_leaves_unmanaged(admin_client, session, dk):
+    s = await _svc(session)
+    await admin_client.post(f"/api/services/{s.id}/mount/plan")
+    await session.refresh(s)
+    assert s.mount_managed is False

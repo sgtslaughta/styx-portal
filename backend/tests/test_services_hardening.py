@@ -5,7 +5,8 @@ from sqlmodel import delete, select
 from app.models import ProxiedService
 from app.services.service_health import check_url, run_health_pass
 
-MEMBER_KEYS = {"id", "slug", "name", "icon", "mount_mode", "enabled", "up", "frame_ok"}
+MEMBER_KEYS = {"id", "slug", "name", "icon", "mount_mode", "enabled", "up", "frame_ok",
+               "needs_setup"}
 
 
 @pytest.mark.asyncio

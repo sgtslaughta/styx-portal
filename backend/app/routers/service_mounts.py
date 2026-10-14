@@ -49,7 +49,11 @@ async def _plan(session, sid, docker):
 async def mount_plan(sid: str, admin: User = Depends(require_admin),
                      session: AsyncSession = Depends(get_session),
                      docker: DockerManager = Depends(get_docker_manager)):
-    _, _, p = await _plan(session, sid, docker)
+    svc, _, p = await _plan(session, sid, docker)
+    if p.already_set and not svc.mount_managed:
+        svc.mount_managed = True   # base path confirmed: found already set
+        session.add(svc)
+        await session.commit()
     return {"method": p.method, "changes": p.changes, "needs_consent": p.needs_consent,
             "reason": p.reason}
 

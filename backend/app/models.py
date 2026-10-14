@@ -339,7 +339,7 @@ class ProxiedService(SQLModel, table=True):
     health_checked_at: datetime | None = None
     preset_id: str | None = None
     enabled: bool = True
-    mount_managed: bool = False   # Styx set the app's base path (spec §3)
+    mount_managed: bool = False   # base path confirmed: Styx set it, or found it already set (spec §3)
     pass_identity: bool = False   # forward X-Styx-User/Email/Groups upstream
     frame_ok: bool = True         # False = "Open without overlay"
     created_at: datetime = Field(default_factory=_now)

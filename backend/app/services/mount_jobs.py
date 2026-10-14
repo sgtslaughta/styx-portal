@@ -26,6 +26,7 @@ class MountPlan:
     changes: list[dict] = field(default_factory=list)
     needs_consent: bool = True
     reason: str | None = None
+    already_set: bool = False
 
 
 def plan_mount(svc: ProxiedService, preset: ServicePreset | None, docker) -> MountPlan:
@@ -54,6 +55,7 @@ def plan_mount(svc: ProxiedService, preset: ServicePreset | None, docker) -> Mou
             plan = MountPlan("config_file", path, m["format"], m["key"], [], needs_consent)
             if old == new:
                 plan.reason = f"Base path is already {new}."
+                plan.already_set = True
             else:
                 plan.changes = [{"target": path, "key": m["key"], "old": old, "new": new}]
             return plan

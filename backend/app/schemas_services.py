@@ -149,6 +149,7 @@ class ProxiedServiceOut(BaseModel):
     preset_id: str | None
     enabled: bool
     mount_managed: bool
+    needs_setup: bool = False
     pass_identity: bool
     frame_ok: bool
     created_at: str
@@ -165,6 +166,7 @@ class ServiceTileOut(BaseModel):
     enabled: bool
     up: bool | None          # None = unknown
     frame_ok: bool = True
+    needs_setup: bool = False
 
 
 class ServicePresetOut(BaseModel):
