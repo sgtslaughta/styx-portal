@@ -4,9 +4,10 @@ import { expect, test, vi } from "vitest";
 const ws = (o: object) => ({ id: "w1", name: "Studio", status: "online", in_use: false, in_use_self: false,
   in_use_by: null, icon_kind: "auto", icon_etag: "e", os_info: {}, ...o });
 const inst = (o: object) => ({ id: "i1", name: "Desk", subdomain: "desk", status: "running", ...o });
-const data = { ws: [] as object[], inst: [] as object[] };
+const data = { ws: [] as object[], inst: [] as object[], fail: 0 };
+const load = (v: object[]) => (data.fail > 0 ? (data.fail--, Promise.reject(new Error("x"))) : Promise.resolve(v));
 vi.mock("@/api/client", () => ({ api: {
-  myWorkstations: () => Promise.resolve(data.ws), listInstances: () => Promise.resolve(data.inst),
+  myWorkstations: () => load(data.ws), listInstances: () => load(data.inst),
   workstationConnectUrl: () => Promise.resolve({ url: "/w/studio/" }),
 } }));
 const choose = vi.fn();
@@ -15,7 +16,7 @@ vi.mock("@/lib/connect-wipe", () => ({ openPending: vi.fn(() => Promise.resolve(
 import { DockWorkspaces } from "../dock-workspaces";
 
 const ui = (onPicked = vi.fn()) =>
-  render(<QueryClientProvider client={new QueryClient()}><DockWorkspaces onPicked={onPicked} /></QueryClientProvider>);
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><DockWorkspaces onPicked={onPicked} /></QueryClientProvider>);
 
 test("lists workspaces with status; unavailable ones are disabled", async () => {
   data.ws = [ws({}), ws({ id: "w2", name: "Lab", status: "offline" }),
@@ -42,4 +43,19 @@ test("empty state", async () => {
   data.ws = []; data.inst = [];
   ui();
   expect(await screen.findByText("No workspaces yet")).toBeInTheDocument();
+});
+
+test("connected (you) workspace is enabled", async () => {
+  data.ws = [ws({ in_use: true, in_use_self: true })]; data.inst = [];
+  ui();
+  expect(await screen.findByRole("button", { name: /Studio.*connected \(you\)/ })).toBeEnabled();
+});
+
+test("shows loading, then error with working retry", async () => {
+  data.ws = [ws({})]; data.inst = []; data.fail = 2;
+  ui();
+  expect(screen.getByText("Loading workspaces…")).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+  expect(await screen.findByRole("button", { name: /Studio/ })).toBeEnabled();
+  data.fail = 0;
 });

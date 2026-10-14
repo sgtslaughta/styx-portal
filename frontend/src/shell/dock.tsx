@@ -35,7 +35,7 @@ export function Dock({ open, onOpenChange, tiles, current, focusSlug, side, tabR
         if (!el) { if (tries++ < 10) id = requestAnimationFrame(focusIn); return; }
         const ae = document.activeElement; // the dialog's focus trap may land on the first tabbable: the switch
         if (!el.contains(ae) || ae === el || ae?.getAttribute("role") === "tab")
-          (el.querySelector<HTMLElement>('a[aria-current="page"]') ?? el.querySelector<HTMLElement>("a") ?? el).focus();
+          (el.querySelector<HTMLElement>('a[aria-current="page"]') ?? el.querySelector<HTMLElement>("a") ?? (ae?.getAttribute("role") === "tab" ? ae : el)).focus();
       };
       id = requestAnimationFrame(focusIn);
       wasOpen.current = true;
@@ -73,7 +73,7 @@ export function Dock({ open, onOpenChange, tiles, current, focusSlug, side, tabR
                 <DialogPrimitive.Title className="sr-only">Styx</DialogPrimitive.Title>
                 <DialogPrimitive.Description className="sr-only">Switch apps or workspaces, or go back to Styx</DialogPrimitive.Description>
                 <Tabs value={view} onValueChange={setView} className="min-h-0 flex-1">
-                  <TabsList aria-label="Switch list" className="h-11 w-full border border-border bg-foreground/10 sm:h-9">
+                  <TabsList aria-label="Switch list" className="w-full border border-border bg-foreground/10 group-data-[orientation=horizontal]/tabs:h-11 sm:group-data-[orientation=horizontal]/tabs:h-9">
                     <TabsTrigger value="apps" className="flex-1">Apps</TabsTrigger>
                     <TabsTrigger value="workspaces" className="flex-1">Workspaces</TabsTrigger>
                   </TabsList>
