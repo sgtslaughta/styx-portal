@@ -116,6 +116,8 @@ async def _run_migrations(conn):
         ("proxied_services", "frame_ok", "BOOLEAN NOT NULL DEFAULT 1"),
         ("users", "locked_until", "TIMESTAMP"),
         ("proxied_services", "icon_custom", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("users", "open_workspaces", "TEXT"),
+        ("users", "open_apps", "TEXT"),
     ]
     for table, column, col_type in migrations:
         try:

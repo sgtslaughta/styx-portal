@@ -28,6 +28,8 @@ class User(SQLModel, table=True):
     last_login: datetime | None = None
     failed_count: int = 0
     locked_until: datetime | None = None
+    open_workspaces: str | None = None  # None = ask | new_tab | same_tab
+    open_apps: str | None = None
 
 
 class BannedIP(SQLModel, table=True):

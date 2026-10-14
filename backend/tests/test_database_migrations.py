@@ -230,3 +230,13 @@ async def test_service_icon_migration_prefixes_raw_emoji_idempotently():
             sqlalchemy.text("PRAGMA table_info(proxied_services)"))).fetchall()}
     assert rows == ["emoji:📺", "emoji:🎬", "data:image/png;base64,AAAA", None, None]
     assert "icon_custom" in cols
+
+
+@pytest.mark.asyncio
+async def test_migrations_add_open_preference_columns_to_users():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.execute(sqlalchemy.text("CREATE TABLE users (id TEXT PRIMARY KEY)"))
+        await _run_migrations(conn)
+        rows = (await conn.execute(sqlalchemy.text("PRAGMA table_info(users)"))).fetchall()
+        assert {"open_workspaces", "open_apps"} <= {r[1] for r in rows}

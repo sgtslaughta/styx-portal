@@ -11,7 +11,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.config import Settings
 from app.database import get_session
 from app.models import User, Invite, RefreshToken, Instance, ServiceTemplate, OAuthProvider, FederatedIdentity, Workstation
-from app.schemas import SetupRequest, LoginRequest, AcceptInviteRequest, UserOut, ConnectedIdentity, ChangePasswordRequest
+from app.schemas import SetupRequest, LoginRequest, AcceptInviteRequest, UserOut, ConnectedIdentity, ChangePasswordRequest, OpenPreferences
 from app.security import tokens, oauth
 from app.security.passwords import hash_password, verify_password, validate_password, current_policy
 from app.security.cookies import clear_auth_cookies, set_auth_cookies
@@ -280,10 +280,28 @@ async def logout(request: Request, response: Response,
     return {"ok": True}
 
 
+def _me_out(user: User) -> UserOut:
+    return UserOut(id=user.id, username=user.username, email=user.email, role=user.role,
+                   is_active=user.is_active, open_workspaces=user.open_workspaces,
+                   open_apps=user.open_apps)
+
+
 @router.get("/me", response_model=UserOut)
 async def me(user: User = Depends(get_current_user)):
-    return UserOut(id=user.id, username=user.username, email=user.email,
-                   role=user.role, is_active=user.is_active)
+    return _me_out(user)
+
+
+@router.put("/me/preferences", response_model=UserOut)
+async def set_preferences(body: OpenPreferences, session: AsyncSession = Depends(get_session),
+                          user: User = Depends(get_current_user)):
+    """Personal UI preference: no admin override, no audit entry."""
+    row = await session.get(User, user.id)
+    for k, v in body.model_dump(exclude_unset=True).items():
+        setattr(row, k, v)
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return _me_out(row)
 
 
 @router.post("/change-password")

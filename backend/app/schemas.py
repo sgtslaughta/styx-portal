@@ -2,7 +2,7 @@ import re
 import ipaddress
 from dataclasses import dataclass
 from typing import Any, Literal
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 SUBDOMAIN_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 RESERVED_SUBDOMAINS = {"api", "traefik", "www", "admin", "auth", "portal"}
@@ -150,6 +150,18 @@ class UserOut(BaseModel):
     last_login: str | None = None
     locked_until: str | None = None
     failed_count: int = 0
+    open_workspaces: str | None = None
+    open_apps: str | None = None
+
+
+OpenMode = Literal["new_tab", "same_tab"]
+
+
+class OpenPreferences(BaseModel):
+    """Where Workspaces / Apps open. None = ask. Only keys sent are changed."""
+    model_config = ConfigDict(extra="forbid")
+    open_workspaces: OpenMode | None = None
+    open_apps: OpenMode | None = None
 
 
 class CreateInviteRequest(BaseModel):
