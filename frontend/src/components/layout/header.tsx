@@ -3,6 +3,7 @@ import { useInstances } from "@/hooks/use-instances";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme, type Theme } from "@/theme/ThemeProvider";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { OpeningMenu } from "@/components/layout/opening-menu";
 import { cn } from "@/lib/utils";
 
 function ThemeToggle() {
@@ -66,7 +67,7 @@ export function Header() {
       </div>
       {user && (
         <div className="flex items-center gap-2 max-sm:ml-auto">
-          <span className="text-sm text-muted-foreground max-sm:hidden">{user.username}</span>
+          <OpeningMenu username={user.username} />
           <button onClick={() => logout()} className="inline-flex min-h-9 max-sm:min-h-11 items-center rounded-md px-1 text-sm underline underline-offset-2 hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">Log out</button>
         </div>
       )}
