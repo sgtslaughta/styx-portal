@@ -115,6 +115,7 @@ async def _run_migrations(conn):
         ("proxied_services", "pass_identity", "BOOLEAN NOT NULL DEFAULT 0"),
         ("proxied_services", "frame_ok", "BOOLEAN NOT NULL DEFAULT 1"),
         ("users", "locked_until", "TIMESTAMP"),
+        ("proxied_services", "icon_custom", "BOOLEAN NOT NULL DEFAULT 0"),
     ]
     for table, column, col_type in migrations:
         try:
@@ -148,6 +149,20 @@ async def _run_migrations(conn):
         except OperationalError as e:
             if "no such table" not in str(e).lower():
                 logger.error("Backfill failed for %s.%s: %s", table, column, e)
+                raise
+
+    # Service icons are stored like workstation icons: None, "emoji:<char>" or a data: URI.
+    # Older rows hold a bare preset emoji.
+    for stmt in (
+        "UPDATE proxied_services SET icon = NULL WHERE icon = ''",
+        "UPDATE proxied_services SET icon = 'emoji:' || icon WHERE icon IS NOT NULL "
+        "AND icon NOT LIKE 'emoji:%' AND icon NOT LIKE 'data:%'",
+    ):
+        try:
+            await conn.execute(sqlalchemy.text(stmt))
+        except OperationalError as e:
+            if "no such table" not in str(e).lower():
+                logger.error("Service icon migration failed: %s", e)
                 raise
 
 
