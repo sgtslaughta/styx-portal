@@ -9,12 +9,14 @@ import { RegistryBrowser } from "@/components/templates/registry-browser";
 import { LaunchModal } from "@/components/templates/launch-modal";
 import { SettingsLayout } from "@/components/settings/settings-layout";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useAuth } from "@/hooks/use-auth";
 import { useTemplates } from "@/hooks/use-templates";
 import { cn } from "@/lib/utils";
 import type { ServiceTemplate, RegistryImage } from "@/lib/types";
 
 export default function App() {
   const { data: templates } = useTemplates();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("instances");
   const [templateSubTab, setTemplateSubTab] = useState<string | null>(null);
   const [launchRegistry, setLaunchRegistry] = useState<RegistryImage | null>(null);
@@ -39,6 +41,11 @@ export default function App() {
       );
     }
   }, []);
+
+  // /?setup=<id> (tile or shell card of an unconfigured service): admins land on Settings > Services.
+  useEffect(() => {
+    if (user?.role === "admin" && new URLSearchParams(window.location.search).has("setup")) setActiveTab("system");
+  }, [user?.role]);
 
   function handleImportRegistry(image: RegistryImage) {
     setLaunchRegistry(image);

@@ -17,6 +17,7 @@ export const HEALTH = (up: boolean | null) =>
 
 /** Where a tile opens. Focus apps always go through /_styx/open (sets the cookie, then redirects). */
 export function shellHref(t: ServiceTile): string {
+  if (t.needs_setup) return `/?setup=${t.id}`; // not usable yet: send the admin to its base path step
   if (t.mount_mode === "cookie-root") return `/_styx/open/${t.slug}`;
   return t.frame_ok ? `/_styx/app/${t.slug}/` : `/${t.slug}/`;
 }

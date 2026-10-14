@@ -113,3 +113,11 @@ describe("blocked-frame header probe", () => {
     expect(screen.queryByRole("heading", { name: "Sonarr can't run inside Styx" })).toBeNull();
   });
 });
+
+it("a needs_setup tile shows the setup card instead of an iframe", () => {
+  const { container } = render(<Frame tile={{ ...tile, id: "s7", needs_setup: true }} inner="/" onTitle={() => {}} />);
+  expect(container.querySelector("iframe")).toBeNull();
+  expect(screen.getByRole("heading", { name: "Sonarr isn't set up yet" })).toBeTruthy();
+  expect(screen.getByText("Styx still needs to set its base path to /sonarr.")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Set it up" }).getAttribute("href")).toBe("/?setup=s7");
+});

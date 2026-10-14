@@ -6,7 +6,7 @@ const listServiceTiles = vi.fn();
 vi.mock("@/api/client", () => ({ api: { listServiceTiles: () => listServiceTiles(), serviceFocus: () => Promise.resolve({ slug: null }) } }));
 import { ShellApp } from "../shell-app";
 
-const mk = () => [{ id: "1", slug: "sonarr", name: "Sonarr", icon: null, mount_mode: "path", enabled: true, up: true, frame_ok: true }];
+const mk = () => [{ id: "1", slug: "sonarr", name: "Sonarr", icon: null, mount_mode: "path", enabled: true, up: true, frame_ok: true, needs_setup: false }];
 afterEach(() => { vi.restoreAllMocks(); listServiceTiles.mockReset(); window.history.replaceState(null, "", "/"); });
 
 function setup() {

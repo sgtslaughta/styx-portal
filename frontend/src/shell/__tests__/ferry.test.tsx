@@ -152,3 +152,9 @@ it("renders an emoji icon as text, never as an img src", () => {
   expect(baseElement.querySelector("img")).toBeNull();
   expect(screen.getByText("🎬")).toBeInTheDocument();
 });
+
+it("a needs_setup app links to its setup step, not into the shell", () => {
+  const t = [{ ...tiles[0]!, id: "s7", needs_setup: true }];
+  render(<Dock open onOpenChange={() => {}} tiles={t} current="" focusSlug={null} side="right" />);
+  expect(screen.getByRole("link", { name: /Sonarr/ }).getAttribute("href")).toBe("/?setup=s7");
+});

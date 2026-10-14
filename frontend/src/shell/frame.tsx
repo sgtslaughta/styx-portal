@@ -45,6 +45,11 @@ export function Frame({ tile, inner, onTitle, onFrame }: FrameProps) {
   }, []);
   const blocked = useFrameSync(el, tile, onLeave, onTitle);
   const src = frameSrc(tile.mount_mode, tile.slug, inner);
+  if (tile.needs_setup) {
+    return <Card title={`${tile.name} isn't set up yet`}
+      text={`Styx still needs to set its base path to /${tile.slug}.`}
+      href={`/?setup=${tile.id}`} action="Set it up" />;
+  }
   if (blocked) {
     return <Card title={`${tile.name} can't run inside Styx`}
       text="This app blocks being shown inside another page." href={src} action={`Open ${tile.name} on its own`} />;
