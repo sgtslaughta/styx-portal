@@ -123,10 +123,12 @@ async def _get_httpx(url: str, cap: int, verify: bool, origin_of: str,
 def _getter(svc: ProxiedService, docker, transport):
     if svc.kind == "docker-local":
         hosts = {"host.docker.internal": "host-gateway"} if svc.upstream_fallback else None
+        origin = page_url(svc)
 
         async def get(url: str, cap: int) -> bytes | None:
-            return await asyncio.to_thread(docker.probe_fetch, url, Settings().SERVICES_NETWORK,
-                                           cap, extra_hosts=hosts)
+            return await asyncio.to_thread(
+                docker.probe_fetch, url, Settings().SERVICES_NETWORK, cap, extra_hosts=hosts,
+                allow_redirect_to=lambda u: same_origin(u, origin))
         return get
 
     async def get(url: str, cap: int) -> bytes | None:

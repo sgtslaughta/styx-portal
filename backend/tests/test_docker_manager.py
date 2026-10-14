@@ -500,11 +500,12 @@ def test_remove_probe_containers(mock_docker):
 def test_probe_fetch_hardened_no_shell_interpolation(mock_docker):
     import base64
     manager, client = mock_docker
-    c = _probe(client, base64.encodebytes(b"PNGDATA" * 20))
+    c = _fetch(client, base64.encodebytes(b"PNGDATA" * 20))
     assert manager.probe_fetch("http://app:80/x/", "styx-services", 1000) == b"PNGDATA" * 20
     args, kw = client.containers.create.call_args
     cmd = args[1]
     assert cmd[:2] == ["sh", "-c"] and "http://app:80/x/" not in cmd[2]
+    assert "-S" in cmd[2] and "2>&1" not in cmd[2]
     assert cmd[3:] == ["probe", "http://app:80/x/", "5", "1000"]
     assert "$1" in cmd[2] and "base64" in cmd[2]
     assert kw["network"] == "styx-services" and kw["read_only"] is True
@@ -525,3 +526,48 @@ def test_probe_fetch_failures_return_none(mock_docker):
     c.remove.assert_called_once_with(force=True)
     with pytest.raises(ValueError):
         manager.probe_fetch("http://a;rm/", "n", 10)
+
+
+def _fetch(client, body: bytes, headers: bytes = b""):
+    c = MagicMock()
+    c.logs.side_effect = lambda stdout=True, stderr=True, **kw: (
+        body if stdout and not stderr else headers if stderr and not stdout else body + headers)
+    client.containers.create.return_value = c
+    return c
+
+
+def _b64(b: bytes) -> bytes:
+    import base64
+    return base64.b64encode(b)
+
+
+def _same(u):
+    return u.startswith("http://app:80/")
+
+
+def test_probe_fetch_cross_origin_redirect_discards_body(mock_docker):
+    manager, client = mock_docker
+    _fetch(client, _b64(b"secret"), b"  HTTP/1.1 302 Found\n  Location: http://169.254.169.254/x\n")
+    assert manager.probe_fetch("http://app:80/a", "n", 100, allow_redirect_to=_same) is None
+
+
+def test_probe_fetch_same_origin_relative_redirect_ok(mock_docker):
+    manager, client = mock_docker
+    _fetch(client, _b64(b"icon"), b"  HTTP/1.1 301 Moved\n  location: /b\n  HTTP/1.1 200 OK\n")
+    assert manager.probe_fetch("http://app:80/a", "n", 100, allow_redirect_to=_same) == b"icon"
+
+
+def test_probe_fetch_too_many_redirects(mock_docker):
+    manager, client = mock_docker
+    hdr = b"".join(b"  HTTP/1.1 302 Found\n  Location: /h%d\n" % i for i in range(4))
+    _fetch(client, _b64(b"icon"), hdr)
+    assert manager.probe_fetch("http://app:80/a", "n", 100, allow_redirect_to=_same) is None
+
+
+def test_probe_fetch_ignores_location_in_stdout_body(mock_docker):
+    manager, client = mock_docker
+    body = b"Location: http://evil.test/\n"
+    _fetch(client, _b64(body), b"  HTTP/1.1 200 OK\n")
+    assert manager.probe_fetch("http://app:80/a", "n", 100, allow_redirect_to=_same) == body
+    calls = [c.kwargs for c in client.containers.create.return_value.logs.call_args_list]
+    assert {"stdout": True, "stderr": False} in calls and {"stdout": False, "stderr": True} in calls

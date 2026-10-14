@@ -7,6 +7,8 @@ import posixpath
 import re
 import tarfile
 import time
+from collections.abc import Callable
+from urllib.parse import urljoin
 
 import docker
 import docker.errors
@@ -30,6 +32,8 @@ def _join_capped(stream) -> bytes:
             raise ValueError("archive stream exceeds 2 MiB cap")
     return buf.getvalue()
 
+MAX_FETCH_REDIRECTS = 3
+_LOCATION = re.compile(r"^\s*location:\s*(\S+)", re.I | re.M)
 _PROBE_URL = re.compile(r"https?://[A-Za-z0-9._:/@%+=~-]+")
 
 
@@ -118,22 +122,36 @@ class ContainerFilesMixin:
             self._rm_probe(c)
 
     def probe_fetch(self, url: str, network: str, max_bytes: int, timeout_s: int = 5,
-                    extra_hosts: dict | None = None) -> bytes | None:
+                    extra_hosts: dict | None = None,
+                    allow_redirect_to: Callable[[str], bool] | None = None) -> bytes | None:
         """First `max_bytes` of the body of `url`, fetched from a throwaway container; None on failure.
 
         The URL is an argv entry ($1), never part of the shell string. The body travels back
-        base64-encoded through the container logs.
+        base64-encoded on stdout; wget's response headers (-S) arrive on stderr and are the only
+        place redirects are read from. Any Location failing `allow_redirect_to` (or more than
+        MAX_FETCH_REDIRECTS hops) discards the body.
         """
+        # ponytail: busybox wget follows redirects itself, so a refused hop was still requested
+        # before Styx can say no. Upgrade path: fetch hop by hop with redirects disabled
+        # (e.g. a tiny curl image with --max-redirs 0).
         if not _PROBE_URL.fullmatch(url):
             raise ValueError("probe url must be plain http(s) with no shell metacharacters")
         c = self._start_probe(
-            ["sh", "-c", 'wget -q -O - -T "$2" "$1" | head -c "$3" | base64',
+            ["sh", "-c", 'wget -q -S -O - -T "$2" "$1" | head -c "$3" | base64',
              "probe", url, str(timeout_s), str(max_bytes)], network, extra_hosts)
         if c is None:
             return None
         try:
             c.wait(timeout=timeout_s + 10)
             out = c.logs(stdout=True, stderr=False)
+            headers = c.logs(stdout=False, stderr=True).decode("utf-8", "replace")
+            cur, hops = url, _LOCATION.findall(headers)
+            if len(hops) > MAX_FETCH_REDIRECTS:
+                return None
+            for loc in hops:
+                cur = urljoin(cur, loc)
+                if allow_redirect_to is not None and not allow_redirect_to(cur):
+                    return None
             return base64.b64decode(b"".join(out.split()), validate=True) or None
         except (binascii.Error, ValueError):
             return None
