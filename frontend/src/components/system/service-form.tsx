@@ -12,11 +12,11 @@ import { validateService, type FieldErrors } from "./service-validation";
 const EMPTY: ProxiedServiceInput = {
   slug: "", name: "", icon: null, kind: "url", upstream_url: "", container: null, container_port: null,
   mount_mode: "path", auth_mode: "sso", bypass_rules: [], allowed_groups: [], verify_tls: true,
-  health_path: null, preset_id: null, enabled: true, pass_identity: false, frame_ok: true,
+  upstream_host: null, health_path: null, preset_id: null, enabled: true, pass_identity: false, frame_ok: true,
 };
 const ACK_TEXT =
   "I understand that this app runs on the same origin as Styx: any JavaScript it serves can use Styx with the rights of whoever opens it.";
-const KNOWN = ["slug", "name", "upstream_url", "container", "container_port", "health_path", "icon"];
+const KNOWN = ["slug", "name", "upstream_url", "upstream_host", "container", "container_port", "health_path", "icon"];
 
 export type DiscoveredPrefill = { name: string; port?: number; preset: string | null };
 type Props = {
@@ -95,7 +95,7 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
   const setKind = (kind: ProxiedServiceInput["kind"]) =>
     setF({ ...f, kind, ...(kind === "url"
       ? { container: null, container_port: null, upstream_url: "" }
-      : { upstream_url: null }) });
+      : { upstream_url: null, upstream_host: null }) });
   const pickContainer = (name: string) => {
     const c = containers?.find((x) => x.name === name);
     setF((p) => ({ ...p, container: name || null, container_port: c?.ports[0] ?? p.container_port }));
@@ -108,7 +108,7 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
     try {
       // Icons change through their own endpoints once the service exists: never send one on edit.
       const { icon: _icon, ...rest } = f;
-      const res = await onSubmit({ ...(isEdit ? rest : f), name: f.name.trim(), bypass_rules: f.auth_mode === "sso-with-bypass" ? f.bypass_rules : [] });
+      const res = await onSubmit({ ...(isEdit ? rest : f), name: f.name.trim(), upstream_host: f.upstream_host?.trim().toLowerCase() || null, bypass_rules: f.auth_mode === "sso-with-bypass" ? f.bypass_rules : [] });
       if (res) setSrv(res);
     } finally { setSaving(false); }
   };
@@ -195,6 +195,26 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
             <Switch id="verify-tls" aria-label="Verify upstream TLS" checked={f.verify_tls} onCheckedChange={(v) => set("verify_tls", v)} />
           </SwitchRow>
           {!f.verify_tls && <RiskCallout tone="warning" title="TLS not verified">{RISK.tls}</RiskCallout>}
+          {f.kind === "url" && (
+            <>
+              <SwitchRow id="upstream-proxy" label="Upstream is a reverse proxy"
+                hint="Turn on when the address above is Nginx Proxy Manager, Caddy or another proxy that picks the site by hostname.">
+                <Switch id="upstream-proxy" aria-label="Upstream is a reverse proxy" checked={f.upstream_host != null}
+                  onCheckedChange={(v) => set("upstream_host", v ? "" : null)} />
+              </SwitchRow>
+              {f.upstream_host != null && (
+                <>
+                  <Field id="upstream-host" label="Site hostname" error={err("upstream_host")} hint="The hostname your proxy uses for this app.">
+                    <Input id="upstream-host" placeholder="unraid.home.lan" value={f.upstream_host} autoComplete="off" {...aria("upstream_host")}
+                      onChange={(e) => set("upstream_host", e.target.value)} />
+                  </Field>
+                  <RiskCallout tone="warning" title="Links may leave Styx">
+                    {`The app will think its address is ${f.upstream_host || "that hostname"}. If it sends full-address redirects, your browser follows them to that hostname, which only works where it resolves. Connect Styx straight to the app when you can.`}
+                  </RiskCallout>
+                </>
+              )}
+            </>
+          )}
         </Section>
 
         <AccessSection f={f} set={set} preset={preset ?? undefined} groups={groups} errors={errors} />

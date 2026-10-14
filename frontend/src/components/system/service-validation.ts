@@ -7,6 +7,9 @@ const RESERVED = new Set([
   "if", "application", "outpost.goauthentik.io", "static", "media", "flows", "ws", "-", ".well-known", "source",
 ]);
 const CONTAINER_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
+// Bare DNS name, mirrors HOSTNAME_RE in the backend schema (lowercased first)
+const HOST_RE = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
+export const HOST_ERROR = "Enter a hostname like unraid.home.lan — no http://, port or path.";
 const URL_RE = /^https?:\/\/[^\s/@]+(\/\S*)?$/;
 
 export type FieldErrors = Record<string, string>;
@@ -25,6 +28,11 @@ export function validateService(f: ProxiedServiceInput, isEdit: boolean): FieldE
     const u = f.upstream_url?.trim() ?? "";
     if (!u) e.upstream_url = "Upstream URL is required";
     else if (!URL_RE.test(u) || /[\x00-\x20\x7f]/.test(u)) e.upstream_url = "Use http(s)://host[:port][/path], no credentials";
+    // null = switch off; "" = switch on, hostname not typed yet
+    if (f.upstream_host != null) {
+      const h = f.upstream_host.toLowerCase();
+      if (h.length > 253 || !HOST_RE.test(h)) e.upstream_host = HOST_ERROR;
+    }
   } else {
     if (!f.container) e.container = "Choose or enter a container";
     else if (!CONTAINER_RE.test(f.container)) e.container = "Letters, digits, _ . - only; must start with a letter or digit";
