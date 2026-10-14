@@ -1,16 +1,18 @@
 import { useEffect, useState } from "react";
 import { api } from "@/api/client";
 import { statusMeta } from "@/lib/status";
+import { Stepper } from "@/components/ui/stepper";
 import type { Instance } from "@/lib/types";
 
 interface IconViewportProps {
   instance: Instance;
   icon: string | null;
+  pull?: { percent: number | null; detail: string | null } | null;
 }
 
 const REFRESH_MS = 30000;
 
-export function IconViewport({ instance, icon }: IconViewportProps) {
+export function IconViewport({ instance, icon, pull }: IconViewportProps) {
   const { dotClass, pulse } = statusMeta(instance.status);
 
   const isStopped = instance.status === "stopped" || instance.status === "error";
@@ -30,7 +32,12 @@ export function IconViewport({ instance, icon }: IconViewportProps) {
   }, [isLive]);
 
   const iconContent = instance.status === "pulling" ? (
-    <span className="text-[16rem] leading-none select-none">⏳</span>
+    <div className="z-10 w-[min(18rem,80%)] rounded-lg bg-card/90 p-4 text-base leading-normal text-card-foreground">
+      <Stepper steps={[
+        { id: "pull", label: "Download image", state: "active", percent: pull?.percent, detail: pull?.detail ?? "Pulling image" },
+        { id: "start", label: "Start", state: "pending" },
+      ]} />
+    </div>
   ) : icon?.startsWith("http") ? (
     <img src={icon} alt={instance.name} className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[130%] h-[130%] object-contain" draggable={false} />
   ) : (

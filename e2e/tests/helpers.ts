@@ -1,4 +1,5 @@
-import { expect, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
+import { execFileSync } from "node:child_process";
+import { expect, type Locator, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
 
 export const ADMIN = { username: "admin", password: "Styx-e2e-Admin-Quartz-Lantern-91" };
 export const MEMBER = { username: "alice", password: "Styx-e2e-Member-Willow-Harbor-57" };
@@ -52,4 +53,84 @@ export async function setTheme(page: Page, want: "light" | "dark") {
   }
   expect(await page.evaluate(() => localStorage.getItem("theme"))).toBe(want);
   await expect(page.locator("html")).toHaveClass(want === "dark" ? /dark/ : /^(?!.*dark).*$/);
+}
+
+export async function waitHttp(req: APIRequestContext, url: string, ok = (s: number) => s < 400, timeout = 120_000) {
+  await expect.poll(async () => (await req.get(url, { failOnStatusCode: false, maxRedirects: 0 }).catch(() => null))?.status() ?? 0,
+    { timeout, intervals: [2000] }).toSatisfy(ok);
+}
+
+const JF_AUTH = 'MediaBrowser Client="e2e", Device="e2e", DeviceId="e2e-1", Version="1.0"';
+/** Completes Jellyfin's startup wizard through Styx (needs Allow native apps on: every call carries
+ *  `Authorization: MediaBrowser ...`, so it bypasses Styx login). Returns an access token. */
+export async function jellyfinToken(req: APIRequestContext, base: string): Promise<string> {
+  const headers = { Authorization: JF_AUTH };
+  const user = { Name: "e2e", Password: "e2e-Jelly-Pass-42" };
+  await req.post(`${base}/Startup/Configuration`, { headers, data: { UICulture: "en-US", MetadataCountryCode: "US", PreferredMetadataLanguage: "en" } });
+  await req.get(`${base}/Startup/User`, { headers });
+  await req.post(`${base}/Startup/User`, { headers, data: user });
+  await req.post(`${base}/Startup/Complete`, { headers });
+  const r = await req.post(`${base}/Users/AuthenticateByName`, { headers, data: { Username: user.Name, Pw: user.Password } });
+  expect(r.ok(), `AuthenticateByName -> ${r.status()}`).toBeTruthy();
+  return (await r.json()).AccessToken;
+}
+
+/** Jellyfin only writes config/network.xml once network settings are saved. Run once, after the
+ *  service is up: waits for /health, completes the wizard from inside the container (the apps
+ *  network is internal and the base path is not set yet, so Styx cannot reach it; skipped when the
+ *  wizard is already done) and re-saves the network config so the file exists for the mount plan. */
+export function jellyfinSeedNetworkXml(container = "jellyfin") {
+  const script = String.raw`set -eu
+A='${JF_AUTH}'; U=http://localhost:8096; J='Content-Type: application/json'
+i=0; until curl -sf $U/health >/dev/null; do i=$((i+1)); [ $i -gt 60 ] && { echo "jellyfin /health never answered" >&2; exit 1; }; sleep 2; done
+code=$(curl -s -o /dev/null -w '%{http_code}' $U/Startup/Configuration -H "Authorization: $A")
+if [ "$code" = 200 ]; then
+  curl -sSf -XPOST $U/Startup/Configuration -H "Authorization: $A" -H "$J" -d '{"UICulture":"en-US","MetadataCountryCode":"US","PreferredMetadataLanguage":"en"}'
+  curl -sSf $U/Startup/User -H "Authorization: $A" >/dev/null
+  curl -sSf -XPOST $U/Startup/User -H "Authorization: $A" -H "$J" -d '{"Name":"e2e","Password":"e2e-Jelly-Pass-42"}'
+  curl -sSf -XPOST $U/Startup/Complete -H "Authorization: $A"
+fi
+T=$(curl -sSf -XPOST $U/Users/AuthenticateByName -H "Authorization: $A" -H "$J" -d '{"Username":"e2e","Pw":"e2e-Jelly-Pass-42"}' | sed 's/.*"AccessToken":"\([^"]*\)".*/\1/')
+curl -sSf $U/System/Configuration/network -H "X-Emby-Token: $T" > /tmp/n.json
+curl -sSf -XPOST $U/System/Configuration/network -H "X-Emby-Token: $T" -H "$J" --data @/tmp/n.json`;
+  try {
+    execFileSync("docker", ["compose", "-p", "styx-e2e", "exec", "-T", container, "sh", "-c", script], { stdio: "pipe" });
+  } catch (e) {
+    const err = e as { stderr?: Buffer; message: string };
+    throw new Error(`jellyfin seeding failed: ${err.stderr?.toString() || err.message}`);
+  }
+}
+
+export type Svc = Record<string, unknown> & { id: string; slug: string };
+
+/** PUT replaces every field: GET the service, merge the patch, PUT it back. */
+export async function updateService(ctx: BrowserContext, slug: string, patch: Record<string, unknown>) {
+  const all: Svc[] = await apiCall(ctx, "GET", "/api/services");
+  const { id, slug: _slug, ...cur } = all.find((x) => x.slug === slug)!;
+  const writable = Object.fromEntries(Object.entries(cur).filter(([k]) =>
+    !["health_status", "health_checked_at", "mount_managed", "upstream_fallback", "created_at", "updated_at"].includes(k)));
+  return apiCall(ctx, "PUT", `/api/services/${id}`, { ...writable, ...patch });
+}
+
+/** Create a service through the API, or update it when the slug already exists (re-runnable). */
+export async function ensureService(ctx: BrowserContext, svc: Record<string, unknown> & { slug: string }) {
+  const all: Svc[] = await apiCall(ctx, "GET", "/api/services");
+  if (all.some((x) => x.slug === svc.slug)) { const { slug, ...rest } = svc; return updateService(ctx, slug, rest); }
+  return apiCall(ctx, "POST", "/api/services", {
+    icon: null, kind: "docker-local", container_port: 80, mount_mode: "path", auth_mode: "sso", bypass_rules: [],
+    allowed_groups: ["media"], verify_tls: true, health_path: null, preset_id: null, enabled: true,
+    pass_identity: false, frame_ok: true, acknowledged_origin: true, ...svc,
+  });
+}
+
+/** Wait until the element has stopped moving (spring/slide-in finished): same box on 3 consecutive samples. */
+export async function settled(loc: Locator) {
+  let last = "";
+  let same = 0;
+  await expect.poll(async () => {
+    const now = JSON.stringify(await loc.boundingBox());
+    same = now === last ? same + 1 : 0;
+    last = now;
+    return same;
+  }, { intervals: [60], timeout: 5000 }).toBeGreaterThanOrEqual(3);
 }

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ChevronLeft } from "lucide-react";
 import { InstanceGrid } from "./instance-grid";
 import { InstanceDetailPane } from "./instance-detail-pane";
 import { ServiceList } from "./service-list";
@@ -14,9 +15,9 @@ export function InstanceWorkspace({ onLaunch, onOpenSettings }: InstanceWorkspac
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   return (
-    <div className="relative flex h-[calc(100vh-8.5rem)] gap-3">
+    <div className="relative flex h-full gap-3">
       {/* List pane: 40% on md+, full-width on narrow */}
-      <div className="w-full overflow-y-auto md:w-2/5 md:min-w-[320px]">
+      <div className="-m-1 w-full overflow-y-auto p-1 md:w-2/5 md:min-w-[320px]">
         <ServiceList onOpenSettings={onOpenSettings} />
         <WorkstationList />
         <InstanceGrid
@@ -37,10 +38,10 @@ export function InstanceWorkspace({ onLaunch, onOpenSettings }: InstanceWorkspac
         {/* Back button for narrow screens */}
         {selectedId && (
           <button
-            className="m-2 text-sm text-muted-foreground hover:text-foreground transition-colors md:hidden"
+            className="m-2 inline-flex min-h-11 items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors md:hidden"
             onClick={() => setSelectedId(null)}
           >
-            ← Back
+            <ChevronLeft className="size-4" aria-hidden />Back
           </button>
         )}
         <InstanceDetailPane key={selectedId} instanceId={selectedId} />

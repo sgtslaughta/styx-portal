@@ -29,10 +29,12 @@ from app.routers import agent as agent_router
 from app.routers import system_settings as system_settings_router
 from app.routers import groups as groups_router
 from app.routers import services as services_router
+from app.routers import service_mounts as service_mounts_router
 from app.routers import services_auth as services_auth_router
 from app.security.deps import get_current_user, require_admin
 from app.services.docker_manager import DockerManager
 from app.services.session_monitor import SessionMonitor
+from app.services.mount_jobs import sweep_interrupted
 from app.security.csrf import csrf_valid, CSRF_COOKIE, CSRF_HEADER, UNSAFE_METHODS
 
 logger = logging.getLogger("styx-portal")
@@ -107,9 +109,21 @@ async def lifespan(app: FastAPI):
 
     await init_db()
 
+    async with async_session() as _s:
+        _n = await sweep_interrupted(_s)
+        if _n:
+            logger.warning("Marked %d interrupted mount job(s) failed", _n)
+
     from app.services.settings_store import settings as _settings_store
     async with async_session() as _s:
         await _settings_store.reload(_s)
+
+    try:
+        _p = await asyncio.to_thread(DockerManager(network_name=_settings.DOCKER_NETWORK).remove_probe_containers)
+        if _p:
+            logger.warning("Removed %d leftover probe container(s)", _p)
+    except Exception:  # noqa: BLE001 - docker may be unavailable at boot
+        logger.warning("Probe container cleanup skipped", exc_info=True)
 
     # Sync instance states — mark stale instances as stopped
     docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
@@ -298,6 +312,7 @@ app.include_router(agent_router.router, prefix="/api/agent", tags=["agent"])
 app.include_router(system_settings_router.router, prefix="/api/system-settings", tags=["system-settings"])
 app.include_router(groups_router.router, prefix="/api/groups", tags=["groups"])
 app.include_router(groups_router.users_router, prefix="/api/users", tags=["groups"])
+app.include_router(service_mounts_router.router, prefix="/api/services", tags=["services"])
 app.include_router(services_router.router, prefix="/api/services", tags=["services"])
 app.include_router(services_auth_router.router, prefix="/api/services", tags=["services"])
 app.include_router(services_auth_router.internal_router, prefix="/internal", tags=["services"])

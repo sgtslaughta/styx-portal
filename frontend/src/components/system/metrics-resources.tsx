@@ -58,7 +58,7 @@ function TimeSeriesChart({
         <span className="text-[11px] text-muted-foreground font-medium">{label}</span>
         <div className="flex gap-3 text-[10px] tabular-nums">
           <span className="text-muted-foreground">avg <span className="text-foreground">{avgVal.toFixed(1)}{unit}</span></span>
-          <span className="text-muted-foreground">peak <span className="text-warning">{peakVal.toFixed(1)}{unit}</span></span>
+          <span className="text-muted-foreground">peak <span className="text-warning-foreground">{peakVal.toFixed(1)}{unit}</span></span>
           <span className="text-muted-foreground">now <span style={{ color }}>{currentVal.toFixed(1)}{unit}</span></span>
         </div>
       </div>

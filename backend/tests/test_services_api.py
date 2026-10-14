@@ -192,3 +192,12 @@ async def test_presets_and_discover(admin_client, docker_mock, session):
     by_name = {c["name"]: c for c in r.json()}
     assert by_name["sonarr"]["suggested_preset"] == "sonarr"
     assert by_name["random"]["suggested_preset"] is None
+
+
+@pytest.mark.asyncio
+async def test_mount_managed_is_server_owned(admin_client, docker_mock):
+    r = await admin_client.post("/api/services", json=_body(mount_managed=True))
+    assert r.status_code == 201 and r.json()["mount_managed"] is False
+    sid = r.json()["id"]
+    r = await admin_client.put(f"/api/services/{sid}", json=_body(mount_managed=True))
+    assert r.status_code == 200 and r.json()["mount_managed"] is False

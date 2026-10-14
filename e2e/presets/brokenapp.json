@@ -1,0 +1,1 @@
+{"id":"brokenapp","name":"Broken app","icon":"🧪","default_port":80,"mount_mode":"path","auth_mode":"sso","bypass_rules":[],"health_path":"/","verify_tls":true,"base_url_hint":null,"warnings":[],"subpath":{"methods":[{"type":"config_file","paths":["/config/config.xml"],"format":"xml","key":"/Config/UrlBase"}],"restart":true,"verify_path":"/{slug}/ping"}}

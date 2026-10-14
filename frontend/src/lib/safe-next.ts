@@ -12,14 +12,20 @@ const BAD_CHARS = /[\s\x00-\x1f\x7f\\]/;
  * protocol-relative), contain no whitespace/control characters, no
  * percent-encoded "." "/" "\" and no dot segments, and must not start with a
  * Styx-internal segment (case-insensitive, after percent-decoding). */
-export function safeNext(next: string | null | undefined): string | null {
+export function safeNext(next: string | null | undefined, inner = false): string | null {
   if (!next || !/^\/(?![/\\])/.test(next) || BAD_CHARS.test(next)) return null;
   const path = next.split(/[?#]/, 1)[0] ?? "";
   try {
     const decoded = decodeURIComponent(path);
     if (ENCODED_SEP.test(path) || ENCODED_SEP.test(decoded) || BAD_CHARS.test(decoded)) return null;
     const segs = decoded.split("/");
-    if (segs.includes(".") || segs.includes("..") || BLOCKED.has((segs[1] ?? "").toLowerCase())) return null;
+    if (segs.includes(".") || segs.includes("..")) return null;
+    const first = (segs[1] ?? "").split(";", 1)[0]!.toLowerCase(); // "/api;x" is still /api to some routers
+    if (!inner && segs[1] === "_styx" && segs[2] === "app" && segs[3]) {
+      // The shell page (/_styx/app/<slug>/...): the one place under /_styx a login may return to.
+      // Its inner path is loaded in the frame as-is, so it must pass the same rule.
+      if (!safeNext("/" + segs.slice(4).join("/") + next.slice(path.length), true)) return null;
+    } else if (BLOCKED.has(first)) return null;
     const u = new URL(next, window.location.origin);
     if (u.origin !== window.location.origin) return null;
     return u.pathname + u.search + u.hash;

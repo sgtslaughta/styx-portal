@@ -23,4 +23,10 @@ describe("safeNext", () => {
     "rejects encoded/dot path %s", (p) => {
       expect(safeNext(p)).toBeNull();
     });
+  // The shell page is the one place under /_styx a login may return to, and only for a safe inner path.
+  test.each(["/_styx/app/sonarr/series?p=1", "/_styx/app/x/", "/_styx/app/x/web/index.html", "/_styx/app/x"])(
+    "accepts shell path %s", (p) => { expect(safeNext(p)).toBe(p); });
+  test.each(["/_styx/app/", "/_styx/app", "/_styx/application", "/_styx/exit", "/_styx/open/x", "/_styx/app/x/_styx/exit",
+    "/_styx/app/x/api/auth/me", "/_styx/app/x/login", "/_styx/app/X/..", "/_styx/app/x/%61pi/y", "/_styx/app/x/api;/y", "/api;x/y", "/_styx/app/x/_styx/app/y/", "/_STYX;a/app/x/"])(
+    "rejects %s", (p) => { expect(safeNext(p)).toBeNull(); });
 });

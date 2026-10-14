@@ -14,9 +14,10 @@ STRIP = "http://backend:8000/internal/services/{slug}/strip"
 # Cookie header minus Styx cookies and Traefik swaps it in (authResponseHeaders
 # replaces the request header), so upstream servers never see Styx credentials.
 # app-native services get a strip-only forwardAuth (no auth) for the same reason.
-IDENTITY_HEADERS = ["X-Styx-User", "X-Styx-Groups", "X-authentik-username",
+IDENTITY_HEADERS = ["X-Styx-User", "X-Styx-Email", "X-Styx-Groups", "X-authentik-username",
                     "X-authentik-groups", "X-authentik-email", "X-authentik-uid"]
-BASE_MW = ["ip-ban-gate", "styx-ratelimit", "styx-strip-identity", "service-unavailable-errors"]
+BASE_MW = ["ip-ban-gate", "styx-ratelimit", "styx-strip-identity", "service-unavailable-errors",
+           "styx-frame-sameorigin"]
 
 
 def add_service_routes(config: dict, middlewares: dict, services: list[dict],
@@ -36,7 +37,7 @@ def add_service_routes(config: dict, middlewares: dict, services: list[dict],
         if s["auth_mode"] != "app-native":
             middlewares[f"svc-auth-{slug}"] = {"forwardAuth": {
                 "address": AUTH_CHECK.format(slug=slug),
-                "authResponseHeaders": ["X-Styx-User", "X-Styx-Groups", "Cookie"]}}
+                "authResponseHeaders": ["X-Styx-User", "X-Styx-Email", "X-Styx-Groups", "Cookie"]}}
             mws.append(f"svc-auth-{slug}")
         else:
             middlewares[f"svc-strip-{slug}"] = {"forwardAuth": {
@@ -68,6 +69,10 @@ def add_service_routes(config: dict, middlewares: dict, services: list[dict],
     routers["styx-exit"] = {"rule": f"Host(`{domain}`) && PathPrefix(`/_styx`)",
                             "service": "api", "priority": 90,
                             "middlewares": ["ip-ban-gate", "styx-ratelimit"], **transport}
+    middlewares["styx-frame-sameorigin"] = {"headers": {"customFrameOptionsValue": "SAMEORIGIN"}}
+    routers["styx-shell"] = {"rule": f"Host(`{domain}`) && PathPrefix(`/_styx/app`)",
+                             "service": "frontend", "priority": 95,
+                             "middlewares": ["ip-ban-gate", "styx-ratelimit"], **transport}
     if has_cookie_root:
         # While a takeover cookie is set, /api belongs to the app unless the
         # request is from the Styx frontend (X-Styx-Client header).

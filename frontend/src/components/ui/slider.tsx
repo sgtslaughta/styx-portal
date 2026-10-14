@@ -30,7 +30,7 @@ function Slider({
       <SliderPrimitive.Thumb
         data-slot="slider-thumb"
         className={cn(
-          "block h-4 w-4 rounded-full border border-primary/50 bg-background shadow-xs transition-[box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50",
+          "block h-4 w-4 rounded-full border border-primary/50 bg-background shadow-xs transition-[box-shadow] outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50",
           className
         )}
       />

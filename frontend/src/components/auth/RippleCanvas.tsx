@@ -111,7 +111,7 @@ void main(){
   // the lower-left. Anchored upper-right, dark navy for contrast.
   float md2 = distance(uv, vec2(1.0, 1.0));
   float mask2 = smoothstep(0.95, 0.18, md2);
-  vec3 darkBlue = vec3(0.043, 0.078, 0.255); // #0b1441
+  vec3 darkBlue = vec3(0.059, 0.110, 0.133); // Water #0F1C22
   col = mix(col, darkBlue, clamp(cover, 0.0, 1.0) * (uLineAlpha + 0.18) * mask2);
 
   vec3 lightDir = normalize(vec3(-0.4, 0.5, 0.8));
@@ -228,14 +228,14 @@ export function RippleCanvas() {
       const [ripR, ripG, ripB] = parseRgb();
       const isDark = document.documentElement.classList.contains("dark");
       // Gradient anchored upper-right (must match the .styx-brand CSS gradient):
-      // dark theme: dark slate grey-blue #38425e -> deep navy #04081a
-      // light theme: dark slate grey-blue #2c3650 -> off-white #faf8f3
+      // dark theme: #16323A -> Water #0F1C22
+      // light theme: Current #2A767C -> Mist #EDF1EF
       const bgNear = isDark
-        ? [0.220, 0.259, 0.369]
-        : [0.173, 0.212, 0.314];
+        ? [0.086, 0.196, 0.227]
+        : [0.165, 0.463, 0.486];
       const bgFar = isDark
-        ? [0.016, 0.031, 0.102]
-        : [0.980, 0.973, 0.953];
+        ? [0.059, 0.110, 0.133]
+        : [0.929, 0.945, 0.937];
       const lineAlpha = isDark ? 0.52 : 0.44;
 
       gl.uniform2f(uRes, canvas.width, canvas.height);

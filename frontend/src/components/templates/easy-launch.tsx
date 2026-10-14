@@ -1,7 +1,7 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Cpu, HardDrive, Globe, ShieldCheck } from "lucide-react";
+import { ArrowRight, Cpu, HardDrive, Globe, ShieldCheck } from "lucide-react";
 import type { LaunchConfig } from "@/hooks/use-launch-config";
 
 interface EasyLaunchProps {
@@ -77,7 +77,7 @@ export function EasyLaunch({ cfg, domain, onLaunch, onAdvanced, launching }: Eas
           className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors"
           onClick={onAdvanced}
         >
-          Switch to Advanced →
+          Switch to Advanced<ArrowRight className="ml-1 inline size-3.5" aria-hidden />
         </button>
       </div>
     </div>

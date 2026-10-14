@@ -35,3 +35,14 @@ def test_rejects(p):
 def test_allow_login_for_exit_chain():
     assert safe_next("/login?next=/dash", allow_login=True) == "/login?next=/dash"
     assert safe_next("/api/x", allow_login=True) is None
+
+
+def test_shell_paths_allowed_other_styx_paths_not():
+    for ok in ("/_styx/app/sonarr/series?p=1", "/_styx/app/x/", "/_styx/app/x/web/index.html", "/_styx/app/x"):
+        assert safe_next(ok) == ok
+    for p in ("/_styx/app/", "/_styx/exit", "/_styx/open/x", "/_styx/application", "/_styx/app",
+              "/_styx/app/../exit", "/_styx/app/%2e%2e/exit", "/_styx/app/X/..",
+              "/_styx/app/x/_styx/exit", "/_styx/app/x/api/auth/me", "/_styx/app/x/login",
+              "/_styx/app/x/API/y?a=1", "/_styx/app/x/%61pi/y",
+              "/_styx/app/x/api;/y", "/api;x/y", "/_styx/app/x/_styx/app/y/", "/_STYX;a/app/x/"):
+        assert safe_next(p) is None, p

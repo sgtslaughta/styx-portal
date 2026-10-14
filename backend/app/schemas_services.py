@@ -20,6 +20,8 @@ SERVICE_KINDS = {"url", "docker-local"}
 class BypassRule(BaseModel):
     path_prefix: str = Field(min_length=1, max_length=255)
     required_header: str | None = Field(default=None, max_length=64)
+    header_prefix: str | None = Field(default=None, max_length=64)   # header value must start with this
+    required_query: str | None = Field(default=None, max_length=64)  # query param must be present & non-empty
 
     @field_validator("path_prefix")
     @classmethod
@@ -27,6 +29,16 @@ class BypassRule(BaseModel):
         if not v.startswith("/"):
             raise ValueError("path_prefix must start with /")
         return v
+
+    @model_validator(mode="after")
+    def _one_condition(self):
+        # a rule without a condition bypasses its whole prefix, so never let a
+        # half-specified rule (e.g. header_prefix alone) silently widen that
+        if self.header_prefix and not self.required_header:
+            raise ValueError("header_prefix requires required_header")
+        if self.required_header and self.required_query:
+            raise ValueError("required_header and required_query are mutually exclusive")
+        return self
 
 
 class _ServiceFields(BaseModel):
@@ -44,6 +56,8 @@ class _ServiceFields(BaseModel):
     health_path: str | None = Field(default=None, max_length=255)
     preset_id: str | None = None
     enabled: bool = True
+    pass_identity: bool = False
+    frame_ok: bool = True
 
     @field_validator("kind")
     @classmethod
@@ -134,6 +148,10 @@ class ProxiedServiceOut(BaseModel):
     health_checked_at: str | None
     preset_id: str | None
     enabled: bool
+    mount_managed: bool
+    needs_setup: bool = False
+    pass_identity: bool
+    frame_ok: bool
     created_at: str
     updated_at: str
 
@@ -147,6 +165,8 @@ class ServiceTileOut(BaseModel):
     mount_mode: str
     enabled: bool
     up: bool | None          # None = unknown
+    frame_ok: bool = True
+    needs_setup: bool = False
 
 
 class ServicePresetOut(BaseModel):
@@ -161,6 +181,7 @@ class ServicePresetOut(BaseModel):
     verify_tls: bool
     base_url_hint: str | None
     warnings: list[str]
+    subpath: dict | None = None
 
 
 class DiscoveredContainer(BaseModel):
@@ -172,7 +193,7 @@ class DiscoveredContainer(BaseModel):
 
 
 class GroupCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=64)
+    name: str = Field(min_length=1, max_length=64, pattern=r"^[^,]+$")  # X-Styx-Groups is comma-joined
     description: str | None = Field(default=None, max_length=255)
 
 

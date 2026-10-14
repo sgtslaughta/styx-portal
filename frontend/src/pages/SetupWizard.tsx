@@ -14,7 +14,7 @@ const STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Good", "Strong"];
 const STRENGTH_COLORS = ["bg-destructive", "bg-warning", "bg-warning", "bg-success", "bg-success"];
 
 function PreRow({ ok, label, detail, warnOnly }: { ok: boolean; label: string; detail: string; warnOnly?: boolean }) {
-  const color = ok ? "text-success" : warnOnly ? "text-warning" : "text-destructive";
+  const color = ok ? "text-success" : warnOnly ? "text-warning-foreground" : "text-destructive";
   return (
     <div className="flex items-center justify-between">
       <span>{label}</span>
@@ -106,7 +106,7 @@ export function SetupWizard() {
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">Strength:</span>
                     <span className={`text-xs font-medium ${
-                      score < 2 ? "text-destructive" : score < 3 ? "text-warning" : "text-success"
+                      score < 2 ? "text-destructive" : score < 3 ? "text-warning-foreground" : "text-success"
                     }`}>
                       {STRENGTH_LABELS[score]}
                     </span>

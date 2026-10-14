@@ -108,6 +108,11 @@ async def _run_migrations(conn):
         ("workstations", "disconnect_pending", "BOOLEAN"),
         ("workstations", "idle_disconnect_sent", "BOOLEAN NOT NULL DEFAULT 0"),
         ("users", "failed_count", "INTEGER DEFAULT 0"),
+        ("service_presets", "subpath", "JSON"),
+        ("proxied_services", "mount_managed", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("mount_jobs", "changed", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("proxied_services", "pass_identity", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("proxied_services", "frame_ok", "BOOLEAN NOT NULL DEFAULT 1"),
         ("users", "locked_until", "TIMESTAMP"),
     ]
     for table, column, col_type in migrations:
@@ -174,7 +179,7 @@ async def seed_templates(session: AsyncSession, templates_dir: str):
 
 
 async def seed_service_presets(session: AsyncSession, presets_dir: str):
-    """Insert-only seed of templates/services/*.json into service_presets."""
+    """Upsert of templates/services/*.json into service_presets (built-in, read-only)."""
     if not os.path.isdir(presets_dir):
         return
     for filename in sorted(os.listdir(presets_dir)):
@@ -182,7 +187,12 @@ async def seed_service_presets(session: AsyncSession, presets_dir: str):
             continue
         with open(os.path.join(presets_dir, filename)) as f:
             data = json.load(f)
-        if await session.get(ServicePreset, data["id"]):
+        existing = await session.get(ServicePreset, data["id"])
+        if existing is None:
+            session.add(ServicePreset(**data))
             continue
-        session.add(ServicePreset(**data))
+        # Rebuild every field: a key the file dropped must not survive from an older seed.
+        for k, v in ServicePreset(**data).model_dump().items():
+            setattr(existing, k, v)
+        session.add(existing)
     await session.commit()

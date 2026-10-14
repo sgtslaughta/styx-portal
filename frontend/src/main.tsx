@@ -3,7 +3,9 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router";
 import { Toaster } from "sonner";
+import { MotionConfig } from "framer-motion";
 import App from "./App";
+import { applyReducedMotion } from "@/lib/motion";
 import { AuthProvider } from "@/auth/AuthContext";
 import { ProtectedRoute } from "@/auth/ProtectedRoute";
 import { ThemeProvider } from "@/theme/ThemeProvider";
@@ -13,6 +15,7 @@ import { ChangePasswordPage } from "@/pages/ChangePasswordPage";
 import { SetupWizard } from "@/pages/SetupWizard";
 import { AcceptInvitePage } from "@/pages/AcceptInvitePage";
 import { ConnectingPage } from "@/pages/ConnectingPage";
+import "@fontsource-variable/commissioner/flar.css";
 import "./styles/globals.css";
 
 /** Toaster that follows the app theme by mirroring the `.dark` class on <html>
@@ -30,6 +33,8 @@ function ThemedToaster() {
   return <Toaster theme={isDark ? "dark" : "light"} />;
 }
 
+applyReducedMotion();
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -42,6 +47,7 @@ const queryClient = new QueryClient({
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
+      <MotionConfig reducedMotion="user">
       <BrowserRouter>
         <ThemeProvider>
         <AuthProvider>
@@ -58,6 +64,7 @@ createRoot(document.getElementById("root")!).render(
         </AuthProvider>
         </ThemeProvider>
       </BrowserRouter>
+      </MotionConfig>
       <ThemedToaster />
     </QueryClientProvider>
   </StrictMode>

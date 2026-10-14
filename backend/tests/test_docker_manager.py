@@ -419,3 +419,79 @@ def test_create_container_no_stale_is_fine(mock_docker):
     manager.create_container(name="selkies-new", image="img", labels={},
                              environment={}, volumes={}, port=3001)
     client.containers.create.assert_called_once()
+
+
+def _probe(client, out: bytes = b"  HTTP/1.1 200 OK\n"):
+    c = MagicMock()
+    c.logs.return_value = out
+    client.containers.create.return_value = c
+    return c
+
+
+def test_probe_http_runs_hardened_container_and_parses_status(mock_docker):
+    manager, client = mock_docker
+    c = _probe(client, b"  HTTP/1.1 200 OK\n")
+    assert manager.probe_http("http://sonarr:8989/sonarr/ping", "styx-services",
+                              extra_hosts={"h": "host-gateway"}) == 200
+    args, kw = client.containers.create.call_args
+    assert args[0] == "busybox:1.36"
+    assert args[1] == ["wget", "-q", "-S", "-O", "/dev/null", "-T", "5", "http://sonarr:8989/sonarr/ping"]
+    assert kw["network"] == "styx-services" and kw["read_only"] is True
+    assert kw["cap_drop"] == ["ALL"] and kw["mem_limit"] == "32m"
+    assert kw["user"] == "65534:65534"
+    assert kw["pids_limit"] == 32 and kw["security_opt"] == ["no-new-privileges"]
+    assert kw["labels"] == {"styx.probe": "true"} and kw["extra_hosts"] == {"h": "host-gateway"}
+    c.remove.assert_called_once_with(force=True)
+
+
+def test_probe_http_404_and_failure(mock_docker):
+    manager, client = mock_docker
+    _probe(client, b"  HTTP/1.1 404 Not Found\n")
+    assert manager.probe_http("http://a:1/", "n") == 404
+    _probe(client, b"wget: bad address 'a'\n")
+    assert manager.probe_http("http://a:1/", "n") == 0
+
+
+def test_probe_http_removes_container_on_exception(mock_docker):
+    manager, client = mock_docker
+    c = _probe(client)
+    c.wait.side_effect = RuntimeError("timeout")
+    assert manager.probe_http("http://a:1/", "n") == 0
+    c.remove.assert_called_once_with(force=True)
+
+
+@pytest.mark.parametrize("url", ["file:///etc/passwd", "http://a;rm -rf /", "http://a b/", "http://a`x`/"])
+def test_probe_http_rejects_bad_urls(mock_docker, url):
+    with pytest.raises(ValueError):
+        mock_docker[0].probe_http(url, "n")
+
+
+def test_probe_http_redirect_counts_by_first_status(mock_docker):
+    manager, client = mock_docker
+    _probe(client, b"  HTTP/1.1 302 Found\n  HTTP/1.1 500 Oops\n")
+    assert manager.probe_http("http://a:1/", "n") == 302
+
+
+def test_probe_http_pull_failure_returns_minus_one(mock_docker):
+    manager, client = mock_docker
+    client.images.get.side_effect = docker.errors.ImageNotFound("nope")
+    client.images.pull.side_effect = docker.errors.APIError("registry down")
+    assert manager.probe_http("http://a:1/", "n") == -1
+    client.containers.create.assert_not_called()
+
+
+def test_probe_http_start_failure_returns_minus_one_and_removes(mock_docker):
+    manager, client = mock_docker
+    c = _probe(client)
+    c.start.side_effect = RuntimeError("no start")
+    assert manager.probe_http("http://a:1/", "n") == -1
+    c.remove.assert_called_once_with(force=True)
+
+
+def test_remove_probe_containers(mock_docker):
+    manager, client = mock_docker
+    a, b = MagicMock(), MagicMock()
+    client.containers.list.return_value = [a, b]
+    assert manager.remove_probe_containers() == 2
+    client.containers.list.assert_called_once_with(all=True, filters={"label": "styx.probe=true"})
+    a.remove.assert_called_once_with(force=True)

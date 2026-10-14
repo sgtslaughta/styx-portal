@@ -1,25 +1,21 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { DiscoveredContainer, Group, ProxiedService, ProxiedServiceInput, ServicePreset } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { DrawerBody, DrawerFooter } from "@/components/ui/drawer";
 import { RISK, RISK_DETAIL, RiskCallout } from "@/components/common/risk-callout";
-import { BypassRulesEditor, Field, Section, SwitchRow, selectCls } from "./service-form-parts";
+import { Field, Section, SwitchRow, selectCls } from "./service-form-parts";
+import { AccessSection, checkCls } from "./service-form-access";
 import { validateService, type FieldErrors } from "./service-validation";
 
 const EMPTY: ProxiedServiceInput = {
   slug: "", name: "", icon: null, kind: "url", upstream_url: "", container: null, container_port: null,
   mount_mode: "path", auth_mode: "sso", bypass_rules: [], allowed_groups: [], verify_tls: true,
-  health_path: null, preset_id: null, enabled: true,
+  health_path: null, preset_id: null, enabled: true, pass_identity: false, frame_ok: true,
 };
 const ACK_TEXT =
   "I understand that this app runs on the same origin as Styx: any JavaScript it serves can use Styx with the rights of whoever opens it.";
-const checkCls =
-  "h-4 w-4 shrink-0 accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
-const chipCls =
-  "flex cursor-pointer items-center gap-2 rounded-md border border-border bg-muted/30 px-2.5 py-1.5 text-sm " +
-  "transition-colors hover:bg-accent has-[:checked]:border-primary/50 has-[:checked]:bg-primary/10";
 const KNOWN = ["slug", "name", "upstream_url", "container", "container_port", "health_path", "icon"];
 
 export type DiscoveredPrefill = { name: string; port?: number; preset: string | null };
@@ -29,6 +25,8 @@ type Props = {
   /** Resolve with field errors to show them next to their fields; throw/reject is not expected. */
   onSubmit: (data: ProxiedServiceInput) => void | FieldErrors | Promise<void | FieldErrors>;
   onCancel: () => void;
+  /** Rendered first inside the scrolling body (e.g. the base-path section). */
+  lead?: ReactNode;
 };
 
 function withPreset(f: ProxiedServiceInput, p: ServicePreset): ProxiedServiceInput {
@@ -42,7 +40,7 @@ function withPreset(f: ProxiedServiceInput, p: ServicePreset): ProxiedServiceInp
 
 function initialState(initial: Props["initial"], discovered: Props["discovered"], presets: ServicePreset[]) {
   if (initial) {
-    const { id: _i, upstream_fallback: _u, health_status: _h, health_checked_at: _c, created_at: _a, updated_at: _b, ...rest } = initial;
+    const { id: _i, upstream_fallback: _u, health_status: _h, health_checked_at: _c, created_at: _a, updated_at: _b, mount_managed: _m, needs_setup: _n, ...rest } = initial;
     return rest;
   }
   if (discovered) {
@@ -51,12 +49,12 @@ function initialState(initial: Props["initial"], discovered: Props["discovered"]
       slug: discovered.name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/^-+|-+$/g, ""), name: discovered.name,
     };
     const p = presets.find((x) => x.id === discovered.preset);
-    return p ? withPreset(base, p) : base;
+    return p ? { ...withPreset(base, p), slug: p.id } : base;
   }
   return EMPTY;
 }
 
-export function ServiceForm({ initial, presets, groups, discovered, loadContainers, onSubmit, onCancel }: Props) {
+export function ServiceForm({ initial, presets, groups, discovered, loadContainers, onSubmit, onCancel, lead }: Props) {
   const isEdit = !!initial;
   const [f, setF] = useState<ProxiedServiceInput>(() => initialState(initial, discovered, presets));
   const [touched, setTouched] = useState<Set<string>>(new Set());
@@ -81,6 +79,9 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
     setSrv((s) => { if (!(k in s)) return s; const { [k]: _x, ...rest } = s; return rest; });
   };
   const preset = presets.find((p) => p.id === f.preset_id) ?? null;
+  // Same rule as the backend's needs_setup: a managed base path step follows the save.
+  const setsBasePath = !isEdit && f.kind === "docker-local" && f.mount_mode === "path"
+    && !!preset?.subpath?.methods.some((m) => (m as { type?: string }).type === "config_file");
   const errors = validateService(f, isEdit);
   const valid = Object.keys(errors).length === 0;
   const err = (k: string) => srv[k] ?? (touched.has(k) ? errors[k] : undefined);
@@ -114,8 +115,9 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
   return (
     <form className="flex min-h-0 flex-1 flex-col" noValidate onSubmit={(e) => { e.preventDefault(); void submit(); }}>
       <DrawerBody className="space-y-5">
+        {lead}
         <Section title="Basics">
-          <Field id="preset" label="Preset" hint={preset?.base_url_hint ? `App setting: ${preset.base_url_hint}` : "Optional: prefills mode, auth, health and bypass rules."}>
+          <Field id="preset" label="Preset" hint="Optional: prefills mode, auth, health and bypass rules.">
             <select id="preset" className={selectCls} value={f.preset_id ?? ""} autoFocus={!isEdit && !discovered}
               onChange={(e) => applyPreset(e.target.value)}>
               <option value="">None (custom)</option>
@@ -190,55 +192,10 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
           <SwitchRow id="verify-tls" label="Verify upstream TLS" hint="Turn off only for self-signed certificates on your LAN.">
             <Switch id="verify-tls" aria-label="Verify upstream TLS" checked={f.verify_tls} onCheckedChange={(v) => set("verify_tls", v)} />
           </SwitchRow>
-          {!f.verify_tls && <RiskCallout title="TLS not verified">{RISK.tls}</RiskCallout>}
+          {!f.verify_tls && <RiskCallout tone="warning" title="TLS not verified">{RISK.tls}</RiskCallout>}
         </Section>
 
-        <Section title="Access" hint="How the app is mounted and who can open it.">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field id="mount" label="Mount mode">
-              <select id="mount" className={selectCls} value={f.mount_mode}
-                onChange={(e) => set("mount_mode", e.target.value as ProxiedServiceInput["mount_mode"])}>
-                <option value="path">Path (/slug, app has base URL)</option>
-                <option value="cookie-root">Cookie root (takeover)</option>
-              </select>
-            </Field>
-            <Field id="auth" label="Auth mode">
-              <select id="auth" className={selectCls} value={f.auth_mode}
-                onChange={(e) => set("auth_mode", e.target.value as ProxiedServiceInput["auth_mode"])}>
-                <option value="sso">SSO (Styx login required)</option>
-                <option value="sso-with-bypass">SSO with bypass rules</option>
-                <option value="app-native">App native (no Styx auth)</option>
-              </select>
-            </Field>
-          </div>
-          {f.mount_mode === "cookie-root" && (
-            <RiskCallout title="Takes over this browser" details={RISK_DETAIL.cookieRoot}>{RISK.cookieRoot}</RiskCallout>
-          )}
-          {f.auth_mode === "app-native" && <RiskCallout title="No Styx login">{RISK.appNative}</RiskCallout>}
-          {f.auth_mode === "sso-with-bypass" && (
-            <BypassRulesEditor rules={f.bypass_rules} errors={errors} onChange={(r) => set("bypass_rules", r)} />
-          )}
-          <fieldset className="space-y-2">
-            <legend className="mb-1.5 text-sm font-medium">Allowed groups</legend>
-            {groups.length === 0 ? (
-              <p className="text-xs text-muted-foreground">No groups defined. Any logged-in user can open this service. Create groups under Administration, Groups.</p>
-            ) : (
-              <>
-                <div className="flex flex-wrap gap-2">
-                  {groups.map((g) => (
-                    <label key={g.id} className={chipCls}>
-                      <input type="checkbox" className={checkCls} checked={f.allowed_groups.includes(g.name)}
-                        onChange={(e) => set("allowed_groups", e.target.checked
-                          ? [...f.allowed_groups, g.name] : f.allowed_groups.filter((n) => n !== g.name))} />
-                      {g.name}
-                    </label>
-                  ))}
-                </div>
-                <p className="text-xs text-muted-foreground">Leave all unchecked to allow any logged-in user. Admins always have access.</p>
-              </>
-            )}
-          </fieldset>
-        </Section>
+        <AccessSection f={f} set={set} preset={preset ?? undefined} groups={groups} errors={errors} />
 
         <Section title="Before you save">
           <RiskCallout title="Runs with your Styx rights" details={RISK_DETAIL.sameOrigin} footer={
@@ -255,10 +212,10 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
           </div>
         )}
       </DrawerBody>
-      <DrawerFooter>
-        {!ack && <p className="mr-auto self-center text-xs text-muted-foreground">Confirm the acknowledgement to save.</p>}
+      <DrawerFooter className="flex-wrap">
+        {!ack && <p className="basis-full text-xs text-muted-foreground sm:mr-auto sm:basis-auto sm:self-center">Tick “I understand” above to turn on Save.</p>}
         <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
-        <Button type="submit" disabled={!valid || !ack || saving} aria-busy={saving}>Save</Button>
+        <Button type="submit" disabled={!valid || !ack || saving} aria-busy={saving}>{setsBasePath ? "Save and set base path" : "Save"}</Button>
       </DrawerFooter>
     </form>
   );
