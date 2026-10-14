@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { WorkstationIcon } from "@/components/system/workstation-icon";
 import { WorkstationSpecs } from "@/components/system/workstation-specs";
-import { openConnectWipe } from "@/lib/connect-wipe";
+import { useOpenChoice } from "@/components/open-prompt";
+import { openPending } from "@/lib/connect-wipe";
 import { cn } from "@/lib/utils";
 
 /* ---------- OS badge: brand-colored glyph keyed off os_info.distro ------- */
@@ -101,6 +102,7 @@ export function WorkstationList() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [takeover, setTakeover] = useState<Workstation | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const choose = useOpenChoice();
 
   useEffect(() => {
     const load = () => api.myWorkstations().then(setRows).catch(() => {});
@@ -131,15 +133,17 @@ export function WorkstationList() {
 
   if (rows.length === 0) return null;
 
-  const connect = async (ws: Workstation, force = false) => {
+  const connect = (ws: Workstation, force = false) => {
     setErr(null);
-    try {
-      const { url } = await api.workstationConnectUrl(ws.id, force);
-      openConnectWipe(url, `Connecting to ${ws.name}…`);
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 423) setTakeover(ws);
-      else setErr((e as Error).message);
-    }
+    // Takeover is confirmed here, in this tab, before any new tab opens.
+    if (!force && ws.in_use && !ws.in_use_self) { setTakeover(ws); return; }
+    choose("workspaces", ws.name, (mode) => {
+      openPending(mode, `Connecting to ${ws.name}…`, async () => (await api.workstationConnectUrl(ws.id, force)).url)
+        .catch((e) => {
+          if (e instanceof ApiError && e.status === 423) setTakeover(ws); // raced: someone joined meanwhile
+          else setErr((e as Error).message);
+        });
+    });
   };
 
   return (
