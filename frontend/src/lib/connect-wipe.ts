@@ -14,11 +14,6 @@ export function openTab(href: string): Window | null {
   return w;
 }
 
-/** New tab that plays the wave, then loads `url`. False if the browser blocked it. */
-export function openConnectWipe(url: string, label: string): boolean {
-  return openTab(wipe({ url, label })) !== null;
-}
-
 /** Open a plain link (an app) per the preference; blocked popup -> this tab + toast. */
 export function openHref(mode: OpenMode, href: string): void {
   if (mode === "new_tab") {

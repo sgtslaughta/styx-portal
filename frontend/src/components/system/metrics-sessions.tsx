@@ -11,7 +11,8 @@ import {
   useDeleteInstance,
 } from "@/hooks/use-instances";
 import { useSessionEvents } from "@/hooks/use-system";
-import { openConnectWipe } from "@/lib/connect-wipe";
+import { openPending } from "@/lib/connect-wipe";
+import { useOpenChoice } from "@/components/open-prompt";
 import { StatusBadge } from "@/components/instances/status-badge";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { formatDuration } from "@/lib/utils";
@@ -166,6 +167,7 @@ function SessionRow({
   const pause = usePauseInstance();
   const unpause = useUnpauseInstance();
   const reduce = useReducedMotion();
+  const choose = useOpenChoice();
   const { data: events } = useSessionEvents(instance.id, expanded);
 
   const isRunning = instance.status === "running" || instance.status === "idle";
@@ -177,6 +179,13 @@ function SessionRow({
   const idleSeconds = instance.last_activity && isRunning
     ? (Date.now() - new Date(instance.last_activity + "Z").getTime()) / 1000
     : null;
+
+  function connect() {
+    choose("workspaces", instance.name, (mode) => {
+      openPending(mode, `Launching ${instance.name}…`, async () => `/i/${instance.subdomain}/`)
+        .catch((e: Error) => toast.error(`Connect failed: ${e.message}`));
+    });
+  }
 
   return (
     <div>
@@ -204,7 +213,7 @@ function SessionRow({
         <div className="flex gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
           {isRunning && (
             <>
-              <ActionBtn icon={ExternalLink} color="success" title="Connect" onClick={() => openConnectWipe(`/i/${instance.subdomain}/`, `Launching ${instance.name}…`)} />
+              <ActionBtn icon={ExternalLink} color="success" title="Connect" onClick={connect} />
               <ActionBtn icon={RotateCcw} color="blue" title="Restart" onClick={() => restart.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />
               <ActionBtn icon={Pause} color="warning" title="Pause" onClick={() => pause.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />
               <ActionBtn icon={Square} color="destructive" title="Stop" onClick={() => stop.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />

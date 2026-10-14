@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
 import { WaveTransition } from "@/components/effects/wave-transition";
 
 /** Decode the {url,label} payload from the hash. Resolve the target against our
@@ -23,10 +24,12 @@ function parseHash(): { url: string | null; label: string } | null {
   }
 }
 
+const PENDING_MS = 30_000;
+
 /**
  * New-tab interstitial: plays the wave wipe, then replaces itself with the
  * real session URL so the animation covers the connect/load instead of a
- * blank tab. Reached via {@link openConnectWipe} or {@link openPending}.
+ * blank tab. Reached via {@link openPending}.
  */
 export function ConnectingPage() {
   const [target, setTarget] = useState(parseHash);
@@ -40,6 +43,15 @@ export function ConnectingPage() {
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);
+
+  // A pending tab whose opener never delivers a url would wave forever.
+  const [stale, setStale] = useState(false);
+  const pending = !!target && !target.url;
+  useEffect(() => {
+    if (!pending) { setStale(false); return; }
+    const t = window.setTimeout(() => setStale(true), PENDING_MS);
+    return () => window.clearTimeout(t);
+  }, [pending]);
 
   useEffect(() => {
     const u = target?.url;
@@ -61,6 +73,12 @@ export function ConnectingPage() {
       {!target && (
         <div className="flex h-full items-center justify-center text-sm text-white/70">
           Invalid connection link.
+        </div>
+      )}
+      {stale && pending && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-[#0c1730] text-sm text-white/80">
+          <p>This connection didn&apos;t start.</p>
+          <Button variant="outline" onClick={() => window.close()}>Close</Button>
         </div>
       )}
     </div>
