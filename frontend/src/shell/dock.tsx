@@ -35,7 +35,7 @@ export function Dock({ open, onOpenChange, tiles, current, focusSlug, side, tabR
         if (!el) { if (tries++ < 10) id = requestAnimationFrame(focusIn); return; }
         const ae = document.activeElement; // the dialog's focus trap may land on the first tabbable: the switch
         if (!el.contains(ae) || ae === el || ae?.getAttribute("role") === "tab")
-          (el.querySelector<HTMLElement>('a[aria-current="page"]') ?? el.querySelector<HTMLElement>("a") ?? (ae?.getAttribute("role") === "tab" ? ae : el)).focus();
+          (el.querySelector<HTMLElement>('a[aria-current="page"]') ?? el.querySelector<HTMLElement>("a") ?? (ae?.getAttribute("role") === "tab" ? (ae as HTMLElement) : el)).focus();
       };
       id = requestAnimationFrame(focusIn);
       wasOpen.current = true;
