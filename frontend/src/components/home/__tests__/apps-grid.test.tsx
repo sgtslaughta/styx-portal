@@ -9,12 +9,16 @@ vi.mock("@/api/client", () => ({
   api: { listServiceTiles: () => listServiceTiles(), serviceFocus: () => serviceFocus() },
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
+const choose = vi.fn();
+vi.mock("@/components/open-prompt", () => ({ useOpenChoice: () => choose }));
+const openHref = vi.fn();
+vi.mock("@/lib/connect-wipe", () => ({ openHref: (...a: unknown[]) => openHref(...a) }));
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ServiceList } from "../service-list";
+import { AppsGrid } from "../apps-grid";
 
 const renderList = (props: { onOpenSettings?: () => void } = {}) =>
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><ServiceList {...props} /></QueryClientProvider>);
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><AppsGrid {...props} /></QueryClientProvider>);
 
 const tile = (o: object) => ({ id: "1", slug: "sonarr", name: "Sonarr", icon_kind: "image", icon_etag: "e9", mount_mode: "path", frame_ok: true, enabled: true, up: true, ...o });
 
@@ -23,10 +27,11 @@ beforeEach(() => {
   localStorage.clear();
   listServiceTiles.mockReset();
   serviceFocus.mockReset();
+  choose.mockReset(); openHref.mockReset();
   serviceFocus.mockResolvedValue({ slug: null });
 });
 
-describe("ServiceList", () => {
+describe("AppsGrid", () => {
   test("tile shows the server icon by id and etag", async () => {
     listServiceTiles.mockResolvedValue([tile({})]);
     const { container } = renderList();
@@ -68,30 +73,15 @@ describe("ServiceList", () => {
     expect(screen.queryByText(/evil/)).toBeNull();
   });
 
-  test("members with no services see nothing", async () => {
-    listServiceTiles.mockResolvedValue([]);
-    const { container } = renderList();
-    await waitFor(() => expect(listServiceTiles).toHaveBeenCalled());
-    expect(container).toBeEmptyDOMElement();
-  });
 
   test("list is fetched on every mount (no shared cache)", async () => {
     listServiceTiles.mockResolvedValueOnce([tile({})]).mockResolvedValueOnce([]);
     const a = renderList();
     await screen.findByText("Sonarr");
     a.unmount();
-    const b = renderList();
+    renderList();
     await waitFor(() => expect(listServiceTiles).toHaveBeenCalledTimes(2));
-    expect(b.container).toBeEmptyDOMElement();
-  });
-
-  test("admin with none gets a settings hint", async () => {
-    role.current = "admin";
-    listServiceTiles.mockResolvedValue([]);
-    const open = vi.fn();
-    renderList({ onOpenSettings: open });
-    fireEvent.click(await screen.findByRole("button", { name: /services in settings/i }));
-    expect(open).toHaveBeenCalled();
+    expect(await screen.findByText("No apps shared with you yet.")).toBeInTheDocument();
   });
 
   test("admin full model maps health_status; tip shown to admins only and dismissible", async () => {
@@ -120,5 +110,47 @@ describe("ServiceList", () => {
     expect(link).toHaveAttribute("href", "/?setup=s7");
     expect(screen.getByText("Needs setup")).toBeInTheDocument();
     expect(screen.queryByText("Status unknown")).toBeNull();
+  });
+
+  test("plain click asks via the Apps preference and opens the shell href", async () => {
+    listServiceTiles.mockResolvedValue([tile({})]);
+    renderList();
+    fireEvent.click(await screen.findByRole("link", { name: "Open Sonarr" }));
+    expect(choose).toHaveBeenCalledWith("apps", "Sonarr", expect.any(Function));
+    choose.mock.calls[0]![2]("new_tab");
+    expect(openHref).toHaveBeenCalledWith("new_tab", "/_styx/app/sonarr/");
+  });
+
+  test("modifier or middle clicks and needs-setup tiles keep native behaviour", async () => {
+    role.current = "admin";
+    listServiceTiles.mockResolvedValue([tile({}), tile({ id: "2", slug: "j", name: "Jelly", needs_setup: true })]);
+    renderList();
+    const link = await screen.findByRole("link", { name: "Open Sonarr" });
+    for (const init of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { button: 1 }])
+      fireEvent.click(link, init);
+    fireEvent.click(screen.getByRole("link", { name: "Set up Jelly" }));
+    expect(choose).not.toHaveBeenCalled();
+  });
+
+  test("region is Apps; admin sees an Add app tile", async () => {
+    role.current = "admin";
+    const onOpenSettings = vi.fn();
+    listServiceTiles.mockResolvedValue([tile({})]);
+    renderList({ onOpenSettings });
+    expect(await screen.findByRole("region", { name: "Apps" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Add app" }));
+    expect(onOpenSettings).toHaveBeenCalled();
+  });
+
+  test("empty states", async () => {
+    listServiceTiles.mockResolvedValue([]);
+    const { unmount } = renderList();
+    expect(await screen.findByText("No apps shared with you yet.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add app" })).toBeNull();
+    unmount();
+    role.current = "admin";
+    renderList();
+    expect(await screen.findByText("No apps yet. Add your first app.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add app" })).toBeInTheDocument();
   });
 });
