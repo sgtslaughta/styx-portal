@@ -23,7 +23,7 @@ export function HomeTabs({ workspaces, apps }: { workspaces: ReactNode; apps: Re
         <TabsTrigger value="apps" className="px-4">Apps</TabsTrigger>
       </TabsList>
       <TabsContent value="workspaces" className="min-h-0 flex-1">{workspaces}</TabsContent>
-      <TabsContent value="apps" className="min-h-0 flex-1 overflow-y-auto">{apps}</TabsContent>
+      <TabsContent value="apps" className="relative min-h-0 flex-1 overflow-y-auto">{apps}</TabsContent>
     </Tabs>
   );
 }

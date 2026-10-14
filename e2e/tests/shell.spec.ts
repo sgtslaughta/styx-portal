@@ -42,6 +42,8 @@ test("s1 shell keeps the URL in sync with the frame", async () => {
   const p = member.page;
   await p.goto("/");
   await p.getByRole("link", { name: "Open Sonarr" }).click();
+  // First open asks where to open; this tab keeps the rest of the suite in one page.
+  await p.getByRole("dialog", { name: "Open Sonarr" }).getByRole("button", { name: "Open here" }).click();
   await expect(p).toHaveURL(/\/_styx\/app\/sonarr\/$/);
   await expect(p.frameLocator("iframe").locator("body")).toBeVisible();
   await eventually(async () => {
@@ -69,7 +71,7 @@ async function homeWhileFocused(p: Page) {
     await route.fulfill({ response: await route.fetch({ headers: { ...h, cookie } }) });
   });
   await p.goto("/");
-  await expect(p.getByRole("region", { name: "Services" })).toBeVisible();
+  await expect(p.getByRole("region", { name: "Apps" })).toBeVisible();
 }
 
 const FERRY = "styx.ferry";

@@ -17,7 +17,7 @@ test("home has no vertical overflow at 1440 and 390", async ({ page }) => {
   for (const sz of SIZES) {
     await page.setViewportSize({ width: sz.w, height: sz.h });
     await page.goto("/");
-    await expect(page.getByRole("region", { name: "Services" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Apps" })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight), `${sz.w}px`).toBe(true);
     expect(await overflow(page)).toBeLessThanOrEqual(0);
   }
@@ -31,6 +31,7 @@ test("home with running, paused, stopped and errored instances", async ({ page }
     await page.evaluate((v) => localStorage.setItem("theme", v), t);
     await page.emulateMedia({ colorScheme: t, reducedMotion: "reduce" });
     await page.goto("/");
+    await page.getByRole("tab", { name: "Workspaces" }).click(); // instances live on the Workspaces tab
     await expect(page.getByText("Dev desktop")).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/home-instances-${sz.w}-${t}.png` });
     expect(await overflow(page), `${sz.w}px ${t}`).toBeLessThanOrEqual(0);

@@ -142,6 +142,10 @@ test("c. member opens the tile; upstream sees identity headers but no Styx cooki
     expect(cookieNames).toEqual(expect.arrayContaining(["styx_proxy", "csrf_token", "app_pref"]));
 
     await tile.click();
+    // First open asks where to open; stay in this tab, without remembering (shell.spec expects the prompt too).
+    const dlg = p.getByRole("dialog", { name: "Open Whoami" });
+    await dlg.getByRole("checkbox", { name: "Remember for all apps" }).uncheck();
+    await dlg.getByRole("button", { name: "Open here" }).click();
     await p.waitForURL(/\/_styx\/app\/whoami\/$/);
     // The shell renders the app in an iframe.
     const app = p.frameLocator("iframe");

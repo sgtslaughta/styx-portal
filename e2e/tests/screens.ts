@@ -71,10 +71,10 @@ export async function captureAll(admin: Page, member: Page) {
         await setTheme(p, theme);
       }
       await member.goto("/");
-      await expect(member.getByRole("region", { name: "Services" })).toBeVisible();
+      await expect(member.getByRole("region", { name: "Apps" })).toBeVisible();
       await shot(member, `home-tiles-member-${tag}`);
       await admin.goto("/");
-      await expect(admin.getByRole("region", { name: "Services" })).toBeVisible();
+      await expect(admin.getByRole("region", { name: "Apps" })).toBeVisible();
       await shot(admin, `home-tiles-admin-${tag}`);
       await serviceDrawer(admin, tag);
       await groupsScreens(admin, tag);

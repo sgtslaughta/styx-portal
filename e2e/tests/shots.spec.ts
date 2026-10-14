@@ -396,7 +396,7 @@ test("empty states: services, discover, home tiles", async () => {
       await p.screenshot({ path: file("discover-empty") });
       await p.keyboard.press("Escape");
       await p.goto("/");
-      await expect(p.getByText(/No services yet. Add one in/)).toBeVisible();
+      await expect(p.getByText("No apps yet. Add your first app.")).toBeVisible();
       await p.screenshot({ path: file("home-no-services-admin") });
     });
   } finally { await p.unrouteAll({ behavior: "ignoreErrors" }); }
@@ -407,7 +407,7 @@ test("empty states: services, discover, home tiles", async () => {
       await setTheme(m, t);
       await m.goto("/");
       await expect(m.getByRole("button", { name: "Log out" })).toBeVisible();
-      await expect(m.getByText("No instances yet")).toBeVisible(); // the real empty state, not the skeleton
+      await expect(m.getByText("No apps shared with you yet.")).toBeVisible(); // the real empty state, not the skeleton
       await m.screenshot({ path: file("home-no-tiles-member") });
     });
   } finally { await m.unrouteAll({ behavior: "ignoreErrors" }); }
