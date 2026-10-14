@@ -37,7 +37,7 @@ test.afterAll(async () => { await ctx?.close(); });
  */
 async function addFromContainer(container: string, preset: string, name: string, slug: string) {
   await openSettings(page, "Services");
-  await page.getByRole("button", { name: "Add from running container" }).click();
+  await page.getByRole("button", { name: "Add from running container" }).first().click();
   await page.getByRole("dialog", { name: "Running containers" })
     .getByRole("button", { name: `Expose ${container}` }).click();
   const form = page.getByRole("dialog").filter({ has: page.locator("#ack-origin") });
@@ -47,11 +47,11 @@ async function addFromContainer(container: string, preset: string, name: string,
   await form.locator("#ack-origin").check();
   await form.getByRole("button", { name: "Save and set base path" }).click();
   await expect(page.getByText("Service saved. Next: set its base path.")).toBeVisible();
-  const drawer = page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: `Set up ${name}` }) });
-  await expect(drawer.getByRole("region", { name: "Base path" })).toBeVisible({ timeout: 30_000 });
-  await expect(drawer.getByRole("button", { name: /^Save/ })).toHaveCount(0);
+  // The consent dialog is modal: while it's open the setup drawer is hidden from the a11y tree,
+  // so the drawer is only asserted on once consent closes (see m1).
   const consent = page.getByRole("dialog", { name: `Change ${name}'s settings?` });
   await expect(consent).toBeVisible({ timeout: 180_000 });
+  const drawer = page.getByRole("dialog").filter({ has: page.getByRole("heading", { name: `Set up ${name}` }) });
   return { drawer, consent };
 }
 
@@ -89,6 +89,7 @@ test("m1 sonarr: adopted container, consent, managed base path", async () => {
 
   const section = drawer.getByRole("region", { name: "Base path" });
   await expect(section.getByText("Base path set. Sonarr answers at /sonarr.")).toBeVisible({ timeout: 120_000 });
+  await expect(drawer.getByRole("button", { name: /^Save/ })).toHaveCount(0); // one flow: no second save
   for (const step of ["Back up settings", "Apply base path", "Restart app", "Check the app responds"])
     await expect(section.getByText(new RegExp(`^${step}\\s*\\(Done\\)`))).toBeVisible();
   await page.screenshot({ path: `${SHOTS}/mount-done-sonarr.png` });
