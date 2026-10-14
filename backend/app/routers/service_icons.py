@@ -4,7 +4,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.database import get_session
 from app.models import User
-from app.routers.services import _get_or_404, _out, _preset_map, get_docker_manager
+from app.routers.services import _get_or_404, _needs_setup, _out, _preset_map, get_docker_manager
 from app.routers.services_auth import user_may_open
 from app.schemas import ProxiedServiceOut, WorkstationIconUpdate
 from app.security.deps import get_current_user, require_admin
@@ -19,7 +19,11 @@ router = APIRouter()
 async def get_icon(sid: str, request: Request, user: User = Depends(get_current_user),
                    session: AsyncSession = Depends(get_session)):
     s = await _get_or_404(session, sid)
-    if not await user_may_open(session, user, s):
+    # same visibility as list_services: members never see disabled or unconfigured apps
+    visible = user.role == "admin" or (
+        s.enabled and not _needs_setup(s, await _preset_map(session))
+        and await user_may_open(session, user, s))
+    if not visible:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Service not found")   # don't leak existence
     return ws_icon.icon_response(request, s.icon, s.name, s.id)
 

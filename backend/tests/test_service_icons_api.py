@@ -179,3 +179,29 @@ async def test_background_fetch_skips_custom_and_stores_otherwise(session, monke
     await session.refresh(custom)
     await session.refresh(plain)
     assert custom.icon == "emoji:📺" and plain.icon == PNG_URI
+
+
+@pytest.mark.asyncio
+async def test_member_icon_404_for_disabled_and_needs_setup(member_client, session):
+    from app.models import ServicePreset
+    session.add(ServicePreset(id="sonarr", name="Sonarr", subpath={"methods": [{"type": "config_file"}]}))
+    await session.commit()
+    off = await _svc(session, slug="off", name="Off", enabled=False, icon=PNG_URI)
+    setup = await _svc(session, slug="ns", name="Ns", kind="docker-local", container="ns",
+                       container_port=1, preset_id="sonarr", icon=PNG_URI)
+    ok = await _svc(session, slug="ok", name="Ok", icon=PNG_URI)
+    assert (await member_client.get(f"/api/services/{off.id}/icon")).status_code == 404
+    assert (await member_client.get(f"/api/services/{setup.id}/icon")).status_code == 404
+    assert (await member_client.get(f"/api/services/{ok.id}/icon")).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_admin_icon_200_for_disabled_and_needs_setup(admin_client, session):
+    from app.models import ServicePreset
+    session.add(ServicePreset(id="sonarr", name="Sonarr", subpath={"methods": [{"type": "config_file"}]}))
+    await session.commit()
+    off = await _svc(session, slug="off", name="Off", enabled=False)
+    setup = await _svc(session, slug="ns", name="Ns", kind="docker-local", container="ns",
+                       container_port=1, preset_id="sonarr")
+    for s in (off, setup):
+        assert (await admin_client.get(f"/api/services/{s.id}/icon")).status_code == 200
