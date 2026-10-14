@@ -35,15 +35,16 @@ export type ProxiedService = {
   health_status: "healthy" | "unhealthy" | "unknown"; health_checked_at: string | null;
   preset_id: string | null; enabled: boolean; created_at: string; updated_at: string;
   /** Server-owned: true when Styx manages the app's mount config. Never sent on write. */
-  mount_managed: boolean; pass_identity: boolean; frame_ok: boolean;
+  mount_managed: boolean; needs_setup: boolean; pass_identity: boolean; frame_ok: boolean;
 };
 /** Non-admin view of GET /services. `up` null = unknown. Admins receive the full ProxiedService instead. */
 export type ServiceTile = {
   id: string; slug: string; name: string; icon: string | null;
   mount_mode: ProxiedService["mount_mode"]; enabled: boolean; up: boolean | null; frame_ok: boolean;
+  needs_setup: boolean;
 };
 export type ProxiedServiceInput = Omit<ProxiedService,
-  "id" | "upstream_fallback" | "health_status" | "health_checked_at" | "created_at" | "updated_at" | "mount_managed">;
+  "id" | "upstream_fallback" | "health_status" | "health_checked_at" | "created_at" | "updated_at" | "mount_managed" | "needs_setup">;
 export type ServicePreset = {
   id: string; name: string; icon: string | null; default_port: number | null;
   mount_mode: ProxiedService["mount_mode"]; auth_mode: ProxiedService["auth_mode"];

@@ -4,7 +4,7 @@ import { Frame } from "../frame";
 
 afterEach(() => { vi.restoreAllMocks(); Reflect.deleteProperty(navigator, "serviceWorker"); });
 
-const tile = { id: "1", slug: "sonarr", name: "Sonarr", icon: null, mount_mode: "path", enabled: true, up: true, frame_ok: true } as const;
+const tile = { id: "1", slug: "sonarr", name: "Sonarr", icon: null, mount_mode: "path", enabled: true, up: true, frame_ok: true, needs_setup: false } as const;
 
 it("shows the fallback when the frame refuses to load", () => {
   const { container } = render(<Frame tile={tile} inner="/" onTitle={() => {}} />);

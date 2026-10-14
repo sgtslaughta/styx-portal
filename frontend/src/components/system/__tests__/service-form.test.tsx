@@ -28,7 +28,7 @@ const existing: ProxiedService = {
   container: null, container_port: null, upstream_fallback: null, mount_mode: "path", auth_mode: "sso",
   bypass_rules: [], allowed_groups: [], verify_tls: true, health_path: null, health_status: "healthy",
   health_checked_at: null, preset_id: null, enabled: true, created_at: "", updated_at: "",
-  mount_managed: false, pass_identity: false, frame_ok: true,
+  mount_managed: false, needs_setup: false, pass_identity: false, frame_ok: true,
 };
 
 describe("ServiceForm risk callouts", () => {
@@ -202,6 +202,19 @@ describe("ServiceForm behaviour", () => {
     change("Slug", "jf"); change("Name", "JF");
     fireEvent.click(save());
     expect(onSubmit.mock.calls[0]?.[0]).toMatchObject({ container: "jellyfin", container_port: 8920 });
+  });
+
+  test("discovered container with a suggested preset gets the preset id as slug, container name stays", () => {
+    const onSubmit = setup({ discovered: { name: "styx-e2e-jellyfin-1", port: 8096, preset: "sonarr" } });
+    expect(screen.getByLabelText("Slug")).toHaveValue("sonarr");
+    expect(screen.getByLabelText("Name")).toHaveValue("styx-e2e-jellyfin-1");
+    fireEvent.click(save());
+    expect(onSubmit.mock.calls[0]?.[0]).toMatchObject({ container: "styx-e2e-jellyfin-1", slug: "sonarr" });
+  });
+
+  test("discovered container without a preset keeps the container-name slug", () => {
+    setup({ discovered: { name: "My_App", port: 80, preset: null } });
+    expect(screen.getByLabelText("Slug")).toHaveValue("my-app");
   });
 
   test("discovery failure falls back to manual entry with a message", async () => {
