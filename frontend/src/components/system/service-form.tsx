@@ -79,6 +79,9 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
     setSrv((s) => { if (!(k in s)) return s; const { [k]: _x, ...rest } = s; return rest; });
   };
   const preset = presets.find((p) => p.id === f.preset_id) ?? null;
+  // Same rule as the backend's needs_setup: a managed base path step follows the save.
+  const setsBasePath = !isEdit && f.kind === "docker-local" && f.mount_mode === "path"
+    && !!preset?.subpath?.methods.some((m) => (m as { type?: string }).type === "config_file");
   const errors = validateService(f, isEdit);
   const valid = Object.keys(errors).length === 0;
   const err = (k: string) => srv[k] ?? (touched.has(k) ? errors[k] : undefined);
@@ -212,7 +215,7 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
       <DrawerFooter className="flex-wrap">
         {!ack && <p className="basis-full text-xs text-muted-foreground sm:mr-auto sm:basis-auto sm:self-center">Tick “I understand” above to turn on Save.</p>}
         <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
-        <Button type="submit" disabled={!valid || !ack || saving} aria-busy={saving}>Save</Button>
+        <Button type="submit" disabled={!valid || !ack || saving} aria-busy={saving}>{setsBasePath ? "Save and set base path" : "Save"}</Button>
       </DrawerFooter>
     </form>
   );
