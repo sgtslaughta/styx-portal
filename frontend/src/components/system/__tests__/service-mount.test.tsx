@@ -1,6 +1,6 @@
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { act, render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { vi, beforeEach } from "vitest";
+import { vi, beforeEach, afterEach, describe } from "vitest";
 import { toast } from "sonner";
 import { ServiceMount as SM, pollWhile } from "../service-mount";
 import { api } from "@/api/client";
@@ -204,4 +204,52 @@ it("without autoOpenConsent the dialog stays closed", async () => {
   wrap(<ServiceMount service={svc} />);
   await screen.findByRole("button", { name: "Set base path to /sonarr" });
   expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+describe("plan retry while the app starts", () => {
+  const WAIT = { method: null as null, changes: [], needs_consent: true, reason: "Styx can't find Sonarr's settings file.", retry: true };
+  const READY = { method: "config_file" as const, changes: CH, needs_consent: true, reason: null };
+  beforeEach(() => { vi.useFakeTimers({ shouldAdvanceTime: false }); });
+  afterEach(() => { vi.useRealTimers(); });
+  const tick = (ms: number) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+
+  it("polls every 3s while retry, then opens consent when changes appear", async () => {
+    vi.mocked(api.mountPlan).mockResolvedValueOnce(WAIT).mockResolvedValueOnce(WAIT).mockResolvedValue(READY);
+    vi.mocked(api.mountLatest).mockRejectedValue(notFound);
+    wrap(<ServiceMount service={svc} autoOpenConsent />);
+    await tick(10);
+    expect(screen.getByText("Waiting for Sonarr to finish starting…")).toBeInTheDocument();
+    expect(screen.getByText(/can't find Sonarr's settings file/)).toBeInTheDocument();
+    expect(api.mountPlan).toHaveBeenCalledTimes(1);
+    await tick(3000);
+    expect(api.mountPlan).toHaveBeenCalledTimes(2);
+    await tick(3000);
+    expect(screen.getByRole("dialog", { name: "Change Sonarr's settings?" })).toBeInTheDocument();
+  });
+
+  it("stops at 120s and offers Check again", async () => {
+    vi.mocked(api.mountPlan).mockResolvedValue(WAIT);
+    vi.mocked(api.mountLatest).mockRejectedValue(notFound);
+    wrap(<ServiceMount service={svc} autoOpenConsent />);
+    await tick(121_000);
+    const calls = vi.mocked(api.mountPlan).mock.calls.length;
+    expect(calls).toBeGreaterThan(30);
+    expect(calls).toBeLessThanOrEqual(42);
+    await tick(10_000);
+    expect(api.mountPlan).toHaveBeenCalledTimes(calls);
+    expect(screen.queryByText(/Waiting for Sonarr/)).toBeNull();
+    vi.mocked(api.mountPlan).mockResolvedValue(READY);
+    fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+    await tick(10);
+    expect(api.mountPlan).toHaveBeenCalledTimes(calls + 1);
+  });
+
+  it("does not poll in edit mode", async () => {
+    vi.mocked(api.mountPlan).mockResolvedValue(WAIT);
+    vi.mocked(api.mountLatest).mockRejectedValue(notFound);
+    wrap(<ServiceMount service={svc} />);
+    await tick(10_000);
+    expect(api.mountPlan).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/Waiting for Sonarr/)).toBeNull();
+  });
 });

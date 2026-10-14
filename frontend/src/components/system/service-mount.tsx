@@ -8,6 +8,7 @@ import { Stepper } from "@/components/ui/stepper";
 import { MountConsentDialog } from "./mount-consent-dialog";
 
 export const ACTIVE = ["pending", "running"];
+const RETRY_MS = 120_000;
 export const pollWhile = (state?: string) => (ACTIVE.includes(state ?? "") ? 1000 : false);
 
 /** Backup detail is a long host path: show the timestamp folder, keep the full path as a tooltip. */
@@ -35,7 +36,17 @@ export function ServiceMount({ service, onChanged, onDone, autoOpenConsent }: {
   const [asking, setAsking] = useState(false);
   const enabled = service.kind === "docker-local" && service.mount_mode === "path";
 
-  const plan = useQuery({ queryKey: ["mount-plan", id], queryFn: () => api.mountPlan(id), enabled });
+  // Setup mode: a fresh app may not have written its settings file yet, so re-plan for up to 2 minutes.
+  const [gaveUp, setGaveUp] = useState(false);
+  useEffect(() => {
+    if (!autoOpenConsent) return;
+    const t = setTimeout(() => setGaveUp(true), RETRY_MS);
+    return () => clearTimeout(t);
+  }, [autoOpenConsent]);
+  const plan = useQuery({
+    queryKey: ["mount-plan", id], queryFn: () => api.mountPlan(id), enabled,
+    refetchInterval: (q) => (autoOpenConsent && !gaveUp && q.state.data?.retry ? 3000 : false),
+  });
   const job = useQuery<MountJob | null>({
     queryKey: ["mount-job", id], enabled,
     queryFn: () => fetchLatestMount(id),
@@ -140,7 +151,12 @@ export function ServiceMount({ service, onChanged, onDone, autoOpenConsent }: {
     );
   }
   else if (p.method === null) body = (
-    <p className="text-sm text-muted-foreground">{p.reason} You can set the base path to /{slug} in the app yourself, or use a preset.</p>
+    <>
+      <p className="text-sm text-muted-foreground">{p.reason} You can set the base path to /{slug} in the app yourself, or use a preset.</p>
+      {autoOpenConsent && p.retry && (gaveUp
+        ? <Button size="sm" variant="outline" disabled={plan.isFetching} onClick={() => void plan.refetch()}>Check again</Button>
+        : <p className="text-sm text-muted-foreground" aria-live="polite">Waiting for {name} to finish starting…</p>)}
+    </>
   );
   else if (p.changes.length > 0) body = (
     <>

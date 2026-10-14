@@ -31,17 +31,11 @@ test.beforeAll(async ({ browser }) => {
 });
 test.afterAll(async () => { await ctx?.close(); });
 
-/** The app writes its settings file on first boot; Styx only plans a change once it exists. */
-const waitForFile = (container: string, path: string) => eventually(async () => {
-  execFileSync("docker", ["compose", "-p", "styx-e2e", "exec", "-T", container, "test", "-f", path]);
-}, 180_000);
-
 /**
  * Services -> Add from running container -> pick a preset -> Save and set base path. Returns with the
- * drawer in setup mode and the consent dialog already open (it opens by itself once the plan loads).
+ * drawer in setup mode and the consent dialog already open (the drawer re-plans until the app has written its settings file).
  */
-async function addFromContainer(container: string, preset: string, name: string, slug: string, readyFile: string) {
-  await waitForFile(container.replace(/^styx-e2e-|-1$/g, ""), readyFile);
+async function addFromContainer(container: string, preset: string, name: string, slug: string) {
   await openSettings(page, "Services");
   await page.getByRole("button", { name: "Add from running container" }).click();
   await page.getByRole("dialog", { name: "Running containers" })
@@ -57,7 +51,7 @@ async function addFromContainer(container: string, preset: string, name: string,
   await expect(drawer.getByRole("region", { name: "Base path" })).toBeVisible({ timeout: 30_000 });
   await expect(drawer.getByRole("button", { name: /^Save/ })).toHaveCount(0);
   const consent = page.getByRole("dialog", { name: `Change ${name}'s settings?` });
-  await expect(consent).toBeVisible({ timeout: 30_000 });
+  await expect(consent).toBeVisible({ timeout: 180_000 });
   return { drawer, consent };
 }
 
@@ -83,7 +77,7 @@ async function applyViaUi(name: string, tag: string, added: Awaited<ReturnType<t
 
 test("m1 sonarr: adopted container, consent, managed base path", async () => {
   test.setTimeout(300_000);
-  const { drawer, consent } = await addFromContainer("styx-e2e-sonarr-1", "sonarr", "Sonarr", "sonarr", "/config/config.xml");
+  const { drawer, consent } = await addFromContainer("styx-e2e-sonarr-1", "sonarr", "Sonarr", "sonarr");
   for (const h of ["File", "Setting", "Now", "After"]) await expect(consent.getByRole("columnheader", { name: h })).toBeVisible();
   await expect(consent.getByRole("cell", { name: "/config/config.xml" })).toBeVisible();
   await expect(consent.getByRole("cell", { name: "/Config/UrlBase" })).toBeVisible();
@@ -106,7 +100,7 @@ test("m1 sonarr: adopted container, consent, managed base path", async () => {
 test("m2 jellyfin: managed base path", async () => {
   test.setTimeout(420_000);
   // A fresh Jellyfin has no network.xml (only system.xml); Styx creates it, so no seeding here.
-  const added = await addFromContainer("styx-e2e-jellyfin-1", "jellyfin", "Jellyfin", "jellyfin", "/config/config/system.xml");
+  const added = await addFromContainer("styx-e2e-jellyfin-1", "jellyfin", "Jellyfin", "jellyfin");
   const { drawer } = await applyViaUi("Jellyfin", "jellyfin", added, true);
   await expect(drawer.getByRole("region", { name: "Base path" }).getByText("Base path set. Jellyfin answers at /jellyfin."))
     .toBeVisible({ timeout: 180_000 });
@@ -171,7 +165,7 @@ test.describe("m3 jellyfin native client", () => {
 
 test("m4 rollback: broken app gets its settings back", async () => {
   test.setTimeout(240_000);
-  const added = await addFromContainer("styx-e2e-brokenapp-1", "brokenapp", "Broken app", "brokenapp", "/config/config.xml");
+  const added = await addFromContainer("styx-e2e-brokenapp-1", "brokenapp", "Broken app", "brokenapp");
   const { drawer } = await applyViaUi("Broken app", "brokenapp", added);
   const section = drawer.getByRole("region", { name: "Base path" });
   await expect(section.getByText(/Styx put its settings back/)).toBeVisible({ timeout: 150_000 });
