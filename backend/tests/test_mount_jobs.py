@@ -260,3 +260,51 @@ async def test_sweep_note_and_steps_follow_changed(session):
     assert "new value" in rows["b"].log_excerpt
     for j in rows.values():
         assert [s["state"] for s in j.steps] == ["done", "failed", "pending"]
+
+
+TEMPLATE = '<?xml version="1.0"?>\n<NetworkConfiguration>\n  <BaseUrl />\n</NetworkConfiguration>\n'
+NEW = "/config/config/network.xml"
+CPLAN = MountPlan("config_file", NEW, "xml", "/NetworkConfiguration/BaseUrl",
+                  [{"target": NEW, "key": "/NetworkConfiguration/BaseUrl", "old": "",
+                    "new": "/sonarr", "created": True}], True, create=True, template=TEMPLATE,
+                  owner_from="/config/config/system.xml")
+
+
+def _owner_docker(d):
+    owner = tarfile.TarInfo("system.xml")
+    owner.uid, owner.gid, owner.mode = 1000, 100, 0o600
+    d.read_file.side_effect = lambda c, p: (b"<x/>", owner) if p == CPLAN.owner_from else None
+
+
+async def test_create_writes_new_file_with_owner_and_mode(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    _owner_docker(d)
+    async def ok(url): return 200
+    await run_job(job.id, svc.id, CPLAN, d, factory, http_get=ok)
+    await session.refresh(job)
+    assert job.state == "done"
+    d.write_file.assert_called_once()
+    _, path, body, info = d.write_file.call_args.args
+    assert path == NEW and b"/sonarr" in body
+    assert (info.mode, info.uid, info.gid) == (0o644, 1000, 100)
+    assert NEW not in [c.args[1] for c in d.read_file.call_args_list]
+    assert (next((tmp_path / svc.id).iterdir()) / "network.xml").read_text() == TEMPLATE
+
+
+async def test_create_verify_fail_rolls_back_to_template(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    _owner_docker(d)
+    async def get(url): return 404 if url.endswith("/sonarr") else 200
+    await run_job(job.id, svc.id, CPLAN, d, factory, http_get=get)
+    await session.refresh(job)
+    assert job.state == "rolled_back"
+    assert d.write_file.call_args.args[2] == TEMPLATE.encode()
+
+
+async def test_create_without_owner_fails_backup_and_writes_nothing(session, tmp_path, monkeypatch, factory):
+    svc, job, d = await _setup(session, tmp_path, monkeypatch)
+    d.read_file.side_effect = lambda c, p: None
+    await run_job(job.id, svc.id, CPLAN, d, factory)
+    await session.refresh(job)
+    assert job.state == "failed" and "system.xml" in job.steps[0]["detail"]
+    d.write_file.assert_not_called()

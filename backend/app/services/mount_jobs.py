@@ -2,6 +2,7 @@
 import asyncio
 import logging
 import shutil
+import tarfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,6 +28,9 @@ class MountPlan:
     needs_consent: bool = True
     reason: str | None = None
     already_set: bool = False
+    create: bool = False          # the settings file doesn't exist yet: Styx writes it from `template`
+    template: str | None = None
+    owner_from: str | None = None  # existing file whose uid/gid the new file copies
 
 
 def plan_mount(svc: ProxiedService, preset: ServicePreset | None, docker) -> MountPlan:
@@ -59,10 +63,28 @@ def plan_mount(svc: ProxiedService, preset: ServicePreset | None, docker) -> Mou
             else:
                 plan.changes = [{"target": path, "key": m["key"], "old": old, "new": new}]
             return plan
+    for m in methods:
+        if (c := m.get("create")) and (plan := _plan_create(m, c, new, svc, needs_consent, docker)):
+            return plan
     return MountPlan(needs_consent=needs_consent,
                      reason=f"Styx can't find {preset.name}'s settings file in the container "
                              "(settings on a tmpfs mount can't be read)."
                              + (f" {hint}" if (hint := (preset.subpath or {}).get("missing_hint")) else ""))
+
+
+def _plan_create(m, c, new, svc, needs_consent, docker) -> MountPlan | None:
+    """Plan writing a missing settings file; None when its owner can't be read (keep the old reason)."""
+    try:
+        if docker.read_file(svc.container, c["owner_from"]) is None:
+            return None
+        old = read_config(c["template"], m["format"], m["key"])
+    except (ValueError, APIError):
+        return None
+    if old == new:
+        return None
+    change = {"target": c["path"], "key": m["key"], "old": old, "new": new, "created": True}
+    return MountPlan("config_file", c["path"], m["format"], m["key"], [change], needs_consent,
+                     create=True, template=c["template"], owner_from=c["owner_from"])
 
 
 STEPS = [("backup", "Back up settings"), ("apply", "Apply base path"),
@@ -166,10 +188,18 @@ async def run_job(job_id, svc_id, plan, docker, session_factory, http_get=None,
     mark("backup", "active")
     try:
         await save()
-        got = await asyncio.to_thread(docker.read_file, c, path)
-        if got is None:
-            raise FileNotFoundError(f"{path} not found in the container")
-        original, info = got
+        if plan.create:
+            owner = await asyncio.to_thread(docker.read_file, c, plan.owner_from)
+            if owner is None:
+                raise FileNotFoundError(f"{plan.owner_from} not found in the container "
+                                        "(needed to copy the file owner)")
+            original, info = plan.template.encode(), tarfile.TarInfo(Path(path).name)
+            info.uid, info.gid, info.mode = owner[1].uid, owner[1].gid, 0o644
+        else:
+            got = await asyncio.to_thread(docker.read_file, c, path)
+            if got is None:
+                raise FileNotFoundError(f"{path} not found in the container")
+            original, info = got
         svc_dir = Path(_settings.MOUNT_BACKUP_DIR) / svc_id
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         bdir = svc_dir / stamp

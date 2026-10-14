@@ -44,7 +44,12 @@
           "/config/network.xml"
         ],
         "format": "xml",
-        "key": "/NetworkConfiguration/BaseUrl"
+        "key": "/NetworkConfiguration/BaseUrl",
+        "create": {
+          "path": "/config/config/network.xml",
+          "owner_from": "/config/config/system.xml",
+          "template": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<NetworkConfiguration xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <BaseUrl />\n</NetworkConfiguration>\n"
+        }
       }
     ],
     "restart": true,
