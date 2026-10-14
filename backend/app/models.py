@@ -342,6 +342,7 @@ class ProxiedService(SQLModel, table=True):
     preset_id: str | None = None
     enabled: bool = True
     mount_managed: bool = False   # base path confirmed: Styx set it, or found it already set (spec §3)
+    icon_custom: bool = False     # admin set the icon by hand; auto-fetch never overwrites it
     pass_identity: bool = False   # forward X-Styx-User/Email/Groups upstream
     frame_ok: bool = True         # False = "Open without overlay"
     created_at: datetime = Field(default_factory=_now)
