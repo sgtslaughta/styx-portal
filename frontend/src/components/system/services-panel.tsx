@@ -185,8 +185,6 @@ export function ServicesPanel() {
                 <ServiceMount key={editing.svc.id} service={editing.svc} autoOpenConsent={editing.auto}
                   onChanged={(svc) => { setEditing({ kind: "setup", svc, auto: false }); void load(); }}
                   onDone={() => void load()} />
-                <ServiceIconSection service={editing.svc}
-                  onChanged={(svc) => { setEditing({ kind: "setup", svc, auto: false }); void load(); }} />
               </DrawerBody>
               <DrawerFooter><Button onClick={() => { setEditing(null); void load(); }}>Done</Button></DrawerFooter>
             </>

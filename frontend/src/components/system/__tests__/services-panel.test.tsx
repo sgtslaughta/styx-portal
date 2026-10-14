@@ -245,6 +245,28 @@ describe("ServicesPanel", () => {
     window.history.replaceState(null, "", "/");
   });
 
+  test("setup mode has no Icon section and no Save button", async () => {
+    planWithChanges();
+    a.listServices.mockResolvedValue([svc(), dockSvc()]);
+    window.history.replaceState(null, "", "/?setup=s3");
+    render(<ServicesPanel />);
+    await screen.findByRole("heading", { name: "Set up Jellyfin" });
+    const drawer = screen.getByRole("dialog");
+    expect(within(drawer).queryAllByText("Icon")).toHaveLength(0);
+    expect(within(drawer).queryByRole("group", { name: "Icon type" })).toBeNull();
+    expect(within(drawer).queryByRole("button", { name: /^save/i })).toBeNull();
+    expect(within(drawer).queryByRole("button", { name: /own icon/i })).toBeNull();
+    window.history.replaceState(null, "", "/");
+  });
+
+  test("edit mode keeps the Icon section", async () => {
+    render(<ServicesPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Jellyfin" }));
+    const drawer = await screen.findByRole("dialog");
+    expect(within(drawer).getByRole("group", { name: "Icon type" })).toBeInTheDocument();
+    expect(within(drawer).getByRole("button", { name: "Use Jellyfin's own icon" })).toBeInTheDocument();
+  });
+
   test("?setup=<unknown id> opens nothing", async () => {
     window.history.replaceState(null, "", "/?setup=nope");
     render(<ServicesPanel />);
