@@ -42,3 +42,13 @@ test("garbage or throwing storage falls back to Workspaces", () => {
   fireEvent.mouseDown(screen.getByRole("tab", { name: "Apps" }), { button: 0 });
   expect(screen.getByText("A-body")).toBeInTheDocument();
 });
+
+test("phone height beats the TabsList default; both panels stay mounted", () => {
+  ui();
+  expect(screen.getByRole("tablist", { name: "Home" }).className)
+    .toContain("max-sm:group-data-[orientation=horizontal]/tabs:h-11");
+  const apps = screen.getByText("A-body", { selector: "p" });
+  expect(apps).toBeInTheDocument(); // forceMount: no blank flash on switch
+  expect(apps.closest('[role="tabpanel"]')).toHaveAttribute("data-state", "inactive");
+  expect(apps.closest('[role="tabpanel"]')!.className).toContain("data-[state=inactive]:hidden");
+});

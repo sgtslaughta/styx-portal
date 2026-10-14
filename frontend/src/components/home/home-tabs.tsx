@@ -18,12 +18,12 @@ export function HomeTabs({ workspaces, apps }: { workspaces: ReactNode; apps: Re
   }
   return (
     <Tabs value={tab} onValueChange={change} className="h-full min-h-0">
-      <TabsList aria-label="Home" className="max-sm:h-11">
+      <TabsList aria-label="Home" className="max-sm:group-data-[orientation=horizontal]/tabs:h-11">
         <TabsTrigger value="workspaces" className="px-4">Workspaces</TabsTrigger>
         <TabsTrigger value="apps" className="px-4">Apps</TabsTrigger>
       </TabsList>
-      <TabsContent value="workspaces" className="min-h-0 flex-1">{workspaces}</TabsContent>
-      <TabsContent value="apps" className="relative min-h-0 flex-1 overflow-y-auto">{apps}</TabsContent>
+      <TabsContent value="workspaces" forceMount className="min-h-0 flex-1 data-[state=inactive]:hidden">{workspaces}</TabsContent>
+      <TabsContent value="apps" forceMount className="relative min-h-0 flex-1 overflow-y-auto data-[state=inactive]:hidden">{apps}</TabsContent>
     </Tabs>
   );
 }
