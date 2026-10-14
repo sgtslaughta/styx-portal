@@ -153,4 +153,13 @@ describe("AppsGrid", () => {
     expect(await screen.findByText("No apps yet. Add your first app.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add app" })).toBeInTheDocument();
   });
+
+  test("a failed load says so and retries, instead of the empty state", async () => {
+    listServiceTiles.mockRejectedValueOnce(new Error("down")).mockResolvedValue([tile({})]);
+    renderList();
+    expect(await screen.findByText("Couldn't load apps.")).toBeInTheDocument();
+    expect(screen.queryByText("No apps shared with you yet.")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByRole("link", { name: "Open Sonarr" })).toBeInTheDocument();
+  });
 });

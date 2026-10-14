@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Info, Plus, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
@@ -72,19 +72,30 @@ export function AppsGrid({ onOpenSettings }: { onOpenSettings?: () => void }) {
   const choose = useOpenChoice();
   const [tiles, setTiles] = useState<ServiceTile[] | null>(null);
   const { data: focus } = useQuery({ queryKey: ["service-focus"], queryFn: api.serviceFocus, refetchOnWindowFocus: true });
+  const reload = useRef<() => void>(() => {});
+  const [failed, setFailed] = useState(false);
   const [tipHidden, setTipHidden] = useState(readDismissed);
 
   useEffect(() => {
     let live = true;
     const load = () => api.listServiceTiles()
-      .then((r) => { if (live) setTiles(r.map(toTile).filter((x) => x.enabled)); })
-      .catch(() => { if (live) setTiles((t) => t ?? []); });
+      .then((r) => { if (live) { setTiles(r.map(toTile).filter((x) => x.enabled)); setFailed(false); } })
+      .catch(() => { if (live) { setFailed(true); setTiles((t) => t ?? []); } });
+    reload.current = () => void load();
     void load();
     const t = setInterval(load, 30_000);
     return () => { live = false; clearInterval(t); };
   }, []);
 
   if (tiles === null) return null;
+  if (failed && tiles.length === 0) {
+    return (
+      <section aria-label="Apps" className="space-y-3">
+        <p className="text-sm text-muted-foreground">Couldn&apos;t load apps.</p>
+        <Button variant="outline" size="sm" onClick={() => reload.current()}>Try again</Button>
+      </section>
+    );
+  }
   if (tiles.length === 0) {
     return (
       <section aria-label="Apps" className="space-y-3">
