@@ -31,7 +31,19 @@ def _iso(d: datetime | None) -> str | None:
     return d.isoformat() if d else None
 
 
-def _out(s: ProxiedService) -> ProxiedServiceOut:
+def _needs_setup(s: ProxiedService, presets: dict[str, ServicePreset]) -> bool:
+    """Docker app Styx can configure (config_file method) whose base path isn't confirmed yet."""
+    p = presets.get(s.preset_id) if s.preset_id else None
+    return (s.kind == "docker-local" and s.mount_mode == "path" and not s.mount_managed
+            and p is not None
+            and any(m.get("type") == "config_file" for m in (p.subpath or {}).get("methods", [])))
+
+
+async def _preset_map(session: AsyncSession) -> dict[str, ServicePreset]:
+    return {p.id: p for p in (await session.exec(select(ServicePreset))).all()}
+
+
+def _out(s: ProxiedService, presets: dict[str, ServicePreset]) -> ProxiedServiceOut:
     return ProxiedServiceOut(
         id=s.id, slug=s.slug, name=s.name, icon=s.icon, kind=s.kind,
         upstream_url=s.upstream_url, container=s.container, container_port=s.container_port,
@@ -39,7 +51,8 @@ def _out(s: ProxiedService) -> ProxiedServiceOut:
         bypass_rules=s.bypass_rules, allowed_groups=s.allowed_groups, verify_tls=s.verify_tls,
         health_path=s.health_path, health_status=s.health_status,
         health_checked_at=_iso(s.health_checked_at), preset_id=s.preset_id, enabled=s.enabled,
-        mount_managed=s.mount_managed, pass_identity=s.pass_identity, frame_ok=s.frame_ok,
+        mount_managed=s.mount_managed, needs_setup=_needs_setup(s, presets),
+        pass_identity=s.pass_identity, frame_ok=s.frame_ok,
         created_at=_iso(s.created_at) or "", updated_at=_iso(s.updated_at) or "")
 
 
@@ -130,10 +143,11 @@ async def discover(admin: User = Depends(require_admin),
     return out
 
 
-def _tile(s: ProxiedService) -> ServiceTileOut:
+def _tile(s: ProxiedService, presets: dict[str, ServicePreset]) -> ServiceTileOut:
     up = {"healthy": True, "unhealthy": False}.get(s.health_status)
     return ServiceTileOut(id=s.id, slug=s.slug, name=s.name, icon=s.icon,
-                          mount_mode=s.mount_mode, enabled=s.enabled, up=up, frame_ok=s.frame_ok)
+                          mount_mode=s.mount_mode, enabled=s.enabled, up=up, frame_ok=s.frame_ok,
+                          needs_setup=_needs_setup(s, presets))
 
 
 @router.get("", response_model=list[ProxiedServiceOut] | list[ServiceTileOut])
@@ -141,9 +155,12 @@ async def list_services(user: User = Depends(get_current_user),
                         session: AsyncSession = Depends(get_session)):
     """Admins get the full model; members get tiles for services they may open."""
     rows = (await session.exec(select(ProxiedService).order_by(ProxiedService.name))).all()
+    presets = await _preset_map(session)
     if user.role == "admin":
-        return [_out(s) for s in rows]
-    return [_tile(s) for s in rows if s.enabled and await user_may_open(session, user, s)]
+        return [_out(s, presets) for s in rows]
+    # a tile for an unconfigured app would only 404, so members don't get one
+    return [_tile(s, presets) for s in rows if s.enabled and not _needs_setup(s, presets)
+            and await user_may_open(session, user, s)]
 
 
 @router.post("", response_model=ProxiedServiceOut, status_code=201)
@@ -164,7 +181,7 @@ async def create_service(body: ProxiedServiceCreate, request: Request,
     await session.commit()
     await session.refresh(s)
     await _refresh(session)
-    return _out(s)
+    return _out(s, await _preset_map(session))
 
 
 @router.put("/{sid}", response_model=ProxiedServiceOut)
@@ -189,7 +206,7 @@ async def update_service(sid: str, body: ProxiedServiceUpdate, request: Request,
     if prev and (s.kind != "docker-local" or s.container != prev):
         await _release_container(session, docker, prev, s.id)
     await _refresh(session)
-    return _out(s)
+    return _out(s, await _preset_map(session))
 
 
 async def _set_enabled(sid, enabled, request, admin, session):
@@ -202,7 +219,7 @@ async def _set_enabled(sid, enabled, request, admin, session):
     await session.commit()
     await session.refresh(s)
     await _refresh(session)
-    return _out(s)
+    return _out(s, await _preset_map(session))
 
 
 @router.post("/{sid}/enable", response_model=ProxiedServiceOut)

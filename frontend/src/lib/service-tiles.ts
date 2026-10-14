@@ -6,7 +6,7 @@ export function toTile(s: ServiceTile | ProxiedService): ServiceTile {
   const up = s.health_status === "healthy" ? true : s.health_status === "unhealthy" ? false : null;
   return {
     id: s.id, slug: s.slug, name: s.name, icon: s.icon, mount_mode: s.mount_mode,
-    enabled: s.enabled, up, frame_ok: s.frame_ok,
+    enabled: s.enabled, up, frame_ok: s.frame_ok, needs_setup: s.needs_setup,
   };
 }
 
@@ -17,6 +17,7 @@ export const HEALTH = (up: boolean | null) =>
 
 /** Where a tile opens. Focus apps always go through /_styx/open (sets the cookie, then redirects). */
 export function shellHref(t: ServiceTile): string {
+  if (t.needs_setup) return `/?setup=${t.id}`; // not usable yet: send the admin to its base path step
   if (t.mount_mode === "cookie-root") return `/_styx/open/${t.slug}`;
   return t.frame_ok ? `/_styx/app/${t.slug}/` : `/${t.slug}/`;
 }

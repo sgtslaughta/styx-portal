@@ -104,4 +104,14 @@ describe("ServiceList", () => {
     await screen.findByText("Sonarr");
     expect(screen.queryByText(/non-admin account/i)).toBeNull();
   });
+
+  test("needs_setup tile deep-links to the setup step with a chip and no health dot", async () => {
+    role.current = "admin";
+    listServiceTiles.mockResolvedValue([tile({ id: "s7", needs_setup: true, up: null })]);
+    renderList();
+    const link = await screen.findByRole("link", { name: "Set up Sonarr" });
+    expect(link).toHaveAttribute("href", "/?setup=s7");
+    expect(screen.getByText("Needs setup")).toBeInTheDocument();
+    expect(screen.queryByText("Status unknown")).toBeNull();
+  });
 });

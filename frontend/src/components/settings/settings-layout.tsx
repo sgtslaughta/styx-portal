@@ -11,7 +11,8 @@ export function SettingsLayout() {
   const reduce = useReducedMotion();
   const cats = useMemo(() => visibleCategories(user?.role === "admin"), [user?.role]);
   const sections = useMemo(() => cats.flatMap((c) => c.sections), [cats]);
-  const [activeId, setActiveId] = useState<string | undefined>(undefined);
+  const [activeId, setActiveId] = useState<string | undefined>(
+    () => (new URLSearchParams(window.location.search).has("setup") ? "services" : undefined));
 
   const active: SettingsSection | undefined =
     sections.find((s) => s.id === activeId) ?? sections[0];

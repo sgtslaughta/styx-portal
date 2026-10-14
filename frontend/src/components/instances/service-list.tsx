@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Info, Link2, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api, type ServiceTile } from "@/api/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -23,7 +24,7 @@ function Tile({ s, focused }: { s: ServiceTile; focused: boolean }) {
   // Unhealthy tiles stay clickable: health is advisory, the app may still work.
   return (
     <div className="flex w-full items-stretch gap-2">
-      <a href={href} className={cn(tileCls, focused && "border-obol-foreground dark:border-obol")} aria-label={`Open ${s.name}`} aria-current={focused ? "true" : undefined} title={href}>
+      <a href={href} className={cn(tileCls, focused && "border-obol-foreground dark:border-obol")} aria-label={s.needs_setup ? `Set up ${s.name}` : `Open ${s.name}`} aria-current={focused ? "true" : undefined} title={href}>
         <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary/10 text-base leading-none text-primary" aria-hidden>
           {s.icon ?? <Link2 className="h-3.5 w-3.5" />}
         </span>
@@ -31,10 +32,14 @@ function Tile({ s, focused }: { s: ServiceTile; focused: boolean }) {
           <span className="block truncate font-medium">{s.name}</span>
           {s.mount_mode === "cookie-root" && <span className="block text-xs text-muted-foreground">Opens full screen</span>}
         </span>
-        <span className="flex items-center gap-1.5" title={h.label}>
-          <span className={cn("size-2.5 shrink-0 rounded-full", h.dot)} aria-hidden />
-          <span className="sr-only">{h.label}</span>
-        </span>
+        {s.needs_setup ? (
+          <Badge variant="outline" className="border-destructive/40 text-destructive">Needs setup</Badge>
+        ) : (
+          <span className="flex items-center gap-1.5" title={h.label}>
+            <span className={cn("size-2.5 shrink-0 rounded-full", h.dot)} aria-hidden />
+            <span className="sr-only">{h.label}</span>
+          </span>
+        )}
       </a>
       {focused && (
         <Button asChild variant="outline" size="sm" className="h-auto self-stretch">

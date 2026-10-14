@@ -40,7 +40,7 @@ function withPreset(f: ProxiedServiceInput, p: ServicePreset): ProxiedServiceInp
 
 function initialState(initial: Props["initial"], discovered: Props["discovered"], presets: ServicePreset[]) {
   if (initial) {
-    const { id: _i, upstream_fallback: _u, health_status: _h, health_checked_at: _c, created_at: _a, updated_at: _b, mount_managed: _m, ...rest } = initial;
+    const { id: _i, upstream_fallback: _u, health_status: _h, health_checked_at: _c, created_at: _a, updated_at: _b, mount_managed: _m, needs_setup: _n, ...rest } = initial;
     return rest;
   }
   if (discovered) {
@@ -49,7 +49,7 @@ function initialState(initial: Props["initial"], discovered: Props["discovered"]
       slug: discovered.name.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/^-+|-+$/g, ""), name: discovered.name,
     };
     const p = presets.find((x) => x.id === discovered.preset);
-    return p ? withPreset(base, p) : base;
+    return p ? { ...withPreset(base, p), slug: p.id } : base;
   }
   return EMPTY;
 }

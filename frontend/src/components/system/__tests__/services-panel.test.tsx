@@ -18,7 +18,7 @@ const svc = (o: Record<string, unknown> = {}) => ({
   id: "s1", slug: "jellyfin", name: "Jellyfin", icon: null, kind: "url", upstream_url: "http://10.0.0.2:8096",
   container: null, container_port: null, upstream_fallback: null, mount_mode: "path", auth_mode: "sso",
   bypass_rules: [], allowed_groups: [], verify_tls: true, health_path: null, health_status: "healthy",
-  health_checked_at: "2026-10-12T10:00:00Z", preset_id: null, enabled: true, created_at: "", updated_at: "", ...o,
+  health_checked_at: "2026-10-12T10:00:00Z", preset_id: null, enabled: true, created_at: "", updated_at: "", needs_setup: false, ...o,
 });
 
 beforeEach(() => {
@@ -174,5 +174,56 @@ describe("ServicesPanel", () => {
     render(<ServicesPanel />);
     await screen.findByText("Sonarr");
     expect(screen.queryByText("Base path set")).toBeNull();
+  });
+
+  const dockSvc = (o: Record<string, unknown> = {}) => svc({ id: "s3", slug: "jellyfin", kind: "docker-local", container: "jf", container_port: 8096,
+    upstream_url: null, needs_setup: true, ...o });
+  const fillCreate = async () => {
+    render(<ServicesPanel />);
+    await screen.findByText("Jellyfin");
+    fireEvent.click(screen.getByRole("button", { name: /add service/i }));
+    const dlg = await screen.findByRole("dialog");
+    const ch = (l: string, v: string) => fireEvent.change(within(dlg).getByLabelText(l), { target: { value: v } });
+    ch("Slug", "n"); ch("Name", "N"); ch("Upstream URL", "http://h:1");
+    fireEvent.click(within(dlg).getByLabelText(/I understand that this app runs on the same origin/));
+    fireEvent.click(within(dlg).getByRole("button", { name: /^save$/i }));
+    return dlg;
+  };
+
+  test("create: a needs_setup service keeps the drawer open on its base path step", async () => {
+    a.mountPlan.mockResolvedValue({ method: "config_file", changes: [{ target: "/c", key: "k", old: "", new: "/jellyfin" }], needs_consent: false, reason: null });
+    a.mountLatest.mockRejectedValue(Object.assign(new Error("nf"), { status: 404 }));
+    a.createService.mockResolvedValue(dockSvc());
+    await fillCreate();
+    expect(await screen.findByRole("region", { name: "Base path" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Edit Jellyfin" })).toBeInTheDocument();
+    expect(toast.success).toHaveBeenCalledWith("Service saved. Next: set its base path.");
+  });
+
+  test("create: other services close the drawer", async () => {
+    a.createService.mockResolvedValue(svc({ id: "s9", needs_setup: false }));
+    await fillCreate();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(toast.success).toHaveBeenCalledWith("Service saved");
+  });
+
+  test("?setup=<id> opens that service's editor and clears the param", async () => {
+    a.mountPlan.mockResolvedValue({ method: "config_file", changes: [], needs_consent: false, reason: null });
+    a.mountLatest.mockRejectedValue(Object.assign(new Error("nf"), { status: 404 }));
+    a.listServices.mockResolvedValue([svc(), dockSvc()]);
+    window.history.replaceState(null, "", "/?setup=s3#x");
+    render(<ServicesPanel />);
+    expect(await screen.findByRole("heading", { name: "Edit Jellyfin" })).toBeInTheDocument();
+    expect(window.location.search).toBe("");
+    expect(window.location.hash).toBe("#x");
+    window.history.replaceState(null, "", "/");
+  });
+
+  test("?setup=<unknown id> opens nothing", async () => {
+    window.history.replaceState(null, "", "/?setup=nope");
+    render(<ServicesPanel />);
+    await screen.findByText("Jellyfin");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    window.history.replaceState(null, "", "/");
   });
 });

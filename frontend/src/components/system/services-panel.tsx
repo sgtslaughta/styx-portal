@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Boxes, Globe, Plus } from "lucide-react";
 import { api, type DiscoveredContainer, type Group, type ProxiedService, type ProxiedServiceInput, type ServicePreset } from "@/api/client";
@@ -35,6 +35,16 @@ export function ServicesPanel() {
   }, []);
   useEffect(() => { void load(); }, [load]);
 
+  // Deep link /?setup=<id> (home tile, shell card): open that service's base path step once.
+  const setupId = useRef(new URLSearchParams(window.location.search).get("setup"));
+  useEffect(() => {
+    if (!setupId.current || !services) return;
+    const svc = services.find((x) => x.id === setupId.current);
+    setupId.current = null;
+    window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+    if (svc) setEditing({ kind: "edit", svc });
+  }, [services]);
+
   const openPicker = async () => {
     setPickerBusy(true);
     try { setPicker(await api.discoverContainers()); }
@@ -43,16 +53,23 @@ export function ServicesPanel() {
   };
 
   const submit = async (data: ProxiedServiceInput): Promise<FieldErrors | void> => {
+    let created: ProxiedService | null = null;
     try {
       if (editing?.kind === "edit") { const { slug: _s, ...rest } = data; await api.updateService(editing.svc.id, rest); }
-      else await api.createService(data);
+      else created = await api.createService(data);
     } catch (e) {
       const { fields, rest } = serverFieldErrors(e);
       if (rest.length || Object.keys(fields).length === 0) toast.error(rest.join("; ") || "Save failed");
       return fields;
     }
-    toast.success("Service saved");
-    setEditing(null);
+    if (created?.needs_setup) {
+      // The base path step lives in the edit drawer; closing now would hide it (it 404s until set).
+      toast.success("Service saved. Next: set its base path.");
+      setEditing({ kind: "edit", svc: created });
+    } else {
+      toast.success("Service saved");
+      setEditing(null);
+    }
     await load();
   };
 
