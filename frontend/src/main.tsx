@@ -10,6 +10,7 @@ import { AuthProvider } from "@/auth/AuthContext";
 import { ProtectedRoute } from "@/auth/ProtectedRoute";
 import { ThemeProvider } from "@/theme/ThemeProvider";
 import { WaveTransitionProvider } from "@/components/effects/transition-provider";
+import { OpenPrefProvider } from "@/components/open-prompt";
 import { LoginPage } from "@/pages/LoginPage";
 import { ChangePasswordPage } from "@/pages/ChangePasswordPage";
 import { SetupWizard } from "@/pages/SetupWizard";
@@ -52,6 +53,7 @@ createRoot(document.getElementById("root")!).render(
         <ThemeProvider>
         <AuthProvider>
           <WaveTransitionProvider>
+          <OpenPrefProvider>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/change-password" element={<ChangePasswordPage />} />
@@ -60,6 +62,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/connecting" element={<ConnectingPage />} />
             <Route path="/*" element={<ProtectedRoute><App /></ProtectedRoute>} />
           </Routes>
+          </OpenPrefProvider>
           </WaveTransitionProvider>
         </AuthProvider>
         </ThemeProvider>
