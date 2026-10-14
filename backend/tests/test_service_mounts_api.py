@@ -121,3 +121,10 @@ async def test_plan_with_changes_leaves_unmanaged(admin_client, session, dk):
     await admin_client.post(f"/api/services/{s.id}/mount/plan")
     await session.refresh(s)
     assert s.mount_managed is False
+
+
+async def test_plan_response_carries_retry(admin_client, session, dk):
+    s = await _svc(session)
+    assert (await admin_client.post(f"/api/services/{s.id}/mount/plan")).json()["retry"] is False
+    dk[0].read_file.return_value = None
+    assert (await admin_client.post(f"/api/services/{s.id}/mount/plan")).json()["retry"] is True

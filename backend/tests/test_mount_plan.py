@@ -136,3 +136,16 @@ def test_jellyfin_preset_creates_network_xml():
     assert c["path"] == "/config/config/network.xml" and c["owner_from"] == "/config/config/system.xml"
     assert c["template"].endswith("<BaseUrl />\n</NetworkConfiguration>\n")
     assert c["path"] in data["subpath"]["methods"][0]["paths"]
+
+
+def test_retry_only_when_settings_file_is_missing():
+    assert plan_mount(_svc(), _preset(), _docker({})).retry is True
+    assert plan_mount(_svc(), _create_preset(), _docker({})).retry is True
+    ok = _docker({"/config/network.xml": "<NetworkConfiguration><BaseUrl/></NetworkConfiguration>"})
+    assert plan_mount(_svc(), _preset(), ok).retry is False
+    done = _docker({"/config/network.xml": "<NetworkConfiguration><BaseUrl>/jellyfin</BaseUrl></NetworkConfiguration>"})
+    assert plan_mount(_svc(), _preset(), done).retry is False
+    assert plan_mount(_svc(), _create_preset(), _docker({"/config/config/system.xml": "<x/>"})).retry is False
+    assert plan_mount(_svc(), ServicePreset(id="x", name="X"), MagicMock()).retry is False
+    bad = _docker({"/config/network.xml": b"\xff\xfe"})
+    assert plan_mount(_svc(), _preset(), bad).retry is False

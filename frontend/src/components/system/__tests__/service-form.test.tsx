@@ -297,3 +297,27 @@ describe("ServiceForm same-origin acknowledgement", () => {
     expect(screen.getByText("Path /your-slug, set the app's base path yourself")).toBeInTheDocument();
   });
 });
+
+describe("submit label", () => {
+  const jf = { ...presets[0]!, id: "jellyfin", name: "Jellyfin", subpath: { methods: [{ type: "config_file" }] } };
+  const dock = { name: "jf", port: 8096, preset: "jellyfin" };
+  const btn = (n: RegExp | string) => screen.getByRole("button", { name: n });
+  test("create docker-local + path + config_file preset says Save and set base path", () => {
+    render(<ServiceForm presets={[jf]} groups={[]} discovered={dock} onSubmit={vi.fn()} onCancel={() => {}} />);
+    expect(btn("Save and set base path")).toBeInTheDocument();
+  });
+  test("edit keeps Save", () => {
+    render(<ServiceForm presets={[jf]} groups={[]} initial={{ ...existing, kind: "docker-local", preset_id: "jellyfin", mount_mode: "path" }}
+      onSubmit={vi.fn()} onCancel={() => {}} />);
+    expect(btn(/^save$/i)).toBeInTheDocument();
+  });
+  test("preset without config_file methods keeps Save", () => {
+    render(<ServiceForm presets={[{ ...jf, subpath: { methods: [{ type: "env" }] } }]} groups={[]} discovered={dock}
+      onSubmit={vi.fn()} onCancel={() => {}} />);
+    expect(btn(/^save$/i)).toBeInTheDocument();
+  });
+  test("preset without subpath keeps Save", () => {
+    render(<ServiceForm presets={[{ ...jf, subpath: null }]} groups={[]} discovered={dock} onSubmit={vi.fn()} onCancel={() => {}} />);
+    expect(btn(/^save$/i)).toBeInTheDocument();
+  });
+});

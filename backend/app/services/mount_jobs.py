@@ -28,6 +28,7 @@ class MountPlan:
     needs_consent: bool = True
     reason: str | None = None
     already_set: bool = False
+    retry: bool = False           # settings file not there yet: the app may still be starting
     create: bool = False          # the settings file doesn't exist yet: Styx writes it from `template`
     template: str | None = None
     owner_from: str | None = None  # existing file whose uid/gid the new file copies
@@ -66,7 +67,7 @@ def plan_mount(svc: ProxiedService, preset: ServicePreset | None, docker) -> Mou
     for m in methods:
         if (c := m.get("create")) and (plan := _plan_create(m, c, new, svc, needs_consent, docker)):
             return plan
-    return MountPlan(needs_consent=needs_consent,
+    return MountPlan(needs_consent=needs_consent, retry=True,
                      reason=f"Styx can't find {preset.name}'s settings file in the container "
                              "(settings on a tmpfs mount can't be read)."
                              + (f" {hint}" if (hint := (preset.subpath or {}).get("missing_hint")) else ""))

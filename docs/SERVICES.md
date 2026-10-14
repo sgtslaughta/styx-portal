@@ -49,7 +49,7 @@ list would otherwise mean "any user").
 
 ## Discovery and health
 
-"Add from container" lists running containers on the Styx host (excluding Styx's own stack
+"Add from running container" lists running containers on the Styx host (excluding Styx's own stack
 and launched instances). Adding one attaches it to the `styx-services` network
 (`SERVICES_NETWORK`), which only Traefik shares; the backend and frontend are not on it.
 If attaching fails (e.g. `network_mode: host`), Styx falls back to
@@ -124,7 +124,7 @@ path**, **Restart app**, **Check the app responds**. The stepper updates while i
 ### Consent
 
 If Styx created the container (it carries the `styx.managed=true` label), the job starts
-at once. For any other container, such as one added with "Add from container", Styx asks
+at once. For any other container, such as one added with "Add from running container", Styx asks
 first. The dialog "Change \<app\>'s settings?" lists every change as file, setting,
 now and after, and says that the app restarts (about 30 seconds). Choose **Restart
 \<app\> and apply** to continue or **Cancel**. Without consent the API answers 409.
@@ -314,7 +314,7 @@ origins (subdomains), which is out of scope for now.
 
 `e2e/` holds an isolated full-stack Playwright suite for proxied services: Traefik,
 backend and frontend built from this checkout, plus two `traefik/whoami` upstreams (one
-docker-local, found through "Add from container"; one reached by URL). whoami echoes the
+docker-local, found through "Add from running container"; one reached by URL). whoami echoes the
 request headers, which lets the suite prove that Styx cookies never reach an upstream.
 
 ```bash

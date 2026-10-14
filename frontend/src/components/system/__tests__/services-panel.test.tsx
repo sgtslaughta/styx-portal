@@ -51,6 +51,18 @@ describe("ServicesPanel", () => {
     expect(screen.getByRole("button", { name: /browse presets/i })).toBeInTheDocument();
   });
 
+  test("discovery buttons read Add from running container", async () => {
+    render(<ServicesPanel />);
+    expect(await screen.findByRole("button", { name: "Add from running container" })).toBeInTheDocument();
+  });
+
+  test("empty state discovery button is renamed too", async () => {
+    a.listServices.mockResolvedValue([]);
+    render(<ServicesPanel />);
+    await screen.findByText(/no services yet/i);
+    expect(screen.getAllByRole("button", { name: "Add from running container" })).toHaveLength(2);
+  });
+
   test("error with retry", async () => {
     a.listServices.mockRejectedValueOnce(new Error("boom"));
     render(<ServicesPanel />);
@@ -190,14 +202,27 @@ describe("ServicesPanel", () => {
     return dlg;
   };
 
-  test("create: a needs_setup service keeps the drawer open on its base path step", async () => {
-    a.mountPlan.mockResolvedValue({ method: "config_file", changes: [{ target: "/c", key: "k", old: "", new: "/jellyfin" }], needs_consent: false, reason: null });
+  const planWithChanges = () => {
+    a.mountPlan.mockResolvedValue({ method: "config_file", changes: [{ target: "/c", key: "k", old: "", new: "/jellyfin" }], needs_consent: true, reason: null });
     a.mountLatest.mockRejectedValue(Object.assign(new Error("nf"), { status: 404 }));
+  };
+
+  test("create: a needs_setup service switches to setup mode and opens consent", async () => {
+    planWithChanges();
     a.createService.mockResolvedValue(dockSvc());
     await fillCreate();
-    expect(await screen.findByRole("region", { name: "Base path" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Edit Jellyfin" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Set up Jellyfin" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Change Jellyfin's settings?" })).toBeInTheDocument();
     expect(toast.success).toHaveBeenCalledWith("Service saved. Next: set its base path.");
+    fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Change Jellyfin's settings?" })).toBeNull());
+    const drawer = screen.getByRole("dialog");
+    expect(within(drawer).queryByRole("button", { name: /^save/i })).toBeNull();
+    expect(within(drawer).getByRole("button", { name: "Set base path to /jellyfin" })).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByRole("dialog", { name: "Change Jellyfin's settings?" })).toBeNull();
+    fireEvent.click(within(drawer).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
   test("create: other services close the drawer", async () => {
@@ -207,13 +232,14 @@ describe("ServicesPanel", () => {
     expect(toast.success).toHaveBeenCalledWith("Service saved");
   });
 
-  test("?setup=<id> opens that service's editor and clears the param", async () => {
-    a.mountPlan.mockResolvedValue({ method: "config_file", changes: [], needs_consent: false, reason: null });
-    a.mountLatest.mockRejectedValue(Object.assign(new Error("nf"), { status: 404 }));
+  test("?setup=<id> opens setup mode without auto consent and clears the param", async () => {
+    planWithChanges();
     a.listServices.mockResolvedValue([svc(), dockSvc()]);
     window.history.replaceState(null, "", "/?setup=s3#x");
     render(<ServicesPanel />);
-    expect(await screen.findByRole("heading", { name: "Edit Jellyfin" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Set up Jellyfin" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Set base path to /jellyfin" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Change Jellyfin's settings?" })).toBeNull();
     expect(window.location.search).toBe("");
     expect(window.location.hash).toBe("#x");
     window.history.replaceState(null, "", "/");
