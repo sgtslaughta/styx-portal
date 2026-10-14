@@ -375,7 +375,7 @@ test("empty states: services, discover, home tiles", async () => {
     await each(async (_w, t, file) => {
       await setTheme(p, t);
       await openSettings(p, "Services");
-      await p.getByRole("button", { name: "Add from running container" }).click();
+      await p.getByRole("button", { name: "Add from running container" }).first().click();
       const dlg = p.getByRole("dialog", { name: "Running containers" });
       await expect(dlg).toBeVisible();
       await settled(dlg);
@@ -389,7 +389,7 @@ test("empty states: services, discover, home tiles", async () => {
       await openSettings(p, "Services");
       await expect(p.getByText("No services yet", { exact: true })).toBeVisible();
       await p.screenshot({ path: file("services-empty") });
-      await p.getByRole("button", { name: "Add from running container" }).click();
+      await p.getByRole("button", { name: "Add from running container" }).first().click();
       const dlg = p.getByRole("dialog", { name: "Running containers" });
       await expect(dlg.getByText(/No eligible containers/)).toBeVisible();
       await settled(dlg);

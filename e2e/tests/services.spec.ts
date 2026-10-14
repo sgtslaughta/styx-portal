@@ -80,7 +80,7 @@ test("a. admin bootstraps, creates group, users and membership", async ({ browse
 test("b. admin adds a path-mode SSO service from a discovered container", async () => {
   const p = admin.page;
   await openSettings(p, "Services");
-  await p.getByRole("button", { name: "Add from running container" }).click();
+  await p.getByRole("button", { name: "Add from running container" }).first().click();
   const picker = p.getByRole("dialog", { name: "Running containers" });
   await expect(picker).toContainText("styx-e2e-whoami-1");
   // The shim narrows discovery to labelled containers; none of the live stack shows up.
