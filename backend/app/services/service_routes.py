@@ -6,6 +6,24 @@ Mounted on the single Styx hostname. `path` services get Path(/slug) || PathPref
 """
 
 COOKIE_NAME = "styx_svc"
+
+
+def focus_token(service_id: str) -> str:
+    """Stable per service row; a re-created service (new id) invalidates old cookies."""
+    return service_id.replace("-", "")[:12]
+
+
+def focus_value(slug: str, service_id: str) -> str:
+    return f"{slug}.{focus_token(service_id)}"
+
+
+def focus_slug(value: str | None) -> str | None:
+    """Slug half of a `<slug>.<token>` cookie value (None for old/odd formats).
+    The token still has to be checked against the service row."""
+    slug, dot, tok = (value or "").rpartition(".")
+    return slug if dot and slug and tok else None
+
+
 # /internal is never routed by Traefik (see test_auth_check_is_internal_and_unrouted).
 AUTH_CHECK = "http://backend:8000/internal/services/{slug}/auth-check"
 STRIP = "http://backend:8000/internal/services/{slug}/strip"
@@ -47,7 +65,7 @@ def add_service_routes(config: dict, middlewares: dict, services: list[dict],
         if s["mount_mode"] == "cookie-root":
             has_cookie_root = True
             rule = (f"Host(`{domain}`) && HeaderRegexp(`Cookie`, "
-                    f"`(^|; ){COOKIE_NAME}={slug}(;|$)`)")
+                    f"`(^|; ){COOKIE_NAME}={slug}\\.{focus_token(s['id'])}(;|$)`)")
             priority = 40
         else:
             # Segment boundary: slug "a" must not capture /assets, "son" not /sonarr.

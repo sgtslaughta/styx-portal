@@ -203,3 +203,37 @@ async def test_unframed_expiry_still_redirects(client, session):
     await _svc(session, auth_mode="sso", bypass_rules=[])
     r = await client.get("/internal/services/sonarr/auth-check", headers=_fwd("/sonarr/"))
     assert r.status_code == 302
+
+
+def _doc(uri, **h):
+    return _fwd(uri, **{"sec-fetch-dest": "document", **h})
+
+
+@pytest.mark.asyncio
+async def test_focus_document_navigation_wraps_in_shell(member_client, session):
+    await _svc(session, slug="immich", mount_mode="cookie-root", auth_mode="sso", bypass_rules=[])
+    r = await member_client.get("/internal/services/immich/auth-check",
+                                headers=_doc("/photos?a=1"), follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"] == "/_styx/app/immich/photos?a=1"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("h", [
+    _fwd("/photos", **{"sec-fetch-dest": "iframe"}), _fwd("/photos", **{"sec-fetch-dest": "frame"}),
+    {"x-forwarded-uri": "/photos"},                                      # no Sec-Fetch (old browser)
+    _fwd("/photos", **{"sec-fetch-dest": "empty", "sec-fetch-mode": "cors"}),   # XHR/fetch
+    _fwd("/photos", **{"sec-fetch-dest": "websocket", "sec-fetch-mode": "websocket"}),
+])
+async def test_focus_non_document_requests_pass_through(member_client, session, h):
+    await _svc(session, slug="immich", mount_mode="cookie-root", auth_mode="sso", bypass_rules=[])
+    r = await member_client.get("/internal/services/immich/auth-check", headers=h, follow_redirects=False)
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kw", [{"frame_ok": False}, {"mount_mode": "path"}])
+async def test_document_navigation_unwrapped_when_not_framed_cookie_root(member_client, session, kw):
+    await _svc(session, slug="immich", auth_mode="sso", bypass_rules=[], **{"mount_mode": "cookie-root", **kw})
+    r = await member_client.get("/internal/services/immich/auth-check",
+                                headers=_doc("/immich/x"), follow_redirects=False)
+    assert r.status_code == 200

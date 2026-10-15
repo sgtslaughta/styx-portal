@@ -4,7 +4,8 @@ from app.services.route_writer import build_routes_config
 
 def _svc(**kw):
     d = {"slug": "sonarr", "upstream": "http://192.168.1.10:8989", "mount_mode": "path",
-         "auth_mode": "sso", "verify_tls": True, "enabled": True}
+         "auth_mode": "sso", "verify_tls": True, "enabled": True,
+         "id": "01234567-89ab-cdef-0123-456789abcdef"}
     d.update(kw)
     return d
 
@@ -30,7 +31,8 @@ def test_cookie_root_router_and_api_gating():
     cfg = build_routes_config([], "example.com", "tunnel",
                               services=[_svc(slug="unraid", mount_mode="cookie-root")])
     r = cfg["http"]["routers"]["svc-unraid"]
-    assert r["rule"] == "Host(`example.com`) && HeaderRegexp(`Cookie`, `(^|; )styx_svc=unraid(;|$)`)"
+    assert r["rule"] == ("Host(`example.com`) && HeaderRegexp(`Cookie`, "
+                         "`(^|; )styx_svc=unraid\\.0123456789ab(;|$)`)")
     assert r["priority"] == 40
     api = cfg["http"]["routers"]["api"]
     assert api["rule"] == ("Host(`example.com`) && PathPrefix(`/api`) && "
@@ -179,3 +181,13 @@ def test_service_routers_force_sameorigin():
     assert "styx-frame-sameorigin" in cfg["http"]["routers"]["svc-sonarr"]["middlewares"]
     mw = cfg["http"]["middlewares"]["styx-frame-sameorigin"]
     assert mw["headers"]["customFrameOptionsValue"] == "SAMEORIGIN"
+
+
+def test_stale_old_format_cookie_matches_no_route():
+    import re
+    cfg = build_routes_config([], "example.com", "tunnel",
+                              services=[_svc(slug="unraid", mount_mode="cookie-root")])
+    rx = re.search(r"HeaderRegexp\(`Cookie`, `(.*)`\)", cfg["http"]["routers"]["svc-unraid"]["rule"]).group(1)
+    assert re.search(rx, "a=1; styx_svc=unraid.0123456789ab")
+    for stale in ("styx_svc=unraid", "styx_svc=unraid.ffffffffffff", "styx_svc=unraidX0123456789ab"):
+        assert not re.search(rx, stale)

@@ -61,7 +61,7 @@ async def test_open_cookie_follows_cookie_secure(member_client, session, monkeyp
     session.add(s)
     await session.commit()
     r = await member_client.get("/_styx/open/unraid", headers=SAME, follow_redirects=False)
-    assert "styx_svc=unraid" in r.headers["set-cookie"]
+    assert "styx_svc=unraid." in r.headers["set-cookie"]
     assert "secure" not in r.headers["set-cookie"].lower()  # suite runs COOKIE_SECURE=false
     monkeypatch.setattr(services_auth._settings, "COOKIE_SECURE", True)
     r = await member_client.get("/_styx/open/unraid", headers=SAME, follow_redirects=False)

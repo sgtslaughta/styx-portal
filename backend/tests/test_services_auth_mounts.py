@@ -1,4 +1,5 @@
 import pytest
+from sqlmodel import select
 from app.models import ProxiedService
 from app.routers.services_auth import bypass_matches
 
@@ -55,7 +56,8 @@ async def test_open_same_origin_sets_cookie_and_redirects(admin_client, session)
     r = await admin_client.get("/_styx/open/immich", headers={"sec-fetch-site": "same-origin"},
                                follow_redirects=False)
     assert r.status_code == 302 and r.headers["location"].endswith("/_styx/app/immich/")
-    assert "styx_svc=immich" in r.headers["set-cookie"] and r.headers["clear-site-data"] == '"cache"'
+    svc = (await session.exec(select(ProxiedService).where(ProxiedService.slug == "immich"))).one()
+    assert f"styx_svc=immich.{svc.id.replace('-', '')[:12]}" in r.headers["set-cookie"] and r.headers["clear-site-data"] == '"cache"'
     await _svc(session, slug="ha", mount_mode="cookie-root", frame_ok=False)
     r2 = await admin_client.get("/_styx/open/ha", headers={"sec-fetch-site": "none"}, follow_redirects=False)
     assert r2.headers["location"].endswith("/") and "/_styx/app" not in r2.headers["location"]
@@ -86,9 +88,14 @@ def test_bypass_fragment_before_query_no_crash():
     assert bypass_matches(rules, "/j/x#?api_key=1", {}) is False
 
 
-async def test_focus_reports_cookie(admin_client):
+async def test_focus_reports_cookie(admin_client, session):
     assert (await admin_client.get("/api/services/focus")).json() == {"slug": None}
-    admin_client.cookies.set("styx_svc", "immich")
+    s = await _svc(session, slug="immich", mount_mode="cookie-root")
+    tok = s.id.replace("-", "")[:12]
+    for stale in ("immich", "immich.ffffffffffff", "nope." + tok, "garbage"):
+        admin_client.cookies.set("styx_svc", stale)
+        assert (await admin_client.get("/api/services/focus")).json() == {"slug": None}
+    admin_client.cookies.set("styx_svc", f"immich.{tok}")
     assert (await admin_client.get("/api/services/focus")).json() == {"slug": "immich"}
 
 

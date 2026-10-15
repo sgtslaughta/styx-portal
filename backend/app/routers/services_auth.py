@@ -21,7 +21,7 @@ from app.middleware.security_headers import SAMEORIGIN_HEADERS
 from app.security.nav import is_navigation, no_access
 from app.security.deps import get_current_user, proxy_user_or_none
 from app.security.safe_next import safe_next
-from app.services.service_routes import COOKIE_NAME
+from app.services.service_routes import COOKIE_NAME, focus_slug, focus_value
 
 _settings = Settings()
 router = APIRouter()
@@ -136,6 +136,12 @@ def login_redirect(request: Request, uri: str | None, cookie_root: bool = False,
     return RedirectResponse(f"{proto}://{_redirect_host(request)}{login}", status_code=302)
 
 
+def _top_level_get(request: Request) -> bool:
+    h = request.headers
+    return (request.method == "GET" and h.get("sec-fetch-dest") == "document"
+            and h.get("sec-fetch-mode") == "navigate")
+
+
 @internal_router.get("/services/{slug}/auth-check")
 async def auth_check(slug: str, request: Request,
                      session: AsyncSession = Depends(get_session)):
@@ -150,6 +156,10 @@ async def auth_check(slug: str, request: Request,
         return login_redirect(request, uri, svc.mount_mode == "cookie-root", svc.slug)
     if not await user_may_open(session, user, svc):
         return no_access(request, "No access to this service")
+    if _top_level_get(request) and svc.mount_mode == "cookie-root" and svc.frame_ok:
+        # A bare top-level load of a focus app has no dock: wrap it in the shell.
+        return RedirectResponse(_shell_path(svc.slug, uri, True) or f"/_styx/app/{svc.slug}/",
+                                status_code=302)
     hdrs = clean_cookie_header(request)
     if svc.pass_identity:
         groups = await user_group_names(session, user.id)
@@ -167,8 +177,13 @@ async def strip_cookies(request: Request, slug: str | None = None):
 
 
 @router.get("/focus")
-async def current_focus(request: Request, user: User = Depends(get_current_user)):
-    return {"slug": request.cookies.get(COOKIE_NAME)}
+async def current_focus(request: Request, user: User = Depends(get_current_user),
+                        session: AsyncSession = Depends(get_session)):
+    value = request.cookies.get(COOKIE_NAME)
+    slug = focus_slug(value)
+    svc = await get_service_by_slug(session, slug) if slug else None
+    ok = svc is not None and svc.mount_mode == "cookie-root" and value == focus_value(svc.slug, svc.id)
+    return {"slug": slug if ok else None}
 
 
 @exit_router.get("/exit")
@@ -186,7 +201,7 @@ _CONFIRM_BODY = (
 def _focus_response(svc: ProxiedService) -> RedirectResponse:
     # frame_ok=False ("Open without overlay"): straight to the bare app at /
     resp = RedirectResponse(f"/_styx/app/{svc.slug}/" if svc.frame_ok else "/", status_code=302)
-    resp.set_cookie(COOKIE_NAME, svc.slug, path="/", httponly=True,
+    resp.set_cookie(COOKIE_NAME, focus_value(svc.slug, svc.id), path="/", httponly=True,
                     secure=_settings.COOKIE_SECURE, samesite="lax")
     resp.headers["Clear-Site-Data"] = '"cache"'
     return resp

@@ -297,6 +297,28 @@ test("h. cookie-root service: enter, takeover, Styx API via X-Styx-Client, exit"
   expect(after).toContain('<div id="root">');
 });
 
+test("h2. focus: top-level loads are wrapped in the shell; stale old-format cookie is not focus", async () => {
+  const m = member.page;
+  await m.goto("/_styx/open/echoroot");
+  await expect(m).toHaveURL("http://127.0.0.1:18080/_styx/app/echoroot/");
+  // A plain top-level load while the cookie is set lands in the shell (dock reachable), app framed.
+  await eventually(async () => {
+    await m.goto("/");
+    await expect(m).toHaveURL(/\/_styx\/app\/echoroot\/$/);
+    expect(isWhoami(await m.frameLocator("iframe").locator("body").innerText({ timeout: 3000 }))).toBe(true);
+  });
+  await expect(m.getByRole("button", { name: "Open the Styx menu (Alt+Shift+S)" })).toBeVisible();
+  await m.goto("/_styx/exit");
+  expect((await member.ctx.cookies()).some((c) => c.name === "styx_svc")).toBe(false);
+
+  // Cookie from before instance binding (or a deleted/re-created service): Styx home, not the app.
+  await member.ctx.addCookies([{ name: "styx_svc", value: "echoroot", url: "http://127.0.0.1:18080" }]);
+  await m.goto("/");
+  await expect(m.getByRole("link", { name: "Open Whoami" })).toBeVisible();
+  expect(isWhoami(await (await member.ctx.request.get("/")).text())).toBe(false);
+  await m.goto("/_styx/exit");
+});
+
 test("i. bypass rule: only the exact prefix on a segment boundary skips login", async ({ browser }) => {
   const p = admin.page;
   await openSettings(p, "Services");

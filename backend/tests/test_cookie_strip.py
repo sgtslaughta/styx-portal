@@ -129,7 +129,7 @@ def _all_cfg():
     inst = {"id": "i1", "subdomain": "d1", "port": 3001, "protocol": "https",
             "extra_ports": [{"slug": "web", "container_port": 8080}]}
     ws = {"id": "w1", "subdomain": "ws1", "lan_ip": "10.0.0.9", "port": 8443, "protocol": "https"}
-    svcs = [{"slug": s, "upstream": "http://10.0.0.2:1", "mount_mode": m, "auth_mode": a,
+    svcs = [{"id": "0123456789abcdef", "slug": s, "upstream": "http://10.0.0.2:1", "mount_mode": m, "auth_mode": a,
              "verify_tls": True, "enabled": True}
             for s, m, a in [("sonarr", "path", "sso"), ("bz", "path", "sso-with-bypass"),
                             ("plex", "path", "app-native"), ("unraid", "cookie-root", "app-native")]]
