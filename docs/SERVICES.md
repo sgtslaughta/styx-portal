@@ -79,10 +79,15 @@ reverse proxy**. Styx then sends that hostname as the `Host` header and TLS SNI,
 traffic and the health and icon checks. `X-Forwarded-Host` still carries the Styx name.
 With TLS verification on, the certificate is checked against that hostname.
 
-Limit: the app now believes its address is that hostname. If it answers with an absolute
-redirect (`Location: https://unraid.home.lan/...`), the browser follows it straight to that
-hostname, outside Styx, and it only works where the name resolves. Traefik cannot rewrite
-`Location` headers. Prefer connecting Styx straight to the app when you can.
+Redirects: the app now believes its address is that hostname, so it may answer with an absolute
+redirect (`Location: https://unraid.home.lan/login`). Styx rewrites redirects (`Location`, and
+`Refresh: N; url=...`) that point at the proxy hostname back to Styx-relative paths, so the browser
+stays inside Styx. This uses a Traefik local plugin shipped in `traefik/plugins-local`, mounted
+into the Traefik container at `/plugins-local`.
+
+Limit: absolute links the app writes into its pages or JavaScript with its own hostname are not
+rewritten (Styx never edits response bodies), so those still leave Styx and only work where the
+name resolves. Prefer connecting Styx straight to the app when you can.
 
 ## Presets
 

@@ -28,6 +28,10 @@ test("url service behind a name-based reverse proxy gets its own hostname as Hos
     expect(headerLines(body, "Host")).toEqual(["app.proxy.test"]);
     // docs/SERVICES.md promises the Styx (browser) name survives in X-Forwarded-Host
     expect(headerLines(body, "X-Forwarded-Host")).toEqual(["127.0.0.1:18080"]);
+    // the styxlocation plugin turns the app's absolute redirect into a relative one
+    const bounce = await p.request.get("/revproxy/bounce", { maxRedirects: 0 });
+    expect(bounce.status()).toBe(302);
+    expect(bounce.headers()["location"]).toBe("/landing?x=1");
   } finally {
     const all: { id: string; slug: string }[] = await apiCall(ctx, "GET", "/api/services");
     const svc = all.find((x) => x.slug === "revproxy");

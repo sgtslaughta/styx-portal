@@ -39,7 +39,7 @@ describe("ServiceForm upstream reverse proxy", () => {
   test("warning text is static and links to the proxy docs", () => {
     setup();
     fireEvent.click(screen.getByLabelText(SW));
-    expect(screen.getByText(/The app will think its address is the hostname in the address above\./)).toBeInTheDocument();
+    expect(screen.getByText(/Redirects are kept inside Styx, but links the app writes into its pages with its own hostname still leave Styx\./)).toBeInTheDocument();
     const alert = screen.getByText("Links may leave Styx").closest("[role=alert]") as HTMLElement;
     expect(alert.querySelector("a")).toHaveAttribute("href", "/docs/SERVICES/#apps-behind-a-reverse-proxy");
   });

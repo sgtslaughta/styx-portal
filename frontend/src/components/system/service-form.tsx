@@ -204,7 +204,7 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
               </SwitchRow>
               {f.upstream_is_proxy && (
                 <RiskCallout tone="warning" title="Links may leave Styx" docs={PROXY_DOCS}>
-                  The app will think its address is the hostname in the address above. If it sends full-address redirects, your browser follows them to that hostname, which only works where it resolves. Connect Styx straight to the app when you can.
+                  Redirects are kept inside Styx, but links the app writes into its pages with its own hostname still leave Styx.
                 </RiskCallout>
               )}
             </>
