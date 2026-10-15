@@ -48,10 +48,8 @@ func relative(v, host string) string {
 	if err != nil || u.Host == "" || strings.ToLower(u.Hostname()) != host {
 		return v
 	}
-	// Never emit "//x" or "/\x": browsers read those as scheme-relative (open redirect).
-	if t := strings.TrimLeft(u.Path, "/\\"); t != u.Path {
-		u.Path, u.RawPath = t, ""
-	}
+	// Escaped form keeps %2F etc. as sent; a raw "\" is always emitted as %5C. Extra leading
+	// slashes are dropped so the result can never read as scheme-relative ("//x").
 	out := "/" + strings.TrimLeft(u.EscapedPath(), "/")
 	if u.ForceQuery || u.RawQuery != "" {
 		out += "?" + u.RawQuery
@@ -94,13 +92,23 @@ func (w *writer) rewrite() {
 }
 
 func (w *writer) WriteHeader(code int) {
+	if code >= 100 && code < 200 && code != http.StatusSwitchingProtocols {
+		w.rw.WriteHeader(code) // interim response: the final one is still to come
+		return
+	}
 	w.rewrite()
 	w.rw.WriteHeader(code)
 }
 
 func (w *writer) Write(b []byte) (int, error) {
 	w.rewrite()
-	return w.rw.Write(b)
+	n, err := w.rw.Write(b)
+	// Yaegi hides this wrapper's Flush from compiled code, so SSE and long polls would sit in
+	// the server buffer. Flushing every Write is simple and correct for a reverse proxy.
+	if f, ok := w.rw.(http.Flusher); ok {
+		f.Flush()
+	}
+	return n, err
 }
 
 func (w *writer) Flush() {

@@ -41,8 +41,10 @@ func TestLocation(t *testing.T) {
 		{"empty path with query", "https://app.example.lan?x=1", "/?x=1"},
 		{"double slash path", "https://app.example.lan//evil.com/x", "/evil.com/x"},
 		{"triple slash path", "https://app.example.lan///evil.com", "/evil.com"},
-		{"backslash path", `https://app.example.lan/\evil.com`, "/evil.com"},
-		{"mixed slashes", `https://app.example.lan/\/\evil.com/x`, "/evil.com/x"},
+		{"backslash path", `https://app.example.lan/\evil.com`, "/%5Cevil.com"},
+		{"mixed slashes", `https://app.example.lan/\/\evil.com/x`, "/%5C/%5Cevil.com/x"},
+		{"keeps encoded slash", "https://app.example.lan/a%2Fb(c)!x", "/a%2Fb(c)!x"},
+		{"encoded leading slashes", "https://app.example.lan/%2F%2Fevil.com", "/%2F%2Fevil.com"},
 		{"other host", "https://other.example.lan/login", "https://other.example.lan/login"},
 		{"suffix host", "https://evil-app.example.lan/x", "https://evil-app.example.lan/x"},
 		{"relative", "/login?x=1", "/login?x=1"},
@@ -165,4 +167,36 @@ func TestHijackUnsupported(t *testing.T) {
 			t.Error("expected error")
 		}
 	})).ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+}
+
+func TestInformationalDoesNotLatch(t *testing.T) {
+	rec := httptest.NewRecorder()
+	handler(t, "app.example.lan", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", "https://app.example.lan/early")
+		w.WriteHeader(http.StatusEarlyHints)
+		w.Header().Set("Location", "https://app.example.lan/x")
+		w.WriteHeader(http.StatusFound)
+	})).ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	if got := rec.Header().Get("Location"); got != "/x" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+type countFlush struct {
+	*httptest.ResponseRecorder
+	n int
+}
+
+func (c *countFlush) Flush() { c.n++ }
+
+// Yaegi hides the wrapper's Flush from compiled code, so Write flushes itself.
+func TestWriteFlushesUnderlying(t *testing.T) {
+	c := &countFlush{ResponseRecorder: httptest.NewRecorder()}
+	handler(t, "app.example.lan", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("a"))
+		_, _ = w.Write([]byte("b"))
+	})).ServeHTTP(c, httptest.NewRequest("GET", "/", nil))
+	if c.n != 2 {
+		t.Fatalf("flushes %d", c.n)
+	}
 }
