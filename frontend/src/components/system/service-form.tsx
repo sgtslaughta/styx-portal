@@ -151,7 +151,7 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
           </Field>
           {f.kind === "url" ? (
             <Field id="upstream" label="Upstream URL" error={err("upstream_url")}>
-              <Input id="upstream" placeholder={`http://192.168.1.10:${preset?.default_port ?? 8080}`} value={f.upstream_url ?? ""}
+              <Input id="upstream" placeholder={`${[443, 8443].includes(preset?.default_port ?? 0) ? "https" : "http"}://192.168.1.10:${preset?.default_port ?? 8080}`} value={f.upstream_url ?? ""}
                 autoComplete="off" {...aria("upstream_url")} onChange={(e) => set("upstream_url", e.target.value)} />
             </Field>
           ) : (

@@ -10,6 +10,7 @@
   "verify_tls": false,
   "base_url_hint": null,
   "warnings": [
+    "Point Styx at Unraid itself (its HTTPS port, e.g. https://192.168.1.10:443, or :8443 if a reverse proxy holds 443), not at a reverse proxy in front of it: Unraid redirects to the hostname it is reached by, which would leave Styx.",
     "Unraid uses a self-signed certificate: TLS verification is disabled for this upstream.",
     "Takes over the root of the hostname for this browser (one service at a time)."
   ]

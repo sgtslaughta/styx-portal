@@ -344,3 +344,17 @@ describe("ServiceForm icon payload", () => {
     expect("icon_kind" in sent || "icon_etag" in sent).toBe(false);
   });
 });
+
+describe("upstream placeholder", () => {
+  const unraid = { ...presets[0]!, id: "unraid", name: "Unraid", default_port: 443, verify_tls: false, bypass_rules: [] };
+  test("https presets suggest an https address", () => {
+    setup({ presets: [...presets, unraid] });
+    change("Preset", "unraid");
+    expect(screen.getByLabelText("Upstream URL")).toHaveAttribute("placeholder", "https://192.168.1.10:443");
+  });
+  test("plain-http presets keep http", () => {
+    setup();
+    change("Preset", "sonarr");
+    expect(screen.getByLabelText("Upstream URL")).toHaveAttribute("placeholder", "http://192.168.1.10:8989");
+  });
+});
