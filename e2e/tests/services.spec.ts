@@ -319,6 +319,41 @@ test("h2. focus: top-level loads are wrapped in the shell; stale old-format cook
   await m.goto("/_styx/exit");
 });
 
+test("h3. focus: an expired Styx session renews or signs in again, never loops", async ({ browser }) => {
+  const s = await fresh(browser);
+  await uiLogin(s.page, MEMBER);
+  await expect(s.page).toHaveURL(/\/$/);
+  await s.page.goto("/_styx/open/echoroot");
+  await expect(s.page).toHaveURL(/\/_styx\/app\/echoroot\/$/);
+  const shell = () => s.page.frameLocator("iframe").locator("body").innerText({ timeout: 5000 });
+  const apiCalls: string[] = [];
+  s.page.on("request", (r) => { if (r.url().includes("/api/")) apiCalls.push(r.url()); });
+
+  // Short-lived access token gone: the shell's silent refresh must reach Styx (not the app) and stay.
+  await s.ctx.clearCookies({ name: "access_token" });
+  await s.page.reload();
+  expect(isWhoami(await shell())).toBe(true);
+  await expect(s.page).toHaveURL(/\/_styx\/app\/echoroot\/$/);
+  expect((await s.ctx.cookies()).some((c) => c.name === "access_token")).toBe(true);
+
+  // Refresh token gone too (app cookie still valid): Styx sign-in, focus cleared, back after login.
+  await s.ctx.clearCookies({ name: "access_token" });
+  await s.ctx.clearCookies({ name: "refresh_token" });
+  apiCalls.length = 0;
+  await s.page.reload();
+  await expect(s.page).toHaveURL(/\/login\?next=%2F_styx%2Fapp%2Fechoroot%2F$/);
+  await expect(s.page.locator("#username")).toBeVisible();
+  expect((await s.ctx.cookies()).some((c) => c.name === "styx_svc")).toBe(false);
+  await s.page.waitForTimeout(1500);
+  expect(apiCalls.length).toBeLessThan(10); // a loop fires several requests a second
+  await s.page.locator("#username").fill(MEMBER.username);
+  await s.page.locator("#password").fill(MEMBER.password);
+  await s.page.getByRole("button", { name: "Sign in" }).click();
+  await expect(s.page).toHaveURL(/\/_styx\/app\/echoroot\/$/);
+  expect(isWhoami(await shell())).toBe(true);
+  await s.ctx.close();
+});
+
 test("i. bypass rule: only the exact prefix on a segment boundary skips login", async ({ browser }) => {
   const p = admin.page;
   await openSettings(p, "Services");
