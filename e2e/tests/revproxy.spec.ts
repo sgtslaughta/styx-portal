@@ -14,7 +14,7 @@ test("url service behind a name-based reverse proxy gets its own hostname as Hos
   await form.locator("#slug").fill("revproxy");
   await form.locator("#upstream").fill("http://app.proxy.test");
   await form.getByLabel("media", { exact: true }).check();
-  await form.getByLabel("Upstream is a reverse proxy").click();
+  await expect(form.getByLabel("Upstream is a reverse proxy")).toBeChecked(); // on by default for a hostname upstream
   await expect(form.getByRole("alert").filter({ hasText: "Links may leave Styx" })).toBeVisible();
   await form.locator("#ack-origin").check();
   await form.getByRole("button", { name: "Save" }).click();

@@ -74,8 +74,9 @@ Some URL services are not the app itself but a proxy in front of it, such as Ngi
 Manager, Caddy or another Traefik. These pick the site by hostname, so when Styx reaches them
 with Styx's own name they reset the connection (`tlsv1 unrecognized name`) or show a default
 page. Set the service's upstream address to the hostname the proxy knows the app by (for
-example `https://unraid.home.lan`; an IP address is not accepted) and turn on **Upstream is a
-reverse proxy**. Styx then sends that hostname as the `Host` header and TLS SNI, for both
+example `https://unraid.home.lan`; an IP address is not accepted). **Upstream is a reverse
+proxy** turns on by itself when the address uses a hostname (off for IPs and `localhost`); you
+can switch it off. Without it, nginx-based proxies answer `421 Misdirected Request`. Styx then sends that hostname as the `Host` header and TLS SNI, for both
 traffic and the health and icon checks. `X-Forwarded-Host` still carries the Styx name.
 With TLS verification on, the certificate is checked against that hostname.
 

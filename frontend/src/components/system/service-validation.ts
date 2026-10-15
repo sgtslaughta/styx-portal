@@ -8,6 +8,13 @@ const RESERVED = new Set([
 ]);
 const CONTAINER_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/;
 const IP_RE = /^(\d+(\.\d+){3}|\[.*\])$/;   // IPv4 or bracketed IPv6 host
+/** True when the URL's host is a DNS name (not an IP or localhost): the default for "Upstream is a reverse proxy". */
+export function hostIsName(url: string): boolean {
+  try {
+    const h = new URL(url).hostname;
+    return !!h && h !== "localhost" && !IP_RE.test(h);
+  } catch { return false; }
+}
 const PROXY_IP_ERROR = "A reverse proxy picks the site by hostname, so the upstream address must use one (e.g. https://unraid.home.lan).";
 const URL_RE = /^https?:\/\/[^\s/@]+(\/\S*)?$/;
 

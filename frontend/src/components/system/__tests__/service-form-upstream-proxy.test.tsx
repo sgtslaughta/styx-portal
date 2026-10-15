@@ -28,7 +28,8 @@ const IP_ERROR = "A reverse proxy picks the site by hostname, so the upstream ad
 
 describe("ServiceForm upstream reverse proxy", () => {
   test("switch reveals the warning; there is no hostname field", () => {
-    setup();
+    setup();                                   // hostname upstream: on by default
+    fireEvent.click(screen.getByLabelText(SW));
     expect(screen.queryByText("Links may leave Styx")).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText(SW));
     expect(screen.queryByLabelText("Site hostname")).not.toBeInTheDocument();
@@ -38,7 +39,6 @@ describe("ServiceForm upstream reverse proxy", () => {
 
   test("warning text is static and links to the proxy docs", () => {
     setup();
-    fireEvent.click(screen.getByLabelText(SW));
     expect(screen.getByText(/Redirects are kept inside Styx, but links the app writes into its pages with its own hostname still leave Styx\./)).toBeInTheDocument();
     const alert = screen.getByText("Links may leave Styx").closest("[role=alert]") as HTMLElement;
     expect(alert.querySelector("a")).toHaveAttribute("href", "/docs/SERVICES/#apps-behind-a-reverse-proxy");
@@ -57,14 +57,12 @@ describe("ServiceForm upstream reverse proxy", () => {
 
   test("submits upstream_is_proxy true when on", () => {
     const onSubmit = setup();
-    fireEvent.click(screen.getByLabelText(SW));
     fireEvent.click(save());
     expect(onSubmit.mock.calls[0]?.[0]).toMatchObject({ upstream_is_proxy: true });
   });
 
-  test("submits upstream_is_proxy false when toggled off again", () => {
+  test("submits upstream_is_proxy false when toggled off", () => {
     const onSubmit = setup();
-    fireEvent.click(screen.getByLabelText(SW));
     fireEvent.click(screen.getByLabelText(SW));
     fireEvent.click(save());
     expect(onSubmit.mock.calls[0]?.[0]).toMatchObject({ upstream_is_proxy: false });
@@ -84,5 +82,27 @@ describe("ServiceForm upstream reverse proxy", () => {
     change("Container port", "80");
     fireEvent.click(save());
     expect(onSubmit.mock.calls[0]?.[0]).toMatchObject({ upstream_is_proxy: false });
+  });
+});
+
+describe("ServiceForm upstream reverse proxy default", () => {
+  const sw = () => screen.getByRole("switch", { name: SW });
+  test("a hostname upstream turns the switch on; an IP turns it off", () => {
+    setup();
+    expect(sw()).toBeChecked();
+    change("Upstream URL", "https://192.168.1.96:8443");
+    expect(sw()).not.toBeChecked();
+    change("Upstream URL", "http://localhost:8080");
+    expect(sw()).not.toBeChecked();
+  });
+  test("a manual choice sticks while the address is edited", () => {
+    setup();
+    fireEvent.click(sw());
+    change("Upstream URL", "https://nas.home.lan");
+    expect(sw()).not.toBeChecked();
+  });
+  test("editing an existing service keeps its saved choice until the address changes", () => {
+    setup({ ...existing, upstream_is_proxy: false });
+    expect(sw()).not.toBeChecked();
   });
 });

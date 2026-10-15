@@ -7,7 +7,7 @@ import { DrawerBody, DrawerFooter } from "@/components/ui/drawer";
 import { PROXY_DOCS, RISK, RISK_DETAIL, RiskCallout } from "@/components/common/risk-callout";
 import { Field, Section, SwitchRow, selectCls } from "./service-form-parts";
 import { AccessSection, checkCls } from "./service-form-access";
-import { validateService, type FieldErrors } from "./service-validation";
+import { hostIsName, validateService, type FieldErrors } from "./service-validation";
 
 const EMPTY: ProxiedServiceInput = {
   slug: "", name: "", icon: null, kind: "url", upstream_url: "", container: null, container_port: null,
@@ -152,7 +152,12 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
           {f.kind === "url" ? (
             <Field id="upstream" label="Upstream URL" error={err("upstream_url")}>
               <Input id="upstream" placeholder={`${[443, 8443].includes(preset?.default_port ?? 0) ? "https" : "http"}://192.168.1.10:${preset?.default_port ?? 8080}`} value={f.upstream_url ?? ""}
-                autoComplete="off" {...aria("upstream_url")} onChange={(e) => set("upstream_url", e.target.value)} />
+                autoComplete="off" {...aria("upstream_url")} onChange={(e) => {
+                  const v = e.target.value;
+                  set("upstream_url", v);
+                  // A hostname usually means a name-based proxy or DNS; follow the address until the admin picks.
+                  if (!touched.has("upstream_is_proxy")) setF((p) => ({ ...p, upstream_is_proxy: hostIsName(v) }));
+                }} />
             </Field>
           ) : (
             <div className="space-y-3">
