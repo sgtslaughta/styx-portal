@@ -43,6 +43,7 @@ test("dock switches between Apps and Workspaces", async ({ browser }) => {
   const ctx = await browser.newContext();
   const p = await ctx.newPage();
   await uiLogin(p, ADMIN);
+  await expect(p.getByRole("button", { name: "Log out" })).toBeVisible(); // login must land before we navigate away
   await p.goto("/_styx/app/sonarr/");
   await p.locator('[aria-label="Open the Styx menu (Alt+Shift+S)"]').click();
   const dock = p.getByRole("dialog");
