@@ -214,7 +214,17 @@ async def test_focus_document_navigation_wraps_in_shell(member_client, session):
     await _svc(session, slug="immich", mount_mode="cookie-root", auth_mode="sso", bypass_rules=[])
     r = await member_client.get("/internal/services/immich/auth-check",
                                 headers=_doc("/photos?a=1"), follow_redirects=False)
-    assert r.status_code == 302 and r.headers["location"] == "/_styx/app/immich/photos?a=1"
+    # absolute: Traefik resolves a relative forwardAuth Location against the backend's own URL
+    assert r.status_code == 302 and r.headers["location"] == "https://localhost/_styx/app/immich/photos?a=1"
+
+
+@pytest.mark.asyncio
+async def test_focus_top_level_form_post_is_not_wrapped(member_client, session):
+    # forwardAuth always asks with GET; the browser's method arrives in X-Forwarded-Method
+    await _svc(session, slug="immich", mount_mode="cookie-root", auth_mode="sso", bypass_rules=[])
+    r = await member_client.get("/internal/services/immich/auth-check",
+                                headers=_doc("/login", **{"x-forwarded-method": "POST"}), follow_redirects=False)
+    assert r.status_code == 200
 
 
 @pytest.mark.asyncio

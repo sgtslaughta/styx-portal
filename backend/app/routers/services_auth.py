@@ -138,7 +138,8 @@ def login_redirect(request: Request, uri: str | None, cookie_root: bool = False,
 
 def _top_level_get(request: Request) -> bool:
     h = request.headers
-    return (request.method == "GET" and h.get("sec-fetch-dest") == "document"
+    # forwardAuth always asks with GET; the browser's own method is X-Forwarded-Method.
+    return (h.get("x-forwarded-method", "GET").upper() == "GET" and h.get("sec-fetch-dest") == "document"
             and h.get("sec-fetch-mode") == "navigate")
 
 
@@ -158,8 +159,11 @@ async def auth_check(slug: str, request: Request,
         return no_access(request, "No access to this service")
     if _top_level_get(request) and svc.mount_mode == "cookie-root" and svc.frame_ok:
         # A bare top-level load of a focus app has no dock: wrap it in the shell.
-        return RedirectResponse(_shell_path(svc.slug, uri, True) or f"/_styx/app/{svc.slug}/",
-                                status_code=302)
+        # Absolute: Traefik resolves a relative forwardAuth Location against the backend's URL.
+        proto = request.headers.get("x-forwarded-proto", "https")
+        proto = proto if proto in ("http", "https") else "https"
+        path = _shell_path(svc.slug, uri, True) or f"/_styx/app/{svc.slug}/"
+        return RedirectResponse(f"{proto}://{_redirect_host(request)}{path}", status_code=302)
     hdrs = clean_cookie_header(request)
     if svc.pass_identity:
         groups = await user_group_names(session, user.id)
