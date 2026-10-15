@@ -1,4 +1,4 @@
-"""upstream_host: serve apps that sit behind a name-based reverse proxy (NPM, Caddy, ...)."""
+"""upstream_is_proxy: serve apps that sit behind a name-based reverse proxy (NPM, Caddy, ...)."""
 import httpx
 import pytest
 import sqlalchemy
@@ -19,34 +19,35 @@ def _body(**kw):
     return d
 
 
-@pytest.mark.parametrize("raw,want", [
-    ("g.jmolabs.dev", "g.jmolabs.dev"), ("Unraid.Home.LAN", "unraid.home.lan"),
-    ("nas", "nas"), ("a-b.c1", "a-b.c1"), ("", None), (None, None),
-    ("a" * 63 + ".com", "a" * 63 + ".com"),
-])
-def test_upstream_host_accepted(raw, want):
-    assert ProxiedServiceCreate(**_body(upstream_host=raw)).upstream_host == want
-    assert ProxiedServiceUpdate(**{k: v for k, v in _body(upstream_host=raw).items()
-                                   if k != "slug"}).upstream_host == want
+URL = "https://unraid.home.lan"
 
 
-@pytest.mark.parametrize("bad", [
-    "http://x", "x:443", "a/b", "-a.com", "a-.com", "a..b", ".a.com", "a b", "a@b", "*.a.com",
-    "a_b.com", "x" * 254, ("a" * 64) + ".com", "a.com/", "a.com?x", " ",
-])
-def test_upstream_host_rejected(bad):
-    with pytest.raises(ValidationError):
-        ProxiedServiceCreate(**_body(upstream_host=bad))
+@pytest.mark.parametrize("url", [URL, "http://nas:8080/x", "https://a.b.c/p"])
+def test_proxy_accepts_dns_names(url):
+    assert ProxiedServiceCreate(**_body(upstream_url=url, upstream_is_proxy=True)).upstream_is_proxy
+    assert ProxiedServiceUpdate(**{k: v for k, v in _body(upstream_url=url, upstream_is_proxy=True)
+                                   .items() if k != "slug"}).upstream_is_proxy
 
 
-def test_upstream_host_only_for_url_kind():
+def test_proxy_defaults_false():
+    assert ProxiedServiceCreate(**_body()).upstream_is_proxy is False
+
+
+@pytest.mark.parametrize("url", ["https://192.168.1.96", "http://10.0.0.1:8080/x", "https://[::1]:8443"])
+def test_proxy_rejects_ip_literal(url):
+    with pytest.raises(ValidationError, match="picks the site by hostname"):
+        ProxiedServiceCreate(**_body(upstream_url=url, upstream_is_proxy=True))
+    ProxiedServiceCreate(**_body(upstream_url=url))      # fine when the switch is off
+
+
+def test_proxy_only_for_url_kind():
     with pytest.raises(ValidationError):
         ProxiedServiceCreate(**_body(kind="docker-local", upstream_url=None, container="c",
-                                     container_port=80, upstream_host="a.com"))
+                                     container_port=80, upstream_is_proxy=True))
 
 
 def _svc(**kw):
-    d = {"slug": "g", "upstream": "https://192.168.1.96", "mount_mode": "path",
+    d = {"slug": "g", "upstream": "https://unraid.home.lan", "mount_mode": "path",
          "auth_mode": "sso", "verify_tls": True, "enabled": True}
     d.update(kw)
     return d
@@ -57,19 +58,19 @@ def _cfg(**kw):
 
 
 @pytest.mark.parametrize("verify", [True, False])
-def test_routes_with_upstream_host(verify):
-    h = _cfg(upstream_host="g.jmolabs.dev", verify_tls=verify)
+def test_routes_with_upstream_proxy(verify):
+    h = _cfg(upstream_host="unraid.home.lan", verify_tls=verify)
     assert h["middlewares"]["svc-host-g"] == {"headers": {
-        "customRequestHeaders": {"Host": "g.jmolabs.dev"}}}
+        "customRequestHeaders": {"Host": "unraid.home.lan"}}}
     mws = h["routers"]["svc-g"]["middlewares"]
     assert mws[-1] == "svc-host-g" and mws[-2] == "svc-auth-g"
     assert h["services"]["svc-g"]["loadBalancer"]["serversTransport"] == "styx-up-g"
     assert h["serversTransports"]["styx-up-g"] == {
-        "serverName": "g.jmolabs.dev", "insecureSkipVerify": not verify}
+        "serverName": "unraid.home.lan", "insecureSkipVerify": not verify}
     assert "styx-insecure-upstream" not in h.get("serversTransports", {})
 
 
-def test_routes_without_upstream_host_unchanged():
+def test_routes_without_upstream_proxy_unchanged():
     for extra in ({}, {"upstream_host": None}):
         h = _cfg(**extra)
         assert "svc-host-g" not in h["middlewares"]
@@ -79,7 +80,7 @@ def test_routes_without_upstream_host_unchanged():
 
 
 @pytest.mark.asyncio
-async def test_migration_adds_upstream_host_column():
+async def test_migration_adds_upstream_is_proxy_column():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.execute(sqlalchemy.text("CREATE TABLE proxied_services (id TEXT PRIMARY KEY, icon TEXT)"))
@@ -87,7 +88,7 @@ async def test_migration_adds_upstream_host_column():
             await _run_migrations(conn)
         cols = {r[1] for r in (await conn.execute(
             sqlalchemy.text("PRAGMA table_info(proxied_services)"))).fetchall()}
-    assert "upstream_host" in cols
+    assert "upstream_is_proxy" in cols
 
 
 @pytest.mark.asyncio
@@ -106,9 +107,9 @@ async def test_check_url_sends_host_and_sni():
 
 
 @pytest.mark.asyncio
-async def test_health_pass_threads_upstream_host(session):
-    session.add(ProxiedService(slug="a", name="A", upstream_url="https://10.0.0.1",
-                               health_path="/", upstream_host="g.jmolabs.dev"))
+async def test_health_pass_threads_proxy_hostname(session):
+    session.add(ProxiedService(slug="a", name="A", upstream_url="https://unraid.home.lan",
+                               health_path="/", upstream_is_proxy=True))
     await session.commit()
     seen = []
 
@@ -117,7 +118,7 @@ async def test_health_pass_threads_upstream_host(session):
         return "healthy"
 
     await run_health_pass(session, checker=fake)
-    assert seen == [("https://10.0.0.1/", "g.jmolabs.dev")]
+    assert seen == [("https://unraid.home.lan/", "unraid.home.lan")]
 
 
 @pytest.mark.asyncio
@@ -131,11 +132,11 @@ async def test_favicon_probes_send_host_and_sni():
         seen.append((req.headers["host"], req.extensions.get("sni_hostname")))
         return httpx.Response(200, content=svg if req.url.path == "/i.svg" else page)
 
-    svc = ProxiedService(slug="g", name="G", upstream_url="https://10.0.0.1", mount_mode="cookie-root",
-                         upstream_host="g.jmolabs.dev")
+    svc = ProxiedService(slug="g", name="G", upstream_url="https://unraid.home.lan", mount_mode="cookie-root",
+                         upstream_is_proxy=True)
     out = await sf.fetch_favicon(svc, None, transport=httpx.MockTransport(handler))
     assert out and out.startswith("data:image/svg")      # same-origin filter still resolves it
-    assert seen and set(seen) == {("g.jmolabs.dev", "g.jmolabs.dev")}
+    assert seen and set(seen) == {("unraid.home.lan", "unraid.home.lan")}
 
 
 @pytest.mark.asyncio
@@ -143,24 +144,28 @@ async def test_api_round_trip(admin_client, monkeypatch):
     async def noop(session, **kw):
         return None
     monkeypatch.setattr("app.services.route_writer.refresh_routes_from_db", noop)
-    body = _body(upstream_host="G.JmoLabs.dev")
+    body = _body(upstream_url=URL, upstream_is_proxy=True)
     r = await admin_client.post("/api/services", json=body)
     assert r.status_code == 201, r.text
-    assert r.json()["upstream_host"] == "g.jmolabs.dev"
+    assert r.json()["upstream_is_proxy"] is True
     sid = r.json()["id"]
     put = {k: v for k, v in body.items() if k != "slug"}
-    r = await admin_client.put(f"/api/services/{sid}", json={**put, "upstream_host": None})
-    assert r.status_code == 200 and r.json()["upstream_host"] is None
-    r = await admin_client.put(f"/api/services/{sid}", json={**put, "upstream_host": "a.lan"})
-    assert r.json()["upstream_host"] == "a.lan"
+    r = await admin_client.put(f"/api/services/{sid}", json={**put, "upstream_is_proxy": False})
+    assert r.status_code == 200 and r.json()["upstream_is_proxy"] is False
+    r = await admin_client.put(f"/api/services/{sid}", json={**put, "upstream_url": "https://10.0.0.1"})
+    assert r.status_code == 422
     r = await admin_client.put(f"/api/services/{sid}", json={
         **put, "kind": "docker-local", "upstream_url": None, "container": "c",
-        "container_port": 80, "upstream_host": "a.lan"})
+        "container_port": 80})
     assert r.status_code == 422
 
 
-def test_route_writer_drops_host_for_non_url_kind():
+def test_route_writer_derives_hostname_for_url_kind_only():
     from app.services.route_writer import _service_dict
+    s = ProxiedService(slug="c", name="C", upstream_url="https://Unraid.Home.LAN:8443/",
+                       upstream_is_proxy=True)
+    assert _service_dict(s)["upstream_host"] == "unraid.home.lan"
     s = ProxiedService(slug="c", name="C", kind="docker-local", container="c", container_port=80,
-                       upstream_host="stale.lan")
+                       upstream_is_proxy=True)
     assert _service_dict(s)["upstream_host"] is None
+    assert _service_dict(ProxiedService(slug="c", name="C", upstream_url=URL))["upstream_host"] is None

@@ -1,5 +1,7 @@
 """Service / group / preset schemas (split from schemas.py)."""
+import ipaddress
 import re
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -11,7 +13,16 @@ RESERVED_SERVICE_SLUGS = {
     "if", "application", "outpost.goauthentik.io", "static", "media", "flows", "ws",
     "-", ".well-known", "source",
 }
-HOSTNAME_RE = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*")
+
+
+def _is_ip(host: str | None) -> bool:
+    try:
+        ipaddress.ip_address(host or "")
+        return True
+    except ValueError:
+        return False
+
+
 CONTAINER_NAME_RE = r"^[a-zA-Z0-9][a-zA-Z0-9_.-]*$"
 MOUNT_MODES = {"path", "cookie-root"}
 AUTH_MODES = {"sso", "sso-with-bypass", "app-native"}
@@ -54,7 +65,7 @@ class _ServiceFields(BaseModel):
     bypass_rules: list[BypassRule] = []
     allowed_groups: list[str] = []
     verify_tls: bool = True
-    upstream_host: str | None = None     # url kind only; DNS hostname, lowercased
+    upstream_is_proxy: bool = False      # url kind only; send the URL hostname as Host/SNI
     health_path: str | None = Field(default=None, max_length=255)
     preset_id: str | None = None
     enabled: bool = True
@@ -92,17 +103,6 @@ class _ServiceFields(BaseModel):
             raise ValueError("upstream_url must be http(s)://host[:port][/path], no credentials")
         return v.rstrip("/")
 
-    @field_validator("upstream_host")
-    @classmethod
-    def _host(cls, v):
-        if not v:
-            return None
-        v = v.lower()
-        # bare DNS name: no scheme/port/path/@/*; labels 1-63 chars, no edge hyphens
-        if len(v) > 253 or not HOSTNAME_RE.fullmatch(v):
-            raise ValueError("upstream_host must be a hostname like unraid.home.lan")
-        return v
-
     @field_validator("health_path")
     @classmethod
     def _health(cls, v):
@@ -115,8 +115,12 @@ class _ServiceFields(BaseModel):
             raise ValueError("upstream_url required for kind=url")
         if self.kind == "docker-local" and not (self.container and self.container_port):
             raise ValueError("container and container_port required for kind=docker-local")
-        if self.upstream_host and self.kind != "url":
-            raise ValueError("upstream_host only allowed for kind=url")
+        if self.upstream_is_proxy:
+            if self.kind != "url":
+                raise ValueError("upstream_is_proxy only allowed for kind=url")
+            if _is_ip(urlsplit(self.upstream_url).hostname):
+                raise ValueError("A reverse proxy picks the site by hostname, so the upstream "
+                                 "address must use one (e.g. https://unraid.home.lan).")
         if self.bypass_rules and self.auth_mode != "sso-with-bypass":
             raise ValueError("bypass_rules only allowed with auth_mode=sso-with-bypass")
         return self
@@ -159,7 +163,7 @@ class ProxiedServiceOut(BaseModel):
     bypass_rules: list[dict]
     allowed_groups: list[str]
     verify_tls: bool
-    upstream_host: str | None = None
+    upstream_is_proxy: bool = False
     health_path: str | None
     health_status: str
     health_checked_at: str | None

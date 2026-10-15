@@ -307,12 +307,11 @@ def write_routes(instances: list[dict], domain: str | None = None,
 
 
 def _service_dict(s) -> dict:
-    from app.models import upstream_base
+    from app.models import proxy_hostname, upstream_base
     return {
         "slug": s.slug, "upstream": upstream_base(s), "mount_mode": s.mount_mode,
         "auth_mode": s.auth_mode, "verify_tls": s.verify_tls, "enabled": s.enabled,
-        # only url services are name-routed; ignore a stale host on any other kind
-        "upstream_host": s.upstream_host if s.kind == "url" else None,
+        "upstream_host": proxy_hostname(s),   # url kind behind a name-based proxy, else None
     }
 
 

@@ -9,7 +9,7 @@ import httpx
 from sqlmodel import select, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models import ProxiedService, upstream_base
+from app.models import ProxiedService, proxy_hostname, upstream_base
 
 log = logging.getLogger(__name__)
 CHECK_TIMEOUT = 5.0
@@ -91,7 +91,7 @@ async def run_health_pass(session: AsyncSession, checker=check_url, docker=None)
     remote = [s for s in rows if s.kind != "docker-local" and s.health_path]
     ids = [s.id for s in local] + [s.id for s in remote]
     containers = [s.container for s in local]
-    probes = [(upstream_base(s) + s.health_path, s.verify_tls, s.upstream_host) for s in remote]
+    probes = [(upstream_base(s) + s.health_path, s.verify_tls, proxy_hostname(s)) for s in remote]
     await session.commit()          # end the read txn; don't hold ORM rows across awaits
     if containers and docker is None:
         docker = _default_docker()

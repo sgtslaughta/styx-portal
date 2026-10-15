@@ -10,7 +10,7 @@ import httpx
 from sqlmodel import update
 
 from app.config import Settings
-from app.models import ProxiedService, upstream_base
+from app.models import ProxiedService, proxy_hostname, upstream_base
 from app.services import ws_icon
 from app.services.service_health import _forbidden_target, host_override
 
@@ -134,7 +134,7 @@ def _getter(svc: ProxiedService, docker, transport):
 
     async def get(url: str, cap: int) -> tuple[bytes, str] | None:
         return await _get_httpx(url, cap, svc.verify_tls, page_url(svc), transport,
-                                 svc.upstream_host)
+                                 proxy_hostname(svc))
     return get
 
 

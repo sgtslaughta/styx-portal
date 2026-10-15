@@ -1,4 +1,5 @@
 import uuid
+from urllib.parse import urlsplit
 from datetime import datetime, timezone
 from typing import Any
 
@@ -338,7 +339,7 @@ class ProxiedService(SQLModel, table=True):
     bypass_rules: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
     allowed_groups: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     verify_tls: bool = True
-    upstream_host: str | None = None           # url kind: Host/SNI for name-based proxies
+    upstream_is_proxy: bool = False            # url kind: send the URL hostname as Host/SNI
     health_path: str | None = None
     health_status: str = "unknown"             # healthy | unhealthy | unknown
     health_checked_at: datetime | None = None
@@ -357,6 +358,13 @@ def upstream_base(svc: "ProxiedService") -> str:
     if svc.kind == "docker-local":
         return svc.upstream_fallback or f"http://{svc.container}:{svc.container_port}"
     return (svc.upstream_url or "").rstrip("/")
+
+
+def proxy_hostname(svc: "ProxiedService") -> str | None:
+    """Lowercased URL hostname to send as Host/SNI to a name-based reverse proxy, else None."""
+    if svc.kind != "url" or not svc.upstream_is_proxy or not svc.upstream_url:
+        return None
+    return urlsplit(svc.upstream_url).hostname
 
 
 class MountJob(SQLModel, table=True):

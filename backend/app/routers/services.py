@@ -51,7 +51,7 @@ def _out(s: ProxiedService, presets: dict[str, ServicePreset]) -> ProxiedService
         upstream_url=s.upstream_url, container=s.container, container_port=s.container_port,
         upstream_fallback=s.upstream_fallback, mount_mode=s.mount_mode, auth_mode=s.auth_mode,
         bypass_rules=s.bypass_rules, allowed_groups=s.allowed_groups, verify_tls=s.verify_tls,
-        upstream_host=s.upstream_host,
+        upstream_is_proxy=s.upstream_is_proxy,
         health_path=s.health_path, health_status=s.health_status,
         health_checked_at=_iso(s.health_checked_at), preset_id=s.preset_id, enabled=s.enabled,
         mount_managed=s.mount_managed, needs_setup=_needs_setup(s, presets),
