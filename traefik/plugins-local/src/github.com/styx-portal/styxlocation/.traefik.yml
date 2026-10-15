@@ -1,0 +1,6 @@
+displayName: Styx Location Rewrite
+type: middleware
+import: github.com/styx-portal/styxlocation
+summary: Rewrites absolute Location/Refresh redirects that point at the configured host into origin-relative ones.
+testData:
+  host: example.lan
