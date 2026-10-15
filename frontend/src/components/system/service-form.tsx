@@ -12,11 +12,11 @@ import { validateService, type FieldErrors } from "./service-validation";
 const EMPTY: ProxiedServiceInput = {
   slug: "", name: "", icon: null, kind: "url", upstream_url: "", container: null, container_port: null,
   mount_mode: "path", auth_mode: "sso", bypass_rules: [], allowed_groups: [], verify_tls: true,
-  upstream_host: null, health_path: null, preset_id: null, enabled: true, pass_identity: false, frame_ok: true,
+  upstream_is_proxy: false, health_path: null, preset_id: null, enabled: true, pass_identity: false, frame_ok: true,
 };
 const ACK_TEXT =
   "I understand that this app runs on the same origin as Styx: any JavaScript it serves can use Styx with the rights of whoever opens it.";
-const KNOWN = ["slug", "name", "upstream_url", "upstream_host", "container", "container_port", "health_path", "icon"];
+const KNOWN = ["slug", "name", "upstream_url", "upstream_is_proxy", "container", "container_port", "health_path", "icon"];
 
 export type DiscoveredPrefill = { name: string; port?: number; preset: string | null };
 type Props = {
@@ -60,7 +60,6 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
   const [touched, setTouched] = useState<Set<string>>(new Set());
   const [srv, setSrv] = useState<FieldErrors>({});
   const [saving, setSaving] = useState(false);
-  const [hostFocus, setHostFocus] = useState(false); // focus the hostname only after the user turns the switch on
   const [ack, setAck] = useState(false); // never pre-checked, not even on edit
   const [containers, setContainers] = useState<DiscoveredContainer[] | null>(null);
   const [discoverErr, setDiscoverErr] = useState<string | null>(null);
@@ -96,7 +95,7 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
   const setKind = (kind: ProxiedServiceInput["kind"]) =>
     setF({ ...f, kind, ...(kind === "url"
       ? { container: null, container_port: null, upstream_url: "" }
-      : { upstream_url: null, upstream_host: null }) });
+      : { upstream_url: null, upstream_is_proxy: false }) });
   const pickContainer = (name: string) => {
     const c = containers?.find((x) => x.name === name);
     setF((p) => ({ ...p, container: name || null, container_port: c?.ports[0] ?? p.container_port }));
@@ -109,7 +108,7 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
     try {
       // Icons change through their own endpoints once the service exists: never send one on edit.
       const { icon: _icon, ...rest } = f;
-      const res = await onSubmit({ ...(isEdit ? rest : f), name: f.name.trim(), upstream_host: f.upstream_host?.trim().toLowerCase() || null, bypass_rules: f.auth_mode === "sso-with-bypass" ? f.bypass_rules : [] });
+      const res = await onSubmit({ ...(isEdit ? rest : f), name: f.name.trim(), bypass_rules: f.auth_mode === "sso-with-bypass" ? f.bypass_rules : [] });
       if (res) setSrv(res);
     } finally { setSaving(false); }
   };
@@ -198,21 +197,15 @@ export function ServiceForm({ initial, presets, groups, discovered, loadContaine
           {!f.verify_tls && <RiskCallout tone="warning" title="TLS not verified">{RISK.tls}</RiskCallout>}
           {f.kind === "url" && (
             <>
-              <SwitchRow id="upstream-proxy" label="Upstream is a reverse proxy"
-                hint="Turn on when the address above is Nginx Proxy Manager, Caddy or another proxy that picks the site by hostname.">
-                <Switch id="upstream-proxy" aria-label="Upstream is a reverse proxy" checked={f.upstream_host != null}
-                  onCheckedChange={(v) => { setHostFocus(v); set("upstream_host", v ? "" : null); }} />
+              <SwitchRow id="upstream-proxy" label="Upstream is a reverse proxy" error={err("upstream_is_proxy")}
+                hint="Turn on when the address above is Nginx Proxy Manager, Caddy or another proxy that picks the site by hostname. Styx sends that hostname to it.">
+                <Switch id="upstream-proxy" aria-label="Upstream is a reverse proxy" checked={!!f.upstream_is_proxy}
+                  onCheckedChange={(v) => set("upstream_is_proxy", v)} {...aria("upstream_is_proxy")} />
               </SwitchRow>
-              {f.upstream_host != null && (
-                <>
-                  <Field id="upstream-host" label="Site hostname" error={err("upstream_host")} hint="The hostname your proxy uses for this app. Use punycode for non-ASCII names (xn--…).">
-                    <Input id="upstream-host" autoFocus={hostFocus} placeholder="unraid.home.lan" value={f.upstream_host} autoComplete="off" {...aria("upstream_host")}
-                      onChange={(e) => set("upstream_host", e.target.value)} />
-                  </Field>
-                  <RiskCallout tone="warning" title="Links may leave Styx" docs={PROXY_DOCS}>
-                    The app will think its address is the site hostname. If it sends full-address redirects, your browser follows them to that hostname, which only works where it resolves. Connect Styx straight to the app when you can.
-                  </RiskCallout>
-                </>
+              {f.upstream_is_proxy && (
+                <RiskCallout tone="warning" title="Links may leave Styx" docs={PROXY_DOCS}>
+                  The app will think its address is the hostname in the address above. If it sends full-address redirects, your browser follows them to that hostname, which only works where it resolves. Connect Styx straight to the app when you can.
+                </RiskCallout>
               )}
             </>
           )}

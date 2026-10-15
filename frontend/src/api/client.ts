@@ -36,7 +36,7 @@ export type ProxiedService = {
   bypass_rules: BypassRule[]; allowed_groups: string[];
   verify_tls: boolean; health_path: string | null;
   /** url kind: Host/SNI sent to a name-based reverse-proxy upstream (NPM, Caddy). */
-  upstream_host?: string | null;
+  upstream_is_proxy?: boolean;
   health_status: "healthy" | "unhealthy" | "unknown"; health_checked_at: string | null;
   preset_id: string | null; enabled: boolean; created_at: string; updated_at: string;
   /** Server-owned: true when Styx manages the app's mount config. Never sent on write. */

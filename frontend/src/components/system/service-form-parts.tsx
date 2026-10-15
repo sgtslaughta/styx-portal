@@ -40,12 +40,13 @@ export function Section({ title, hint, children }: { title: string; hint?: strin
 }
 
 /** Label + description on the left, a switch on the right. */
-export function SwitchRow({ id, label, hint, children }: { id: string; label: string; hint?: string; children: ReactNode }) {
+export function SwitchRow({ id, label, hint, error, children }: { id: string; label: string; hint?: string; error?: string; children: ReactNode }) {
   return (
     <div className="flex items-center justify-between gap-4">
       <div className="space-y-0.5">
         <Label htmlFor={id}>{label}</Label>
         {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+        {error && <p id="upstream_is_proxy-err" className="text-xs text-destructive">{error}</p>}
       </div>
       {children}
     </div>

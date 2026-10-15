@@ -12,75 +12,77 @@ function setup(initial?: ProxiedService) {
   const onSubmit = vi.fn();
   render(<ServiceForm presets={[]} groups={[]} initial={initial} onSubmit={onSubmit} onCancel={() => {}} />);
   fireEvent.click(screen.getByLabelText(ACK));
-  if (!initial) { change("Slug", "g"); change("Name", "G"); change("Upstream URL", "https://10.0.0.1"); }
+  if (!initial) { change("Slug", "g"); change("Name", "G"); change("Upstream URL", "https://unraid.home.lan"); }
   return onSubmit;
 }
 
 const existing: ProxiedService = {
-  id: "s1", slug: "jf", name: "Jellyfin", icon_kind: "auto", icon_etag: "e", kind: "url", upstream_url: "http://10.0.0.2:8096",
+  id: "s1", slug: "jf", name: "Jellyfin", icon_kind: "auto", icon_etag: "e", kind: "url", upstream_url: "http://jf.lan:8096",
   container: null, container_port: null, upstream_fallback: null, mount_mode: "path", auth_mode: "sso",
-  bypass_rules: [], allowed_groups: [], verify_tls: true, upstream_host: "app.proxy.test", health_path: null,
+  bypass_rules: [], allowed_groups: [], verify_tls: true, upstream_is_proxy: true, health_path: null,
   health_status: "healthy", health_checked_at: null, preset_id: null, enabled: true, created_at: "", updated_at: "",
   mount_managed: false, needs_setup: false, pass_identity: false, frame_ok: true,
 };
 
+const IP_ERROR = "A reverse proxy picks the site by hostname, so the upstream address must use one (e.g. https://unraid.home.lan).";
+
 describe("ServiceForm upstream reverse proxy", () => {
-  test("switch reveals the hostname field and the warning", () => {
+  test("switch reveals the warning; there is no hostname field", () => {
     setup();
-    expect(screen.queryByLabelText("Site hostname")).not.toBeInTheDocument();
+    expect(screen.queryByText("Links may leave Styx")).not.toBeInTheDocument();
     fireEvent.click(screen.getByLabelText(SW));
-    expect(screen.getByLabelText("Site hostname")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Site hostname")).not.toBeInTheDocument();
     expect(screen.getByText("Links may leave Styx")).toBeInTheDocument();
+    expect(screen.getByText(/Styx sends that hostname to it\./)).toBeInTheDocument();
   });
 
-  test("warning text is static, links to the proxy docs, and focus moves to the field", () => {
+  test("warning text is static and links to the proxy docs", () => {
     setup();
     fireEvent.click(screen.getByLabelText(SW));
-    expect(screen.getByLabelText("Site hostname")).toHaveFocus();
-    const before = screen.getByText(/The app will think its address is the site hostname\./);
-    change("Site hostname", "unraid.home.lan");
-    expect(screen.getByText(/The app will think its address is the site hostname\./).textContent).toBe(before.textContent);
+    expect(screen.getByText(/The app will think its address is the hostname in the address above\./)).toBeInTheDocument();
     const alert = screen.getByText("Links may leave Styx").closest("[role=alert]") as HTMLElement;
     expect(alert.querySelector("a")).toHaveAttribute("href", "/docs/SERVICES/#apps-behind-a-reverse-proxy");
-    expect(screen.getByText(/punycode/)).toBeInTheDocument();
   });
 
-  test("invalid hostname shows the message and blocks save", () => {
+  test.each(["https://10.0.0.1", "http://192.168.1.96:8080/x", "https://[::1]:8443"])("IP literal %s blocks save when on", (url) => {
     setup();
+    change("Upstream URL", url);
     fireEvent.click(screen.getByLabelText(SW));
-    change("Site hostname", "http://x");
-    expect(screen.getByText("Enter a hostname like unraid.home.lan — no http://, port or path.")).toBeInTheDocument();
+    expect(screen.getByText(IP_ERROR)).toBeInTheDocument();
     expect(save()).toBeDisabled();
-    change("Site hostname", "");
-    expect(save()).toBeDisabled();      // on but empty
+    fireEvent.click(screen.getByLabelText(SW));
+    expect(screen.queryByText(IP_ERROR)).not.toBeInTheDocument();
+    expect(save()).toBeEnabled();
   });
 
-  test("submits the lowercased hostname", () => {
+  test("submits upstream_is_proxy true when on", () => {
     const onSubmit = setup();
     fireEvent.click(screen.getByLabelText(SW));
-    change("Site hostname", "Unraid.Home.LAN");
     fireEvent.click(save());
-    expect(onSubmit.mock.calls[0]?.[0]).toMatchObject({ upstream_host: "unraid.home.lan" });
+    expect(onSubmit.mock.calls[0]?.[0]).toMatchObject({ upstream_is_proxy: true });
   });
 
-  test("submits null when the switch is toggled off again", () => {
+  test("submits upstream_is_proxy false when toggled off again", () => {
     const onSubmit = setup();
     fireEvent.click(screen.getByLabelText(SW));
-    change("Site hostname", "x.lan");
     fireEvent.click(screen.getByLabelText(SW));
     fireEvent.click(save());
-    expect(onSubmit.mock.calls[0]?.[0]).toMatchObject({ upstream_host: null });
+    expect(onSubmit.mock.calls[0]?.[0]).toMatchObject({ upstream_is_proxy: false });
   });
 
-  test("existing service with a host opens with the switch on", () => {
+  test("existing proxy service opens with the switch on", () => {
     setup(existing);
     expect(screen.getByLabelText(SW)).toBeChecked();
-    expect(screen.getByLabelText("Site hostname")).toHaveValue("app.proxy.test");
   });
 
-  test("not offered for docker-local", () => {
-    setup();
+  test("not offered for docker-local, and cleared when switching kind", () => {
+    const onSubmit = setup();
+    fireEvent.click(screen.getByLabelText(SW));
     change("Kind", "docker-local");
     expect(screen.queryByLabelText(SW)).not.toBeInTheDocument();
+    change("Container", "c");
+    change("Container port", "80");
+    fireEvent.click(save());
+    expect(onSubmit.mock.calls[0]?.[0]).toMatchObject({ upstream_is_proxy: false });
   });
 });

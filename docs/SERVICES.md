@@ -73,13 +73,14 @@ Unhealthy tiles stay clickable.
 Some URL services are not the app itself but a proxy in front of it, such as Nginx Proxy
 Manager, Caddy or another Traefik. These pick the site by hostname, so when Styx reaches them
 with Styx's own name they reset the connection (`tlsv1 unrecognized name`) or show a default
-page. Turn on **Upstream is a reverse proxy** on the service and enter the **Site hostname**
-the proxy knows the app by. Styx then sends that name as the `Host` header and TLS SNI, for
-both traffic and the health and icon checks. `X-Forwarded-Host` still carries the Styx name.
-With TLS verification on, the certificate is checked against the site hostname.
+page. Set the service's upstream address to the hostname the proxy knows the app by (for
+example `https://unraid.home.lan`; an IP address is not accepted) and turn on **Upstream is a
+reverse proxy**. Styx then sends that hostname as the `Host` header and TLS SNI, for both
+traffic and the health and icon checks. `X-Forwarded-Host` still carries the Styx name.
+With TLS verification on, the certificate is checked against that hostname.
 
-Limit: the app now believes its address is the site hostname. If it answers with an absolute
-redirect (`Location: https://<site hostname>/...`), the browser follows it straight to that
+Limit: the app now believes its address is that hostname. If it answers with an absolute
+redirect (`Location: https://unraid.home.lan/...`), the browser follows it straight to that
 hostname, outside Styx, and it only works where the name resolves. Traefik cannot rewrite
 `Location` headers. Prefer connecting Styx straight to the app when you can.
 
