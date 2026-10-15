@@ -49,9 +49,27 @@ describe("services api", () => {
 
 describe("expiredLoginUrl", () => {
   test("outside the shell: plain expired login", () => expect(expiredLoginUrl("/settings", "")).toBe("/login?expired=1"));
-  test("inside the shell: carries the shell path as next", () =>
+  // In Focus mode /login belongs to the app, so the shell leaves via /_styx/exit
+  // (clears the focus cookie) or the wrap redirect sends it straight back: reload loop.
+  test("inside the shell: exits focus, carries the shell path as next", () =>
     expect(expiredLoginUrl("/_styx/app/sonarr/series", "?p=2")).toBe(
-      "/login?expired=1&next=%2F_styx%2Fapp%2Fsonarr%2Fseries%3Fp%3D2"));
-  test("unsafe shell inner path is dropped", () =>
-    expect(expiredLoginUrl("/_styx/app/immich/api/auth/me", "")).toBe("/login?expired=1"));
+      "/_styx/exit?next=" + encodeURIComponent("/login?expired=1&next=%2F_styx%2Fapp%2Fsonarr%2Fseries%3Fp%3D2")));
+  test("unsafe shell inner path is dropped but still exits focus", () =>
+    expect(expiredLoginUrl("/_styx/app/immich/api/auth/me", "")).toBe(
+      "/_styx/exit?next=" + encodeURIComponent("/login?expired=1")));
+});
+
+describe("silent refresh", () => {
+  test("refresh carries X-Styx-Client so Focus mode routes it to Styx", async () => {
+    const calls: [string, RequestInit][] = [];
+    vi.stubGlobal("location", { href: "", pathname: "/", search: "" });
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+      calls.push([url, init]);
+      return new Response("{}", { status: url.endsWith("/auth/refresh") ? 200 : calls.length > 2 ? 200 : 401 });
+    }));
+    await api.listServices();
+    const refresh = calls.find(([u]) => u.endsWith("/auth/refresh"));
+    expect(refresh?.[1].headers).toMatchObject({ "X-Styx-Client": "1" });
+    vi.unstubAllGlobals();
+  });
 });

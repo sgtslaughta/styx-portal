@@ -158,7 +158,8 @@ const silentRefresh = singleFlight(async (): Promise<boolean> => {
   const res = await fetch(`${BASE}/auth/refresh`, {
     method: "POST",
     credentials: "include",
-    headers: csrf !== null ? { "X-CSRF-Token": csrf } : {},
+    // X-Styx-Client: in Focus mode /api belongs to the app without it.
+    headers: { "X-Styx-Client": "1", ...(csrf !== null ? { "X-CSRF-Token": csrf } : {}) },
   });
   return res.ok;
 });
@@ -202,11 +203,14 @@ async function request<T>(path: string, init?: RequestInit, retried = false): Pr
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
-/** /login URL after a 401. Inside the shell (/_styx/app/...) it carries the shell path so sign-in returns there. */
+/** /login URL after a 401. Inside the shell (/_styx/app/...) it carries the shell path so sign-in
+ * returns there, and goes via /_styx/exit: in Focus mode /login is the app's, and the shell-wrap
+ * redirect would send it straight back here (reload loop). */
 export function expiredLoginUrl(pathname: string, search: string): string {
-  const here = pathname + search;
-  const next = pathname.startsWith("/_styx/app/") ? safeNext(here) : null;
-  return next ? `/login?expired=1&next=${encodeURIComponent(next)}` : "/login?expired=1";
+  if (!pathname.startsWith("/_styx/app/")) return "/login?expired=1";
+  const next = safeNext(pathname + search);
+  const login = next ? `/login?expired=1&next=${encodeURIComponent(next)}` : "/login?expired=1";
+  return `/_styx/exit?next=${encodeURIComponent(login)}`;
 }
 
 export const api = {
