@@ -48,10 +48,11 @@ func relative(v, host string) string {
 	if err != nil || u.Host == "" || strings.ToLower(u.Hostname()) != host {
 		return v
 	}
-	out := u.EscapedPath()
-	if out == "" {
-		out = "/"
+	// Never emit "//x" or "/\x": browsers read those as scheme-relative (open redirect).
+	if t := strings.TrimLeft(u.Path, "/\\"); t != u.Path {
+		u.Path, u.RawPath = t, ""
 	}
+	out := "/" + strings.TrimLeft(u.EscapedPath(), "/")
 	if u.ForceQuery || u.RawQuery != "" {
 		out += "?" + u.RawQuery
 	}

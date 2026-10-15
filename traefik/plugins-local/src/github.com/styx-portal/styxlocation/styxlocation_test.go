@@ -39,6 +39,10 @@ func TestLocation(t *testing.T) {
 		{"query+fragment", "https://app.example.lan/a/b?x=1&y=2#frag", "/a/b?x=1&y=2#frag"},
 		{"empty path", "https://app.example.lan", "/"},
 		{"empty path with query", "https://app.example.lan?x=1", "/?x=1"},
+		{"double slash path", "https://app.example.lan//evil.com/x", "/evil.com/x"},
+		{"triple slash path", "https://app.example.lan///evil.com", "/evil.com"},
+		{"backslash path", `https://app.example.lan/\evil.com`, "/evil.com"},
+		{"mixed slashes", `https://app.example.lan/\/\evil.com/x`, "/evil.com/x"},
 		{"other host", "https://other.example.lan/login", "https://other.example.lan/login"},
 		{"suffix host", "https://evil-app.example.lan/x", "https://evil-app.example.lan/x"},
 		{"relative", "/login?x=1", "/login?x=1"},
@@ -74,6 +78,7 @@ func TestRefresh(t *testing.T) {
 		{"0; url=https://app.example.lan/x?a=1", "0; url=/x?a=1"},
 		{"5;URL=http://app.example.lan:81/x", "5;URL=/x"},
 		{"0; url=https://other.lan/x", "0; url=https://other.lan/x"},
+		{"0; url=https://app.example.lan//evil.com/x", "0; url=/evil.com/x"},
 		{"3", "3"},
 		{"0; url=/x", "0; url=/x"},
 	}
