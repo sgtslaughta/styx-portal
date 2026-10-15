@@ -65,4 +65,12 @@ describe("LoginPage next-follow", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(replace).not.toHaveBeenCalled();
   });
+
+  test("expired notice drops ?expired but keeps next (sign-in returns to the app)", async () => {
+    auth.user = null;
+    const spy = vi.spyOn(window.history, "replaceState");
+    at("?expired=1&next=%2F_styx%2Fapp%2Fechoroot%2F");
+    await waitFor(() => expect(spy).toHaveBeenCalledWith({}, "", "/login?next=%2F_styx%2Fapp%2Fechoroot%2F"));
+    spy.mockRestore();
+  });
 });

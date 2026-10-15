@@ -56,9 +56,11 @@ export function LoginPage() {
   }, []);
 
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("expired")) {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("expired")) {
       toast("Your session expired — please sign in again.");
-      window.history.replaceState({}, "", "/login");
+      q.delete("expired"); // keep next: sign-in must return to where the session ran out
+      window.history.replaceState({}, "", q.size ? `/login?${q}` : "/login");
     }
   }, []);
 

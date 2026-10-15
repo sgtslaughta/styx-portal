@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ThemedToaster } from "@/components/themed-toaster";
 import { api } from "@/api/client";
@@ -20,7 +20,7 @@ export function ShellApp() {
     queryFn: async () => (await api.listServiceTiles()).map(toTile),
     refetchInterval: 30_000,
   });
-  const { data: focus } = useQuery({ queryKey: ["service-focus"], queryFn: () => api.serviceFocus() });
+  const { data: focus, isPending: focusPending } = useQuery({ queryKey: ["service-focus"], queryFn: () => api.serviceFocus() });
   const tabRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [side, setSide] = useState(() => readPos().side);
@@ -28,12 +28,16 @@ export function ShellApp() {
   const toggle = useCallback(() => { setSide(readPos().side); setOpen((o) => !o); }, []);
   useHotkey(() => [window, frameEl?.contentWindow ?? null], toggle, frameEl, () => setOpen(false));
   const onTitle = useCallback((t: string) => { if (t) document.title = t; }, []);
-  if (isPending) return null;
+  const tile = target && tiles?.find((t) => t.slug === target.slug);
+  // A focus app framed without its cookie would show Styx itself (e.g. after sign-in, a bookmark):
+  // /_styx/open sets the cookie and comes back here. ponytail: lands at the app root, inner path lost.
+  const refocus = tile?.mount_mode === "cookie-root" && focus !== undefined && focus.slug !== tile.slug;
+  useEffect(() => { if (refocus && tile) window.location.replace(`/_styx/open/${tile.slug}`); }, [refocus, tile]);
+  if (isPending || refocus || (tile?.mount_mode === "cookie-root" && focusPending)) return null;
   if (error && !tiles) {
     return <Card title="Couldn't load your apps" text={`${error.message} Check your connection and try again.`}
       action="Try again" onAction={() => void refetch()} />;
   }
-  const tile = target && tiles?.find((t) => t.slug === target.slug);
   if (!target || !tile) {
     return <Card title="This app isn't available" text="It may have been removed or turned off."
       href="/_styx/exit?next=/" action="Go home" />;

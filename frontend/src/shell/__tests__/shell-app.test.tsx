@@ -3,7 +3,8 @@ import { fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 const listServiceTiles = vi.fn();
-vi.mock("@/api/client", () => ({ api: { listServiceTiles: () => listServiceTiles(), serviceFocus: () => Promise.resolve({ slug: null }),
+const serviceFocus = vi.fn(() => Promise.resolve<{ slug: string | null }>({ slug: null }));
+vi.mock("@/api/client", () => ({ api: { listServiceTiles: () => listServiceTiles(), serviceFocus: () => serviceFocus(),
   me: () => Promise.resolve({ id: "u", username: "a", email: null, role: "user", open_workspaces: null, open_apps: null }),
   myWorkstations: () => Promise.resolve([]), listInstances: () => Promise.resolve([]) } }));
 vi.mock("sonner", () => ({ Toaster: ({ theme }: { theme?: string }) => <i data-testid="toaster">{theme}</i>, toast: Object.assign(vi.fn(), { error: vi.fn() }) }));
@@ -74,4 +75,26 @@ it("shell toaster follows the html dark class", async () => {
   const { findByTestId } = setup();
   expect((await findByTestId("toaster")).textContent).toBe("dark");
   document.documentElement.classList.remove("dark");
+});
+
+it("a focus app without its focus cookie re-opens through /_styx/open (frame would be Styx)", async () => {
+  listServiceTiles.mockImplementation(() => Promise.resolve([{ ...mk()[0], mount_mode: "cookie-root" }]));
+  const replace = vi.fn();
+  const real = window.location;
+  Object.defineProperty(window, "location", { configurable: true,
+    value: { ...real, pathname: "/_styx/app/sonarr/series", search: "", hash: "", replace } });
+  try {
+    const { container } = setup();
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/_styx/open/sonarr"));
+    expect(container.querySelector("iframe")).toBeNull();
+  } finally {
+    Object.defineProperty(window, "location", { configurable: true, value: real });
+  }
+});
+
+it("a focus app with its focus cookie frames normally", async () => {
+  listServiceTiles.mockImplementation(() => Promise.resolve([{ ...mk()[0], mount_mode: "cookie-root" }]));
+  serviceFocus.mockResolvedValueOnce({ slug: "sonarr" });
+  const { container } = setup();
+  await waitFor(() => expect(container.querySelector("iframe")).toBeTruthy());
 });
