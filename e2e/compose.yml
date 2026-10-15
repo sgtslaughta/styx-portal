@@ -54,6 +54,7 @@ services:
       - "127.0.0.1:18080:80"
     volumes:
       - ./traefik.yml:/etc/traefik/traefik.yml:ro
+      - ../traefik/plugins-local:/plugins-local:ro
       - dynamic:/etc/traefik/dynamic:ro
     networks: [edge, services]
     healthcheck:

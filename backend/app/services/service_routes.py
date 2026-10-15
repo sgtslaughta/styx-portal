@@ -61,6 +61,10 @@ def add_service_routes(config: dict, middlewares: dict, services: list[dict],
             # Host header is swapped here; X-Forwarded-Host keeps the browser's name.
             middlewares[f"svc-host-{slug}"] = {"headers": {"customRequestHeaders": {"Host": uh}}}
             mws.append(f"svc-host-{slug}")
+            # Local plugin (traefik/plugins-local): the app builds absolute redirects from
+            # that Host; turn the ones aimed at it back into relative ones.
+            middlewares[f"svc-loc-{slug}"] = {"plugin": {"styxlocation": {"host": uh}}}
+            mws.append(f"svc-loc-{slug}")
             transports[f"styx-up-{slug}"] = {"serverName": uh,
                                              "insecureSkipVerify": not s.get("verify_tls", True)}
             lb["serversTransport"] = f"styx-up-{slug}"

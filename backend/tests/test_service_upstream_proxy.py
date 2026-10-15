@@ -63,7 +63,9 @@ def test_routes_with_upstream_proxy(verify):
     assert h["middlewares"]["svc-host-g"] == {"headers": {
         "customRequestHeaders": {"Host": "unraid.home.lan"}}}
     mws = h["routers"]["svc-g"]["middlewares"]
-    assert mws[-1] == "svc-host-g" and mws[-2] == "svc-auth-g"
+    assert mws[-2:] == ["svc-host-g", "svc-loc-g"] and mws[-3] == "svc-auth-g"
+    assert h["middlewares"]["svc-loc-g"] == {
+        "plugin": {"styxlocation": {"host": "unraid.home.lan"}}}
     assert h["services"]["svc-g"]["loadBalancer"]["serversTransport"] == "styx-up-g"
     assert h["serversTransports"]["styx-up-g"] == {
         "serverName": "unraid.home.lan", "insecureSkipVerify": not verify}
@@ -75,6 +77,8 @@ def test_routes_without_upstream_proxy_unchanged():
         h = _cfg(**extra)
         assert "svc-host-g" not in h["middlewares"]
         assert "svc-host-g" not in h["routers"]["svc-g"]["middlewares"]
+        assert "svc-loc-g" not in h["middlewares"]
+        assert "svc-loc-g" not in h["routers"]["svc-g"]["middlewares"]
         assert "serversTransport" not in h["services"]["svc-g"]["loadBalancer"]
         assert "styx-up-g" not in h.get("serversTransports", {})
 

@@ -63,6 +63,7 @@ services:
       - "443:443"
     volumes:
       - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/plugins-local:/plugins-local:ro
       - traefik-dynamic:/etc/traefik/dynamic:ro
       - lan-certs:/lan-certs:ro
     networks:
@@ -87,6 +88,7 @@ services:
       - CF_DNS_API_TOKEN=${CF_DNS_API_TOKEN:-}
     volumes:
       - ./traefik/traefik-direct.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/plugins-local:/plugins-local:ro
       - traefik-dynamic:/etc/traefik/dynamic:ro
       - letsencrypt:/letsencrypt
       - lan-certs:/lan-certs:ro
