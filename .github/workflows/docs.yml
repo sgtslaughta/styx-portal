@@ -28,7 +28,7 @@ jobs:
           python-version: "3.12"
       # Pinned zensical + prunes internal specs/plans; shared with GitLab pages job.
       - run: sh scripts/build-docs.sh
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site
       - id: deployment
