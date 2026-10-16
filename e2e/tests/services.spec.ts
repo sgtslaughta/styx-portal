@@ -336,12 +336,15 @@ test("h3. focus: an expired Styx session renews or signs in again, never loops",
   await expect(s.page).toHaveURL(/\/_styx\/app\/echoroot\/$/);
   expect((await s.ctx.cookies()).some((c) => c.name === "access_token")).toBe(true);
 
-  // Refresh token gone too (app cookie still valid): Styx sign-in, focus cleared, back after login.
+  // Refresh token gone too (app cookie still valid): Styx sign-in, focus cleared, then back on the
+  // same app page (the shell re-opens focus via /_styx/open?next=<inner>).
+  await s.page.goto("/_styx/app/echoroot/deep/page?x=1");
+  await expect(s.page.frameLocator("iframe").locator("body")).toContainText("GET /deep/page?x=1 ");
   await s.ctx.clearCookies({ name: "access_token" });
   await s.ctx.clearCookies({ name: "refresh_token" });
   apiCalls.length = 0;
   await s.page.reload();
-  await expect(s.page).toHaveURL(/\/login\?next=%2F_styx%2Fapp%2Fechoroot%2F$/);
+  await expect(s.page).toHaveURL(/\/login\?next=%2F_styx%2Fapp%2Fechoroot%2Fdeep%2Fpage%3Fx%3D1$/);
   await expect(s.page.locator("#username")).toBeVisible();
   expect((await s.ctx.cookies()).some((c) => c.name === "styx_svc")).toBe(false);
   await s.page.waitForTimeout(1500);
@@ -349,8 +352,8 @@ test("h3. focus: an expired Styx session renews or signs in again, never loops",
   await s.page.locator("#username").fill(MEMBER.username);
   await s.page.locator("#password").fill(MEMBER.password);
   await s.page.getByRole("button", { name: "Sign in" }).click();
-  await expect(s.page).toHaveURL(/\/_styx\/app\/echoroot\/$/);
-  expect(isWhoami(await shell())).toBe(true);
+  await expect(s.page).toHaveURL(/\/_styx\/app\/echoroot\/deep\/page\?x=1$/);
+  await expect(s.page.frameLocator("iframe").locator("body")).toContainText("GET /deep/page?x=1 ");
   await s.ctx.close();
 });
 

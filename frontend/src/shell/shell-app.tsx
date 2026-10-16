@@ -30,9 +30,14 @@ export function ShellApp() {
   const onTitle = useCallback((t: string) => { if (t) document.title = t; }, []);
   const tile = target && tiles?.find((t) => t.slug === target.slug);
   // A focus app framed without its cookie would show Styx itself (e.g. after sign-in, a bookmark):
-  // /_styx/open sets the cookie and comes back here. ponytail: lands at the app root, inner path lost.
+  // /_styx/open sets the cookie and comes back to the same page (server re-checks next; the
+  // #hash rides along because a redirect without one keeps it).
   const refocus = tile?.mount_mode === "cookie-root" && focus !== undefined && focus.slug !== tile.slug;
-  useEffect(() => { if (refocus && tile) window.location.replace(`/_styx/open/${tile.slug}`); }, [refocus, tile]);
+  useEffect(() => {
+    if (!refocus || !tile || !target) return;
+    const [rest, hash = ""] = target.inner.split(/#(.*)/s, 2);
+    window.location.replace(`/_styx/open/${tile.slug}?next=${encodeURIComponent(rest!)}${hash && "#" + hash}`);
+  }, [refocus, tile, target]);
   if (isPending || refocus || (tile?.mount_mode === "cookie-root" && focusPending)) return null;
   if (error && !tiles) {
     return <Card title="Couldn't load your apps" text={`${error.message} Check your connection and try again.`}

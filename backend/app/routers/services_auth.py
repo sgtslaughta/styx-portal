@@ -202,9 +202,12 @@ _CONFIRM_BODY = (
     '<div class="actions"><a class="btn" href="/_styx/open/{slug}">Open app</a><a href="/">Stay in Styx</a></div>')
 
 
-def _focus_response(svc: ProxiedService) -> RedirectResponse:
-    # frame_ok=False ("Open without overlay"): straight to the bare app at /
-    resp = RedirectResponse(f"/_styx/app/{svc.slug}/" if svc.frame_ok else "/", status_code=302)
+def _focus_response(svc: ProxiedService, inner: str | None = None) -> RedirectResponse:
+    # frame_ok=False ("Open without overlay"): straight to the bare app at /.
+    # inner: the app page to land on; it loads at the origin root, so it passes the shell's rule.
+    ok = inner and inner.startswith("/") and safe_next(f"/_styx/app/{svc.slug}{inner}")
+    inner = inner if ok else "/"
+    resp = RedirectResponse(f"/_styx/app/{svc.slug}{inner}" if svc.frame_ok else inner, status_code=302)
     resp.set_cookie(COOKIE_NAME, focus_value(svc.slug, svc.id), path="/", httponly=True,
                     secure=_settings.COOKIE_SECURE, samesite="lax")
     resp.headers["Clear-Site-Data"] = '"cache"'
@@ -226,7 +229,7 @@ async def _open_target(slug: str, request: Request, session: AsyncSession):
 
 
 @exit_router.get("/open/{slug}")
-async def open_service(slug: str, request: Request,
+async def open_service(slug: str, request: Request, next: str | None = None,
                        session: AsyncSession = Depends(get_session)):
     # Missing/other Sec-Fetch-Site = possibly cross-site: confirm page, no auth/DB.
     if request.headers.get("sec-fetch-site") not in ("same-origin", "none"):
@@ -235,7 +238,7 @@ async def open_service(slug: str, request: Request,
         return HTMLResponse(styx_page("Open app?", _CONFIRM_BODY.format(slug=html.escape(slug))),
                             headers={"Cache-Control": "no-store", **SAMEORIGIN_HEADERS})
     svc, deny = await _open_target(slug, request, session)
-    return deny or _focus_response(svc)
+    return deny or _focus_response(svc, next)
 
 
 _UNAVAILABLE_HTML = styx_page(

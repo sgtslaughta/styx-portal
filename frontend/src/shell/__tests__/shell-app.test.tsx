@@ -82,10 +82,10 @@ it("a focus app without its focus cookie re-opens through /_styx/open (frame wou
   const replace = vi.fn();
   const real = window.location;
   Object.defineProperty(window, "location", { configurable: true,
-    value: { ...real, pathname: "/_styx/app/sonarr/series", search: "", hash: "", replace } });
+    value: { ...real, pathname: "/_styx/app/sonarr/series", search: "?p=2", hash: "#top", replace } });
   try {
     const { container } = setup();
-    await waitFor(() => expect(replace).toHaveBeenCalledWith("/_styx/open/sonarr"));
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/_styx/open/sonarr?next=%2Fseries%3Fp%3D2#top"));
     expect(container.querySelector("iframe")).toBeNull();
   } finally {
     Object.defineProperty(window, "location", { configurable: true, value: real });

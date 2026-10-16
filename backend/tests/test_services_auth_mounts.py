@@ -104,3 +104,23 @@ async def test_open_denied_without_group(member_client, session):
     r = await member_client.get("/_styx/open/immich", headers={"sec-fetch-site": "same-origin",
                                                               "accept": "text/html"})
     assert r.status_code == 403
+
+
+@pytest.mark.parametrize("nxt,framed,bare", [
+    ("/series/12?p=2", "/_styx/app/immich/series/12?p=2", "/series/12?p=2"),
+    ("/", "/_styx/app/immich/", "/"),
+    ("/api/x", "/_styx/app/immich/", "/"),            # Styx path at the origin root: dropped
+    ("//evil.com/x", "/_styx/app/immich/", "/"),
+    ("/%2F%2Fevil.com", "/_styx/app/immich/", "/"),
+    ("https://evil.com/", "/_styx/app/immich/", "/"),
+    ("series", "/_styx/app/immich/", "/"),
+])
+async def test_open_keeps_safe_inner_path(admin_client, session, nxt, framed, bare):
+    """The shell re-opens a focus app (cookie lost, e.g. after sign-in) at the page it showed."""
+    await _svc(session, slug="immich", mount_mode="cookie-root")
+    await _svc(session, slug="ha", mount_mode="cookie-root", frame_ok=False)
+    h = {"sec-fetch-site": "same-origin"}
+    r = await admin_client.get("/_styx/open/immich", params={"next": nxt}, headers=h, follow_redirects=False)
+    assert r.status_code == 302 and r.headers["location"].split("://", 1)[-1].removeprefix("test") == framed
+    r = await admin_client.get("/_styx/open/ha", params={"next": nxt}, headers=h, follow_redirects=False)
+    assert r.headers["location"].split("://", 1)[-1].removeprefix("test") == bare
