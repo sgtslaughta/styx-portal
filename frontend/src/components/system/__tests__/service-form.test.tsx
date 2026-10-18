@@ -6,7 +6,7 @@ import type { ProxiedService } from "@/api/client";
 
 const presets = [{ id: "sonarr", name: "Sonarr", icon: null, default_port: 8989, mount_mode: "path" as const,
   auth_mode: "sso-with-bypass" as const, bypass_rules: [{ path_prefix: "/sonarr/api", required_header: "X-Api-Key" }],
-  health_path: "/sonarr/ping", verify_tls: true, base_url_hint: "URL Base = /sonarr", warnings: [] }];
+  health_path: "/sonarr/ping", verify_tls: true, base_url_hint: "URL Base = /sonarr", warnings: [], subpath: null }];
 
 type Props = Parameters<typeof ServiceForm>[0];
 const ACK = /I understand that this app runs on the same origin as Styx/;
@@ -28,11 +28,13 @@ const existing: ProxiedService = {
   container: null, container_port: null, upstream_fallback: null, mount_mode: "path", auth_mode: "sso",
   bypass_rules: [], allowed_groups: [], verify_tls: true, health_path: null, health_status: "healthy",
   health_checked_at: null, preset_id: null, enabled: true, created_at: "", updated_at: "",
+  mount_managed: false, needs_setup: false, pass_identity: false, frame_ok: true,
 };
 
 describe("ServiceForm risk callouts", () => {
   test("bypass rule callout appears and empty prefix blocks save", () => {
     setup();
+    fireEvent.click(screen.getByText("Advanced"));
     change("Auth mode", "sso-with-bypass");
     fireEvent.click(screen.getByRole("button", { name: /add bypass rule/i }));
     expect(screen.getByText(RISK.bypass("<prefix>"))).toBeInTheDocument();
@@ -42,6 +44,7 @@ describe("ServiceForm risk callouts", () => {
   test("bypass callout shows the typed prefix; a valid prefix enables save", () => {
     setup();
     fillUrl();
+    fireEvent.click(screen.getByText("Advanced"));
     change("Auth mode", "sso-with-bypass");
     fireEvent.click(screen.getByRole("button", { name: /add bypass rule/i }));
     fireEvent.change(screen.getByLabelText("Bypass path prefix"), { target: { value: "/x/api" } });
@@ -86,12 +89,26 @@ describe("ServiceForm risk callouts", () => {
   test("bypass rules are dropped on submit when auth mode is no longer sso-with-bypass", () => {
     const onSubmit = setup();
     fillUrl();
+    fireEvent.click(screen.getByText("Advanced"));
     change("Auth mode", "sso-with-bypass");
     fireEvent.click(screen.getByRole("button", { name: /add bypass rule/i }));
     fireEvent.change(screen.getByLabelText("Bypass path prefix"), { target: { value: "/a" } });
     change("Auth mode", "sso");
     fireEvent.click(save());
     expect(onSubmit.mock.calls[0]?.[0]).toMatchObject({ auth_mode: "sso", bypass_rules: [] });
+  });
+});
+
+describe("ServiceForm server-owned fields", () => {
+  test("edit payload never carries mount_managed", () => {
+    const onSubmit = vi.fn();
+    render(<ServiceForm presets={presets} groups={[]} initial={{ ...existing, mount_managed: true }}
+      onSubmit={onSubmit} onCancel={() => {}} />);
+    fireEvent.click(screen.getByLabelText(ACK));
+    fireEvent.click(save());
+    const payload = onSubmit.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(payload).toBeDefined();
+    expect(payload).not.toHaveProperty("mount_managed");
   });
 });
 
@@ -122,6 +139,7 @@ describe("ServiceForm behaviour", () => {
     change("Preset", "sonarr");
     expect(screen.getByLabelText("Slug")).toHaveValue("sonarr");
     expect(screen.getByLabelText("Name")).toHaveValue("Sonarr");
+    fireEvent.click(screen.getByText("Advanced"));
     expect(screen.getByLabelText("Bypass path prefix")).toHaveValue("/sonarr/api");
     expect(screen.getByText(/URL Base = \/sonarr/)).toBeInTheDocument();
   });
@@ -186,6 +204,19 @@ describe("ServiceForm behaviour", () => {
     expect(onSubmit.mock.calls[0]?.[0]).toMatchObject({ container: "jellyfin", container_port: 8920 });
   });
 
+  test("discovered container with a suggested preset gets the preset id as slug, container name stays", () => {
+    const onSubmit = setup({ discovered: { name: "styx-e2e-jellyfin-1", port: 8096, preset: "sonarr" } });
+    expect(screen.getByLabelText("Slug")).toHaveValue("sonarr");
+    expect(screen.getByLabelText("Name")).toHaveValue("styx-e2e-jellyfin-1");
+    fireEvent.click(save());
+    expect(onSubmit.mock.calls[0]?.[0]).toMatchObject({ container: "styx-e2e-jellyfin-1", slug: "sonarr" });
+  });
+
+  test("discovered container without a preset keeps the container-name slug", () => {
+    setup({ discovered: { name: "My_App", port: 80, preset: null } });
+    expect(screen.getByLabelText("Slug")).toHaveValue("my-app");
+  });
+
   test("discovery failure falls back to manual entry with a message", async () => {
     setup({ loadContainers: vi.fn().mockRejectedValue(new Error("no docker")) });
     change("Kind", "docker-local");
@@ -234,5 +265,59 @@ describe("ServiceForm same-origin acknowledgement", () => {
     render(<ServiceForm presets={presets} groups={[]} initial={existing} onSubmit={vi.fn()} onCancel={() => {}} />);
     expect(screen.getByLabelText(ACK)).not.toBeChecked();
     expect(save()).toBeDisabled();
+  });
+
+  test("native apps on then off drops bypass rules on submit", () => {
+    const onSubmit = setup();
+    change("Preset", "sonarr");
+    change("Upstream URL", "http://10.0.0.1:80");
+    const sw = () => screen.getByRole("switch", { name: /allow native apps/i });
+    expect(sw()).toBeChecked(); // sonarr preset starts with bypass on
+    fireEvent.click(sw()); fireEvent.click(sw()); fireEvent.click(sw());
+    fireEvent.click(save());
+    expect(onSubmit.mock.calls[0]?.[0]).toMatchObject({ auth_mode: "sso", bypass_rules: [] });
+  });
+
+  test("existing bypass service opens Advanced unchanged with its risk visible", () => {
+    const rules = [{ path_prefix: "/x/api", required_header: null }];
+    render(<ServiceForm presets={[]} groups={[]} initial={{ ...existing, auth_mode: "sso-with-bypass", bypass_rules: rules }}
+      onSubmit={vi.fn()} onCancel={() => {}} />);
+    expect(screen.getByLabelText("Bypass path prefix")).toHaveValue("/x/api");
+    expect(screen.getAllByRole("alert").filter((a) => /WITHOUT Styx login/.test(a.textContent ?? ""))).toHaveLength(1);
+  });
+
+  test("bypass with no rules and no preset still shows a danger callout", () => {
+    render(<ServiceForm presets={[]} groups={[]} initial={{ ...existing, auth_mode: "sso-with-bypass", bypass_rules: [] }}
+      onSubmit={vi.fn()} onCancel={() => {}} />);
+    expect(screen.getAllByRole("alert").filter((a) => /exposed to the internet/.test(a.textContent ?? ""))).toHaveLength(1);
+  });
+
+  test("empty slug shows a placeholder in the mount line", () => {
+    setup();
+    expect(screen.getByText("Path /your-slug, set the app's base path yourself")).toBeInTheDocument();
+  });
+});
+
+describe("submit label", () => {
+  const jf = { ...presets[0]!, id: "jellyfin", name: "Jellyfin", subpath: { methods: [{ type: "config_file" }] } };
+  const dock = { name: "jf", port: 8096, preset: "jellyfin" };
+  const btn = (n: RegExp | string) => screen.getByRole("button", { name: n });
+  test("create docker-local + path + config_file preset says Save and set base path", () => {
+    render(<ServiceForm presets={[jf]} groups={[]} discovered={dock} onSubmit={vi.fn()} onCancel={() => {}} />);
+    expect(btn("Save and set base path")).toBeInTheDocument();
+  });
+  test("edit keeps Save", () => {
+    render(<ServiceForm presets={[jf]} groups={[]} initial={{ ...existing, kind: "docker-local", preset_id: "jellyfin", mount_mode: "path" }}
+      onSubmit={vi.fn()} onCancel={() => {}} />);
+    expect(btn(/^save$/i)).toBeInTheDocument();
+  });
+  test("preset without config_file methods keeps Save", () => {
+    render(<ServiceForm presets={[{ ...jf, subpath: { methods: [{ type: "env" }] } }]} groups={[]} discovered={dock}
+      onSubmit={vi.fn()} onCancel={() => {}} />);
+    expect(btn(/^save$/i)).toBeInTheDocument();
+  });
+  test("preset without subpath keeps Save", () => {
+    render(<ServiceForm presets={[{ ...jf, subpath: null }]} groups={[]} discovered={dock} onSubmit={vi.fn()} onCancel={() => {}} />);
+    expect(btn(/^save$/i)).toBeInTheDocument();
   });
 });

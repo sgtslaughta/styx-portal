@@ -146,7 +146,7 @@ def test_every_upstream_forward_auth_rewrites_cookie():
     for name, fa in fas.items():
         assert "Cookie" in fa["authResponseHeaders"], name
     assert mws["svc-auth-sonarr"]["forwardAuth"]["authResponseHeaders"] == [
-        "X-Styx-User", "X-Styx-Groups", "Cookie"]
+        "X-Styx-User", "X-Styx-Email", "X-Styx-Groups", "Cookie"]
     assert mws["svc-strip-plex"]["forwardAuth"]["address"] == \
         "http://backend:8000/internal/services/plex/strip"
     assert mws["inst-auth-i1"]["forwardAuth"]["address"] == \

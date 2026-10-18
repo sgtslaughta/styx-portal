@@ -18,7 +18,7 @@ def test_path_mode_router():
         assert mw in r["middlewares"]
     fa = cfg["http"]["middlewares"]["svc-auth-sonarr"]["forwardAuth"]
     assert fa["address"] == "http://backend:8000/internal/services/sonarr/auth-check"
-    assert fa["authResponseHeaders"] == ["X-Styx-User", "X-Styx-Groups", "Cookie"]
+    assert fa["authResponseHeaders"] == ["X-Styx-User", "X-Styx-Email", "X-Styx-Groups", "Cookie"]
     assert cfg["http"]["services"]["svc-sonarr"]["loadBalancer"]["servers"] == [
         {"url": "http://192.168.1.10:8989"}]
     # no cookie-root service: /api router untouched
@@ -162,3 +162,20 @@ def test_auth_check_is_internal_and_unrouted(tmp_path, monkeypatch):
         assert not _path_matches(r["rule"], "/internal/services/sonarr/strip"), name
     wfa = cfg["http"]["middlewares"]["ws-auth-w1"]["forwardAuth"]
     assert wfa["address"] == "http://backend:8000/internal/workstations/w1/auth-check"
+
+
+def test_shell_router_above_focus_and_exit():
+    cfg = build_routes_config([], "example.com", "tunnel",
+                              services=[_svc(slug="immich", mount_mode="cookie-root")])
+    r = cfg["http"]["routers"]["styx-shell"]
+    assert r["service"] == "frontend" and r["priority"] == 95
+    assert "PathPrefix(`/_styx/app`)" in r["rule"]
+    assert r["priority"] > cfg["http"]["routers"]["styx-exit"]["priority"]
+    assert r["middlewares"] == ["ip-ban-gate", "styx-ratelimit"]
+
+
+def test_service_routers_force_sameorigin():
+    cfg = build_routes_config([], "example.com", "tunnel", services=[_svc()])
+    assert "styx-frame-sameorigin" in cfg["http"]["routers"]["svc-sonarr"]["middlewares"]
+    mw = cfg["http"]["middlewares"]["styx-frame-sameorigin"]
+    assert mw["headers"]["customFrameOptionsValue"] == "SAMEORIGIN"

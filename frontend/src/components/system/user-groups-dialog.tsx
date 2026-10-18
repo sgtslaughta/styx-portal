@@ -52,7 +52,7 @@ export function UserGroupsDialog({ userId, username, open, onOpenChange }: Props
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Groups for {username}</DialogTitle>
           <DialogDescription>

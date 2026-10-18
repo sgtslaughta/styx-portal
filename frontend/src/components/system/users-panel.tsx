@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/api/client";
-import { Users, Copy, Trash2, Check, ShieldCheck, ShieldOff, Lock, Unlock, RefreshCw, AlertTriangle, UsersRound } from "lucide-react";
+import { Users, Copy, Trash2, Check, ShieldCheck, ShieldOff, Lock, Unlock, RefreshCw, AlertTriangle, UsersRound, MoreHorizontal } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -172,19 +172,19 @@ export function UsersPanel() {
                   )}
                 </Button>
               </div>
-              <p className="mt-1 text-xs text-warning">Valid for 72 hours. Share securely — anyone with this link can join.</p>
+              <p className="mt-1 text-xs text-warning-foreground">Valid for 72 hours. Share securely — anyone with this link can join.</p>
             </div>
           )}
 
-          <div className="border border-border rounded-lg overflow-hidden">
+          <div className="overflow-x-auto rounded-lg border border-border">
             <table className="w-full text-sm">
               <thead className="border-b border-border bg-muted/40">
                 <tr>
                   <th className="px-4 py-3 text-left font-semibold text-sm">Username</th>
-                  <th className="px-4 py-3 text-left font-semibold text-sm">Role</th>
+                  <th className="px-4 py-3 text-left font-semibold text-sm max-sm:hidden">Role</th>
                   <th className="px-4 py-3 text-left font-semibold text-sm">Status</th>
-                  <th className="px-4 py-3 text-left font-semibold text-sm">Last login</th>
-                  <th className="px-4 py-3 text-right font-semibold text-sm">Actions</th>
+                  <th className="px-4 py-3 text-left font-semibold text-sm max-sm:hidden">Last login</th>
+                  <th className="px-4 py-3 text-right font-semibold text-sm"><span className="max-sm:sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -202,8 +202,11 @@ export function UsersPanel() {
                     const isLocked = isUserLocked(u.locked_until);
                     return (
                       <tr key={u.id} className="border-b border-border hover:bg-muted/30 transition-colors">
-                        <td className="px-4 py-3 font-medium">{u.username}</td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 font-medium">
+                          {u.username}
+                          <span className="block text-xs font-normal text-muted-foreground sm:hidden">{u.role}</span>
+                        </td>
+                        <td className="px-4 py-3 max-sm:hidden">
                           <span className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
                             {u.role}
                           </span>
@@ -230,10 +233,10 @@ export function UsersPanel() {
                             )}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-xs text-muted-foreground">
+                        <td className="whitespace-nowrap px-4 py-3 text-xs tabular-nums text-muted-foreground max-sm:hidden">
                           {formatRelativeTime(u.last_login)}
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="whitespace-nowrap px-4 py-3 text-right">
                           {isLocked && (
                             <Button
                               variant="ghost"
@@ -241,7 +244,7 @@ export function UsersPanel() {
                               onClick={() => unlock.mutate(u.id)}
                               disabled={unlock.isPending}
                               title="Unlock user account"
-                              className="text-success hover:text-success hover:bg-success/10"
+                              className="text-success hover:text-success hover:bg-success/10 max-sm:hidden"
                             >
                               <Unlock className="h-4 w-4 mr-1" />
                               Unlock
@@ -256,6 +259,7 @@ export function UsersPanel() {
                                   onClick={() => setRole.mutate({ id: u.id, role: "user" })}
                                   disabled={setRole.isPending}
                                   title="Demote to user"
+                                  className="max-sm:hidden"
                                 >
                                   <ShieldOff className="h-4 w-4 mr-1" />
                                   Make user
@@ -267,27 +271,47 @@ export function UsersPanel() {
                                   onClick={() => setRole.mutate({ id: u.id, role: "admin" })}
                                   disabled={setRole.isPending}
                                   title="Promote to admin"
+                                  className="max-sm:hidden"
                                 >
                                   <ShieldCheck className="h-4 w-4 mr-1" />
                                   Make admin
                                 </Button>
                               )}
+                            </>
+                          )}
 
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button
                                     variant="ghost"
-                                    size="sm"
+                                    size="icon-sm"
+                                    aria-label={`More actions for ${u.username}`}
                                     disabled={
                                       resetPassword.isPending ||
                                       forcePasswordChange.isPending ||
                                       deleteUser.isPending
                                     }
                                   >
-                                    More
+                                    <MoreHorizontal className="size-4" aria-hidden />
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
+                                  {isLocked && (
+                                    <DropdownMenuItem className="sm:hidden" onClick={() => unlock.mutate(u.id)}>
+                                      <Unlock className="h-4 w-4 mr-2" />
+                                      Unlock
+                                    </DropdownMenuItem>
+                                  )}
+                                  {u.is_active && (
+                                    <DropdownMenuItem
+                                      className="sm:hidden"
+                                      onClick={() => setRole.mutate({ id: u.id, role: u.role === "admin" ? "user" : "admin" })}
+                                    >
+                                      {u.role === "admin" ? <ShieldOff className="h-4 w-4 mr-2" /> : <ShieldCheck className="h-4 w-4 mr-2" />}
+                                      {u.role === "admin" ? "Make user" : "Make admin"}
+                                    </DropdownMenuItem>
+                                  )}
+                                  {(isLocked || u.is_active) && <DropdownMenuSeparator className="sm:hidden" />}
                                   <DropdownMenuItem onClick={() => setGroupsFor({ id: u.id, username: u.username })}>
                                     <UsersRound className="h-4 w-4 mr-2" />
                                     Groups…
@@ -324,8 +348,6 @@ export function UsersPanel() {
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
-                            </>
-                          )}
                         </td>
                       </tr>
                     );

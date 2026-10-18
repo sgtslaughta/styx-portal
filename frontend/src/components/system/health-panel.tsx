@@ -56,7 +56,7 @@ function HealthCheck({ check }: { check: DiagCheck }) {
           {check.detail}
         </p>
         {!isOk && hint && (
-          <p className="mt-2 text-xs text-warning leading-relaxed">
+          <p className="mt-2 text-xs text-warning-foreground leading-relaxed">
             {hint}
           </p>
         )}

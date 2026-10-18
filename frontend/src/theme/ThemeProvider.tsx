@@ -4,6 +4,15 @@ import { isPublicPath, resolveDark, type Theme } from "./resolve";
 
 export type { Theme };
 
+/** Flip `.dark` with transitions suppressed for two frames, so controls don't tween colours. */
+function applyDark(dark: boolean) {
+  const r = document.documentElement;
+  if (r.classList.contains("dark") === dark) return;
+  r.classList.add("no-transitions");
+  r.classList.toggle("dark", dark);
+  requestAnimationFrame(() => requestAnimationFrame(() => r.classList.remove("no-transitions")));
+}
+
 function systemPrefersDark(): boolean {
   return window.matchMedia("(prefers-color-scheme: dark)").matches;
 }
@@ -29,7 +38,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // Apply the resolved theme on every theme/route change. Persist the user's
   // real preference (not the public-route override).
   useEffect(() => {
-    document.documentElement.classList.toggle("dark", resolveDark(pathname, theme, systemPrefersDark()));
+    applyDark(resolveDark(pathname, theme, systemPrefersDark()));
     localStorage.setItem("theme", theme);
   }, [theme, pathname]);
 
@@ -39,7 +48,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     if (!onPublic && theme !== "system") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const handler = () =>
-      document.documentElement.classList.toggle("dark", resolveDark(pathname, theme, mq.matches));
+      applyDark(resolveDark(pathname, theme, mq.matches));
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, [theme, pathname, onPublic]);

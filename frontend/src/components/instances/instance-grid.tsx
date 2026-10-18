@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { LayoutGrid, List, Maximize2, Filter, Play, Square, Pause, Trash2, CheckSquare, X } from "lucide-react";
+import { ArrowRight, LayoutGrid, List, Maximize2, Filter, Play, Square, Pause, Trash2, CheckSquare, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SearchSortBar } from "@/components/common/search-sort-bar";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
@@ -152,10 +152,17 @@ export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: 
   const hasSelection = selected.size > 0;
 
   if (isLoading) {
+    if (dense) {
+      return (
+        <div className="space-y-2">
+          {[1, 2, 3].map((i) => <div key={i} className="h-14 animate-pulse rounded-lg bg-muted" />)}
+        </div>
+      );
+    }
     return (
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="aspect-[4/3] rounded-xl bg-card animate-pulse" />
+          <div key={i} className="aspect-[4/3] rounded-xl bg-muted animate-pulse" />
         ))}
       </div>
     );
@@ -174,8 +181,8 @@ export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: 
     return (
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ type: "spring", stiffness: 300, damping: 25 }} className="flex flex-col items-center justify-center py-20 text-center">
         <p className="mb-1 text-lg font-medium text-foreground">No instances yet</p>
-        <p className="mb-4 text-sm text-muted-foreground">Browse the Template Gallery to launch one.</p>
-        <button onClick={onLaunch} className="text-sm font-medium text-primary hover:underline">Go to Template Gallery &rarr;</button>
+        <p className="mb-4 text-sm text-muted-foreground">Browse the template gallery to launch one.</p>
+        <button onClick={onLaunch} className="text-sm font-medium text-primary hover:underline">Go to template gallery<ArrowRight className="ml-1 inline size-3.5" aria-hidden /></button>
       </motion.div>
     );
   }
@@ -222,7 +229,7 @@ export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: 
           </button>
         )}
 
-        <span className="text-[10px] text-muted-foreground tabular-nums">
+        <span className="text-xs text-muted-foreground tabular-nums">
           {processed.length}/{instances.length}
         </span>
       </SearchSortBar>

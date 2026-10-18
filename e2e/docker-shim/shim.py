@@ -9,7 +9,10 @@ compose project:
   container list, which is narrowed to containers labelled discoverable;
 - the only writes allowed are network create/connect/disconnect on the e2e
   services network, for containers of the e2e project; `styx-traefik` in a
-  connect/disconnect body is rewritten to the e2e Traefik container.
+  connect/disconnect body is rewritten to the e2e Traefik container; plus
+  PUT archive / POST restart on e2e-project containers; plus the mount probe
+  container (create only with the probe image, label styx.probe=true and the
+  e2e services network; start/wait/delete only for styx.probe=true containers).
 """
 import json
 import os
@@ -23,6 +26,7 @@ SOCK = "/var/run/docker.sock"
 PROJECT = os.environ["E2E_PROJECT"]
 NETWORK = os.environ["E2E_SERVICES_NETWORK"]
 LABEL = "styx-e2e.discoverable=true"
+PROBE_IMAGE = os.environ.get("E2E_PROBE_IMAGE", "busybox:1.36")
 VER = re.compile(r"^/v\d+\.\d+")
 
 
@@ -55,6 +59,22 @@ def network_name(ref: str) -> str | None:
     return json.loads(body)["Name"] if code == 200 else None
 
 
+def probe_create_ok(d: dict) -> bool:
+    """The create body must be exactly the hardened mount-probe shape."""
+    h = d.get("HostConfig") or {}
+    nets = (d.get("NetworkingConfig") or {}).get("EndpointsConfig") or {}
+    return (d.get("Image") == PROBE_IMAGE
+            and (d.get("Labels") or {}).get("styx.probe") == "true"
+            and h.get("NetworkMode") == NETWORK
+            and set(nets) <= {NETWORK}
+            and not h.get("Privileged")
+            and not (h.get("Binds") or h.get("Mounts") or h.get("Devices") or h.get("CapAdd"))
+            and not (h.get("PidMode") or h.get("IpcMode") or h.get("UsernsMode") or h.get("UTSMode"))
+            and h.get("ReadonlyRootfs") is True
+            and h.get("CapDrop") == ["ALL"]
+            and (d.get("Cmd") or [""])[0] == "wget")
+
+
 class Handler(socketserver.StreamRequestHandler):
     def reply(self, code: int, msg: str) -> None:
         body = json.dumps({"message": msg}).encode()
@@ -68,13 +88,19 @@ class Handler(socketserver.StreamRequestHandler):
         method, target, _ = line.split(" ", 2)
         headers = []
         length = 0
+        chunked = False
         while (h := self.rfile.readline().decode()) not in ("\r\n", "\n", ""):
             k, _, v = h.partition(":")
+            if k.lower() == "transfer-encoding":
+                chunked = True
             if k.lower() == "content-length":
                 length = int(v.strip())
             if k.lower() in ("connection", "content-length", "transfer-encoding"):
                 continue
             headers.append(h.rstrip("\r\n"))
+        if chunked and method in ("POST", "PUT"):
+            self.reply(411, "e2e shim: Transfer-Encoding bodies not supported, send Content-Length")
+            return
         body = self.rfile.read(length) if length else b""
         url = urllib.parse.urlsplit(target)
         path = VER.sub("", url.path)
@@ -86,7 +112,7 @@ class Handler(socketserver.StreamRequestHandler):
         up = socket.socket(socket.AF_UNIX)
         up.connect(SOCK)
         req = [f"{method} {target} HTTP/1.1", *headers, "Connection: close"]
-        if body or method == "POST":
+        if body or method in ("POST", "PUT"):
             req.append(f"Content-Length: {len(body)}")
         up.sendall(("\r\n".join(req) + "\r\n\r\n").encode() + body)
         while chunk := up.recv(65536):
@@ -107,8 +133,33 @@ class Handler(socketserver.StreamRequestHandler):
                 q["filters"] = [json.dumps(flt)]
                 target = url.path + "?" + urllib.parse.urlencode(q, doseq=True)
             return target, body
+        m = re.fullmatch(r"/containers/([^/]+)/(archive|restart)", path)
+        if m and ((method == "PUT" and m.group(2) == "archive") or (method == "POST" and m.group(2) == "restart")):
+            cid = urllib.parse.unquote(m.group(1))
+            info = None if "/" in cid else inspect(cid)
+            if not info or info["Config"]["Labels"].get("com.docker.compose.project") != PROJECT:
+                return 403, "e2e shim: container outside the e2e project"
+            return target, body
+        m = re.fullmatch(r"/containers/([^/]+)(/start|/wait)?", path)
+        if m and ((method == "DELETE" and not m.group(2)) or (method == "POST" and m.group(2))):
+            cid = urllib.parse.unquote(m.group(1))
+            info = None if "/" in cid else inspect(cid)
+            if (not info or info["Config"]["Labels"].get("styx.probe") != "true"
+                    or set(info["NetworkSettings"]["Networks"]) - {NETWORK}
+                    or NETWORK not in info["NetworkSettings"]["Networks"]):
+                return 403, "e2e shim: not a probe container on the e2e services network"
+            return target, body
         if method != "POST":
             return 403, f"e2e shim: {method} not allowed"
+        if path == "/containers/create":
+            return (target, body) if probe_create_ok(json.loads(body or b"{}")) else (
+                403, "e2e shim: only the mount probe container may be created")
+        if path == "/images/create":
+            q = urllib.parse.parse_qs(url.query)
+            ref = q.get("fromImage", [""])[0] + ":" + q.get("tag", [""])[0]
+            if ref != PROBE_IMAGE:
+                return 403, "e2e shim: only the probe image may be pulled"
+            return target, body
         if path == "/networks/create":
             if json.loads(body or b"{}").get("Name") != NETWORK:
                 return 403, "e2e shim: only the e2e services network may be created"

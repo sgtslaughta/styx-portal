@@ -45,6 +45,7 @@ Traefik will automatically request and renew wildcard `*.your.domain.com` certif
 
 The `db-data` volume contains:
 - **SQLite database** (`/app/data/styx-portal.db`) — templates, instances, users, OAuth providers
+- **Mount backups** (`/app/data/mount-backups/<service-id>/<timestamp>/`) — copies of app settings files Styx saved before changing an app's base path (last 5 per service). Included in the data-volume backup below; see [Services](SERVICES.md#letting-styx-configure-an-app)
 - **Secrets file** (`/app/data/secrets.json`, mode 0600) — JWT secret for signing tokens and deriving encryption keys
 
 **Losing `secrets.json` logs out all users and invalidates stored OAuth client secrets.**
@@ -64,6 +65,7 @@ For production, set up automated daily backups and test restore procedures.
 
 All of the following are already implemented:
 
+- **Socket-proxy writes:** managed mounts write settings files with the Docker archive API, so the socket-proxy needs `POST=1` (set in `docker-compose.yml`). Exec, build and system calls stay blocked.
 - **docker-socket-proxy:** Backend communicates with a read-only socket-proxy; direct socket access is denied. Dangerous operations (exec, build, system commands) are explicitly blocked.
 - **Container isolation:** Instances run with `cap_drop: ["ALL"]` + minimal needed capabilities. DinD (Docker-in-Docker) templates are privileged, admin-only, and require memory/CPU limits.
 - **No Traefik dashboard:** API dashboard is disabled (`api.insecure: false`). Optional opt-in via basicAuth environment variable (not enabled by default).

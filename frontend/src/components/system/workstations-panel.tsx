@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Copy, Monitor, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowRight, Copy, Monitor, RefreshCw, Trash2 } from "lucide-react";
 import { api, type EnrollToken, type Workstation, type WorkstationUpdateCommand } from "@/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -263,7 +263,7 @@ export function WorkstationsPanel() {
           {updateCmd && (
             <div className="space-y-3 text-sm">
               <p className="text-muted-foreground">
-                Run on the workstation to update {updateCmd.current_version || "—"} →{" "}
+                Run on the workstation to update {updateCmd.current_version || "—"} <ArrowRight className="inline size-3.5" aria-hidden />{" "}
                 {updateCmd.latest_version}. Runs a full upgrade (new engine and wheels; the previous install is kept as a fallback). The desktop session restarts.
               </p>
               {updateCmd.lan_command && (

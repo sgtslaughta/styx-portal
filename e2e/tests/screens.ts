@@ -24,7 +24,7 @@ async function scrollDialogs(page: Page) {
 async function serviceDrawer(page: Page, tag: string) {
   await openSettings(page, "Services");
   await shot(page, `services-list-${tag}`);
-  await page.getByRole("button", { name: "Add from container" }).click();
+  await page.getByRole("button", { name: "Add from running container" }).first().click();
   await expect(page.getByRole("dialog", { name: "Running containers" })).toBeVisible();
   await shot(page, `services-discover-${tag}`, false);
   await page.keyboard.press("Escape");
@@ -34,6 +34,7 @@ async function serviceDrawer(page: Page, tag: string) {
   await form.locator("#name").fill("Example");
   await form.locator("#slug").fill("example");
   await form.locator("#upstream").fill("https://192.168.1.10:8443");
+  await form.getByText("Advanced", { exact: true }).click();
   await form.locator("#mount").selectOption("cookie-root");
   await form.locator("#auth").selectOption("sso-with-bypass");
   await form.getByRole("button", { name: "Add bypass rule" }).click();

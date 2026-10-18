@@ -1,0 +1,15 @@
+{
+  "id": "immich",
+  "name": "Immich",
+  "icon": "🖼️",
+  "default_port": 2283,
+  "mount_mode": "cookie-root",
+  "auth_mode": "sso",
+  "bypass_rules": [],
+  "health_path": "/api/server/ping",
+  "verify_tls": true,
+  "base_url_hint": null,
+  "warnings": [
+    "Immich only runs at the root of a site, so it opens on its own (one focus app at a time)."
+  ]
+}

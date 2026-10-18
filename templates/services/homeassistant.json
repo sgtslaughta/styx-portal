@@ -1,0 +1,15 @@
+{
+  "id": "homeassistant",
+  "name": "Home Assistant",
+  "icon": "🏠",
+  "default_port": 8123,
+  "mount_mode": "cookie-root",
+  "auth_mode": "sso",
+  "bypass_rules": [],
+  "health_path": "/manifest.json",
+  "verify_tls": true,
+  "base_url_hint": null,
+  "warnings": [
+    "Home Assistant only runs at the root of a site, so it opens on its own (one focus app at a time)."
+  ]
+}

@@ -6,7 +6,7 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export function formatDuration(seconds: number | null | undefined): string {
-  if (seconds == null || seconds < 0) return "—";
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return "—";
   if (seconds < 60) return `${Math.floor(seconds)}s`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
   const h = Math.floor(seconds / 3600);

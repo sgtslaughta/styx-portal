@@ -19,7 +19,7 @@ function ThemeToggle() {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button onClick={cycle} className="rounded-md p-2 hover:bg-secondary" aria-label="Toggle theme">
+        <button onClick={cycle} className="inline-flex size-9 max-sm:size-11 items-center justify-center rounded-md hover:bg-secondary outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="Toggle theme">
           <Icon className="h-4 w-4" />
         </button>
       </TooltipTrigger>
@@ -58,16 +58,16 @@ export function Header() {
     <header className="styx-header styx-motif flex items-center gap-3 border-b border-border px-6 py-2.5">
       <Waves className="h-5 w-5" style={{ color: "var(--brand-accent)" }} />
       <span className="text-base font-extrabold tracking-wider">STYX PORTAL</span>
-      <div className="ml-auto flex items-center gap-1.5">
+      <div className="ml-auto flex items-center gap-1.5 max-sm:hidden">
         <CountChip count={running} label="running" dotClass="bg-success" />
         <CountChip count={paused} label="paused" dotClass="bg-warning" />
         <CountChip count={stopped} label="stopped" dotClass="bg-muted-foreground" />
         <CountChip count={errored} label="error" dotClass="bg-destructive" />
       </div>
       {user && (
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">{user.username}</span>
-          <button onClick={() => logout()} className="text-sm underline hover:text-foreground">Log out</button>
+        <div className="flex items-center gap-2 max-sm:ml-auto">
+          <span className="text-sm text-muted-foreground max-sm:hidden">{user.username}</span>
+          <button onClick={() => logout()} className="inline-flex min-h-9 max-sm:min-h-11 items-center rounded-md px-1 text-sm underline underline-offset-2 hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">Log out</button>
         </div>
       )}
       <ThemeToggle />

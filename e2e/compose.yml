@@ -17,6 +17,7 @@ networks:
 
 volumes:
   dynamic:
+  presets:
 
 services:
   docker-shim:
@@ -36,11 +37,16 @@ services:
 
   volume-init:
     image: busybox:1.36
-    command: chown -R 1000:1000 /dyn
+    # A file bind inside the ro ../templates mount cannot create its mountpoint,
+    # so the backend's presets dir is assembled here: real presets + e2e extras.
+    command: sh -c "chown -R 1000:1000 /dyn && cp /src/*.json /extra/*.json /presets/"
     user: "0:0"
     restart: "no"
     volumes:
       - dynamic:/dyn
+      - presets:/presets
+      - ../templates/services:/src:ro
+      - ./presets:/extra:ro
 
   traefik:
     image: traefik:v3.4
@@ -73,6 +79,7 @@ services:
       # label filter already hides everything else. Non-matching sentinel = hide nothing.
       COMPOSE_PROJECT: e2e-no-own-project-filter
       TEMPLATES_DIR: /app/templates
+      SERVICE_PRESETS_DIR: /app/presets  # real presets + e2e extras, merged by volume-init
       JWT_SECRET: e2e-only-jwt-secret-not-for-production-0123456789abcdef
       COOKIE_SECURE: "false"
       DEPLOY_MODE: tunnel
@@ -86,6 +93,7 @@ services:
     volumes:
       - dynamic:/app/traefik-dynamic
       - ../templates:/app/templates:ro
+      - presets:/app/presets:ro
     networks: [edge, dockerapi]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
@@ -114,3 +122,53 @@ services:
     image: traefik/whoami:v1.10.3
     command: ["--name", "whoami-url"]
     networks: [edge]
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:4.0.15
+    environment: {PUID: "1000", PGID: "1000", TZ: Etc/UTC}
+    volumes: ["/config"]  # not tmpfs: the Docker archive API (read/write config) cannot see tmpfs
+    labels:
+      styx-e2e.discoverable: "true"
+    networks: [apps]
+
+  jellyfin:
+    image: jellyfin/jellyfin:10.10.7
+    volumes: ["/config", "/cache"]  # not tmpfs: the Docker archive API cannot see tmpfs
+    labels:
+      styx-e2e.discoverable: "true"
+    networks: [apps]
+
+  # root-only app with a service worker
+  focusapp:
+    image: nginx:1.27-alpine
+    volumes: ["./apps/focusapp:/usr/share/nginx/html:ro", "./apps/focusapp/nginx.conf:/etc/nginx/conf.d/default.conf:ro"]
+    labels:
+      styx-e2e.discoverable: "true"
+    networks: [apps]
+
+  # sends frame-ancestors 'none'
+  frameblock:
+    image: nginx:1.27-alpine
+    volumes: ["./apps/frameblock/nginx.conf:/etc/nginx/conf.d/default.conf:ro"]
+    labels:
+      styx-e2e.discoverable: "true"
+    networks: [apps]
+
+  # plain framable app the shell spec stops mid-session
+  stoppable:
+    image: nginx:1.27-alpine
+    volumes: ["./apps/stoppable/nginx.conf:/etc/nginx/conf.d/default.conf:ro"]
+    labels:
+      styx-e2e.discoverable: "true"
+    networks: [apps]
+
+  # config.xml exists, but /brokenapp/ping never answers -> rollback
+  brokenapp:
+    image: nginx:1.27-alpine
+    # a file bind mount cannot be replaced through the archive API ("device or resource busy"),
+    # so /config is a volume seeded at start
+    volumes: ["/config"]
+    command: ["sh", "-c", "echo '<Config><UrlBase></UrlBase></Config>' > /config/config.xml && exec nginx -g 'daemon off;'"]
+    labels:
+      styx-e2e.discoverable: "true"
+    networks: [apps]

@@ -42,7 +42,7 @@ export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
       className="styx-card group cursor-pointer overflow-hidden rounded-xl transition-colors hover:border-primary/50"
       onClick={() => onSelect(instance)}
     >
-      <IconViewport instance={instance} icon={icon} />
+      <IconViewport instance={instance} icon={icon} pull={status ? { percent: status.pull_percent, detail: status.pull_detail } : null} />
 
       <div className="p-3 space-y-2">
         {/* Status + timing */}
@@ -64,7 +64,7 @@ export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
                 initial={{ opacity: 0, x: -5 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0 }}
-                className="text-[10px] text-warning"
+                className="text-[10px] text-warning-foreground"
               >
                 idle {formatDuration(idleSeconds)}
               </motion.span>
@@ -77,19 +77,6 @@ export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
           <p className="line-clamp-3 break-all text-xs text-destructive" title={instance.error_message}>
             {instance.error_message}
           </p>
-        )}
-
-        {/* Image pull progress bar */}
-        {status?.pull_percent != null && (
-          <div className="space-y-1">
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{status.pull_detail ?? "Pulling image"}</span>
-              <span>{status.pull_percent}%</span>
-            </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-              <div className="h-full bg-primary transition-all" style={{ width: `${status.pull_percent}%` }} />
-            </div>
-          </div>
         )}
 
         {/* Overlaid sparkline — CPU + RAM */}

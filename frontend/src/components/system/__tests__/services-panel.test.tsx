@@ -2,21 +2,23 @@ import { render, screen, waitFor, fireEvent, within } from "@testing-library/rea
 import { describe, test, expect, vi, beforeEach } from "vitest";
 
 const { a, toast } = vi.hoisted(() => ({ toast: { error: vi.fn(), success: vi.fn() }, a: { listServices: vi.fn(), listServicePresets: vi.fn(), listGroups: vi.fn(), discoverContainers: vi.fn(),
-  createService: vi.fn(), updateService: vi.fn(), deleteService: vi.fn(), setServiceEnabled: vi.fn() } }));
+  createService: vi.fn(), updateService: vi.fn(), deleteService: vi.fn(), setServiceEnabled: vi.fn(), mountPlan: vi.fn(), mountLatest: vi.fn(), mountApply: vi.fn() } }));
 vi.mock("@/api/client", () => ({
   api: new Proxy({}, { get: (_t, k: string) => (...args: unknown[]) => (a as unknown as Record<string, (...x: unknown[]) => unknown>)[k]?.(...args) }),
   ApiError: class extends Error { status = 0; detail: unknown; constructor(m: string, s: number, d?: unknown) { super(m); this.status = s; this.detail = d; } },
 }));
 vi.mock("sonner", () => ({ toast }));
 
-import { ServicesPanel } from "../services-panel";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ServicesPanel as Panel } from "../services-panel";
+const ServicesPanel = () => <QueryClientProvider client={new QueryClient()}><Panel /></QueryClientProvider>;
 import { ApiError } from "@/api/client";
 
 const svc = (o: Record<string, unknown> = {}) => ({
   id: "s1", slug: "jellyfin", name: "Jellyfin", icon: null, kind: "url", upstream_url: "http://10.0.0.2:8096",
   container: null, container_port: null, upstream_fallback: null, mount_mode: "path", auth_mode: "sso",
   bypass_rules: [], allowed_groups: [], verify_tls: true, health_path: null, health_status: "healthy",
-  health_checked_at: "2026-10-12T10:00:00Z", preset_id: null, enabled: true, created_at: "", updated_at: "", ...o,
+  health_checked_at: "2026-10-12T10:00:00Z", preset_id: null, enabled: true, created_at: "", updated_at: "", needs_setup: false, ...o,
 });
 
 beforeEach(() => {
@@ -47,6 +49,18 @@ describe("ServicesPanel", () => {
     expect(await screen.findByText(/no services yet/i)).toBeInTheDocument();
     expect(screen.getByText(/start from a preset/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /browse presets/i })).toBeInTheDocument();
+  });
+
+  test("discovery buttons read Add from running container", async () => {
+    render(<ServicesPanel />);
+    expect(await screen.findByRole("button", { name: "Add from running container" })).toBeInTheDocument();
+  });
+
+  test("empty state discovery button is renamed too", async () => {
+    a.listServices.mockResolvedValue([]);
+    render(<ServicesPanel />);
+    await screen.findByText(/no services yet/i);
+    expect(screen.getAllByRole("button", { name: "Add from running container" })).toHaveLength(2);
   });
 
   test("error with retry", async () => {
@@ -122,5 +136,120 @@ describe("ServicesPanel", () => {
     expect(await screen.findByText("Cookie root")).toBeInTheDocument();
     expect(screen.getByText("No Styx login")).toBeInTheDocument();
     expect(screen.getByText("TLS unverified")).toBeInTheDocument();
+  });
+
+  test("form remounts with focus mode after the switch", async () => {
+    const dock = svc({ id: "s3", slug: "sonarr", name: "Sonarr", kind: "docker-local", container: "sonarr", container_port: 8989, url: null, upstream_url: null });
+    a.listServices.mockResolvedValue([dock]);
+    a.mountPlan.mockResolvedValue({ method: "config_file", changes: [{ target: "/c", key: "k", old: "", new: "/sonarr" }], needs_consent: false, reason: null });
+    a.mountLatest.mockResolvedValue({ id: "j", state: "rolled_back", changes: [], backup_dir: "/b", changed: false, log_excerpt: "x", created_at: "", finished_at: "", steps: [] });
+    a.updateService.mockResolvedValue({ ...dock, mount_mode: "cookie-root", updated_at: "2" });
+    render(<ServicesPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Sonarr" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use focus mode instead" }));
+    expect(await screen.findByText("Focus: opens full screen")).toBeInTheDocument();
+  });
+
+  test("base path section renders inside the drawer's scroll body", async () => {
+    const dock = svc({ id: "s3", slug: "sonarr", name: "Sonarr", kind: "docker-local", container: "sonarr", container_port: 8989, url: null, upstream_url: null });
+    a.listServices.mockResolvedValue([dock]);
+    a.mountPlan.mockResolvedValue({ method: "config_file", changes: [{ target: "/c", key: "k", old: "", new: "/sonarr" }], needs_consent: false, reason: null });
+    a.mountLatest.mockRejectedValue(Object.assign(new Error("nf"), { status: 404 }));
+    render(<ServicesPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: "Edit Sonarr" }));
+    const region = await screen.findByRole("region", { name: "Base path" });
+    expect(region.closest('[data-slot="drawer-body"]')).not.toBeNull();
+  });
+
+  test("row shows the last mount outcome on a fresh page load", async () => {
+    const dock = svc({ id: "s3", slug: "sonarr", name: "Sonarr", kind: "docker-local", container: "sonarr", container_port: 8989, url: null, upstream_url: null });
+    a.listServices.mockResolvedValue([dock]);
+    a.mountLatest.mockResolvedValue({ id: "j", state: "rolled_back", changes: [], backup_dir: "/b", changed: false, log_excerpt: "x", created_at: "", finished_at: "", steps: [] });
+    render(<ServicesPanel />);
+    expect(await screen.findByText("Rolled back")).toBeInTheDocument();
+  });
+
+  test("Base path set chip reads mount_managed, not the job history", async () => {
+    const dock = svc({ id: "s3", slug: "sonarr", name: "Sonarr", kind: "docker-local", container: "sonarr", container_port: 8989,
+      url: null, upstream_url: null, mount_managed: true });
+    a.listServices.mockResolvedValue([dock]);
+    a.mountLatest.mockRejectedValue(Object.assign(new Error("nf"), { status: 404 }));
+    render(<ServicesPanel />);
+    expect(await screen.findByText("Base path set")).toBeInTheDocument();
+  });
+
+  test("no chip when the service was never managed", async () => {
+    const dock = svc({ id: "s3", slug: "sonarr", name: "Sonarr", kind: "docker-local", container: "sonarr", container_port: 8989,
+      url: null, upstream_url: null, mount_managed: false });
+    a.listServices.mockResolvedValue([dock]);
+    a.mountLatest.mockResolvedValue({ id: "j", state: "done", changes: [], backup_dir: "/b", log_excerpt: null, created_at: "", finished_at: "", steps: [] });
+    render(<ServicesPanel />);
+    await screen.findByText("Sonarr");
+    expect(screen.queryByText("Base path set")).toBeNull();
+  });
+
+  const dockSvc = (o: Record<string, unknown> = {}) => svc({ id: "s3", slug: "jellyfin", kind: "docker-local", container: "jf", container_port: 8096,
+    upstream_url: null, needs_setup: true, ...o });
+  const fillCreate = async () => {
+    render(<ServicesPanel />);
+    await screen.findByText("Jellyfin");
+    fireEvent.click(screen.getByRole("button", { name: /add service/i }));
+    const dlg = await screen.findByRole("dialog");
+    const ch = (l: string, v: string) => fireEvent.change(within(dlg).getByLabelText(l), { target: { value: v } });
+    ch("Slug", "n"); ch("Name", "N"); ch("Upstream URL", "http://h:1");
+    fireEvent.click(within(dlg).getByLabelText(/I understand that this app runs on the same origin/));
+    fireEvent.click(within(dlg).getByRole("button", { name: /^save$/i }));
+    return dlg;
+  };
+
+  const planWithChanges = () => {
+    a.mountPlan.mockResolvedValue({ method: "config_file", changes: [{ target: "/c", key: "k", old: "", new: "/jellyfin" }], needs_consent: true, reason: null });
+    a.mountLatest.mockRejectedValue(Object.assign(new Error("nf"), { status: 404 }));
+  };
+
+  test("create: a needs_setup service switches to setup mode and opens consent", async () => {
+    planWithChanges();
+    a.createService.mockResolvedValue(dockSvc());
+    await fillCreate();
+    expect(await screen.findByRole("heading", { name: "Set up Jellyfin" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Change Jellyfin's settings?" })).toBeInTheDocument();
+    expect(toast.success).toHaveBeenCalledWith("Service saved. Next: set its base path.");
+    fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Change Jellyfin's settings?" })).toBeNull());
+    const drawer = screen.getByRole("dialog");
+    expect(within(drawer).queryByRole("button", { name: /^save/i })).toBeNull();
+    expect(within(drawer).getByRole("button", { name: "Set base path to /jellyfin" })).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByRole("dialog", { name: "Change Jellyfin's settings?" })).toBeNull();
+    fireEvent.click(within(drawer).getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  test("create: other services close the drawer", async () => {
+    a.createService.mockResolvedValue(svc({ id: "s9", needs_setup: false }));
+    await fillCreate();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(toast.success).toHaveBeenCalledWith("Service saved");
+  });
+
+  test("?setup=<id> opens setup mode without auto consent and clears the param", async () => {
+    planWithChanges();
+    a.listServices.mockResolvedValue([svc(), dockSvc()]);
+    window.history.replaceState(null, "", "/?setup=s3#x");
+    render(<ServicesPanel />);
+    expect(await screen.findByRole("heading", { name: "Set up Jellyfin" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Set base path to /jellyfin" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Change Jellyfin's settings?" })).toBeNull();
+    expect(window.location.search).toBe("");
+    expect(window.location.hash).toBe("#x");
+    window.history.replaceState(null, "", "/");
+  });
+
+  test("?setup=<unknown id> opens nothing", async () => {
+    window.history.replaceState(null, "", "/?setup=nope");
+    render(<ServicesPanel />);
+    await screen.findByText("Jellyfin");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    window.history.replaceState(null, "", "/");
   });
 });

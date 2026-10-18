@@ -16,14 +16,14 @@ function EventRow({ event }: { event: { type: string; instance: string; time: st
     started: "text-emerald-400",
     stopped: "text-muted-foreground",
     error: "text-destructive",
-    restarted: "text-blue-400",
-    paused: "text-warning",
+    restarted: "text-primary",
+    paused: "text-warning-foreground",
     created: "text-purple-400",
   };
 
   return (
     <div className="flex items-center gap-3 py-2 px-3 rounded-md hover:bg-muted/30 transition-colors group">
-      <div className={`h-1.5 w-1.5 rounded-full ${typeColors[event.type]?.replace("text-", "bg-") ?? "bg-muted-foreground"}`} />
+      <div className={`h-1.5 w-1.5 rounded-full ${event.type === "paused" ? "bg-warning" : typeColors[event.type]?.replace("text-", "bg-") ?? "bg-muted-foreground"}`} />
       <span className="text-xs text-foreground flex-1 truncate">{event.instance}</span>
       <span className={`text-[11px] font-medium ${typeColors[event.type] ?? "text-muted-foreground"}`}>
         {event.type}

@@ -7,6 +7,7 @@ import docker.errors
 from docker.types import DeviceRequest, Ulimit
 
 from app.config import Settings
+from app.services.docker_files import ContainerFilesMixin
 
 logger = logging.getLogger("styx-portal")
 
@@ -46,7 +47,7 @@ def detect_gpu() -> dict:
     return result
 
 
-class DockerManager:
+class DockerManager(ContainerFilesMixin):
     def __init__(self, network_name: str = "styx-portal", base_url: str | None = None):
         # Lazy connect: do NOT open the socket here. Eager construction raises if
         # the docker socket is absent (CI runners, docker-down hosts), which would
@@ -217,7 +218,7 @@ class DockerManager:
 
     def restart_container(self, container_id: str) -> None:
         container = self._client.containers.get(container_id)
-        container.restart()
+        container.restart(timeout=30)
 
     def remove_container(self, container_id: str) -> None:
         container = self._client.containers.get(container_id)

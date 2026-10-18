@@ -158,7 +158,7 @@ export function ProviderDialog({ open, onOpenChange, editing }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[90vh] max-w-2xl flex-col">
+      <DialogContent className="flex max-h-[90vh] sm:max-w-2xl flex-col">
         <DialogHeader>
           <DialogTitle>{editing ? "Edit provider" : "Add SSO provider"}</DialogTitle>
           <DialogDescription>
