@@ -75,7 +75,7 @@ def build_routes_config(instances: list[dict], domain: str,
                     "rule": f"Host(`{domain}`)",
                     "service": "frontend",
                     "priority": 1,
-                    "middlewares": ["styx-ratelimit"],
+                    "middlewares": ["ip-ban-gate", "styx-ratelimit"],
                     **_router_transport(deploy_mode, domain),
                 },
                 "api": {
@@ -250,7 +250,7 @@ def build_routes_config(instances: list[dict], domain: str,
         config["http"]["routers"]["api-lan"] = _lan_router(
             "PathPrefix(`/api`)", "api", 100, ["ip-ban-gate", "styx-ratelimit"])
         config["http"]["routers"]["frontend-lan"] = _lan_router(
-            "PathPrefix(`/`)", "frontend", 1, ["styx-ratelimit"])
+            "PathPrefix(`/`)", "frontend", 1, ["ip-ban-gate", "styx-ratelimit"])
 
     if has_https:
         config["http"]["serversTransports"] = {
