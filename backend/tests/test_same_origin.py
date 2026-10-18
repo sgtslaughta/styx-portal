@@ -62,3 +62,13 @@ async def test_member_writes_unaffected_by_admin_origin_check(member_client):
     r = await member_client.put("/api/auth/me/preferences", json={"open_mode": "shell"},
                                 headers={"sec-fetch-dest": "empty"})
     assert r.status_code != 403
+
+
+async def test_admin_inline_privileged_writes_checked(admin_client):
+    """F2: privileged template/launch live behind get_current_user, not require_admin."""
+    bad = {"sec-fetch-dest": "iframe", "referer": "http://test/groups"}
+    r = await admin_client.post("/api/templates", json={
+        "name": "p", "image": "x:1", "privileged": True}, headers=bad)
+    assert r.status_code == 403, r.text
+    r = await admin_client.post("/api/instances", json={"template_id": "t", "name": "n"}, headers=bad)
+    assert r.status_code == 403, r.text

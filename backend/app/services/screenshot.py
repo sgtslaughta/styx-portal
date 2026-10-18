@@ -183,7 +183,11 @@ class ScreenshotService:
                 try:
                     async def guard(route):
                         if _origin_allowed(route.request.url, ip, port, protocol):
-                            await route.continue_()
+                            # No redirects inside the handler: Playwright only calls it for
+                            # the first URL of a chain, so hand a 3xx to the browser as-is and
+                            # let every hop come back through here for the origin check.
+                            resp = await route.fetch(max_redirects=0)
+                            await route.fulfill(response=resp)
                         else:
                             logger.warning("screenshot: blocked request to %s", route.request.url)
                             await route.abort()

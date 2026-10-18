@@ -33,6 +33,11 @@ async def get_current_user(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token revoked")
     if user.must_change_pw and request.url.path not in _PW_CHANGE_OK:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Password change required")
+    if user.role == "admin":
+        # Admin powers are also exercised inline (privileged templates/launches), so every
+        # admin write must come from the Styx SPA, not only require_admin routes.
+        from app.security.same_origin import require_spa_origin
+        await require_spa_origin(request, session)
     return user
 
 
@@ -40,8 +45,6 @@ async def require_admin(request: Request, user: User = Depends(get_current_user)
                         session: AsyncSession = Depends(get_session)) -> User:
     if user.role != "admin":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin required")
-    from app.security.same_origin import require_spa_origin
-    await require_spa_origin(request, session)
     return user
 
 

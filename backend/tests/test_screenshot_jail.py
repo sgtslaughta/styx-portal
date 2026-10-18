@@ -43,8 +43,36 @@ async def test_capture_routes_block_foreign_and_no_service_workers(monkeypatch):
     await handler(foreign)
     await handler(own)
     foreign.abort.assert_awaited()
-    foreign.continue_.assert_not_awaited()
-    own.continue_.assert_awaited()
+    foreign.fulfill.assert_not_awaited()
+    own.fulfill.assert_awaited()
     own.abort.assert_not_awaited()
 
 
+
+
+async def test_guard_fetches_without_redirects_and_fulfills(monkeypatch):
+    """F1: a redirect hop must re-enter the handler, so never follow redirects inside it."""
+    context = AsyncMock()
+    context.new_page.return_value = AsyncMock()
+    browser = AsyncMock()
+    browser.new_context.return_value = context
+    with tempfile.TemporaryDirectory() as d:
+        svc = ScreenshotService(cache_dir=d, docker_manager=MagicMock())
+        svc._browser = browser
+        monkeypatch.setattr(svc, "_ensure_browser", AsyncMock())
+        monkeypatch.setattr(svc, "_resolve_ip", lambda cid: "172.18.0.5")
+        monkeypatch.setattr(svc, "_secure_endpoint", lambda cid, p, proto: (proto, p))
+        monkeypatch.setattr(svc, "_is_streaming", AsyncMock(return_value=False))
+        await svc.capture("i", "c", 3001, "https")
+    _, handler = context.route.await_args.args
+    hop1, hop2 = AsyncMock(), AsyncMock()
+    hop1.request.url = "https://172.18.0.5:3001/go"
+    hop2.request.url = "http://docker-proxy:2375/containers/x/json"
+    resp = MagicMock()
+    hop1.fetch = AsyncMock(return_value=resp)
+    await handler(hop1)  # 302 to hop2 is fulfilled as-is; the browser then asks for hop2
+    hop1.fetch.assert_awaited_with(max_redirects=0)
+    hop1.fulfill.assert_awaited_with(response=resp)
+    await handler(hop2)
+    hop2.abort.assert_awaited()
+    hop2.fetch.assert_not_awaited()
