@@ -189,3 +189,36 @@ async def test_expired_proxy_denied(member_client, session):
     member_client.cookies.clear()
     member_client.cookies.set("styx_proxy", tokens.create_proxy_token(user.id, fam, ttl=-5))
     assert (await member_client.get(AUTH, headers=_fwd())).status_code == 302
+
+
+async def _login_member_for_proxy(client, session):
+    from app.security.passwords import hash_password
+    await _svc(session)
+    session.add(User(username="m", password_hash=hash_password(PW), role="user"))
+    await session.commit()
+    r = await client.post("/api/auth/login", json={"username": "m", "password": PW})
+    assert r.status_code == 200, r.text
+    _only(client, "styx_proxy")
+    assert (await client.get(AUTH, headers=_fwd())).status_code == 200
+
+
+async def test_proxy_cookie_dies_when_token_version_bumps(client, session):
+    await _login_member_for_proxy(client, session)
+    u = (await session.exec(select(User).where(User.username == "m"))).first()
+    u.token_version += 1
+    session.add(u)
+    await session.commit()
+    assert (await client.get(AUTH, headers=_fwd())).status_code != 200
+
+
+async def test_proxy_cookie_denied_while_password_change_forced(client, session):
+    await _login_member_for_proxy(client, session)
+    u = (await session.exec(select(User).where(User.username == "m"))).first()
+    u.must_change_pw = True
+    session.add(u)
+    await session.commit()
+    assert (await client.get(AUTH, headers=_fwd())).status_code != 200
+
+
+def test_proxy_token_carries_tv():
+    assert tokens.decode_token(tokens.create_proxy_token("u", "f", tv=3))["tv"] == 3

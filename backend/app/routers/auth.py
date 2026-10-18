@@ -66,7 +66,7 @@ async def _issue_session(resp: Response, session: AsyncSession, user: User, requ
     user.last_login = _now()
     session.add(user)
     await session.commit()
-    set_auth_cookies(resp, access, refresh, tokens.create_proxy_token(user.id, family_id),
+    set_auth_cookies(resp, access, refresh, tokens.create_proxy_token(user.id, family_id, tv=user.token_version),
                      new_csrf_token())
 
 

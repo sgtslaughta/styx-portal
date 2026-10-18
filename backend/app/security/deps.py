@@ -78,4 +78,10 @@ async def proxy_user_or_none(request: Request, session: AsyncSession) -> User | 
                 r.expires_at.replace(tzinfo=timezone.utc)) > now for r in rows):
         return None
     user = await session.get(User, claims["sub"])
-    return user if user and user.is_active else None
+    if not user or not user.is_active:
+        return None
+    # Same revocation rules as the API: password/role/disable bump token_version, and a
+    # forced password change blocks apps and streams until it is done.
+    if claims.get("tv", 0) != user.token_version or user.must_change_pw:
+        return None
+    return user
