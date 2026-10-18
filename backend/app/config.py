@@ -38,8 +38,8 @@ class Settings(BaseSettings):
     DEPLOY_MODE: str = "tunnel"   # tunnel | direct
     # Direct peers whose CF-Connecting-IP / X-Forwarded-For are believed
     # (Traefik). Default: loopback + docker's default bridge pools
-    # (172.17-31.x, 192.168.x). Add yours if daemon.json sets other pools.
-    TRUSTED_PROXY_CIDRS: str = "127.0.0.1/32,::1/128,172.16.0.0/12,192.168.0.0/16"
+    # (172.16-31.x). LAN clients are not proxies. Add yours if daemon.json sets other pools.
+    TRUSTED_PROXY_CIDRS: str = "127.0.0.1/32,::1/128,172.16.0.0/12"
     JWT_SECRET: str = ""
     ACCESS_TTL: int = 900          # 15 minutes
     REFRESH_TTL: int = 604800      # 7 days
@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     # --- Brute-force protection ---
     LOCKOUT_THRESHOLD: int = 10           # failed logins per username before lock
     LOCKOUT_DURATION: int = 900           # lock duration seconds (15 min)
+    LOGIN_GLOBAL_THRESHOLD: int = 30      # failures per username (any IP) before 1 check/10 s
     BAN_FAIL_THRESHOLD: int = 20          # failed logins per IP in window before ban
     BAN_FAIL_WINDOW: int = 600            # abuse-detector window seconds (10 min)
     BAN_DURATION: int = 3600              # IP ban duration seconds (1 h)

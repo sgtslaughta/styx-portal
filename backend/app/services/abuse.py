@@ -26,6 +26,8 @@ def ip_key(ip: str) -> str:
         addr = ipaddress.ip_address(ip)
     except ValueError:
         return ip
+    if addr.version == 6 and addr.ipv4_mapped:
+        return str(addr.ipv4_mapped)
     if addr.version == 6:
         return str(ipaddress.ip_network(f"{ip}/64", strict=False))
     return str(addr)
@@ -80,6 +82,8 @@ class LoginLockout:
     def __init__(self) -> None:
         self._fails: dict[str, deque] = {}
         self._locked: dict[str, float] = {}
+        self._global: dict[str, deque] = {}    # username -> failure times, any IP
+        self._last_check: dict[str, float] = {}
 
     @staticmethod
     def _key(username: str, ip: str) -> str:
@@ -101,6 +105,10 @@ class LoginLockout:
         """Count a failure; True when this failure trips the lock."""
         now = time.monotonic() if now is None else now
         key = self._key(username, ip)
+        g = _bounded_deque(self._global, username.strip().lower())
+        g.append(now)
+        while g and g[0] <= now - duration:
+            g.popleft()
         q = _bounded_deque(self._fails, key)
         q.append(now)
         while q and q[0] <= now - duration:
@@ -113,6 +121,27 @@ class LoginLockout:
             return True
         return False
 
+    def throttled(self, username: str, threshold: int, duration: int,
+                  now: float | None = None) -> bool:
+        """Distributed-guessing brake: once a username has `threshold` failures (any IP)
+        in the window, allow one password check per 10 s. Never a hard lock."""
+        now = time.monotonic() if now is None else now
+        name = username.strip().lower()
+        g = self._global.get(name)
+        if g is None:
+            return False
+        while g and g[0] <= now - duration:
+            g.popleft()
+        if len(g) < threshold:
+            return False
+        last = self._last_check.get(name)
+        if last is not None and now - last < 10:
+            return True
+        if len(self._last_check) >= MAX_TRACKED:
+            self._last_check.pop(next(iter(self._last_check)))
+        self._last_check[name] = now
+        return False
+
     def clear(self, username: str, ip: str) -> None:
         key = self._key(username, ip)
         self._fails.pop(key, None)
@@ -123,10 +152,14 @@ class LoginLockout:
         for d in (self._fails, self._locked):
             for k in [k for k in d if k.startswith(prefix)]:
                 del d[k]
+        self._global.pop(username.strip().lower(), None)
+        self._last_check.pop(username.strip().lower(), None)
 
     def reset(self) -> None:
         self._fails.clear()
         self._locked.clear()
+        self._global.clear()
+        self._last_check.clear()
 
 
 class BanCache:
@@ -150,7 +183,7 @@ class BanCache:
         # Convert to naive datetime for comparison (SQLite stores as naive)
         now_naive = now.replace(tzinfo=None) if now.tzinfo else now
         result = await session.exec(select(BannedIP).where(BannedIP.expires_at > now_naive))
-        self._bans = {b.ip: b.expires_at for b in result.all()}
+        self._bans = {ip_key(b.ip): b.expires_at for b in result.all()}
 
     async def is_banned(self, session: AsyncSession, ip: str,
                         now: datetime | None = None,
@@ -168,14 +201,17 @@ class BanCache:
 
 async def ban_ip(session: AsyncSession, ip: str, reason: str, duration: int,
                  now: datetime | None = None) -> bool:
-    """Persist a ban. Refuses (False) for the reverse proxy's own address: that means the
-    real client IP could not be resolved, and banning it would lock everyone out."""
-    from app.middleware.rate_limit import _peer_is_trusted_proxy
-    if _peer_is_trusted_proxy(ip):
-        logger.error("Refusing to ban %s: it is a trusted proxy address (client IP not "
-                     "resolved; check DEPLOY_MODE / TRUSTED_PROXY_CIDRS). Reason: %s", ip, reason)
-        return False
+    """Persist a ban. Refuses (False) for loopback only: that is the local proxy itself
+    (client IP not resolved), and banning it would lock everyone out."""
     ip = ip_key(ip)
+    try:
+        loopback = ipaddress.ip_address(ip).is_loopback
+    except ValueError:
+        loopback = False
+    if loopback:
+        logger.error("Refusing to ban loopback %s (client IP not resolved; check "
+                     "DEPLOY_MODE / TRUSTED_PROXY_CIDRS). Reason: %s", ip, reason)
+        return False
     now = now or _now()
     expires = now + timedelta(seconds=duration)
     existing = await session.get(BannedIP, ip)

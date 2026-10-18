@@ -98,3 +98,8 @@ def test_trackers_are_bounded(monkeypatch):
     for i in range(50):
         w.allow(f"k{i}")
     assert len(w._hits) <= 5
+
+
+def test_ip_key_maps_v4_mapped_to_v4():
+    from app.services.abuse import ip_key
+    assert ip_key("::ffff:203.0.113.9") == "203.0.113.9"

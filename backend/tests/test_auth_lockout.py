@@ -189,3 +189,73 @@ async def test_never_bans_a_trusted_proxy_address(client, session):
     for i in range(20):
         await client.post("/api/auth/login", json={"username": f"nobody{i}", "password": "nope"})
     assert await session.get(BannedIP, "127.0.0.1") is None
+
+
+async def test_distributed_guessing_is_throttled_but_never_hard_locked(client, session, monkeypatch):
+    import time as _t
+    await _make_user(session)
+    for i in range(30):          # one failure each from 30 different IPs
+        r = await client.post("/api/auth/login", headers={"X-Forwarded-For": f"203.0.113.{i + 1}"},
+                              json={"username": "victim", "password": "nope"})
+        assert r.status_code == 401
+    good = {"username": "victim", "password": "correct horse battery staple"}
+    h = {"X-Forwarded-For": "198.51.100.7"}
+    # first check after the threshold is let through (and uses the 10 s slot) ...
+    assert (await client.post("/api/auth/login", headers=h,
+                              json={"username": "victim", "password": "nope"})).status_code == 401
+    # ... so an immediate correct password is throttled with the same 401
+    r = await client.post("/api/auth/login", headers=h, json=good)
+    assert r.status_code == 401 and r.json() == {"detail": "Invalid credentials"}
+    # the owner gets through once the slot reopens: throttled, never locked out
+    real = _t.monotonic
+    monkeypatch.setattr("app.services.abuse.time.monotonic", lambda: real() + 11)
+    assert (await client.post("/api/auth/login", headers=h, json=good)).status_code == 200
+
+
+async def test_unknown_username_locks_identically(client):
+    from app.services.abuse import login_lockout
+    for _ in range(10):
+        r = await client.post("/api/auth/login", headers={"X-Forwarded-For": "5.5.5.5"},
+                              json={"username": "ghost", "password": "nope"})
+        assert r.status_code == 401
+    assert login_lockout.is_locked("ghost", "5.5.5.5")
+
+
+async def test_lockout_does_not_write_the_user_row(client, session):
+    from sqlmodel import select
+    from app.models import User
+    await _make_user(session)
+    for _ in range(10):
+        await client.post("/api/auth/login", json={"username": "victim", "password": "nope"})
+    u = (await session.exec(select(User).where(User.username == "victim"))).first()
+    assert u.locked_until is None
+
+
+async def test_lan_client_is_banned_after_threshold(client, session):
+    from app.models import BannedIP
+    for i in range(20):
+        await client.post("/api/auth/login", headers={"X-Forwarded-For": "192.168.5.5"},
+                          json={"username": f"nobody{i}", "password": "nope"})
+    assert await session.get(BannedIP, "192.168.5.5") is not None
+
+
+async def test_raw_ipv6_ban_row_matches_client_in_the_64(client, session):
+    from app.models import BannedIP
+    from app.services.abuse import ban_cache
+    from datetime import datetime, timedelta
+    session.add(BannedIP(ip="2001:db8:1:2:aaaa:bbbb:cccc:dddd", reason="legacy",
+                         expires_at=datetime.utcnow() + timedelta(hours=1)))
+    await session.commit()
+    ban_cache.invalidate()
+    r = await client.get("/api/auth/ban-check",
+                         headers={"X-Forwarded-For": "2001:db8:1:2:1111:2222:3333:4444"})
+    assert r.status_code == 403
+
+
+async def test_ipv4_mapped_client_matches_ipv4_ban(client, session):
+    from app.services.abuse import ban_ip, ban_cache
+    await ban_ip(session, "203.0.113.9", "t", 3600)
+    await session.commit()
+    ban_cache.invalidate()
+    r = await client.get("/api/auth/ban-check", headers={"X-Forwarded-For": "::ffff:203.0.113.9"})
+    assert r.status_code == 403

@@ -155,7 +155,9 @@ async def login(body: LoginRequest, request: Request, response: Response,
 
     # Per-(username, IP) lockout. A locked attempt is indistinguishable from a bad
     # password (same 401, same Argon2 work), so lockout never reveals which names exist.
-    if login_lockout.is_locked(body.username, ip):
+    if (login_lockout.is_locked(body.username, ip)
+            or login_lockout.throttled(body.username, _settings.LOGIN_GLOBAL_THRESHOLD,
+                                       sys_settings.get("LOCKOUT_DURATION"))):
         verify_password(body.password, _dummy_hash())
         await audit_request(session, request, "auth.login_locked",
                             user_id=user.id if user else None)
@@ -165,12 +167,9 @@ async def login(body: LoginRequest, request: Request, response: Response,
     ok = bool(user and user.is_active)
     pw_ok = verify_password(body.password, user.password_hash if ok else _dummy_hash())
     if not (ok and pw_ok):
-        if user and login_lockout.record_fail(
-                body.username, ip, sys_settings.get("LOCKOUT_THRESHOLD"),
-                sys_settings.get("LOCKOUT_DURATION")):
-            # Informational only (admin Users list); enforcement is the in-memory lock.
-            user.locked_until = _now() + timedelta(seconds=sys_settings.get("LOCKOUT_DURATION"))
-            session.add(user)
+        # Every submitted username counts, existing or not (no enumeration signal).
+        login_lockout.record_fail(body.username, ip, sys_settings.get("LOCKOUT_THRESHOLD"),
+                                  sys_settings.get("LOCKOUT_DURATION"))
         # Per-IP abuse detector -> proxy ban (L3). Thresholds are live-tunable.
         fail_tracker.threshold = sys_settings.get("BAN_FAIL_THRESHOLD")
         fail_tracker.window = sys_settings.get("BAN_FAIL_WINDOW")

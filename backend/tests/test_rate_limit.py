@@ -86,8 +86,10 @@ def test_cf_header_ignored_in_direct_mode(monkeypatch):
 
 
 def test_default_trusts_loopback_and_compose_bridges():
-    for host in ("127.0.0.1", "::1", "172.17.0.2", "172.31.255.1", "192.168.16.3"):
+    for host in ("127.0.0.1", "::1", "172.17.0.2", "172.31.255.1"):
         assert client_ip_from_headers(_FakeReq({"x-forwarded-for": "5.6.7.8"}, host=host)) == "5.6.7.8"
+    # LAN clients are not proxies: their forwarded headers are not believed
+    assert client_ip_from_headers(_FakeReq({"x-forwarded-for": "5.6.7.8"}, host="192.168.16.3")) == "192.168.16.3"
 
 
 def test_ban_check_is_exempt():

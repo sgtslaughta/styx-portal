@@ -302,7 +302,7 @@ Read this section before exposing anything.
   they cannot reach the Styx API or the Docker socket proxy.
 - **Client IPs** (rate limits, bans, audit) come from `CF-Connecting-IP` /
   `X-Forwarded-For` only when the socket peer is in `TRUSTED_PROXY_CIDRS` (default:
-  loopback plus Docker's default bridge pools `172.16.0.0/12,192.168.0.0/16`; widen it if
+  loopback plus Docker's default bridge pools `172.16.0.0/12`; widen it if
   `daemon.json` sets other pools). `CF-Connecting-IP` is ignored when
   `DEPLOY_MODE=direct`.
 
