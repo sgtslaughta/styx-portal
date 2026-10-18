@@ -197,10 +197,12 @@ async def delete_user(user_id: str, request: Request,
 
 
 def _user_out(u: User) -> UserOut:
+    left = login_lockout.locked_for(u.username)
+    mem_until = (datetime.now(timezone.utc) + timedelta(seconds=left)).isoformat() if left > 0 else None
     return UserOut(
         id=u.id, username=u.username, email=u.email, role=u.role,
         is_active=u.is_active,
         last_login=u.last_login.isoformat() if u.last_login else None,
-        locked_until=u.locked_until.isoformat() if u.locked_until else None,
+        locked_until=u.locked_until.isoformat() if u.locked_until else mem_until,
         failed_count=u.failed_count,
     )

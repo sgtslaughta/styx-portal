@@ -157,6 +157,12 @@ class LoginLockout:
             return False
         return True
 
+    def locked_for(self, username: str, now: float | None = None) -> float:
+        """Seconds until the longest active lock on this username (any IP) ends; 0 = none."""
+        now = time.monotonic() if now is None else now
+        prefix = f"{username.strip().lower()}|"
+        return max([u - now for k, u in self._locked.items() if k.startswith(prefix)] + [0.0])
+
     def record_fail(self, username: str, ip: str, threshold: int, duration: int,
                     now: float | None = None) -> bool:
         """Count a failure; True when this failure trips the lock."""

@@ -97,3 +97,18 @@ async def test_reset_password_temp_satisfies_strict_policy(admin_client, session
     # The generated temp password MUST satisfy the active policy.
     validate_password(temp, current_policy())   # must not raise
     assert len(temp) >= 20
+
+
+async def test_users_list_shows_in_memory_lockout(admin_client, session):
+    """F9: the Locked badge reads lockout state, which lives in memory only."""
+    from app.services.abuse import login_lockout
+    r = await admin_client.get("/api/users")
+    admin = r.json()[0]
+    assert admin["locked_until"] is None
+    for _ in range(3):
+        login_lockout.record_fail(admin["username"], "9.9.9.9", 3, 900)
+    try:
+        r = await admin_client.get("/api/users")
+        assert r.json()[0]["locked_until"] is not None
+    finally:
+        login_lockout.clear_user(admin["username"])
