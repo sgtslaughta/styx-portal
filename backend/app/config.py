@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     SESSION_MAX_AGE: int = 2592000  # 30 days: absolute cap on a refresh family
     COOKIE_SECURE: bool = True
     DEV_CORS: bool = False          # allow the Vite dev origin (http://localhost:5173) with credentials
+    ENABLE_DOCS: bool = False       # expose /docs, /redoc, /openapi.json (dev only)
     COOKIE_DOMAIN: str | None = None
     RATE_LIMIT_AUTH: str = "5/60"        # 5 requests per 60s on /auth/*
     RATE_LIMIT_DEFAULT: str = "120/60"   # 120 requests per 60s otherwise

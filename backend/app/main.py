@@ -285,7 +285,13 @@ try:
 except PackageNotFoundError:  # pragma: no cover
     _APP_VERSION = "0.0.0"
 
+def docs_kwargs(s: Settings) -> dict:
+    """API docs are an unauthenticated map of every route: off unless explicitly enabled."""
+    return {} if s.ENABLE_DOCS else {"docs_url": None, "redoc_url": None, "openapi_url": None}
+
+
 app = FastAPI(title="Styx Portal", version=_APP_VERSION, lifespan=lifespan,
+              **docs_kwargs(_settings),
               dependencies=[Depends(svc_cookie_guard)])
 
 app.add_middleware(SecurityHeadersMiddleware)
