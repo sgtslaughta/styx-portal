@@ -19,12 +19,44 @@ def _trusted_networks(spec: str) -> tuple:
                  for c in spec.split(",") if c.strip())
 
 
+def own_subnets(path: str = "/proc/net/route") -> tuple:
+    """IPv4 subnets of this host/container's own interfaces (stdlib, Linux only).
+
+    Traefik shares a docker network with the backend, so it is always inside one of these,
+    whatever pool docker picked. Default route (mask 0) is skipped; no file = empty.
+    """
+    nets = []
+    try:
+        with open(path) as f:
+            rows = f.read().splitlines()[1:]
+    except OSError:
+        return ()
+    for row in rows:
+        cols = row.split()
+        try:
+            dest, mask = (int(cols[1], 16), int(cols[7], 16))
+            if mask == 0:
+                continue
+            # kernel prints these little-endian
+            dest, mask = (int.from_bytes(v.to_bytes(4, "big"), "little") for v in (dest, mask))
+            nets.append(ipaddress.ip_network((dest, bin(mask).count("1")), strict=False))
+        except (IndexError, ValueError):
+            continue
+    return tuple(nets)
+
+
+@lru_cache(maxsize=1)
+def _own_networks() -> tuple:
+    return own_subnets()
+
+
 def _peer_is_trusted_proxy(host: str | None) -> bool:
     try:
         ip = ipaddress.ip_address(host or "")
     except ValueError:
         return False
-    return any(ip in net for net in _trusted_networks(_settings.TRUSTED_PROXY_CIDRS))
+    return (any(ip in net for net in _trusted_networks(_settings.TRUSTED_PROXY_CIDRS))
+            or any(ip in net for net in _own_networks()))
 
 
 def _is_tunnel_peer(ip: str) -> bool:

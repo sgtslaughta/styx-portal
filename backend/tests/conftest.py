@@ -155,3 +155,10 @@ async def second_member_client(session):
 def _no_background_favicon(monkeypatch):
     """Service create/mount jobs would otherwise fetch favicons on the app's real DB sessions."""
     monkeypatch.setattr("app.services.service_favicon.schedule_favicon", lambda *a, **k: None)
+
+
+@pytest.fixture(autouse=True)
+def _no_host_interface_trust(monkeypatch):
+    """The dev/CI host's own subnets must not leak into proxy-trust tests."""
+    from app.middleware import rate_limit
+    monkeypatch.setattr(rate_limit, "_own_networks", lambda: ())

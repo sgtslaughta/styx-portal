@@ -148,3 +148,32 @@ def test_client_ip_resolved_flag():
     assert client_ip_resolved(_FakeReq({}, host="127.0.0.1")) == ("127.0.0.1", False)
     assert client_ip_resolved(_FakeReq({"x-forwarded-for": "192.168.1.9"}, host="172.18.0.2")) == ("192.168.1.9", True)
     assert client_ip_resolved(_FakeReq({}, host="8.8.8.8")) == ("8.8.8.8", True)
+
+
+_ROUTE = (
+    "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\tMTU\tWindow\tIRTT\n"
+    "eth0\t00000000\t0110A8C0\t0003\t0\t0\t0\t00000000\t0\t0\t0\n"      # default: skipped
+    "eth0\t0010A8C0\t00000000\t0001\t0\t0\t0\t00F0FFFF\t0\t0\t0\n"      # 192.168.16.0/20
+    "eth1\t000011AC\t00000000\t0001\t0\t0\t0\t0000FFFF\t0\t0\t0\n"      # 172.17.0.0/16
+    "junk line\n"
+)
+
+
+def test_own_subnets_parses_proc_net_route(tmp_path):
+    from app.middleware.rate_limit import own_subnets
+    f = tmp_path / "route"
+    f.write_text(_ROUTE)
+    assert [str(n) for n in own_subnets(str(f))] == ["192.168.16.0/20", "172.17.0.0/16"]
+    assert own_subnets(str(tmp_path / "missing")) == ()
+
+
+def test_peer_in_own_subnet_is_trusted_proxy(tmp_path, monkeypatch):
+    """F4: docker may place styx-portal in 192.168.x; Traefik must still be trusted."""
+    from app.middleware import rate_limit
+    f = tmp_path / "route"
+    f.write_text(_ROUTE)
+    monkeypatch.setattr(rate_limit, "_own_networks", lambda: rate_limit.own_subnets(str(f)))
+    req = _FakeReq({"x-forwarded-for": "5.6.7.8"}, host="192.168.16.3")
+    assert client_ip_from_headers(req) == "5.6.7.8"
+    other = _FakeReq({"x-forwarded-for": "5.6.7.8"}, host="192.168.99.3")
+    assert client_ip_from_headers(other) == "192.168.99.3"
