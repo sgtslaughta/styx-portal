@@ -218,6 +218,8 @@ def test_secret_bearing_urls_ignore_focus_cookie():
     assert oauth["priority"] > 40 and invite["priority"] > 40
     assert oauth["service"] == "api" and invite["service"] == "frontend"
     assert "PathPrefix(`/api/auth/oauth/`)" in oauth["rule"]
+    assert "PathPrefix(`/api/auth/link/`)" in oauth["rule"]            # F11
+    assert "PathPrefix(`/api/oauth-providers/`)" in oauth["rule"]
     assert "/accept-invite" in invite["rule"]
     for x in (oauth, invite):
         assert x["middlewares"] == ["ip-ban-gate", "styx-ratelimit"]

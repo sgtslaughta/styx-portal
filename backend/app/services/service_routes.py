@@ -120,7 +120,8 @@ def add_service_routes(config: dict, middlewares: dict, services: list[dict],
         # Secret-bearing Styx URLs (top-level navigations, no X-Styx-Client) must never
         # reach a Focus app's upstream: OAuth code/state and invite tokens.
         routers["styx-oauth-cb"] = {
-            "rule": f"Host(`{domain}`) && PathPrefix(`/api/auth/oauth/`)",
+            "rule": (f"Host(`{domain}`) && (PathPrefix(`/api/auth/oauth/`) || "
+                     "PathPrefix(`/api/auth/link/`) || PathPrefix(`/api/oauth-providers/`))"),
             "service": "api", "priority": 101, "middlewares": gated, **transport}
         routers["styx-accept-invite"] = {
             "rule": f"Host(`{domain}`) && (Path(`/accept-invite`) || PathPrefix(`/accept-invite/`))",

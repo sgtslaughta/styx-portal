@@ -75,3 +75,23 @@ async def test_direct_websocket_takeover_denied(client, session):
     r = await client.get(f"/internal/workstations/{ws.id}/auth-check",
                          headers={"X-Forwarded-Uri": f"/w/{ws.subdomain}/websockets"})
     assert r.status_code == 200
+
+
+async def test_takeover_grant_survives_parallel_websocket(client, session):
+    """F13: a second websocket opened with the same grant must not be refused."""
+    u, ws = await _setup(session)
+    other = User(username="erin", password_hash=hash_password("x"), role="user")
+    session.add(other)
+    await session.commit()
+    session.add(WorkstationAccess(workstation_id=ws.id, user_id=other.id))
+    await session.commit()
+    await client.get("/api/auth/csrf")
+    await client.post("/api/auth/login", json={"username": "erin", "password": "x"})
+    await client.get(f"/api/workstations/{ws.id}/connect?force=true")
+    hdr = {"X-Forwarded-Uri": f"/w/{ws.subdomain}/websockets"}
+    path = f"/internal/workstations/{ws.id}/auth-check"
+    assert (await client.get(path, headers=hdr)).status_code == 200
+    ws.occupied_by = u.id            # as if the first upgrade's commit had not landed yet
+    session.add(ws)
+    await session.commit()
+    assert (await client.get(path, headers=hdr)).status_code == 200

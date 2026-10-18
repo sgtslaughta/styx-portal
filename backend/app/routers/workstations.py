@@ -250,7 +250,8 @@ async def auth_check(ws_id: str, request: Request,
     if "/websocket" in uri:
         # Takeover lock: another user's live seat needs /connect?force=true,
         # which hands the seat over; opening the URL directly is refused.
-        granted = _force_grants.pop((ws.id, user.id), 0) > time.monotonic()
+        # Not popped: a parallel websocket must pass too; the grant simply expires.
+        granted = _force_grants.get((ws.id, user.id), 0) > time.monotonic()
         if (ws.active_connections > 0 and ws.occupied_by
                 and ws.occupied_by != user.id and not granted):
             return no_access(request, "Workstation in use")
