@@ -34,7 +34,6 @@ class Settings(BaseSettings):
     MOUNT_BACKUP_DIR: str = "./data/mount-backups"
     MOUNT_PROBE_IMAGE: str = "busybox:1.36"
     TRAEFIK_DYNAMIC_DIR: str = "/app/traefik-dynamic"
-    AUTHENTIK_MIDDLEWARE: str = "authentik@file"
     DEPLOY_MODE: str = "tunnel"   # tunnel | direct
     # Direct peers whose CF-Connecting-IP / X-Forwarded-For are believed
     # (Traefik). Default: loopback + docker's default bridge pools
