@@ -14,6 +14,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.config import Settings
 from app.database import init_db, async_session, get_session
 from app.middleware.rate_limit import RateLimitMiddleware
+from app.security.same_origin import svc_cookie_guard
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.models import Instance, SessionEvent, User
 from app.routers import templates, instances, registry, images
@@ -284,7 +285,8 @@ try:
 except PackageNotFoundError:  # pragma: no cover
     _APP_VERSION = "0.0.0"
 
-app = FastAPI(title="Styx Portal", version=_APP_VERSION, lifespan=lifespan)
+app = FastAPI(title="Styx Portal", version=_APP_VERSION, lifespan=lifespan,
+              dependencies=[Depends(svc_cookie_guard)])
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(CSRFMiddleware)

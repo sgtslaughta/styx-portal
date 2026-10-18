@@ -36,9 +36,12 @@ async def get_current_user(
     return user
 
 
-async def require_admin(user: User = Depends(get_current_user)) -> User:
+async def require_admin(request: Request, user: User = Depends(get_current_user),
+                        session: AsyncSession = Depends(get_session)) -> User:
     if user.role != "admin":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin required")
+    from app.security.same_origin import require_spa_origin
+    await require_spa_origin(request, session)
     return user
 
 
