@@ -215,3 +215,44 @@ def test_lifespan_snapshots_before_screenshot_task():
     from app import main
     src = inspect.getsource(main.lifespan)
     assert src.index("snapshot_own_networks()") < src.index("_screenshot_capture_loop()")
+
+
+def test_unrecognised_private_proxy_is_unresolved(caplog):
+    """Snapshot missed Traefik: do not attribute every client to its address."""
+    from app.middleware import rate_limit
+    from app.middleware.rate_limit import client_ip_resolved
+    rate_limit._warned.clear()
+    rate_limit._settings.TRUSTED_PROXY_CIDRS = "127.0.0.1/32"
+    req = _FakeReq({"x-forwarded-for": "5.6.7.8"}, host="192.168.50.2")
+    with caplog.at_level("ERROR"):
+        assert client_ip_resolved(req) == ("192.168.50.2", False)
+        client_ip_resolved(req)
+    assert sum("unrecognised proxy" in r.message for r in caplog.records) == 1  # once per window
+    assert client_ip_resolved(_FakeReq({}, host="192.168.50.2")) == ("192.168.50.2", True)
+    assert client_ip_resolved(_FakeReq({"x-forwarded-for": "9.9.9.9"}, host="8.8.4.4")) \
+        == ("8.8.4.4", True)
+
+
+async def test_unresolved_requests_skip_per_ip_limit(monkeypatch):
+    from app.middleware import rate_limit
+    monkeypatch.setattr(rate_limit._settings, "TRUSTED_PROXY_CIDRS", "127.0.0.1/32")
+    seen = []
+
+    async def call_next(r):
+        seen.append(1)
+        return "ok"
+    mw = rate_limit.RateLimitMiddleware(app=None)
+    monkeypatch.setattr(mw, "_window_for", lambda spec: pytest.fail("limiter used"))
+    req = _FakeReq({"x-forwarded-for": "5.6.7.8"}, host="192.168.50.2")
+    req.url = type("U", (), {"path": "/api/x"})()
+    req.method = "GET"
+    for _ in range(3):
+        assert await mw.dispatch(req, call_next) == "ok"
+    assert len(seen) == 3
+
+
+def test_empty_snapshot_logs_error(tmp_path, caplog):
+    from app.middleware import rate_limit
+    with caplog.at_level("ERROR"):
+        rate_limit.snapshot_own_networks(str(tmp_path / "missing"))
+    assert any("no network interfaces" in r.message for r in caplog.records)

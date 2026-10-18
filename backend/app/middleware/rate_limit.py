@@ -1,4 +1,5 @@
 import ipaddress
+import logging
 import time
 from collections import deque
 from functools import lru_cache
@@ -10,6 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.config import Settings
 
 _settings = Settings()
+logger = logging.getLogger(__name__)
 MAX_TRACKED = 100_000   # cap on the per-key hit map (oldest key evicted)
 
 
@@ -55,6 +57,9 @@ def snapshot_own_networks(path: str = "/proc/net/route") -> None:
     global _startup_networks, _snapshot_taken
     if not _snapshot_taken:
         _startup_networks, _snapshot_taken = own_subnets(path), True
+        if not _startup_networks:
+            logger.error("no network interfaces found at startup (/proc/net/route unreadable?); "
+                         "only TRUSTED_PROXY_CIDRS are trusted proxies")
 
 
 def _own_networks() -> tuple:
@@ -78,6 +83,24 @@ def _is_tunnel_peer(ip: str) -> bool:
     return any(addr in n for n in _trusted_networks(_settings.TUNNEL_PEER_CIDRS))
 
 
+def _is_private(host: str) -> bool:
+    try:
+        return ipaddress.ip_address(host).is_private
+    except ValueError:
+        return False
+
+
+_warned: dict[str, float] = {}
+
+
+def _warn_unknown_proxy(peer: str) -> None:
+    now = time.monotonic()
+    if now - _warned.get(peer, -1e9) >= 600:
+        _warned[peer] = now
+        logger.error("request via unrecognised proxy %s; restart the backend or add it to "
+                     "TRUSTED_PROXY_CIDRS", peer)
+
+
 def client_ip_resolved(request) -> tuple[str, bool]:
     """Returns (ip, resolved). Resolve the real client IP behind a trusted proxy (Cloudflare/Traefik).
 
@@ -90,6 +113,11 @@ def client_ip_resolved(request) -> tuple[str, bool]:
     """
     peer = request.client.host if request.client else "unknown"
     if not _peer_is_trusted_proxy(peer):
+        if request.headers.get("x-forwarded-for") and _is_private(peer):
+            # A private peer that forwards for someone is almost certainly a proxy we do not
+            # know (snapshot empty/stale): do not pin every client on its address.
+            _warn_unknown_proxy(peer)
+            return peer, False
         return peer, True
     cf = request.headers.get("cf-connecting-ip")
     xff = request.headers.get("x-forwarded-for")
@@ -174,7 +202,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if is_rate_limit_exempt(request.url.path):
             return await call_next(request)
         from app.services.settings_store import settings
-        ip = client_ip_from_headers(request)
+        ip, resolved = client_ip_resolved(request)
+        if not resolved:
+            # Unknown client behind a proxy: a shared bucket would let one caller lock out
+            # everyone. Traefik's own rate limit and per-username lockout still apply.
+            return await call_next(request)
         strict = is_strict_auth(request.method, request.url.path)
         spec = settings.get("RATE_LIMIT_AUTH") if strict else settings.get("RATE_LIMIT_DEFAULT")
         window = self._window_for(spec)
