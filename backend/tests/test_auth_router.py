@@ -133,3 +133,17 @@ async def test_change_password_weak_new(member_client, session):
                                  json={"old_password": "correct horse battery staple",
                                        "new_password": "NoSymbolsHere123"})
     assert r.status_code == 422
+
+
+async def test_me_exposes_must_change_pw(member_client, session):
+    """F5: the SPA needs the flag to route to /change-password."""
+    from sqlmodel import select
+
+    from app.models import User
+    assert (await member_client.get("/api/auth/me")).json()["must_change_pw"] is False
+    u = (await session.exec(select(User).where(User.username == "member"))).first()
+    u.must_change_pw = True
+    session.add(u)
+    await session.commit()
+    r = await member_client.get("/api/auth/me")
+    assert r.status_code == 200 and r.json()["must_change_pw"] is True

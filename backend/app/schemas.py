@@ -199,6 +199,7 @@ class UserOut(BaseModel):
     failed_count: int = 0
     open_workspaces: str | None = None
     open_apps: str | None = None
+    must_change_pw: bool = False
 
 
 OpenMode = Literal["new_tab", "same_tab"]

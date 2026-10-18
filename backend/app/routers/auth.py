@@ -337,7 +337,7 @@ async def logout(request: Request, response: Response,
 def _me_out(user: User) -> UserOut:
     return UserOut(id=user.id, username=user.username, email=user.email, role=user.role,
                    is_active=user.is_active, open_workspaces=user.open_workspaces,
-                   open_apps=user.open_apps)
+                   open_apps=user.open_apps, must_change_pw=user.must_change_pw)
 
 
 @router.get("/me", response_model=UserOut)
