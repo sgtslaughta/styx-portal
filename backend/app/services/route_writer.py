@@ -241,7 +241,8 @@ def build_routes_config(instances: list[dict], domain: str,
             config["http"]["routers"][f"{rid}-lan"] = _lan_router(
                 _seg(f"/w/{sub}"), rid, 50, router_middlewares)
         protocol = ws.get("protocol", "http")
-        svc: dict = {"servers": [{"url": f"{protocol}://{ws['lan_ip']}:{ws['port']}"}]}
+        host = f"[{ws['lan_ip']}]" if ":" in str(ws["lan_ip"]) else ws["lan_ip"]
+        svc: dict = {"servers": [{"url": f"{protocol}://{host}:{ws['port']}"}]}
         if protocol == "https":
             svc["serversTransport"] = "selkies-transport"
             has_https = True

@@ -371,7 +371,7 @@ class WorkstationRegisterRequest(BaseModel):
     gpu_info: dict[str, Any] = {}
     os_info: dict[str, Any] = {}
     agent_version: str = ""
-    port: int | None = None
+    port: int | None = Field(default=None, ge=1, le=65535)
 
     @field_validator("lan_ip")
     @classmethod

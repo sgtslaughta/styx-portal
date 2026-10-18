@@ -82,7 +82,7 @@ class Settings(BaseSettings):
     )
     ARTIFACT_CACHE_DIR: str = "/app/data/artifacts"
     AGENT_DIR: str = "/app/agent"   # mounted from repo ./agent; dev fallback in enroll router
-    ENROLL_TOKEN_TTL_HOURS: int = 24
+    ENROLL_TOKEN_TTL_HOURS: int = 1
     WORKSTATION_OFFLINE_AFTER_S: int = 90
     WORKSTATION_DEFAULT_PORT: int = 8443
     WORKSTATION_HEARTBEAT_S: int = 30

@@ -69,6 +69,37 @@ async def mint_enroll_token(request: Request,
         lan_url_source=lan_source)
 
 
+@router.get("/enroll-tokens")
+async def list_enroll_tokens(admin: User = Depends(require_admin),
+                             session: AsyncSession = Depends(get_session)):
+    """Unused, unexpired enrollment tokens (ids only; the secret is never stored)."""
+    now = datetime.now(timezone.utc)
+    rows = (await session.exec(select(WorkstationEnrollmentToken).where(
+        WorkstationEnrollmentToken.used_at == None))).all()  # noqa: E711
+    out = []
+    for t in rows:
+        exp = t.expires_at if t.expires_at.tzinfo else t.expires_at.replace(tzinfo=timezone.utc)
+        if exp > now:
+            out.append({"id": t.id, "created_by": t.created_by,
+                        "created_at": t.created_at.isoformat(),
+                        "expires_at": exp.isoformat()})
+    return out
+
+
+@router.delete("/enroll-tokens/{token_id}")
+async def revoke_enroll_token(token_id: str, request: Request,
+                              admin: User = Depends(require_admin),
+                              session: AsyncSession = Depends(get_session)):
+    tok = await session.get(WorkstationEnrollmentToken, token_id)
+    if tok is None or tok.used_at is not None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such unused token")
+    await session.delete(tok)
+    await audit_request(session, request, "workstation.enroll_token_revoke",
+                        user_id=admin.id, resource=token_id)
+    await session.commit()
+    return {"ok": True}
+
+
 @router.get("/{ws_id}/update-command", response_model=WorkstationUpdateCommandOut)
 async def update_command(ws_id: str,
                          admin: User = Depends(require_admin),

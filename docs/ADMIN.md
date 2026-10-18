@@ -40,7 +40,7 @@ Styx Portal can stream physical Linux machines on the local network alongside co
 ### Admin Panel
 
 In **System → Workstations**, you can:
-- **Enroll:** Mint single-use tokens (valid 24 hours) with enrollment commands
+- **Enroll:** Mint single-use tokens (valid 1 hour) with enrollment commands
 - **Monitor:** See status (online/offline/pending/revoked), last heartbeat, IP address, GPU info
 - **Configure:** Adjust encoder, framerate, bitrate per workstation
 - **Access control:** Restrict which users can connect to each workstation
