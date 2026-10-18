@@ -44,6 +44,13 @@ _TEMPLATE_UPDATE_FIELDS = {
 }
 
 
+def _member_view(t: ServiceTemplate, user: User) -> ServiceTemplate:
+    """Non-owners (members on shared/ownerless templates) never see env values."""
+    if user.role == "admin" or t.owner_id == user.id:
+        return t
+    return t.model_copy(update={"env_vars": {}})
+
+
 @router.get("", response_model=list[ServiceTemplate])
 async def list_templates(
     session: AsyncSession = Depends(get_session),
@@ -55,7 +62,7 @@ async def list_templates(
             (ServiceTemplate.owner_id == user.id) | (ServiceTemplate.owner_id == None) | (ServiceTemplate.shared == True)  # noqa: E711, E712
         )
     result = await session.exec(stmt)
-    return result.all()
+    return [_member_view(t, user) for t in result.all()]
 
 
 @router.post("", response_model=ServiceTemplate, status_code=201)
@@ -101,7 +108,7 @@ async def get_template(
         raise HTTPException(404, "Template not found")
     if template.owner_id is not None:
         require_owner_or_admin(template.owner_id, user)
-    return template
+    return _member_view(template, user)
 
 
 @router.put("/{template_id}", response_model=ServiceTemplate)

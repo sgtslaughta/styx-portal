@@ -206,7 +206,7 @@ async def test_register_accepts_valid_ipv4_and_ipv6(client, admin_client, sessio
     # Test IPv6
     raw = await _mint(session, aid)
     r = await client.post("/api/enroll/register", json={
-        "token": raw, "hostname": "desk-ipv6", "lan_ip": "::1"})
+        "token": raw, "hostname": "desk-ipv6", "lan_ip": "fd00::5"})
     assert r.status_code == 201
 
 

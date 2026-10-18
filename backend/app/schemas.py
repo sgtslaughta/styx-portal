@@ -304,6 +304,19 @@ class EnrollTokenOut(BaseModel):
     lan_url_source: str            # env | detected | none
 
 
+def _check_lan_ip(v: str) -> str:
+    """A workstation address Traefik will route to: never loopback/link-local/special
+    (that would aim the injected workstation credentials at the host or a metadata service)."""
+    try:
+        ip = ipaddress.ip_address(v)
+    except ValueError:
+        raise ValueError("lan_ip must be a valid IPv4 or IPv6 address")
+    if (ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip.is_multicast
+            or ip.is_reserved):
+        raise ValueError("lan_ip must be a routable LAN address")
+    return v
+
+
 class WorkstationRegisterRequest(BaseModel):
     token: str
     hostname: str = Field(min_length=1, max_length=255)
@@ -317,11 +330,7 @@ class WorkstationRegisterRequest(BaseModel):
     @field_validator("lan_ip")
     @classmethod
     def _valid_lan_ip(cls, v: str) -> str:
-        try:
-            ipaddress.ip_address(v)
-        except ValueError:
-            raise ValueError("lan_ip must be a valid IPv4 or IPv6 address")
-        return v
+        return _check_lan_ip(v)
 
     @field_validator("display_server")
     @classmethod
@@ -353,11 +362,7 @@ class WorkstationHeartbeatRequest(BaseModel):
     def _valid_lan_ip(cls, v: str | None) -> str | None:
         if v is None:
             return v
-        try:
-            ipaddress.ip_address(v)
-        except ValueError:
-            raise ValueError("lan_ip must be a valid IPv4 or IPv6 address")
-        return v
+        return _check_lan_ip(v)
 
 
 class WorkstationHeartbeatResponse(BaseModel):

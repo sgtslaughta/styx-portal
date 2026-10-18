@@ -11,6 +11,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 # noqa: E402 — set environment variables BEFORE importing app modules
 os.environ.setdefault("JWT_SECRET", "test-secret-long-enough-32-chars")
 os.environ.setdefault("COOKIE_SECURE", "false")
+os.environ.setdefault("DEV_CORS", "true")
 os.environ.setdefault("RATE_LIMIT_AUTH", "1000/60")
 os.environ.setdefault("RATE_LIMIT_DEFAULT", "1000/60")
 _test_tmpdir = tempfile.mkdtemp()
