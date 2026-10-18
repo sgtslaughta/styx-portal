@@ -111,6 +111,13 @@ def test_cf_header_ignored_in_direct_mode(monkeypatch):
     assert client_ip_from_headers(req) == "198.51.100.1"
 
 
+@pytest.fixture(autouse=True)
+def _legacy_bridge_trust(monkeypatch):
+    """Most tests here use a 172.x proxy peer; trust it explicitly (the default no longer does)."""
+    from app.middleware import rate_limit
+    monkeypatch.setattr(rate_limit._settings, "TRUSTED_PROXY_CIDRS", "127.0.0.1/32,::1/128,172.16.0.0/12")
+
+
 def test_default_trusts_loopback_and_compose_bridges():
     for host in ("127.0.0.1", "::1", "172.17.0.2", "172.31.255.1"):
         assert client_ip_from_headers(_FakeReq({"x-forwarded-for": "5.6.7.8"}, host=host)) == "5.6.7.8"
@@ -172,8 +179,39 @@ def test_peer_in_own_subnet_is_trusted_proxy(tmp_path, monkeypatch):
     from app.middleware import rate_limit
     f = tmp_path / "route"
     f.write_text(_ROUTE)
-    monkeypatch.setattr(rate_limit, "_own_networks", lambda: rate_limit.own_subnets(str(f)))
+    rate_limit.snapshot_own_networks(str(f))
     req = _FakeReq({"x-forwarded-for": "5.6.7.8"}, host="192.168.16.3")
     assert client_ip_from_headers(req) == "5.6.7.8"
     other = _FakeReq({"x-forwarded-for": "5.6.7.8"}, host="192.168.99.3")
     assert client_ip_from_headers(other) == "192.168.99.3"
+
+
+def test_snapshot_taken_once_ignores_later_networks(tmp_path):
+    """A network the backend joins after startup (screenshot) must not become trusted."""
+    from app.middleware import rate_limit
+    f = tmp_path / "route"
+    f.write_text(_ROUTE)
+    rate_limit.snapshot_own_networks(str(f))
+    f.write_text(_ROUTE + "br-x\t0063A8C0\t00000000\t0001\t0\t0\t0\t00FFFFFF\t0\t0\t0\n")  # 192.168.99.0/24
+    rate_limit.snapshot_own_networks(str(f))
+    later = _FakeReq({"x-forwarded-for": "5.6.7.8"}, host="192.168.99.9")
+    assert client_ip_from_headers(later) == "192.168.99.9"
+    ok = _FakeReq({"x-forwarded-for": "5.6.7.8"}, host="172.17.0.9")
+    assert client_ip_from_headers(ok) == "5.6.7.8"
+
+
+def test_foreign_docker_peer_not_trusted_by_default(monkeypatch):
+    """172.25.x not in the snapshot: its forged XFF / CF headers are ignored."""
+    from app.config import Settings
+    from app.middleware import rate_limit
+    monkeypatch.setattr(rate_limit._settings, "TRUSTED_PROXY_CIDRS", Settings.model_fields["TRUSTED_PROXY_CIDRS"].default)
+    req = _FakeReq({"cf-connecting-ip": "1.2.3.4", "x-forwarded-for": "172.31.254.2"}, host="172.25.0.7")
+    assert client_ip_from_headers(req) == "172.25.0.7"
+
+
+def test_lifespan_snapshots_before_screenshot_task():
+    import inspect
+
+    from app import main
+    src = inspect.getsource(main.lifespan)
+    assert src.index("snapshot_own_networks()") < src.index("_screenshot_capture_loop()")

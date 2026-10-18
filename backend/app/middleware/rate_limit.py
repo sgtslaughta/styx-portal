@@ -45,9 +45,20 @@ def own_subnets(path: str = "/proc/net/route") -> tuple:
     return tuple(nets)
 
 
-@lru_cache(maxsize=1)
+# Frozen once at startup (lifespan), before any screenshot/background task can join an
+# instance network: later-joined networks must never become trusted proxies.
+_startup_networks: tuple = ()
+_snapshot_taken = False
+
+
+def snapshot_own_networks(path: str = "/proc/net/route") -> None:
+    global _startup_networks, _snapshot_taken
+    if not _snapshot_taken:
+        _startup_networks, _snapshot_taken = own_subnets(path), True
+
+
 def _own_networks() -> tuple:
-    return own_subnets()
+    return _startup_networks
 
 
 def _peer_is_trusted_proxy(host: str | None) -> bool:

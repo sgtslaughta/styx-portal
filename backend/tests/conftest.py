@@ -161,4 +161,5 @@ def _no_background_favicon(monkeypatch):
 def _no_host_interface_trust(monkeypatch):
     """The dev/CI host's own subnets must not leak into proxy-trust tests."""
     from app.middleware import rate_limit
-    monkeypatch.setattr(rate_limit, "_own_networks", lambda: ())
+    monkeypatch.setattr(rate_limit, "_startup_networks", ())
+    monkeypatch.setattr(rate_limit, "_snapshot_taken", False)

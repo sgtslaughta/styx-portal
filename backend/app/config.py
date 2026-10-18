@@ -36,9 +36,10 @@ class Settings(BaseSettings):
     TRAEFIK_DYNAMIC_DIR: str = "/app/traefik-dynamic"
     DEPLOY_MODE: str = "tunnel"   # tunnel | direct
     # Direct peers whose CF-Connecting-IP / X-Forwarded-For are believed
-    # (Traefik). Default: loopback + docker's default bridge pools
-    # (172.16-31.x). LAN clients are not proxies. Add yours if daemon.json sets other pools.
-    TRUSTED_PROXY_CIDRS: str = "127.0.0.1/32,::1/128,172.16.0.0/12"
+    # (Traefik). Default: loopback only; peers on the subnets of the backend's own interfaces
+    # (snapshotted once at startup, see middleware/rate_limit.py) are trusted in addition.
+    # LAN clients and networks joined later (screenshots) are not proxies.
+    TRUSTED_PROXY_CIDRS: str = "127.0.0.1/32,::1/128"
     # Only peers in this subnet (compose network `styx-tunnel`, shared solely by cloudflared and
     # Traefik) may vouch for CF-Connecting-IP. Traefik also sits in it, but is never its own peer.
     TUNNEL_PEER_CIDRS: str = "172.31.254.0/28"

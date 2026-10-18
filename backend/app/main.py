@@ -109,6 +109,10 @@ async def lifespan(app: FastAPI):
         logger.critical("FATAL: %s", e)
         raise
 
+    # Before anything that can join another docker network (screenshots): see rate_limit.
+    from app.middleware.rate_limit import snapshot_own_networks
+    snapshot_own_networks()
+
     await init_db()
 
     async with async_session() as _s:
