@@ -16,6 +16,8 @@ CF_TUNNEL_TOKEN=<your-token>
 
 TLS terminates at Cloudflare's edge; backend traffic is plaintext but encrypted in transit. Traefik dashboard is disabled by default.
 
+**Tunnel origin:** the tunnel's public hostname must point at `http://traefik:80` (service name `traefik`, container `styx-traefik`). Never `frontend` or `backend`: those skip forwardAuth and the ban gate or expose `/internal/*`. Ports 80/443 stay published for LAN workstations; the backend believes `CF-Connecting-IP` only when the peer Traefik saw is the `cloudflared` container (`TUNNEL_PEER_CIDRS` adds more), so direct hits on those ports cannot forge a client IP. Firewall them from the internet if you have no workstations.
+
 ### Direct Mode (Let's Encrypt Wildcard)
 
 For self-hosted on a static IP with direct domain control:
@@ -66,7 +68,7 @@ For production, set up automated daily backups and test restore procedures.
 All of the following are already implemented:
 
 - **Socket-proxy writes:** managed mounts write settings files with the Docker archive API, so the socket-proxy needs `POST=1` (set in `docker-compose.yml`). Exec, build and system calls stay blocked.
-- **docker-socket-proxy:** Backend communicates with a read-only socket-proxy; direct socket access is denied. Dangerous operations (exec, build, system commands) are explicitly blocked.
+- **docker-socket-proxy:** Backend communicates through a socket-proxy that allows POST (needed for create, start, archive and network calls), so it is not read-only; direct socket access is denied. Dangerous operations (exec, build, system commands) are explicitly blocked.
 - **Container isolation:** Instances run with `cap_drop: ["ALL"]` + minimal needed capabilities. DinD (Docker-in-Docker) templates are privileged, admin-only, and require memory/CPU limits.
 - **No Traefik dashboard:** API dashboard is disabled (`api.insecure: false`). Optional opt-in via basicAuth environment variable (not enabled by default).
 - **Refresh-token reuse detection:** RFC 9700 family-based rotation. Presenting a revoked token invalidates the entire family and logs an audit event.
