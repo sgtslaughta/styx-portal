@@ -206,7 +206,7 @@ async def test_register_accepts_valid_ipv4_and_ipv6(client, admin_client, sessio
     # Test IPv6
     raw = await _mint(session, aid)
     r = await client.post("/api/enroll/register", json={
-        "token": raw, "hostname": "desk-ipv6", "lan_ip": "::1"})
+        "token": raw, "hostname": "desk-ipv6", "lan_ip": "fd00::5"})
     assert r.status_code == 201
 
 
@@ -232,7 +232,7 @@ async def test_artifact_endpoint_missing_prebuilt_503(client, tmp_path, monkeypa
     monkeypatch.setattr(artifacts._settings, "ARTIFACT_CACHE_DIR", str(tmp_path))
     r = await client.get("/api/enroll/artifacts/wheelhouse-x86_64.tar.gz")
     assert r.status_code == 503
-    assert "build_agent_artifacts" in r.json()["detail"]
+    assert r.json()["detail"] == "Enrollment files unavailable"
 
 
 @pytest.mark.asyncio

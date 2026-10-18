@@ -85,7 +85,7 @@ def _bypass_svc(session):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("uri", ["/sonarr/api", "/sonarr/api/v3/series?q=%2e%2e%2f",
-                                 "/sonarr/api/", "/sonarr//api/x", "/sonarr/./api/x"])
+                                 "/sonarr/api/", "/sonarr//api/x"])  # "./" segments are denied (P2-4)
 async def test_bypass_allows_within_prefix(client, session, uri):
     await _bypass_svc(session)
     r = await client.get(AUTH.format(slug="sonarr"), headers=_fwd(uri))

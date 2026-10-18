@@ -24,7 +24,7 @@ export function StorageSection({ cfg }: Props) {
           render={(row, update) => (
             <div className="space-y-1">
               <Input
-                placeholder="Volume name"
+                placeholder="Volume name (e.g., {instance_id}-data)"
                 value={row.name}
                 onChange={(e) => update({ ...row, name: e.target.value })}
               />

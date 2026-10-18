@@ -132,7 +132,7 @@ class ProxiedServiceCreate(_ServiceFields):
     @field_validator("slug")
     @classmethod
     def _slug(cls, v):
-        if not SERVICE_SLUG_RE.match(v) or v in RESERVED_SERVICE_SLUGS:
+        if not SERVICE_SLUG_RE.fullmatch(v) or v in RESERVED_SERVICE_SLUGS:
             raise ValueError("slug is invalid or reserved")
         return v
 

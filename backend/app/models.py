@@ -25,6 +25,7 @@ class User(SQLModel, table=True):
     role: str = "user"  # admin | user
     is_active: bool = True
     must_change_pw: bool = False
+    token_version: int = 0   # bumped on password/role/disable; access JWTs carry it ("tv")
     created_at: datetime = Field(default_factory=_now)
     last_login: datetime | None = None
     failed_count: int = 0

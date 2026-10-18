@@ -1,13 +1,14 @@
 import pytest
 from sqlmodel import select, delete
 from app.models import RefreshToken, AuditLog
+from tests.helpers_setup import st
 
 
 @pytest.mark.asyncio
 async def test_rotation_keeps_family(client, session):
     """Login → refresh once → all tokens share one family_id, family_id == first jti."""
     # Setup admin user
-    r = await client.post("/api/auth/setup", json={
+    r = await client.post("/api/auth/setup", json={**st(), 
         "username": "admin", "password": "correct horse battery staple"})
     assert r.status_code == 201
 
@@ -43,7 +44,7 @@ async def test_rotation_keeps_family(client, session):
 async def test_reuse_of_rotated_token_revokes_family(client, session):
     """Login → refresh (succeeds) → replay old token → 401, all family tokens revoked."""
     # Setup admin user
-    r = await client.post("/api/auth/setup", json={
+    r = await client.post("/api/auth/setup", json={**st(), 
         "username": "admin", "password": "correct horse battery staple"})
     assert r.status_code == 201
 
@@ -95,7 +96,7 @@ async def test_reuse_of_rotated_token_revokes_family(client, session):
 async def test_login_success_audited(client, session):
     """Successful login → AuditLog has 'auth.login' action with user_id."""
     # Setup admin user
-    r = await client.post("/api/auth/setup", json={
+    r = await client.post("/api/auth/setup", json={**st(), 
         "username": "admin", "password": "correct horse battery staple"})
     assert r.status_code == 201
     admin_id = r.json()["id"]
@@ -123,7 +124,7 @@ async def test_login_success_audited(client, session):
 async def test_login_failure_audited(client, session):
     """Failed login → 401 and AuditLog has 'auth.login_failed'."""
     # Setup admin user first
-    r = await client.post("/api/auth/setup", json={
+    r = await client.post("/api/auth/setup", json={**st(), 
         "username": "admin", "password": "correct horse battery staple"})
     assert r.status_code == 201
 

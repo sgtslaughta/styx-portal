@@ -1,6 +1,7 @@
 import ipaddress
+import logging
 import time
-from collections import defaultdict, deque
+from collections import deque
 from functools import lru_cache
 
 from fastapi import Request
@@ -10,6 +11,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.config import Settings
 
 _settings = Settings()
+logger = logging.getLogger(__name__)
+MAX_TRACKED = 100_000   # cap on the per-key hit map (oldest key evicted)
 
 
 @lru_cache(maxsize=8)
@@ -18,16 +21,88 @@ def _trusted_networks(spec: str) -> tuple:
                  for c in spec.split(",") if c.strip())
 
 
+def own_subnets(path: str = "/proc/net/route") -> tuple:
+    """IPv4 subnets of this host/container's own interfaces (stdlib, Linux only).
+
+    Traefik shares a docker network with the backend, so it is always inside one of these,
+    whatever pool docker picked. Default route (mask 0) is skipped; no file = empty.
+    """
+    nets = []
+    try:
+        with open(path) as f:
+            rows = f.read().splitlines()[1:]
+    except OSError:
+        return ()
+    for row in rows:
+        cols = row.split()
+        try:
+            dest, mask = (int(cols[1], 16), int(cols[7], 16))
+            if mask == 0:
+                continue
+            # kernel prints these little-endian
+            dest, mask = (int.from_bytes(v.to_bytes(4, "big"), "little") for v in (dest, mask))
+            nets.append(ipaddress.ip_network((dest, bin(mask).count("1")), strict=False))
+        except (IndexError, ValueError):
+            continue
+    return tuple(nets)
+
+
+# Frozen once at startup (lifespan), before any screenshot/background task can join an
+# instance network: later-joined networks must never become trusted proxies.
+_startup_networks: tuple = ()
+_snapshot_taken = False
+
+
+def snapshot_own_networks(path: str = "/proc/net/route") -> None:
+    global _startup_networks, _snapshot_taken
+    if not _snapshot_taken:
+        _startup_networks, _snapshot_taken = own_subnets(path), True
+        if not _startup_networks:
+            logger.error("no network interfaces found at startup (/proc/net/route unreadable?); "
+                         "only TRUSTED_PROXY_CIDRS are trusted proxies")
+
+
+def _own_networks() -> tuple:
+    return _startup_networks
+
+
 def _peer_is_trusted_proxy(host: str | None) -> bool:
     try:
         ip = ipaddress.ip_address(host or "")
     except ValueError:
         return False
-    return any(ip in net for net in _trusted_networks(_settings.TRUSTED_PROXY_CIDRS))
+    return (any(ip in net for net in _trusted_networks(_settings.TRUSTED_PROXY_CIDRS))
+            or any(ip in net for net in _own_networks()))
 
 
-def client_ip_from_headers(request) -> str:
-    """Resolve the real client IP behind a trusted proxy (Cloudflare/Traefik).
+def _is_tunnel_peer(ip: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return any(addr in n for n in _trusted_networks(_settings.TUNNEL_PEER_CIDRS))
+
+
+def _is_private(host: str) -> bool:
+    try:
+        return ipaddress.ip_address(host).is_private
+    except ValueError:
+        return False
+
+
+_warned: dict[str, float] = {}
+
+
+def _warn_unknown_proxy(peer: str) -> None:
+    now = time.monotonic()
+    if now - _warned.get(peer, -1e9) >= 600:
+        _warned[peer] = now
+        logger.error("request via unrecognised proxy %s; restart the backend or add it to "
+                     "TRUSTED_PROXY_CIDRS", peer)
+
+
+def client_ip_resolved(request) -> tuple[str, bool]:
+    """Returns (ip, resolved). Resolve the real client IP behind a trusted proxy (Cloudflare/Traefik).
 
     Forwarded headers are only honoured when the direct socket peer is in
     TRUSTED_PROXY_CIDRS (Traefik on a docker bridge); anyone else reaching the
@@ -38,25 +113,44 @@ def client_ip_from_headers(request) -> str:
     """
     peer = request.client.host if request.client else "unknown"
     if not _peer_is_trusted_proxy(peer):
-        return peer
+        if request.headers.get("x-forwarded-for") and _is_private(peer):
+            # A private peer that forwards for someone is almost certainly a proxy we do not
+            # know (snapshot empty/stale): do not pin every client on its address.
+            _warn_unknown_proxy(peer)
+            return peer, False
+        return peer, True
     cf = request.headers.get("cf-connecting-ip")
-    if cf and _settings.DEPLOY_MODE == "tunnel":
-        return cf.strip()
     xff = request.headers.get("x-forwarded-for")
+    # CF-Connecting-IP is only believed when the peer Traefik saw (the XFF entry it
+    # appended: the last one) is in the tunnel subnet (cloudflared); Traefik passes the header through
+    # unchanged, so anyone reaching a published Traefik port could forge it.
+    if (cf and xff and _settings.DEPLOY_MODE == "tunnel"
+            and _is_tunnel_peer(xff.split(",")[-1].strip())):
+        return cf.strip(), True
     if xff:
-        return xff.split(",")[0].strip()
-    return peer
+        return xff.split(",")[0].strip(), True
+    return peer, False   # fell back to the proxy itself: the real client is unknown
+
+
+def client_ip_from_headers(request) -> str:
+    return client_ip_resolved(request)[0]
+
+
 
 
 class SlidingWindow:
     def __init__(self, limit: int, window: int):
         self.limit = limit
         self.window = window
-        self._hits: dict[str, deque] = defaultdict(deque)
+        self._hits: dict[str, deque] = {}
 
     def allow(self, key: str, now: float | None = None) -> bool:
         now = time.monotonic() if now is None else now
-        q = self._hits[key]
+        q = self._hits.get(key)
+        if q is None:
+            if len(self._hits) >= MAX_TRACKED:
+                self._hits.pop(next(iter(self._hits)))
+            q = self._hits[key] = deque()
         while q and q[0] <= now - self.window:
             q.popleft()
         if len(q) >= self.limit:
@@ -108,6 +202,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if is_rate_limit_exempt(request.url.path):
             return await call_next(request)
         from app.services.settings_store import settings
+        # Unresolved (unrecognised proxy) is limited by the peer IP: fail closed, never open.
         ip = client_ip_from_headers(request)
         strict = is_strict_auth(request.method, request.url.path)
         spec = settings.get("RATE_LIMIT_AUTH") if strict else settings.get("RATE_LIMIT_DEFAULT")

@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.services import template_validation as _tv
+
 SUBDOMAIN_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 RESERVED_SUBDOMAINS = {"api", "traefik", "www", "admin", "auth", "portal"}
 
@@ -43,6 +45,28 @@ class TemplateCreate(BaseModel):
     privileged: bool = False
     extra_docker_args: dict = {}
 
+    @field_validator("volumes")
+    @classmethod
+    def _v_volumes(cls, v):
+        return v if v is None else _tv.validate_volumes(v)
+
+    @field_validator("extra_ports")
+    @classmethod
+    def _v_ports(cls, v):
+        return v if v is None else _tv.validate_extra_ports(v)
+
+    @field_validator("internal_protocol")
+    @classmethod
+    def _v_proto(cls, v):
+        return v if v is None else _tv.validate_protocol(v)
+
+    @field_validator("internal_port")
+    @classmethod
+    def _v_port(cls, v):
+        if v is not None and not 1 <= v <= 65535:
+            raise ValueError("internal_port must be 1-65535")
+        return v
+
 
 class TemplateUpdate(BaseModel):
     display_name: str | None = None
@@ -78,6 +102,28 @@ class TemplateUpdate(BaseModel):
     privileged: bool | None = None
     extra_docker_args: dict | None = None
 
+    @field_validator("volumes")
+    @classmethod
+    def _v_volumes(cls, v):
+        return v if v is None else _tv.validate_volumes(v)
+
+    @field_validator("extra_ports")
+    @classmethod
+    def _v_ports(cls, v):
+        return v if v is None else _tv.validate_extra_ports(v)
+
+    @field_validator("internal_protocol")
+    @classmethod
+    def _v_proto(cls, v):
+        return v if v is None else _tv.validate_protocol(v)
+
+    @field_validator("internal_port")
+    @classmethod
+    def _v_port(cls, v):
+        if v is not None and not 1 <= v <= 65535:
+            raise ValueError("internal_port must be 1-65535")
+        return v
+
 
 class InstanceCreate(BaseModel):
     template_id: str
@@ -89,7 +135,7 @@ class InstanceCreate(BaseModel):
     @field_validator("subdomain")
     @classmethod
     def _valid_subdomain(cls, v: str) -> str:
-        if not SUBDOMAIN_RE.match(v):
+        if not SUBDOMAIN_RE.fullmatch(v):
             raise ValueError(
                 "subdomain must be 1-63 chars: lowercase letters, digits, "
                 "hyphens (no leading/trailing hyphen)"
@@ -128,11 +174,12 @@ class SetupRequest(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     email: str | None = None
     password: str = Field(min_length=8, max_length=256)
+    setup_token: str = Field(min_length=1, max_length=128)
 
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    username: str = Field(max_length=64)
+    password: str = Field(max_length=256)
 
 
 class AcceptInviteRequest(BaseModel):
@@ -152,6 +199,7 @@ class UserOut(BaseModel):
     failed_count: int = 0
     open_workspaces: str | None = None
     open_apps: str | None = None
+    must_change_pw: bool = False
 
 
 OpenMode = Literal["new_tab", "same_tab"]
@@ -303,6 +351,19 @@ class EnrollTokenOut(BaseModel):
     lan_url_source: str            # env | detected | none
 
 
+def _check_lan_ip(v: str) -> str:
+    """A workstation address Traefik will route to: never loopback/link-local/special
+    (that would aim the injected workstation credentials at the host or a metadata service)."""
+    try:
+        ip = ipaddress.ip_address(v)
+    except ValueError:
+        raise ValueError("lan_ip must be a valid IPv4 or IPv6 address")
+    if (ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip.is_multicast
+            or ip.is_reserved):
+        raise ValueError("lan_ip must be a routable LAN address")
+    return v
+
+
 class WorkstationRegisterRequest(BaseModel):
     token: str
     hostname: str = Field(min_length=1, max_length=255)
@@ -311,16 +372,12 @@ class WorkstationRegisterRequest(BaseModel):
     gpu_info: dict[str, Any] = {}
     os_info: dict[str, Any] = {}
     agent_version: str = ""
-    port: int | None = None
+    port: int | None = Field(default=None, ge=1, le=65535)
 
     @field_validator("lan_ip")
     @classmethod
     def _valid_lan_ip(cls, v: str) -> str:
-        try:
-            ipaddress.ip_address(v)
-        except ValueError:
-            raise ValueError("lan_ip must be a valid IPv4 or IPv6 address")
-        return v
+        return _check_lan_ip(v)
 
     @field_validator("display_server")
     @classmethod
@@ -352,11 +409,7 @@ class WorkstationHeartbeatRequest(BaseModel):
     def _valid_lan_ip(cls, v: str | None) -> str | None:
         if v is None:
             return v
-        try:
-            ipaddress.ip_address(v)
-        except ValueError:
-            raise ValueError("lan_ip must be a valid IPv4 or IPv6 address")
-        return v
+        return _check_lan_ip(v)
 
 
 class WorkstationHeartbeatResponse(BaseModel):

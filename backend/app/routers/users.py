@@ -12,6 +12,8 @@ from app.schemas import UserOut, CreateInviteRequest, InviteOut, TempPasswordOut
 from app.security.deps import require_admin
 from app.security.passwords import hash_password, current_policy
 from app.services.audit import audit_request
+from app.services.abuse import login_lockout
+from app.services.workstations import kick_unqualified
 
 router = APIRouter()
 INVITE_TTL_HOURS = 72
@@ -52,7 +54,10 @@ async def disable_user(user_id: str, request: Request,
     if user.id == admin.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot disable yourself")
     user.is_active = False
+    user.token_version += 1
     session.add(user)
+    await session.flush()
+    await kick_unqualified(session, user_id=user.id)
     await audit_request(session, request, "user.disable", user_id=admin.id,
                         resource=user.id)
     await session.commit()
@@ -75,7 +80,10 @@ async def change_role(user_id: str, role: str, request: Request,
             raise HTTPException(status.HTTP_400_BAD_REQUEST,
                                 "cannot demote the last admin")
     user.role = role
+    user.token_version += 1
     session.add(user)
+    await session.flush()
+    await kick_unqualified(session, user_id=user.id)
     await audit_request(session, request, "user.role_change", user_id=admin.id,
                         resource=user.id, detail={"new_role": role, "via": "manual"})
     await session.commit()
@@ -91,6 +99,7 @@ async def unlock_user(user_id: str, request: Request,
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     user.failed_count = 0
     user.locked_until = None
+    login_lockout.clear_user(user.username)
     session.add(user)
     await audit_request(session, request, "user.unlock", user_id=admin.id, resource=user.id)
     await session.commit()
@@ -125,8 +134,10 @@ async def reset_password(user_id: str, request: Request,
     temp = _gen_temp_password(current_policy())
     user.password_hash = hash_password(temp)
     user.must_change_pw = True
+    user.token_version += 1
     user.failed_count = 0
     user.locked_until = None
+    login_lockout.clear_user(user.username)
     session.add(user)
     await session.exec(update(RefreshToken)
                        .where(RefreshToken.user_id == user.id)
@@ -177,6 +188,8 @@ async def delete_user(user_id: str, request: Request,
     fids = (await session.exec(select(FederatedIdentity).where(FederatedIdentity.user_id == user.id))).all()
     for f in fids:
         await session.delete(f)
+    await session.flush()
+    await kick_unqualified(session, user_id=user.id, force=True)
     await session.delete(user)
     await audit_request(session, request, "user.delete", user_id=admin.id, resource=user_id)
     await session.commit()
@@ -184,10 +197,12 @@ async def delete_user(user_id: str, request: Request,
 
 
 def _user_out(u: User) -> UserOut:
+    left = login_lockout.locked_for(u.username)
+    mem_until = (datetime.now(timezone.utc) + timedelta(seconds=left)).isoformat() if left > 0 else None
     return UserOut(
         id=u.id, username=u.username, email=u.email, role=u.role,
         is_active=u.is_active,
         last_login=u.last_login.isoformat() if u.last_login else None,
-        locked_until=u.locked_until.isoformat() if u.locked_until else None,
+        locked_until=u.locked_until.isoformat() if u.locked_until else mem_until,
         failed_count=u.failed_count,
     )

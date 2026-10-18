@@ -36,7 +36,7 @@ def test_cookie_root_router_and_api_gating():
     assert r["priority"] == 40
     api = cfg["http"]["routers"]["api"]
     assert api["rule"] == ("Host(`example.com`) && PathPrefix(`/api`) && "
-                           "!HeaderRegexp(`Cookie`, `(^|; )styx_svc=`)")
+                           "!HeaderRegexp(`Cookie`, `(^|; )styx_svc=(unraid\\.0123456789ab)(;|$)`)")
     client = cfg["http"]["routers"]["api-client"]
     assert client["rule"] == "Host(`example.com`) && PathPrefix(`/api`) && Header(`X-Styx-Client`, `1`)"
     assert client["priority"] == 100 and client["service"] == "api"
@@ -191,3 +191,45 @@ def test_stale_old_format_cookie_matches_no_route():
     assert re.search(rx, "a=1; styx_svc=unraid.0123456789ab")
     for stale in ("styx_svc=unraid", "styx_svc=unraid.ffffffffffff", "styx_svc=unraidX0123456789ab"):
         assert not re.search(rx, stale)
+
+
+def _routers(*svcs, **kw):
+    return build_routes_config([], "example.com", "tunnel", services=list(svcs), **kw)["http"]["routers"]
+
+
+def test_frontend_routers_carry_ban_gate():
+    r = _routers(_svc())
+    assert r["frontend"]["middlewares"] == ["ip-ban-gate", "styx-ratelimit"]
+
+
+def test_api_exclusion_only_for_valid_focus_tokens():
+    r = _routers(_svc(slug="unraid", mount_mode="cookie-root"),
+                 _svc(slug="ha", id="fedcba98-7654-3210-fedc-ba9876543210", mount_mode="cookie-root"),
+                 _svc(slug="plain"), _svc(slug="off", mount_mode="cookie-root", enabled=False))
+    rule = r["api"]["rule"]
+    assert "styx_svc=(unraid\\.0123456789ab|ha\\.fedcba987654)(;|$)" in rule
+    assert "off" not in rule and "plain" not in rule
+    assert "styx_svc=`" not in rule      # a junk styx_svc value no longer skips the api router
+
+
+def test_secret_bearing_urls_ignore_focus_cookie():
+    r = _routers(_svc(slug="unraid", mount_mode="cookie-root"))
+    oauth, invite = r["styx-oauth-cb"], r["styx-accept-invite"]
+    assert oauth["priority"] > 40 and invite["priority"] > 40
+    assert oauth["service"] == "api" and invite["service"] == "frontend"
+    assert "PathPrefix(`/api/auth/oauth/`)" in oauth["rule"]
+    assert "PathPrefix(`/api/auth/link/`)" in oauth["rule"]            # F11
+    assert "PathPrefix(`/api/oauth-providers/`)" in oauth["rule"]
+    assert "/accept-invite" in invite["rule"]
+    for x in (oauth, invite):
+        assert x["middlewares"] == ["ip-ban-gate", "styx-ratelimit"]
+        assert "HeaderRegexp" not in x["rule"]
+    assert "styx-oauth-cb" not in _routers(_svc())
+
+
+def test_identity_variants_stripped():
+    cfg = build_routes_config([], "example.com", "tunnel", services=[_svc()])
+    hdrs = cfg["http"]["middlewares"]["styx-strip-identity"]["headers"]["customRequestHeaders"]
+    for h in ("X_Styx_User", "X_Styx_Email", "X_Styx_Groups", "X_authentik_username",
+              "Remote-User", "X-Remote-User", "X-Forwarded-User", "X-Webauth-User"):
+        assert hdrs.get(h) == ""

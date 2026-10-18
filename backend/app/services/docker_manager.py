@@ -304,6 +304,8 @@ class DockerManager(ContainerFilesMixin):
 
     def ensure_traefik_network(self, name: str) -> str:
         """Bridge network `name` (created if missing) with traefik attached."""
+        if name == "styx-tunnel":
+            raise ValueError("styx-tunnel is reserved")
         try:
             net = self._client.networks.get(name)
         except docker.errors.NotFound:
@@ -335,6 +337,8 @@ class DockerManager(ContainerFilesMixin):
 
     def connect_to_network(self, container: str, network: str | None = None) -> bool:
         """Attach a container to the styx network so Traefik can reach it. False on failure."""
+        if (network or self._network_name) == "styx-tunnel":
+            return False   # reserved for cloudflared + Traefik (CF-Connecting-IP trust)
         try:
             net = self._client.networks.get(network or self._network_name)
             net.connect(container)
@@ -346,6 +350,22 @@ class DockerManager(ContainerFilesMixin):
                 return True
             logger.warning("network connect failed for %s: %s", container, e)
             return False
+
+    def ensure_isolated(self, container: str, owner_id: str | None) -> None:
+        """Attach to the owner's user network and make sure the container is NOT on the
+        portal network (where the backend lives). Raises on any failure (fail closed)."""
+        net = self.ensure_user_network(owner_id or "ownerless")
+        if not self.connect_to_network(container, net):
+            raise RuntimeError(f"could not attach {container} to {net}")
+        attached = self._client.containers.get(container).attrs["NetworkSettings"]["Networks"]
+        if self._network_name in attached:
+            self._client.networks.get(self._network_name).disconnect(container)
+
+    def on_portal_network(self, network: str | None = None) -> list[str]:
+        """Names of Styx-managed instance containers attached to the portal network (read-only)."""
+        net = self._client.networks.get(network or self._network_name)
+        net.reload()
+        return [c.name for c in net.containers if c.name.startswith("selkies-")]
 
     def disconnect_from_network(self, container: str, network: str | None = None) -> None:
         try:

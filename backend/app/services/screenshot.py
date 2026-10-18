@@ -2,6 +2,7 @@ import asyncio
 import logging
 import socket
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from playwright.async_api import async_playwright
 
@@ -30,6 +31,29 @@ _STREAM_PROBE_JS = """() => {
 # directly. Traefik fronts the http port for browsers (secure at the edge), but
 # direct in-container capture has no such edge.
 _SECURE_PORT = 3001
+
+
+_DEFAULT_PORT = {"http": 80, "https": 443, "ws": 80, "wss": 443}
+
+
+def _origin_allowed(url: str, ip: str, port: int, protocol: str) -> bool:
+    """Network jail for the capture browser: the page may only talk to the instance's own
+    ip:port over the capture scheme (http/ws or https/wss), plus inert data:/blob:/about:.
+    Everything else (docker-proxy, backend, metadata, other LAN hosts) is refused."""
+    parts = urlsplit(url)
+    scheme = parts.scheme.lower()
+    if scheme in ("data", "about"):
+        return True
+    if scheme == "blob":
+        return _origin_allowed(url[5:], ip, port, protocol)
+    secure = protocol == "https"
+    if scheme not in (("https", "wss") if secure else ("http", "ws")):
+        return False
+    try:
+        host, p = parts.hostname, parts.port or _DEFAULT_PORT[scheme]
+    except ValueError:
+        return False
+    return host == ip and p == port and "@" not in parts.netloc
 
 
 class ScreenshotService:
@@ -111,8 +135,22 @@ class ScreenshotService:
             self._browser = None
         if self._pw is None:
             self._pw = await async_playwright().start()
+        # --no-sandbox is kept: the backend container runs as non-root under Docker's
+        # default seccomp profile, which blocks the user namespaces Chromium's sandbox
+        # needs. Compensating control: every context is network-jailed to the single
+        # instance origin (see capture) so a hostile page cannot reach docker-proxy,
+        # the backend or the LAN. --ignore-certificate-errors: instances use self-signed certs.
         self._browser = await self._pw.chromium.launch(
-            args=["--no-sandbox", "--ignore-certificate-errors"],
+            args=[
+                "--no-sandbox", "--ignore-certificate-errors",
+                # Route interception does not see WebRTC/STUN or prefetch traffic; these (plus the
+                # per-context dead proxy in capture) keep it off the network.
+                "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+                "--webrtc-ip-handling-policy=disable_non_proxied_udp",
+                "--disable-features=NetworkPrediction", "--dns-prefetch-disable",
+            ],
+            # Placeholder that makes Chromium honour per-context proxies (also for loopback).
+            proxy={"server": "http://per-context"},
         )
 
     async def capture(
@@ -149,9 +187,30 @@ class ScreenshotService:
             base = f"{protocol}://{ip}:{port}/"
             async with self._sem:
                 context = await self._browser.new_context(
-                    ignore_https_errors=True, viewport=_VIEWPORT,
+                    ignore_https_errors=True, viewport=_VIEWPORT, service_workers="block",
+                    # Network fence: all but the instance's own ip:port goes to a dead proxy.
+                    proxy={"server": "http://127.0.0.1:9", "bypass": f"{ip}:{port}"},
                 )
                 try:
+                    async def guard(route):
+                        if _origin_allowed(route.request.url, ip, port, protocol):
+                            # No redirects inside the handler: Playwright only calls it for
+                            # the first URL of a chain, so hand a 3xx to the browser as-is and
+                            # let every hop come back through here for the origin check.
+                            resp = await route.fetch(max_redirects=0)
+                            await route.fulfill(response=resp)
+                        else:
+                            logger.warning("screenshot: blocked request to %s", route.request.url)
+                            await route.abort()
+
+                    async def guard_ws(ws):
+                        if _origin_allowed(ws.url, ip, port, protocol):
+                            ws.connect_to_server()
+                        else:
+                            await ws.close()
+
+                    await context.route("**/*", guard)
+                    await context.route_web_socket("**/*", guard_ws)
                     # ONLY ever use the "#shared" view-only mirror. It connects as
                     # a viewer, never a primary/controller, so it can never steal
                     # an active user's session. If no stream is flowing (nobody is

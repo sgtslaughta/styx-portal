@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -14,6 +15,8 @@ from app.security.crypto import encrypt_secret
 from app.security.deps import require_admin
 from app.services.audit import audit_request
 import json as _json
+
+logger = logging.getLogger("styx-portal")
 
 _settings = Settings()
 
@@ -76,6 +79,12 @@ async def create_provider(request: Request, body: ProviderCreate,
         scopes=body.scopes, role_map=body.role_map, enabled=body.enabled,
         icon_url=body.icon_url, trust_email=body.trust_email,
         allow_signup=body.allow_signup, auto_promote_admins=body.auto_promote_admins)
+    if body.trust_email:
+        logger.warning("OAuth provider %r: trust_email accepts unverified IdP emails "
+                       "(only for already-linked subjects); enable only for IdPs you control", p.name)
+    if body.allow_signup and not (body.role_map or {}).get("user_group"):
+        logger.warning("OAuth provider %r: allow_signup without role_map.user_group "
+                       "is refused at sign-in; set a user group to enable self-signup", p.name)
     session.add(p)
     await session.flush()
     if request:
@@ -131,7 +140,8 @@ async def test_start(provider_id: str, admin: User = Depends(require_admin),
     resp.set_cookie(oauth.TX_COOKIE,
                     oauth.pack_tx(p.name, state, verifier, "test", provider_id),
                     max_age=oauth.TX_TTL, httponly=True,
-                    secure=_settings.COOKIE_SECURE, samesite="lax")
+                    secure=_settings.COOKIE_SECURE, samesite="lax",
+                    path="/api/oauth-providers")
     return resp
 
 
@@ -180,7 +190,7 @@ async def test_callback(provider_id: str, request: Request,
              "email_verified": identity.email_verified, "trust_email": p.trust_email,
              "would_pass": would_pass, "claims": identity.claims}
     resp = _probe_page(probe)
-    resp.delete_cookie(oauth.TX_COOKIE)
+    resp.delete_cookie(oauth.TX_COOKIE, path="/api/oauth-providers")
     return resp
 
 

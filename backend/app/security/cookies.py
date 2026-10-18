@@ -18,7 +18,8 @@ ACCESS_PATH = "/api"
 REFRESH_PATH = "/api/auth"      # only /refresh and /logout read it
 PROXY_COOKIE = "styx_proxy"
 _LEGACY = ("access_token", "refresh_token")   # pre-split cookies lived at Path=/
-STYX_COOKIES = frozenset({PROXY_COOKIE, *_LEGACY, CSRF_COOKIE, "styx_svc"})
+TX_PATH = "/api/auth"           # oauth_tx (state + PKCE verifier): both callbacks live here
+STYX_COOKIES = frozenset({PROXY_COOKIE, *_LEGACY, CSRF_COOKIE, "styx_svc", "oauth_tx", "styx_device"})
 
 
 def strip_styx_cookies(header: str) -> str:
@@ -36,6 +37,13 @@ def clean_cookie_header(request) -> dict[str, str]:
     auth response's values, so the upstream gets an empty `Cookie:` line.
     """
     return {"Cookie": strip_styx_cookies("; ".join(request.headers.getlist("cookie")))}
+
+
+DEVICE_COOKIE = "styx_device"
+
+
+def set_device_cookie(resp: Response, token: str) -> None:
+    resp.set_cookie(DEVICE_COOKIE, token, max_age=180 * 86400, path=TX_PATH, **_common())
 
 
 def _common() -> dict:

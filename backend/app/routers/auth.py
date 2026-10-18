@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import logging
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -12,19 +13,21 @@ from app.config import Settings
 from app.database import get_session
 from app.models import User, Invite, RefreshToken, Instance, ServiceTemplate, OAuthProvider, FederatedIdentity, Workstation
 from app.schemas import SetupRequest, LoginRequest, AcceptInviteRequest, UserOut, ConnectedIdentity, ChangePasswordRequest, OpenPreferences
-from app.security import tokens, oauth
+from app.security import tokens, oauth, setup_token
 from app.security.passwords import hash_password, verify_password, validate_password, current_policy
-from app.security.cookies import clear_auth_cookies, set_auth_cookies
+from app.security.cookies import (DEVICE_COOKIE, TX_PATH, clear_auth_cookies, set_auth_cookies,
+                                  set_device_cookie)
 from app.security.csrf import new_csrf_token, CSRF_COOKIE
 from app.security.deps import get_current_user
 from app.security.setup_gate import users_exist
-from app.services import federation
+from app.services import federation, single_use
 from app.services.audit import audit_request
-from app.middleware.rate_limit import client_ip_from_headers
-from app.services.abuse import fail_tracker, ban_cache, ban_ip
+from app.middleware.rate_limit import client_ip_from_headers, client_ip_resolved
+from app.services.abuse import fail_tracker, ban_cache, ban_ip, login_lockout
 from app.services.settings_store import settings as sys_settings
 
 router = APIRouter()
+logger = logging.getLogger("styx-portal")
 _settings = Settings()
 
 
@@ -37,13 +40,24 @@ def _aware(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
+_DUMMY: str | None = None
+
+
+def _dummy_hash() -> str:
+    """A valid Argon2 hash to verify against when the user is missing/locked (uniform timing)."""
+    global _DUMMY
+    if _DUMMY is None:
+        _DUMMY = hash_password("styx-dummy-password")
+    return _DUMMY
+
+
 def _hash_token(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
 async def _issue_session(resp: Response, session: AsyncSession, user: User, request: Request,
                          family_id: str | None = None) -> None:
-    access = tokens.create_access_token(user.id, user.role)
+    access = tokens.create_access_token(user.id, user.role, tv=user.token_version)
     refresh, jti = tokens.create_refresh_token(user.id)
     family_id = family_id or jti
     session.add(RefreshToken(
@@ -55,7 +69,7 @@ async def _issue_session(resp: Response, session: AsyncSession, user: User, requ
     user.last_login = _now()
     session.add(user)
     await session.commit()
-    set_auth_cookies(resp, access, refresh, tokens.create_proxy_token(user.id, family_id),
+    set_auth_cookies(resp, access, refresh, tokens.create_proxy_token(user.id, family_id, tv=user.token_version),
                      new_csrf_token())
 
 
@@ -107,22 +121,30 @@ async def setup_preflight(session: AsyncSession = Depends(get_session)):
 @router.post("/setup", response_model=UserOut, status_code=201)
 async def setup(body: SetupRequest, request: Request, response: Response,
                 session: AsyncSession = Depends(get_session)):
+    if request.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Cross-site setup refused")
     if await users_exist(session):
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if not setup_token.verify(body.setup_token):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid setup code")
     try:
         validate_password(body.password, current_policy())
     except ValueError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
-    user = User(username=body.username, email=body.email,
-                password_hash=hash_password(body.password), role="admin")
-    session.add(user)
-    await session.flush()
-    await session.exec(update(Instance).where(Instance.owner_id == None).values(owner_id=user.id))  # noqa: E711
-    await session.exec(update(ServiceTemplate).where(ServiceTemplate.owner_id == None).values(owner_id=user.id))  # noqa: E711
-    await _issue_session(response, session, user, request)
-    await audit_request(session, request, "auth.signup", user_id=user.id,
-                        detail={"role": user.role, "via": "setup"})
-    await session.commit()
+    async with setup_token.setup_lock:
+        if await users_exist(session):  # lost the race to a concurrent request
+            raise HTTPException(status.HTTP_404_NOT_FOUND)
+        user = User(username=body.username, email=body.email,
+                    password_hash=hash_password(body.password), role="admin")
+        session.add(user)
+        await session.flush()
+        await session.exec(update(Instance).where(Instance.owner_id == None).values(owner_id=user.id))  # noqa: E711
+        await session.exec(update(ServiceTemplate).where(ServiceTemplate.owner_id == None).values(owner_id=user.id))  # noqa: E711
+        await _issue_session(response, session, user, request)
+        await audit_request(session, request, "auth.signup", user_id=user.id,
+                            detail={"role": user.role, "via": "setup"})
+        await session.commit()
+    setup_token.clear()
     return UserOut(id=user.id, username=user.username, email=user.email,
                    role=user.role, is_active=user.is_active)
 
@@ -130,31 +152,47 @@ async def setup(body: SetupRequest, request: Request, response: Response,
 @router.post("/login")
 async def login(body: LoginRequest, request: Request, response: Response,
                 session: AsyncSession = Depends(get_session)):
-    ip = client_ip_from_headers(request)
+    ip, resolved = client_ip_resolved(request)
+    if not resolved:
+        logger.error("client IP not resolved; check DEPLOY_MODE/TRUSTED_PROXY_CIDRS "
+                     "(limited by peer address; per-IP ban skipped for this login)")
     result = await session.exec(select(User).where(User.username == body.username))
     user = result.first()
 
-    # Per-username lockout: refuse before checking the password.
-    if user and user.locked_until and _aware(user.locked_until) > _now():
-        await audit_request(session, request, "auth.login_locked", user_id=user.id)
+    # Per-(username, IP) lockout. A locked attempt is indistinguishable from a bad
+    # password (same 401, same Argon2 work), so lockout never reveals which names exist.
+    # A valid trusted-device cookie for this very account skips the lock and the
+    # distributed throttle (not Argon2, not the per-IP ban): the owner is never shut out.
+    # Each device token has its own failure budget; once spent it bypasses nothing.
+    rnd = tokens.device_rnd(request.cookies.get(DEVICE_COOKIE), user)
+    device_ok = rnd is not None and not login_lockout.device_blocked(rnd)
+    if not device_ok and (
+            login_lockout.is_locked(body.username, ip)
+            or login_lockout.throttled(body.username, _settings.LOGIN_GLOBAL_THRESHOLD,
+                                       sys_settings.get("LOCKOUT_DURATION"))):
+        verify_password(body.password, _dummy_hash())
+        await audit_request(session, request, "auth.login_locked",
+                            user_id=user.id if user else None)
         await session.commit()
-        retry = int((_aware(user.locked_until) - _now()).total_seconds())
-        raise HTTPException(
-            status.HTTP_423_LOCKED, "Account temporarily locked",
-            headers={"Retry-After": str(max(retry, 1))},
-        )
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
 
-    if not user or not user.is_active or not verify_password(body.password, user.password_hash):
+    ok = bool(user and user.is_active)
+    pw_ok = verify_password(body.password, user.password_hash if ok else _dummy_hash())
+    if not (ok and pw_ok):
+        # Only real accounts are tracked (keeps the maps bounded by the user count and
+        # un-floodable); the response path is identical either way.
+        if rnd:
+            login_lockout.device_fail(rnd, sys_settings.get("LOCKOUT_THRESHOLD"),
+                                      sys_settings.get("LOCKOUT_DURATION"))
         if user:
-            user.failed_count += 1
-            if user.failed_count >= sys_settings.get("LOCKOUT_THRESHOLD"):
-                user.locked_until = _now() + timedelta(seconds=sys_settings.get("LOCKOUT_DURATION"))
-                user.failed_count = 0
-            session.add(user)
+            login_lockout.record_fail(body.username, ip, sys_settings.get("LOCKOUT_THRESHOLD"),
+                                      sys_settings.get("LOCKOUT_DURATION"))
         # Per-IP abuse detector -> proxy ban (L3). Thresholds are live-tunable.
         fail_tracker.threshold = sys_settings.get("BAN_FAIL_THRESHOLD")
         fail_tracker.window = sys_settings.get("BAN_FAIL_WINDOW")
-        if fail_tracker.record(ip):
+        # Unresolved: still tracked under the peer address, but a misconfiguration must never
+        # persist a ban on the proxy itself (it would lock out the whole portal).
+        if fail_tracker.record(ip) and resolved:
             await ban_ip(session, ip, "brute-force: failed logins",
                          sys_settings.get("BAN_DURATION"))
             ban_cache.invalidate()
@@ -166,8 +204,12 @@ async def login(body: LoginRequest, request: Request, response: Response,
     # Success: clear lockout state.
     user.failed_count = 0
     user.locked_until = None
+    login_lockout.clear(body.username, ip)
+    if rnd:
+        login_lockout.device_clear(rnd)    # the fresh cookie below carries a new rnd
     session.add(user)
     await _issue_session(response, session, user, request)
+    set_device_cookie(response, tokens.create_device_token(user.id, user.token_version))
     await audit_request(session, request, "auth.login", user_id=user.id)
     await session.commit()
     return {"id": user.id, "username": user.username, "role": user.role,
@@ -202,7 +244,14 @@ async def refresh(request: Request, response: Response,
     stored = await session.get(RefreshToken, claims["jti"])
     if not stored:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh revoked")
-    if stored.revoked:
+    # Atomic claim: only one concurrent use of a refresh token can win the rotation.
+    claimed = 0
+    if not stored.revoked:
+        res = await session.exec(update(RefreshToken).where(
+            RefreshToken.jti == stored.jti, RefreshToken.revoked == False)  # noqa: E712
+            .values(revoked=True))
+        claimed = res.rowcount
+    if not claimed:
         # RFC 9700: replay of a rotated token — assume theft, kill the family
         await session.exec(
             update(RefreshToken)
@@ -216,8 +265,12 @@ async def refresh(request: Request, response: Response,
     user = await session.get(User, claims["sub"])
     if not user or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User inactive")
-    stored.revoked = True
-    session.add(stored)
+    root = await session.get(RefreshToken, stored.family_id) or stored
+    if _now() - _aware(root.created_at) > timedelta(seconds=_settings.SESSION_MAX_AGE):
+        await session.exec(update(RefreshToken).where(
+            RefreshToken.family_id == stored.family_id).values(revoked=True))
+        await session.commit()
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired")
     await _issue_session(response, session, user, request, family_id=stored.family_id)
     return {"ok": True}
 
@@ -259,6 +312,9 @@ async def logout(request: Request, response: Response,
         session.add(ws)
 
     if stored:
+        # Whole family: a forked/rotated sibling must not keep the proxy cookie alive.
+        await session.exec(update(RefreshToken).where(
+            RefreshToken.family_id == (stored.family_id or stored.jti)).values(revoked=True))
         stored.revoked = True
         session.add(stored)
     # Hard kill-on-logout: revoke the current access-token jti so the stateless
@@ -283,7 +339,7 @@ async def logout(request: Request, response: Response,
 def _me_out(user: User) -> UserOut:
     return UserOut(id=user.id, username=user.username, email=user.email, role=user.role,
                    is_active=user.is_active, open_workspaces=user.open_workspaces,
-                   open_apps=user.open_apps)
+                   open_apps=user.open_apps, must_change_pw=user.must_change_pw)
 
 
 @router.get("/me", response_model=UserOut)
@@ -316,6 +372,7 @@ async def change_password(body: ChangePasswordRequest, request: Request, respons
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
     user.password_hash = hash_password(body.new_password)
     user.must_change_pw = False
+    user.token_version += 1     # kills every access token minted before this change
     session.add(user)
     await session.exec(update(RefreshToken)
                        .where(RefreshToken.user_id == user.id)
@@ -344,10 +401,11 @@ async def accept_invite(body: AcceptInviteRequest, request: Request, response: R
         validate_password(body.password, current_policy())
     except ValueError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
+    if not await single_use.claim(session, Invite, inv.id):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid or used invite")
     user = User(username=body.username, email=inv.email,
                 password_hash=hash_password(body.password), role=inv.role)
-    inv.used_at = _now()
-    session.add_all([user, inv])
+    session.add(user)
     await _issue_session(response, session, user, request)
     await audit_request(session, request, "auth.accept_invite", user_id=user.id,
                         detail={"role": user.role})
@@ -375,7 +433,13 @@ async def link_start(name: str, user: User = Depends(get_current_user),
     resp = RedirectResponse(url, status_code=status.HTTP_302_FOUND)
     resp.set_cookie(oauth.TX_COOKIE, oauth.pack_tx(name, state, verifier, "link", user.id),
                     max_age=oauth.TX_TTL, httponly=True,
-                    secure=_settings.COOKIE_SECURE, samesite="lax")
+                    secure=_settings.COOKIE_SECURE, samesite="lax", path=TX_PATH)
+    return resp
+
+
+def _link_redirect(code: str) -> RedirectResponse:
+    resp = RedirectResponse(f"/?link={code}", status_code=302)
+    resp.delete_cookie(oauth.TX_COOKIE, path=TX_PATH)
     return resp
 
 
@@ -385,20 +449,20 @@ async def link_callback(name: str, request: Request,
                         session: AsyncSession = Depends(get_session)):
     tx_raw = request.cookies.get(oauth.TX_COOKIE)
     if not tx_raw:
-        return RedirectResponse("/?link=missing_state", status_code=302)
+        return _link_redirect("missing_state")
     try:
         tx = oauth.unpack_tx(tx_raw)
     except Exception:
-        return RedirectResponse("/?link=bad_state", status_code=302)
+        return _link_redirect("bad_state")
     if tx["provider"] != name or tx["mode"] != "link" or \
             request.query_params.get("state") != tx["state"]:
-        return RedirectResponse("/?link=bad_state", status_code=302)
+        return _link_redirect("bad_state")
     if tx["uid"] != user.id:
-        return RedirectResponse("/?link=error", status_code=302)
+        return _link_redirect("error")
     provider = (await session.exec(select(OAuthProvider).where(
         OAuthProvider.name == name))).first()
     if not provider:
-        return RedirectResponse("/?link=error", status_code=302)
+        return _link_redirect("error")
     try:
         identity = await oauth.fetch_identity(provider, "link", str(request.url), tx["verifier"])
         await federation.link_identity(session, user, name, identity)
@@ -406,12 +470,10 @@ async def link_callback(name: str, request: Request,
                             resource=name, detail={"email": identity.email})
         await session.commit()
     except federation.FederationError:
-        return RedirectResponse("/?link=conflict", status_code=302)
+        return _link_redirect("conflict")
     except Exception:
-        return RedirectResponse("/?link=error", status_code=302)
-    resp = RedirectResponse("/?link=ok", status_code=302)
-    resp.delete_cookie(oauth.TX_COOKIE)
-    return resp
+        return _link_redirect("error")
+    return _link_redirect("ok")
 
 
 @router.delete("/link/{name}")

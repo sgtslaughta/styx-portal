@@ -247,3 +247,20 @@ async def test_document_navigation_unwrapped_when_not_framed_cookie_root(member_
     r = await member_client.get("/internal/services/immich/auth-check",
                                 headers=_doc("/immich/x"), follow_redirects=False)
     assert r.status_code == 200
+
+
+
+
+@pytest.mark.parametrize("path", ["/internal/services/sonarr/auth-check", "/internal/services/sonarr/strip",
+                                   "/internal/strip"])
+@pytest.mark.parametrize("name", ["X-Styx_User", "X_Styx-User", "x_AUTHENTIK-uid", "X_Styx_Email",
+                                   "Remote_User", "X-Forwarded_User"])
+async def test_disguised_identity_header_rejected(client, path, name):
+    r = await client.get(path, headers={name: "admin"})
+    assert r.status_code == 400
+
+
+async def test_nonempty_dashed_identity_header_rejected_and_empty_ok(client):
+    assert (await client.get("/internal/strip", headers={"X-Styx-User": "admin"})).status_code == 400
+    assert (await client.get("/internal/strip", headers={"X-Styx-User": ""})).status_code == 200
+    assert (await client.get("/internal/strip", headers={"X-Other_Thing": "a"})).status_code == 200

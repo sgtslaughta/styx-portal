@@ -7,6 +7,8 @@ export function ProtectedRoute({ children, adminOnly = false }: { children: Reac
   if (loading) return <div className="grid h-screen place-items-center">Loading…</div>;
   if (setupRequired) return <Navigate to="/setup" replace />;
   if (!user) return <Navigate to="/login" replace />;
+  // Server refuses every other API call until the password is changed.
+  if (user.must_change_pw) return <Navigate to="/change-password" replace />;
   if (adminOnly && user.role !== "admin") return <Navigate to="/" replace />;
   return <>{children}</>;
 }

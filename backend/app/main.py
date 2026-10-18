@@ -14,6 +14,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.config import Settings
 from app.database import init_db, async_session, get_session
 from app.middleware.rate_limit import RateLimitMiddleware
+from app.security.same_origin import svc_cookie_guard
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.models import Instance, SessionEvent, User
 from app.routers import templates, instances, registry, images
@@ -98,6 +99,18 @@ async def _session_monitor_loop():
             pass
 
 
+async def _log_portal_instances(docker) -> None:
+    """Read-only: legacy instance containers may still sit on styx-portal next to the backend."""
+    try:
+        names = await asyncio.to_thread(docker.on_portal_network)
+    except Exception:  # noqa: BLE001 - docker may be unavailable at boot
+        logger.warning("portal network inspection skipped", exc_info=True)
+        return
+    for name in names:
+        logger.error("instance container %s is on the portal network; "
+                     "starting it again will isolate it", name)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Fail fast at boot if the auth secret is misconfigured, rather than
@@ -108,7 +121,16 @@ async def lifespan(app: FastAPI):
         logger.critical("FATAL: %s", e)
         raise
 
+    # Before anything that can join another docker network (screenshots): see rate_limit.
+    from app.middleware.rate_limit import snapshot_own_networks
+    snapshot_own_networks()
+
     await init_db()
+
+    async with async_session() as _s:
+        from app.security import setup_token
+        from app.security.setup_gate import users_exist
+        setup_token.announce(not await users_exist(_s))
 
     async with async_session() as _s:
         _n = await sweep_interrupted(_s)
@@ -148,6 +170,7 @@ async def lifespan(app: FastAPI):
                 inst.status = "stopped"
                 session.add(inst)
         await session.commit()
+        await _log_portal_instances(docker)
 
     # Write initial Traefik routes on startup
     from app.services.route_writer import refresh_routes_from_db
@@ -279,14 +302,26 @@ try:
 except PackageNotFoundError:  # pragma: no cover
     _APP_VERSION = "0.0.0"
 
-app = FastAPI(title="Styx Portal", version=_APP_VERSION, lifespan=lifespan)
+def docs_kwargs(s: Settings) -> dict:
+    """API docs are an unauthenticated map of every route: off unless explicitly enabled."""
+    return {} if s.ENABLE_DOCS else {"docs_url": None, "redoc_url": None, "openapi_url": None}
+
+
+app = FastAPI(title="Styx Portal", version=_APP_VERSION, lifespan=lifespan,
+              **docs_kwargs(_settings),
+              dependencies=[Depends(svc_cookie_guard)])
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(CSRFMiddleware)
 app.add_middleware(RateLimitMiddleware)
-_cors_origins = [f"https://{_settings.DOMAIN}"]
-if not _settings.COOKIE_SECURE:
-    _cors_origins.append("http://localhost:5173")
+def cors_origins(s: Settings) -> list[str]:
+    origins = [f"https://{s.DOMAIN}"]
+    if s.DEV_CORS and not s.COOKIE_SECURE:   # explicit dev opt-in only
+        origins.append("http://localhost:5173")
+    return origins
+
+
+_cors_origins = cors_origins(_settings)
 
 app.add_middleware(
     CORSMiddleware,

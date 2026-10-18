@@ -4,6 +4,7 @@ from sqlmodel import select, update
 
 from app.models import ProxiedService, RefreshToken, User
 from app.security import tokens
+from tests.helpers_setup import st
 
 PW = "correct horse battery staple"
 AUTH = "/internal/services/sonarr/auth-check"
@@ -57,7 +58,7 @@ def test_proxy_token_claims():
 
 @pytest.mark.asyncio
 async def test_setup_scopes_api_cookies_and_sets_proxy(client):
-    r = await client.post("/api/auth/setup", json={"username": "admin", "password": PW})
+    r = await client.post("/api/auth/setup", json={**st(), "username": "admin", "password": PW})
     assert r.status_code == 201
     assert _cookie(r, "access_token", "/api")
     assert _cookie(r, "refresh_token", "/api/auth")
@@ -188,3 +189,36 @@ async def test_expired_proxy_denied(member_client, session):
     member_client.cookies.clear()
     member_client.cookies.set("styx_proxy", tokens.create_proxy_token(user.id, fam, ttl=-5))
     assert (await member_client.get(AUTH, headers=_fwd())).status_code == 302
+
+
+async def _login_member_for_proxy(client, session):
+    from app.security.passwords import hash_password
+    await _svc(session)
+    session.add(User(username="m", password_hash=hash_password(PW), role="user"))
+    await session.commit()
+    r = await client.post("/api/auth/login", json={"username": "m", "password": PW})
+    assert r.status_code == 200, r.text
+    _only(client, "styx_proxy")
+    assert (await client.get(AUTH, headers=_fwd())).status_code == 200
+
+
+async def test_proxy_cookie_dies_when_token_version_bumps(client, session):
+    await _login_member_for_proxy(client, session)
+    u = (await session.exec(select(User).where(User.username == "m"))).first()
+    u.token_version += 1
+    session.add(u)
+    await session.commit()
+    assert (await client.get(AUTH, headers=_fwd())).status_code != 200
+
+
+async def test_proxy_cookie_denied_while_password_change_forced(client, session):
+    await _login_member_for_proxy(client, session)
+    u = (await session.exec(select(User).where(User.username == "m"))).first()
+    u.must_change_pw = True
+    session.add(u)
+    await session.commit()
+    assert (await client.get(AUTH, headers=_fwd())).status_code != 200
+
+
+def test_proxy_token_carries_tv():
+    assert tokens.decode_token(tokens.create_proxy_token("u", "f", tv=3))["tv"] == 3

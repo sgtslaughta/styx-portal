@@ -1,4 +1,5 @@
 import pytest
+from tests.helpers_setup import st
 
 
 @pytest.mark.asyncio
@@ -9,11 +10,11 @@ async def test_setup_required_initially_true(client):
 
 @pytest.mark.asyncio
 async def test_setup_creates_admin_and_locks(client):
-    r = await client.post("/api/auth/setup", json={
+    r = await client.post("/api/auth/setup", json={**st(), 
         "username": "admin", "password": "correct horse battery staple"})
     assert r.status_code == 201
     assert r.json()["role"] == "admin"
-    r2 = await client.post("/api/auth/setup", json={
+    r2 = await client.post("/api/auth/setup", json={**st(), 
         "username": "user2", "password": "another long password"})
     assert r2.status_code == 404
 
@@ -99,7 +100,7 @@ async def test_setup_enforces_password_policy(client, session):
     await settings.set(session, "PASSWORD_MIN_LENGTH", 12, actor_id=None)
     await session.commit()
     r = await client.post("/api/auth/setup",
-                          json={"username": "admin", "password": "no-digits-here!"})
+                          json={**st(), "username": "admin", "password": "no-digits-here!"})
     assert r.status_code == 422, r.text
 
 
@@ -132,3 +133,17 @@ async def test_change_password_weak_new(member_client, session):
                                  json={"old_password": "correct horse battery staple",
                                        "new_password": "NoSymbolsHere123"})
     assert r.status_code == 422
+
+
+async def test_me_exposes_must_change_pw(member_client, session):
+    """F5: the SPA needs the flag to route to /change-password."""
+    from sqlmodel import select
+
+    from app.models import User
+    assert (await member_client.get("/api/auth/me")).json()["must_change_pw"] is False
+    u = (await session.exec(select(User).where(User.username == "member"))).first()
+    u.must_change_pw = True
+    session.add(u)
+    await session.commit()
+    r = await member_client.get("/api/auth/me")
+    assert r.status_code == 200 and r.json()["must_change_pw"] is True

@@ -6,6 +6,10 @@ from app.models import User
 from app.security import tokens
 
 
+# Everything else is refused while a temporary/forced password is still in place.
+_PW_CHANGE_OK = frozenset({"/api/auth/me", "/api/auth/change-password", "/api/auth/logout"})
+
+
 async def get_current_user(
     request: Request,
     session: AsyncSession = Depends(get_session),
@@ -25,10 +29,22 @@ async def get_current_user(
     user = await session.get(User, claims["sub"])
     if not user or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User inactive")
+    if claims.get("tv", 0) != user.token_version:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token revoked")
+    if user.must_change_pw and request.url.path not in _PW_CHANGE_OK:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Password change required")
+    from app.security.same_origin import _FOCUS_WRITE_OK
+    if user.role == "admin" and request.url.path not in _FOCUS_WRITE_OK:
+        # Self-service paths (shell/dock live under /_styx/app) are exempt.
+        # Admin powers are also exercised inline (privileged templates/launches), so every
+        # admin write must come from the Styx SPA, not only require_admin routes.
+        from app.security.same_origin import require_spa_origin
+        await require_spa_origin(request, session)
     return user
 
 
-async def require_admin(user: User = Depends(get_current_user)) -> User:
+async def require_admin(request: Request, user: User = Depends(get_current_user),
+                        session: AsyncSession = Depends(get_session)) -> User:
     if user.role != "admin":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin required")
     return user
@@ -70,4 +86,10 @@ async def proxy_user_or_none(request: Request, session: AsyncSession) -> User | 
                 r.expires_at.replace(tzinfo=timezone.utc)) > now for r in rows):
         return None
     user = await session.get(User, claims["sub"])
-    return user if user and user.is_active else None
+    if not user or not user.is_active:
+        return None
+    # Same revocation rules as the API: password/role/disable bump token_version, and a
+    # forced password change blocks apps and streams until it is done.
+    if claims.get("tv", 0) != user.token_version or user.must_change_pw:
+        return None
+    return user

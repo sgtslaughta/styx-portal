@@ -46,3 +46,8 @@ def test_shell_paths_allowed_other_styx_paths_not():
               "/_styx/app/x/API/y?a=1", "/_styx/app/x/%61pi/y",
               "/_styx/app/x/api;/y", "/api;x/y", "/_styx/app/x/_styx/app/y/", "/_STYX;a/app/x/"):
         assert safe_next(p) is None, p
+
+
+def test_trailing_newline_rejected():
+    from app.security.safe_next import safe_next
+    assert safe_next("/dashboard\n") is None

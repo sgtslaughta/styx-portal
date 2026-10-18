@@ -10,6 +10,7 @@ from app.database import get_session
 from app.models import OAuthProvider
 from app.schemas import PublicProvider
 from app.security import oauth
+from app.security.cookies import TX_PATH
 from app.routers.auth import _issue_session
 from app.services import federation
 
@@ -25,11 +26,13 @@ async def _get_enabled(session: AsyncSession, name: str) -> OAuthProvider | None
 
 def _set_tx_cookie(resp: Response, tx: str) -> None:
     resp.set_cookie(oauth.TX_COOKIE, tx, max_age=oauth.TX_TTL, httponly=True,
-                    secure=_settings.COOKIE_SECURE, samesite="lax")
+                    secure=_settings.COOKIE_SECURE, samesite="lax", path=TX_PATH)
 
 
 def _err_redirect(code: str) -> RedirectResponse:
-    return RedirectResponse(f"/login?error={code}", status_code=status.HTTP_302_FOUND)
+    resp = RedirectResponse(f"/login?error={code}", status_code=status.HTTP_302_FOUND)
+    resp.delete_cookie(oauth.TX_COOKIE, path=TX_PATH)
+    return resp
 
 
 @router.get("/providers", response_model=list[PublicProvider])
@@ -83,6 +86,6 @@ async def callback(name: str, request: Request, session: AsyncSession = Depends(
         logger.exception("oauth callback failed")
         return _err_redirect("oauth_failed")
     resp = RedirectResponse("/", status_code=status.HTTP_302_FOUND)
-    resp.delete_cookie(oauth.TX_COOKIE)
+    resp.delete_cookie(oauth.TX_COOKIE, path=TX_PATH)
     await _issue_session(resp, session, user, request)
     return resp

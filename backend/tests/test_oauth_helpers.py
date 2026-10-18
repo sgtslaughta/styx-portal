@@ -88,3 +88,14 @@ async def test_build_authorize_uses_redirect_override(monkeypatch):
     url, _state, _verifier = await oauth.build_authorize(
         p, mode="login", redirect_uri="https://app.test/custom/callback")
     assert "redirect_uri=https%3A%2F%2Fapp.test%2Fcustom%2Fcallback" in url
+
+
+@pytest.mark.parametrize("info", [{"email": "a@b.c"}, {"sub": None}, {"sub": ""}, {"sub": "None"}])
+def test_normalize_oidc_rejects_missing_subject(info):
+    with pytest.raises(ValueError):
+        oauth.normalize_oidc(info)
+
+
+def test_normalize_oidc_custom_subject_claim():
+    ident = oauth.normalize_oidc({"id": 42, "email": "a@b.c"}, subject_claim="id")
+    assert ident.sub == "42"

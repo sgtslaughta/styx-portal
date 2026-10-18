@@ -302,9 +302,13 @@ Read this section before exposing anything.
   they cannot reach the Styx API or the Docker socket proxy.
 - **Client IPs** (rate limits, bans, audit) come from `CF-Connecting-IP` /
   `X-Forwarded-For` only when the socket peer is in `TRUSTED_PROXY_CIDRS` (default:
-  loopback plus Docker's default bridge pools `172.16.0.0/12,192.168.0.0/16`; widen it if
+  loopback plus Docker's default bridge pools `172.16.0.0/12`; widen it if
   `daemon.json` sets other pools). `CF-Connecting-IP` is ignored when
-  `DEPLOY_MODE=direct`.
+  `DEPLOY_MODE=direct`, and in tunnel mode unless the peer Traefik saw is in
+  `TUNNEL_PEER_CIDRS` (default: the `styx-tunnel` subnet shared only by cloudflared and Traefik).
+- **Identity headers.** Spoofed spellings (`X_Styx_User`, mixed `-`/`_`, `Remote-User`,
+  `X-Forwarded-User`, ...) are removed by Traefik; the forwardAuth handlers return 400 for
+  any that still arrive disguised.
 
 ### Cookie split
 
@@ -359,3 +363,26 @@ Requirements: Docker with Compose v2, Node 20+. The script installs the pinned
 - The admin is created through the real `/setup` page and users through invite links.
 - Screenshots of every services/groups screen (light and dark, 1440x900 and 390x844)
   land in `e2e/screenshots/` (gitignored).
+
+### Trust and same-origin apps
+
+What Styx does about it, and where it stops:
+
+- While a Focus app is active (valid `styx_svc` cookie), `/api` writes are refused (403)
+  except `auth/refresh`, `auth/logout`, `auth/me/preferences` and `services/focus*`. The
+  shell only needs those plus reads.
+- Admin writes from a browser must be a `fetch` (`Sec-Fetch-Dest: empty`) whose Referer is
+  a Styx page, not `/<slug>/...`, `/i/...`, `/w/...` or `/_styx/app`. With no Referer, the
+  a missing Referer is refused too (a page script can suppress it). Clients that send no
+  `Sec-Fetch-Dest` (curl, scripts) keep working with CSRF. Focus app pages live at root
+  paths, so their Referer looks like a Styx page; the Focus write guard above covers them.
+- OAuth callbacks (`/api/auth/oauth/`, `/api/auth/link/`, `/api/oauth-providers/`) and
+  `/accept-invite` always reach Styx, never a Focus app.
+- Known bypasses of the Focus write guard: a hostile Focus app can clear its own `styx_svc`
+  cookie (Set-Cookie from its upstream) or frame `/_styx/exit`; its pages then send a
+  root-path Referer, which passes the origin check. A path-mounted app can fake an SPA
+  Referer with `history.replaceState`. Styx does not strip upstream Set-Cookie headers.
+  The origin check now covers every write made by an admin account, not only admin routes.
+
+The ceiling: any proxied app can still act as its viewer for member-level calls. Open
+untrusted apps with a member account, not an admin account.

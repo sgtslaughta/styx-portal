@@ -18,7 +18,6 @@ _lock = asyncio.Lock()
 
 # name -> upstream URL (None = prebuilt, must be pre-placed)
 ARTIFACTS: dict[str, str | None] = {
-    "selkies-app.tar.gz": _settings.SELKIES_APP_URL,
     "wheelhouse-x86_64.tar.gz": None,
     # nwg-drawer (app grid) + nwg-dock binaries — built on the server because
     # they are absent from some distro repos (e.g. Ubuntu 24.04).

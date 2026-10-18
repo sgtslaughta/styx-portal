@@ -11,12 +11,14 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 # noqa: E402 — set environment variables BEFORE importing app modules
 os.environ.setdefault("JWT_SECRET", "test-secret-long-enough-32-chars")
 os.environ.setdefault("COOKIE_SECURE", "false")
+os.environ.setdefault("DEV_CORS", "true")
 os.environ.setdefault("RATE_LIMIT_AUTH", "1000/60")
 os.environ.setdefault("RATE_LIMIT_DEFAULT", "1000/60")
 _test_tmpdir = tempfile.mkdtemp()
 os.environ.setdefault("SECRETS_FILE", os.path.join(_test_tmpdir, "secrets.json"))
 
 from app.main import app  # noqa: E402
+from tests.helpers_setup import st  # noqa: E402
 from app.database import get_session  # noqa: E402
 from app.routers.instances import get_docker_manager, get_screenshot_service  # noqa: E402
 
@@ -34,9 +36,10 @@ async def session_fixture():
 
 @pytest.fixture(autouse=True)
 def _reset_abuse_state():
-    from app.services.abuse import fail_tracker, ban_cache
+    from app.services.abuse import fail_tracker, ban_cache, login_lockout
     from app.services.settings_store import settings as _settings_store
     fail_tracker.reset()
+    login_lockout.reset()
     ban_cache._bans.clear()
     ban_cache._loaded_at = None
     _settings_store.reset_cache()
@@ -75,7 +78,7 @@ async def client_fixture(session):
 @pytest.fixture
 async def admin_client(client):
     """An AsyncClient that has completed first-run setup and holds admin cookies + CSRF header."""
-    r = await client.post("/api/auth/setup", json={
+    r = await client.post("/api/auth/setup", json={**st(), 
         "username": "admin", "password": "correct horse battery staple"})
     assert r.status_code == 201, r.text
     csrf = client.cookies.get("csrf_token")
@@ -152,3 +155,11 @@ async def second_member_client(session):
 def _no_background_favicon(monkeypatch):
     """Service create/mount jobs would otherwise fetch favicons on the app's real DB sessions."""
     monkeypatch.setattr("app.services.service_favicon.schedule_favicon", lambda *a, **k: None)
+
+
+@pytest.fixture(autouse=True)
+def _no_host_interface_trust(monkeypatch):
+    """The dev/CI host's own subnets must not leak into proxy-trust tests."""
+    from app.middleware import rate_limit
+    monkeypatch.setattr(rate_limit, "_startup_networks", ())
+    monkeypatch.setattr(rate_limit, "_snapshot_taken", False)

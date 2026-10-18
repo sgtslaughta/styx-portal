@@ -58,7 +58,7 @@ Get Styx Portal running in 5 minutes using Cloudflare Tunnel (the default).
 
 4. **Complete setup:**
    - Open `https://your.domain.com` in your browser
-   - You'll be redirected to `/setup` — create an admin account
+   - You'll be redirected to `/setup` — enter the **setup code** (find it with `docker compose logs backend | grep "setup code"`, or `docker compose exec backend cat data/setup-token`) and create an admin account
    - The setup page includes an **Environment Check** panel showing Docker, database, and network status; green lights mean you're ready
 
 5. **Done!**

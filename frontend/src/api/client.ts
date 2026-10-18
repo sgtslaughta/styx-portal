@@ -63,7 +63,7 @@ export type DiscoveredContainer = {
 };
 export type OpenMode = "new_tab" | "same_tab";
 export type Me = { id: string; username: string; email: string | null; role: string;
-  open_workspaces: OpenMode | null; open_apps: OpenMode | null };
+  open_workspaces: OpenMode | null; open_apps: OpenMode | null; must_change_pw?: boolean };
 export type Group = { id: string; name: string; description: string | null; member_count: number };
 
 export type MountChange = { target: string; key: string; old: string | null; new: string; created?: boolean };
@@ -330,7 +330,7 @@ export const api = {
 
   setupRequired: () => request<{ setup_required: boolean }>("/auth/setup-required"),
   setupPreflight: () => request<SetupPreflight>("/auth/setup-preflight"),
-  setup: (data: { username: string; email?: string; password: string }) =>
+  setup: (data: { username: string; email?: string; password: string; setup_token: string }) =>
     request<{ id: string; username: string; role: string }>("/auth/setup", {
       method: "POST", body: JSON.stringify(data) }),
   login: (data: { username: string; password: string }) =>

@@ -3,7 +3,8 @@ import { api, ApiError } from "@/api/client";
 import { SessionExpiryDialog } from "@/components/auth/SessionExpiryDialog";
 import { ActiveSessionDialog } from "@/components/auth/ActiveSessionDialog";
 
-export type AuthUser = { id: string; username: string; email: string | null; role: string };
+export type AuthUser = { id: string; username: string; email: string | null; role: string;
+  must_change_pw?: boolean };
 
 type AuthState = {
   user: AuthUser | null;
@@ -83,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // demand, so the session ends ONLY when the user is idle here AND streaming
   // nowhere.
   useEffect(() => {
-    if (!user) return;
+    if (!user || user.must_change_pw) return; // server 403s everything but change-password
     lastActivity.current = Date.now();
     const bump = () => { lastActivity.current = Date.now(); setShowExpiry(false); };
     const events = ["mousedown", "keydown", "scroll", "touchstart"] as const;

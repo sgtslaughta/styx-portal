@@ -3,24 +3,10 @@ import pytest
 from app.services import artifacts
 
 
-@pytest.mark.asyncio
-async def test_url_artifact_cached_file_is_returned(tmp_path, monkeypatch):
-    monkeypatch.setattr(artifacts._settings, "ARTIFACT_CACHE_DIR", str(tmp_path))
-    (tmp_path / "selkies-app.tar.gz").write_bytes(b"cached")
-    path = await artifacts.ensure_artifact("selkies-app.tar.gz")
-    assert path.read_bytes() == b"cached"
-
-
-@pytest.mark.asyncio
-async def test_url_artifact_downloads_when_missing(tmp_path, monkeypatch):
-    monkeypatch.setattr(artifacts._settings, "ARTIFACT_CACHE_DIR", str(tmp_path))
-
-    async def fake_download(url, dest):
-        dest.write_bytes(b"downloaded:" + url.encode())
-
-    monkeypatch.setattr(artifacts, "_download", fake_download)
-    path = await artifacts.ensure_artifact("selkies-app.tar.gz")
-    assert path.read_bytes().startswith(b"downloaded:https://github.com/")
+def test_no_anonymously_triggered_upstream_download():
+    """Unused selkies-app artifact removed: no endpoint may fetch from the internet."""
+    assert "selkies-app.tar.gz" not in artifacts.ARTIFACTS
+    assert all(url is None for url in artifacts.ARTIFACTS.values())
 
 
 @pytest.mark.asyncio

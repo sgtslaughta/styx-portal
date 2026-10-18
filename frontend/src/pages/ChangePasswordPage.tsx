@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import { api, ApiError } from "@/api/client";
+import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { PasswordInput } from "@/components/ui/password-input";
 import { RefreshCw, AlertCircle, CheckCircle2 } from "lucide-react";
@@ -13,6 +14,7 @@ export function ChangePasswordPage() {
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const nav = useNavigate();
+  const { refresh } = useAuth();
 
   const passwordMismatch = newPassword && confirmPassword && newPassword !== confirmPassword;
   const isValid = oldPassword && newPassword && confirmPassword && !passwordMismatch;
@@ -41,6 +43,7 @@ export function ChangePasswordPage() {
       toast.success("Password changed successfully!", {
         icon: <CheckCircle2 className="h-5 w-5 text-success" />,
       });
+      await refresh(); // clears must_change_pw in the auth context
       nav("/");
     } catch (e) {
       const error = e as ApiError;

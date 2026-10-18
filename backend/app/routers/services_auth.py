@@ -18,6 +18,7 @@ from app.config import Settings
 from app.security.cookies import clean_cookie_header
 from app.security.page_style import styx_page
 from app.middleware.security_headers import SAMEORIGIN_HEADERS
+from app.security.identity_headers import reject_disguised_identity
 from app.security.nav import is_navigation, no_access
 from app.security.deps import get_current_user, proxy_user_or_none
 from app.security.safe_next import safe_next
@@ -42,14 +43,19 @@ def _bypass_path(uri: str) -> str | None:
     """Normalised request path, or None if it smells of traversal/encoding tricks.
 
     The upstream may decode or normalise differently than a string compare, so
-    any encoded ".", "/", "\\", backslash or ".." segment (raw or decoded,
-    which also catches double-encoding) disqualifies the request from bypass.
+    any encoded ".", "/", "\\", backslash, ";" path parameter (`..;` for servlet stacks),
+    "." or ".." segment (raw or decoded, which also catches double-encoding), control
+    or non-ASCII character disqualifies the request from bypass.
     """
     raw = uri.split("?", 1)[0].split("#", 1)[0]
     decoded = unquote(raw)
     for p in (raw, decoded):
-        if "\\" in p or _ENCODED_SEP.search(p) or ".." in p.split("/"):
+        if ("\\" in p or _ENCODED_SEP.search(p) or ";" in p
+                or {".", ".."} & set(p.split("/"))):
             return None
+    # Control characters and non-ASCII never appear in a legitimate bypass path.
+    if not decoded.isascii() or not decoded.isprintable():
+        return None
     if not decoded.startswith("/"):
         return None
     norm = re.sub(r"/+", "/", posixpath.normpath(decoded))
@@ -143,7 +149,7 @@ def _top_level_get(request: Request) -> bool:
             and h.get("sec-fetch-mode") == "navigate")
 
 
-@internal_router.get("/services/{slug}/auth-check")
+@internal_router.get("/services/{slug}/auth-check", dependencies=[Depends(reject_disguised_identity)])
 async def auth_check(slug: str, request: Request,
                      session: AsyncSession = Depends(get_session)):
     svc = await get_service_by_slug(session, slug)
@@ -172,8 +178,8 @@ async def auth_check(slug: str, request: Request,
     return Response(status_code=200, headers=hdrs)
 
 
-@internal_router.get("/strip")
-@internal_router.get("/services/{slug}/strip")
+@internal_router.get("/strip", dependencies=[Depends(reject_disguised_identity)])
+@internal_router.get("/services/{slug}/strip", dependencies=[Depends(reject_disguised_identity)])
 async def strip_cookies(request: Request, slug: str | None = None):
     """Strip-only forwardAuth (app-native services): no auth,
     always 200 with the Cookie header minus Styx cookies."""
@@ -233,7 +239,7 @@ async def open_service(slug: str, request: Request, next: str | None = None,
                        session: AsyncSession = Depends(get_session)):
     # Missing/other Sec-Fetch-Site = possibly cross-site: confirm page, no auth/DB.
     if request.headers.get("sec-fetch-site") not in ("same-origin", "none"):
-        if not SERVICE_SLUG_RE.match(slug):
+        if not SERVICE_SLUG_RE.fullmatch(slug):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown service")
         return HTMLResponse(styx_page("Open app?", _CONFIRM_BODY.format(slug=html.escape(slug))),
                             headers={"Cache-Control": "no-store", **SAMEORIGIN_HEADERS})

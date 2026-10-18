@@ -40,7 +40,7 @@ Styx Portal can stream physical Linux machines on the local network alongside co
 ### Admin Panel
 
 In **System → Workstations**, you can:
-- **Enroll:** Mint single-use tokens (valid 24 hours) with enrollment commands
+- **Enroll:** Mint single-use tokens (valid 1 hour) with enrollment commands
 - **Monitor:** See status (online/offline/pending/revoked), last heartbeat, IP address, GPU info
 - **Configure:** Adjust encoder, framerate, bitrate per workstation
 - **Access control:** Restrict which users can connect to each workstation
@@ -66,8 +66,9 @@ Styx Portal supports federated authentication via OIDC and OAuth2 providers.
    - **Client ID:** from your OAuth app registration
    - **Client Secret:** from your OAuth app registration
 4. Configure options:
-   - **Trust Email:** if true, use the email from the IdP without requiring verification (only applies to login/signup; account linking always requires verified email)
-   - **Allow Signup:** if true, users with verified email can sign up directly; if false, they must match an existing user or invite
+   - **Trust Email:** if true, an unverified IdP email is accepted only for subjects already linked or for brand-new self-signup; it never links to an existing account or matches an invite. Enable only for IdPs you control
+   - **Allow Signup:** if true, users can sign up directly, but only when the **user group** in the role map is set and the user is in it (no open signup); if false, they must match an existing user or invite
+   - A custom OAuth2 provider whose userinfo lacks `sub` can set `subject_claim` in the role map (for example `id`); sign-in is refused when no subject is found
    - **Auto-Promote Admins:** if true, users in the provider's admin group (claims) are automatically promoted to admin; if false, the claim is noted in audit but requires manual promotion
 
 ### OAuth Redirect URIs
@@ -85,7 +86,7 @@ Logged-in users can link their account to a provider under **System → Connecte
 - Link: Adds a provider identity to their account
 - Unlink: Removes a provider identity (cannot unlink the only login method)
 
-**Security:** Linking always requires a verified email address, regardless of the provider's `trust_email` setting.
+**Security:** Linking always requires a verified email address, regardless of the provider's `trust_email` setting. SSO sign-in never auto-links to an admin account: admins link providers while signed in, from their Account page.
 
 ## Templates
 

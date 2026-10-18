@@ -26,6 +26,7 @@ function PreRow({ ok, label, detail, warnOnly }: { ok: boolean; label: string; d
 export function SetupWizard() {
   const [username, setU] = useState("");
   const [password, setP] = useState("");
+  const [code, setCode] = useState("");
   const [err, setErr] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const nav = useNavigate();
@@ -38,7 +39,7 @@ export function SetupWizard() {
     if (score < 3) { setErr("Password too weak"); return; }
     setSubmitting(true);
     try {
-      await api.setup({ username, password });
+      await api.setup({ username, password, setup_token: code.trim() });
       await refresh();
       nav("/");
     } catch (e) { setErr((e as Error).message); }
@@ -82,6 +83,19 @@ export function SetupWizard() {
                 onChange={(e) => setU(e.target.value)}
                 required
               />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="setup-code" className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Setup code
+              </label>
+              <Input
+                id="setup-code"
+                autoComplete="off"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                required
+              />
+              <p className="text-xs text-muted-foreground">Find it in the backend log: docker compose logs backend</p>
             </div>
             <div className="space-y-2">
               <label htmlFor="password" className="block text-xs font-medium uppercase tracking-wide text-muted-foreground">

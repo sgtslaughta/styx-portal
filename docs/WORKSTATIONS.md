@@ -35,7 +35,7 @@ The enrollment script will:
 - Register the machine with the portal and save encrypted config.
 - Start a systemd `--user` service that streams immediately.
 
-**Token validity:** Tokens expire after 24 hours (configurable `ENROLL_TOKEN_TTL_HOURS`). If yours expires, mint a new one in the admin panel.
+**Token validity:** Tokens expire after 1 hour (configurable `ENROLL_TOKEN_TTL_HOURS`). If yours expires, mint a new one in the admin panel.
 
 ### Requirements
 
@@ -79,7 +79,7 @@ All settings are environment variables or `.env` file entries on the **server**.
 | `SERVER_CA_PIN` | `""` (auto-pin) | Override for the TLS pin in enrollment commands. Format: `sha256:<hex>`. Leave empty: the portal auto-generates a self-signed LAN cert and pins it automatically. |
 | `ARTIFACT_CACHE_DIR` | `/app/data/artifacts` | Server-side directory for cached agent wheelhouse and seat artifacts. Must be writable. Enrollment artifacts are served from here. |
 | `AGENT_DIR` | `/app/agent` | Server path to the `agent/` directory (scripts and daemon). Mounted from the repo in Docker Compose. |
-| `ENROLL_TOKEN_TTL_HOURS` | `24` | Lifetime of enrollment tokens (hours). Tokens are single-use and expire after this duration. |
+| `ENROLL_TOKEN_TTL_HOURS` | `1` | Lifetime of enrollment tokens (hours). Tokens are single-use and expire after this duration. |
 | `WORKSTATION_OFFLINE_AFTER_S` | `90` | Heartbeat timeout (seconds). If a workstation doesn't heartbeat for 90+ seconds, it is marked offline. |
 | `WORKSTATION_DEFAULT_PORT` | `8443` | Default Selkies port on workstations. Enrollment uses this; if busy, enrollment fails (E07). |
 | `WORKSTATION_HEARTBEAT_S` | `30` | Agent heartbeat interval (seconds). Heartbeat reports status, config changes, and health. |
@@ -393,11 +393,14 @@ Agent daemon startup, crashes, restarts.
 
 ## Security Model
 
-- **Token-based enrollment:** Enrollment tokens are single-use and expire after 24 hours (configurable). Each token mints a unique agent token at registration.
+- **Token-based enrollment:** Enrollment tokens are single-use and expire after 1 hour (configurable). Each token mints a unique agent token at registration.
 - **Per-workstation bearer token:** The agent authenticates to the portal with a unique token (stored hashed in the database). Compromising one workstation's token does not affect others.
 - **TLS pinning (automatic):** The enrollment command pins the portal's LAN certificate fingerprint (auto-generated self-signed cert, or `SERVER_CA_PIN` override). Enrollment and all agent traffic verify against the pinned cert — MITM on the LAN fails closed, and no insecure connections are ever made.
 - **Per-user access control:** Admins can restrict which users can connect to each workstation in the admin panel.
 - **Stream access (forwardAuth):** Requests to `/w/<subdomain>/` are gated by Traefik forwardAuth against the portal — you must be logged in to the portal in the same browser, and your account must have access to that workstation. A 401 on the stream URL means you are not logged in; a 403 means your account is not assigned to that workstation.
+- **Revocation:** Disabling, deleting or demoting a user, or removing their workstation access, drops their live workstation stream at the next agent heartbeat (the agent closes clients) and every later reconnect is denied. Instance streams (`/i/`) have no kick channel: a revoked user keeps an already-open websocket until it closes; every new request and reconnect is denied. Stop the instance to cut it immediately.
+- **Seat lock:** A second user cannot open another user's live seat by URL; they must use Connect with takeover (grants a 60 s window).
+- **Unused enrollment tokens:** `GET /api/workstations/enroll-tokens` lists them, `DELETE /api/workstations/enroll-tokens/{id}` revokes one.
 - **Selkies credentials never reach the browser:** Each workstation's Selkies instance is protected by HTTP basic auth (random password, encrypted at rest). Traefik injects the `Authorization` header server-side after forwardAuth passes, so the password never appears in URLs, browser history, or logs. Direct LAN access to the workstation's Selkies port still requires that password.
 - **Heartbeat revocation:** Admins can revoke a workstation at any time; the agent sees it on the next heartbeat (~30 s) and stops.
 

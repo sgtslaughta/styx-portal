@@ -34,16 +34,22 @@ class Settings(BaseSettings):
     MOUNT_BACKUP_DIR: str = "./data/mount-backups"
     MOUNT_PROBE_IMAGE: str = "busybox:1.36"
     TRAEFIK_DYNAMIC_DIR: str = "/app/traefik-dynamic"
-    AUTHENTIK_MIDDLEWARE: str = "authentik@file"
     DEPLOY_MODE: str = "tunnel"   # tunnel | direct
     # Direct peers whose CF-Connecting-IP / X-Forwarded-For are believed
-    # (Traefik). Default: loopback + docker's default bridge pools
-    # (172.17-31.x, 192.168.x). Add yours if daemon.json sets other pools.
-    TRUSTED_PROXY_CIDRS: str = "127.0.0.1/32,::1/128,172.16.0.0/12,192.168.0.0/16"
+    # (Traefik). Default: loopback only; peers on the subnets of the backend's own interfaces
+    # (snapshotted once at startup, see middleware/rate_limit.py) are trusted in addition.
+    # LAN clients and networks joined later (screenshots) are not proxies.
+    TRUSTED_PROXY_CIDRS: str = "127.0.0.1/32,::1/128"
+    # Only peers in this subnet (compose network `styx-tunnel`, shared solely by cloudflared and
+    # Traefik) may vouch for CF-Connecting-IP. Traefik also sits in it, but is never its own peer.
+    TUNNEL_PEER_CIDRS: str = "172.31.254.0/28"
     JWT_SECRET: str = ""
     ACCESS_TTL: int = 900          # 15 minutes
     REFRESH_TTL: int = 604800      # 7 days
+    SESSION_MAX_AGE: int = 2592000  # 30 days: absolute cap on a refresh family
     COOKIE_SECURE: bool = True
+    DEV_CORS: bool = False          # allow the Vite dev origin (http://localhost:5173) with credentials
+    ENABLE_DOCS: bool = False       # expose /docs, /redoc, /openapi.json (dev only)
     COOKIE_DOMAIN: str | None = None
     RATE_LIMIT_AUTH: str = "5/60"        # 5 requests per 60s on /auth/*
     RATE_LIMIT_DEFAULT: str = "120/60"   # 120 requests per 60s otherwise
@@ -51,6 +57,7 @@ class Settings(BaseSettings):
     # --- Brute-force protection ---
     LOCKOUT_THRESHOLD: int = 10           # failed logins per username before lock
     LOCKOUT_DURATION: int = 900           # lock duration seconds (15 min)
+    LOGIN_GLOBAL_THRESHOLD: int = 30      # failures per username (any IP) before 1 check/10 s
     BAN_FAIL_THRESHOLD: int = 20          # failed logins per IP in window before ban
     BAN_FAIL_WINDOW: int = 600            # abuse-detector window seconds (10 min)
     BAN_DURATION: int = 3600              # IP ban duration seconds (1 h)
@@ -77,7 +84,7 @@ class Settings(BaseSettings):
     )
     ARTIFACT_CACHE_DIR: str = "/app/data/artifacts"
     AGENT_DIR: str = "/app/agent"   # mounted from repo ./agent; dev fallback in enroll router
-    ENROLL_TOKEN_TTL_HOURS: int = 24
+    ENROLL_TOKEN_TTL_HOURS: int = 1
     WORKSTATION_OFFLINE_AFTER_S: int = 90
     WORKSTATION_DEFAULT_PORT: int = 8443
     WORKSTATION_HEARTBEAT_S: int = 30

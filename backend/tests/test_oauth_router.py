@@ -75,3 +75,10 @@ async def test_public_list_includes_icon_url(client, session):
     assert r.status_code == 200
     row = next(p for p in r.json() if p["name"] == "authentik")
     assert row["icon_url"] == "https://idp.test/logo.svg"
+
+
+async def test_tx_cookie_is_scoped_and_cleared_on_failure(client, session):
+    r = await client.get("/api/auth/oauth/nope/callback", follow_redirects=False)
+    assert r.status_code == 302
+    sc = [c for c in r.headers.get_list("set-cookie") if c.startswith("oauth_tx=")]
+    assert sc and "Path=/api/auth" in sc[0] and "Max-Age=0" in sc[0]

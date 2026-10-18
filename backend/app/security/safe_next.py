@@ -22,7 +22,7 @@ def safe_next(uri: str | None, *, allow_login: bool = False, _inner: bool = Fals
     allow_login: only for /_styx/exit, which chains to /login?next=… (the login
     page re-validates its own next with the same rule).
     """
-    if not uri or not _SHAPE.match(uri):
+    if not uri or not _SHAPE.fullmatch(uri):
         return None
     path = re.split(r"[?#]", uri, maxsplit=1)[0]
     decoded = unquote(path)

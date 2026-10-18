@@ -147,7 +147,7 @@ class SettingsService:
             if not isinstance(value, bool):
                 raise ValueError(f"{spec.key} must be a boolean")
         elif spec.type == "rate":
-            if not isinstance(value, str) or not _RATE_RE.match(value):
+            if not isinstance(value, str) or not _RATE_RE.fullmatch(value):
                 raise ValueError(f"{spec.key} must look like '5/60'")
 
     async def set(self, session: AsyncSession, key: str, value: Any, actor_id: str | None) -> None:

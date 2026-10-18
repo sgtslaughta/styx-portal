@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 const toast = vi.fn();
 vi.mock("sonner", () => ({ toast: (m: string) => toast(m) }));
-import { BLOCKED, openHref, openPending } from "../connect-wipe";
+import { BLOCKED, isWebUrl, openExternal, openHref, openPending } from "../connect-wipe";
 
 const assign = vi.fn();
 let opened: { location: { replace: ReturnType<typeof vi.fn> }; close: ReturnType<typeof vi.fn>; opener: unknown } | null;
@@ -54,4 +54,16 @@ test("openHref: new tab, blocked fallback, same tab", () => {
   expect(assign).toHaveBeenCalledWith("/_styx/app/s/");
   openHref("same_tab", "/x/");
   expect(assign).toHaveBeenLastCalledWith("/x/");
+});
+
+test("openExternal only opens http(s) urls and cuts the opener", () => {
+  expect(isWebUrl("https://a.example/x")).toBe(true);
+  expect(isWebUrl("javascript:alert(1)")).toBe(false);
+  expect(isWebUrl("data:text/html,hi")).toBe(false);
+  expect(isWebUrl("")).toBe(false);
+  openExternal("javascript:alert(1)");
+  expect(window.open).not.toHaveBeenCalled();
+  openExternal("https://a.example/x");
+  expect(window.open).toHaveBeenCalledWith("https://a.example/x", "_blank");
+  expect(opened!.opener).toBeNull();
 });

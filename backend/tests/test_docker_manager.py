@@ -633,3 +633,52 @@ def test_probe_fetch_location_in_body_is_ignored(mock_docker):
     body = b"Location: http://evil.test/\r\n\r\n"
     _hops(client, _raw("200 OK", "", body))
     assert manager.probe_fetch("http://app:80/a", "n", 100, allow_redirect_to=_same) == body
+
+
+def test_backend_never_attaches_to_tunnel_network(mock_docker):
+    manager, client = mock_docker
+    assert manager.connect_to_network("c1", "styx-tunnel") is False
+    with pytest.raises(ValueError):
+        manager.ensure_traefik_network("styx-tunnel")
+    client.networks.get.assert_not_called()
+
+
+def _attached(client, *nets):
+    client.containers.get.return_value.attrs = {"NetworkSettings": {"Networks": {n: {} for n in nets}}}
+
+
+def test_ensure_isolated_attaches_user_net_and_detaches_portal(mock_docker):
+    manager, client = mock_docker
+    _attached(client, "styx-portal")
+    manager.ensure_user_network = MagicMock(return_value="styx-u-o1")
+    manager.ensure_isolated("cid", "o1")
+    manager.ensure_user_network.assert_called_once_with("o1")
+    client.networks.get.assert_any_call("styx-u-o1")
+    client.networks.get.assert_any_call("styx-portal")
+    client.networks.get.return_value.disconnect.assert_called_once_with("cid")
+
+
+def test_ensure_isolated_noop_detach_when_not_on_portal(mock_docker):
+    manager, client = mock_docker
+    _attached(client, "styx-u-o1")
+    manager.ensure_user_network = MagicMock(return_value="styx-u-o1")
+    manager.ensure_isolated("cid", None)
+    manager.ensure_user_network.assert_called_once_with("ownerless")
+    client.networks.get.return_value.disconnect.assert_not_called()
+
+
+def test_ensure_isolated_raises_when_detach_fails(mock_docker):
+    manager, client = mock_docker
+    _attached(client, "styx-portal")
+    manager.ensure_user_network = MagicMock(return_value="styx-u-o1")
+    client.networks.get.return_value.disconnect.side_effect = docker.errors.APIError("boom")
+    with pytest.raises(docker.errors.APIError):
+        manager.ensure_isolated("cid", "o1")
+
+
+def test_on_portal_network_lists_only_instance_containers(mock_docker):
+    manager, client = mock_docker
+    a, b = MagicMock(), MagicMock()
+    a.name, b.name = "selkies-foo", "styx-backend"
+    client.networks.get.return_value.containers = [a, b]
+    assert manager.on_portal_network() == ["selkies-foo"]
