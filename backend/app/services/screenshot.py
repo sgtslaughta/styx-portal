@@ -141,7 +141,16 @@ class ScreenshotService:
         # instance origin (see capture) so a hostile page cannot reach docker-proxy,
         # the backend or the LAN. --ignore-certificate-errors: instances use self-signed certs.
         self._browser = await self._pw.chromium.launch(
-            args=["--no-sandbox", "--ignore-certificate-errors"],
+            args=[
+                "--no-sandbox", "--ignore-certificate-errors",
+                # Route interception does not see WebRTC/STUN or prefetch traffic; these (plus the
+                # per-context dead proxy in capture) keep it off the network.
+                "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",
+                "--webrtc-ip-handling-policy=disable_non_proxied_udp",
+                "--disable-features=NetworkPrediction", "--dns-prefetch-disable",
+            ],
+            # Placeholder that makes Chromium honour per-context proxies (also for loopback).
+            proxy={"server": "http://per-context"},
         )
 
     async def capture(
@@ -179,6 +188,8 @@ class ScreenshotService:
             async with self._sem:
                 context = await self._browser.new_context(
                     ignore_https_errors=True, viewport=_VIEWPORT, service_workers="block",
+                    # Network fence: all but the instance's own ip:port goes to a dead proxy.
+                    proxy={"server": "http://127.0.0.1:9", "bypass": f"{ip}:{port}"},
                 )
                 try:
                     async def guard(route):
