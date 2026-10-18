@@ -48,6 +48,28 @@ def create_refresh_token(user_id: str, ttl: int | None = None) -> tuple[str, str
     return jwt.encode(payload, _secret(), algorithm=_ALGO), jti
 
 
+DEVICE_TTL = 180 * 86400
+
+
+def create_device_token(user_id: str, tv: int) -> str:
+    """Trusted-device cookie: lets the real owner past the lockout/throttle brakes."""
+    now = datetime.now(timezone.utc)
+    return jwt.encode({"sub": user_id, "type": "device", "tv": tv, "rnd": uuid.uuid4().hex,
+                       "iat": now, "exp": now + timedelta(seconds=DEVICE_TTL)},
+                      _secret(), algorithm=_ALGO)
+
+
+def device_cookie_valid(raw: str | None, user) -> bool:
+    if not raw or user is None:
+        return False
+    try:
+        c = decode_token(raw)
+    except TokenError:
+        return False
+    return (c.get("type") == "device" and c.get("sub") == user.id
+            and c.get("tv", 0) == user.token_version)
+
+
 def decode_token(token: str) -> dict:
     try:
         return jwt.decode(token, _secret(), algorithms=[_ALGO])

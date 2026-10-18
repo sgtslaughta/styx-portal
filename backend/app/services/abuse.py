@@ -72,22 +72,44 @@ class IpFailTracker:
 
 
 class LoginLockout:
-    """Per-(username, client IP) login lockout, in memory.
+    """Per-(username, client IP) login lockout plus a per-username distributed brake.
 
-    Keyed on the pair so a stranger failing against the admin's username only locks
-    their own address out, never the real user on another IP. Thresholds are passed
-    per call so the live admin settings apply.
+    In memory. Only usernames that exist are tracked (the caller knows), which bounds the
+    per-username maps by the user count. The (username, ip) maps are capped, but an active
+    lock is never evicted: on a full map, expired entries go first, then the oldest
+    non-locked failure counters. Thresholds are passed per call (live admin settings).
     """
+
+    PURGE_EVERY = 60.0
 
     def __init__(self) -> None:
         self._fails: dict[str, deque] = {}
         self._locked: dict[str, float] = {}
         self._global: dict[str, deque] = {}    # username -> failure times, any IP
         self._last_check: dict[str, float] = {}
+        self._last_purge = 0.0
 
     @staticmethod
     def _key(username: str, ip: str) -> str:
         return f"{username.strip().lower()}|{ip_key(ip)}"
+
+    def _purge(self, now: float, duration: int) -> None:
+        for k in [k for k, u in self._locked.items() if u <= now]:
+            del self._locked[k]
+        for k in [k for k, q in self._fails.items() if not q or q[-1] <= now - duration]:
+            del self._fails[k]
+        self._last_purge = now
+
+    def _fail_deque(self, key: str, now: float, duration: int) -> deque:
+        q = self._fails.get(key)
+        if q is None:
+            if len(self._fails) >= MAX_TRACKED:
+                if now - self._last_purge >= self.PURGE_EVERY:
+                    self._purge(now, duration)
+                if len(self._fails) >= MAX_TRACKED:      # fail counters only, never locks
+                    self._fails.pop(next(iter(self._fails)))
+            q = self._fails[key] = deque()
+        return q
 
     def is_locked(self, username: str, ip: str, now: float | None = None) -> bool:
         now = time.monotonic() if now is None else now
@@ -105,18 +127,16 @@ class LoginLockout:
         """Count a failure; True when this failure trips the lock."""
         now = time.monotonic() if now is None else now
         key = self._key(username, ip)
-        g = _bounded_deque(self._global, username.strip().lower())
+        g = self._global.setdefault(username.strip().lower(), deque())
         g.append(now)
         while g and g[0] <= now - duration:
             g.popleft()
-        q = _bounded_deque(self._fails, key)
+        q = self._fail_deque(key, now, duration)
         q.append(now)
         while q and q[0] <= now - duration:
             q.popleft()
         if len(q) >= threshold:
             self._fails.pop(key, None)
-            if len(self._locked) >= MAX_TRACKED:
-                self._locked.pop(next(iter(self._locked)))
             self._locked[key] = now + duration
             return True
         return False
@@ -124,7 +144,8 @@ class LoginLockout:
     def throttled(self, username: str, threshold: int, duration: int,
                   now: float | None = None) -> bool:
         """Distributed-guessing brake: once a username has `threshold` failures (any IP)
-        in the window, allow one password check per 10 s. Never a hard lock."""
+        in the window, allow one password check per 10 s. Never a hard lock; a trusted
+        device cookie skips it."""
         now = time.monotonic() if now is None else now
         name = username.strip().lower()
         g = self._global.get(name)
@@ -137,8 +158,6 @@ class LoginLockout:
         last = self._last_check.get(name)
         if last is not None and now - last < 10:
             return True
-        if len(self._last_check) >= MAX_TRACKED:
-            self._last_check.pop(next(iter(self._last_check)))
         self._last_check[name] = now
         return False
 
@@ -201,17 +220,8 @@ class BanCache:
 
 async def ban_ip(session: AsyncSession, ip: str, reason: str, duration: int,
                  now: datetime | None = None) -> bool:
-    """Persist a ban. Refuses (False) for loopback only: that is the local proxy itself
-    (client IP not resolved), and banning it would lock everyone out."""
+    """Persist a ban (keyed by ip_key). Callers only pass resolved client IPs."""
     ip = ip_key(ip)
-    try:
-        loopback = ipaddress.ip_address(ip).is_loopback
-    except ValueError:
-        loopback = False
-    if loopback:
-        logger.error("Refusing to ban loopback %s (client IP not resolved; check "
-                     "DEPLOY_MODE / TRUSTED_PROXY_CIDRS). Reason: %s", ip, reason)
-        return False
     now = now or _now()
     expires = now + timedelta(seconds=duration)
     existing = await session.get(BannedIP, ip)

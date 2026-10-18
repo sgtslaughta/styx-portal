@@ -27,8 +27,8 @@ def _peer_is_trusted_proxy(host: str | None) -> bool:
     return any(ip in net for net in _trusted_networks(_settings.TRUSTED_PROXY_CIDRS))
 
 
-def client_ip_from_headers(request) -> str:
-    """Resolve the real client IP behind a trusted proxy (Cloudflare/Traefik).
+def client_ip_resolved(request) -> tuple[str, bool]:
+    """Returns (ip, resolved). Resolve the real client IP behind a trusted proxy (Cloudflare/Traefik).
 
     Forwarded headers are only honoured when the direct socket peer is in
     TRUSTED_PROXY_CIDRS (Traefik on a docker bridge); anyone else reaching the
@@ -39,14 +39,20 @@ def client_ip_from_headers(request) -> str:
     """
     peer = request.client.host if request.client else "unknown"
     if not _peer_is_trusted_proxy(peer):
-        return peer
+        return peer, True
     cf = request.headers.get("cf-connecting-ip")
     if cf and _settings.DEPLOY_MODE == "tunnel":
-        return cf.strip()
+        return cf.strip(), True
     xff = request.headers.get("x-forwarded-for")
     if xff:
-        return xff.split(",")[0].strip()
-    return peer
+        return xff.split(",")[0].strip(), True
+    return peer, False   # fell back to the proxy itself: the real client is unknown
+
+
+def client_ip_from_headers(request) -> str:
+    return client_ip_resolved(request)[0]
+
+
 
 
 class SlidingWindow:

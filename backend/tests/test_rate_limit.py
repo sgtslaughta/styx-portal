@@ -115,3 +115,10 @@ def test_internal_forwardauth_paths_are_exempt():
     assert is_rate_limit_exempt("/internal/workstations/auth-check") is True
     assert is_rate_limit_exempt("/internalx") is False
     assert is_rate_limit_exempt("/api/internal/x") is False
+
+
+def test_client_ip_resolved_flag():
+    from app.middleware.rate_limit import client_ip_resolved
+    assert client_ip_resolved(_FakeReq({}, host="127.0.0.1")) == ("127.0.0.1", False)
+    assert client_ip_resolved(_FakeReq({"x-forwarded-for": "192.168.1.9"}, host="172.18.0.2")) == ("192.168.1.9", True)
+    assert client_ip_resolved(_FakeReq({}, host="8.8.8.8")) == ("8.8.8.8", True)

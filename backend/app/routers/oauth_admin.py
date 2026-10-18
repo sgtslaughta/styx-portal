@@ -140,7 +140,8 @@ async def test_start(provider_id: str, admin: User = Depends(require_admin),
     resp.set_cookie(oauth.TX_COOKIE,
                     oauth.pack_tx(p.name, state, verifier, "test", provider_id),
                     max_age=oauth.TX_TTL, httponly=True,
-                    secure=_settings.COOKIE_SECURE, samesite="lax")
+                    secure=_settings.COOKIE_SECURE, samesite="lax",
+                    path="/api/oauth-providers")
     return resp
 
 
@@ -189,7 +190,7 @@ async def test_callback(provider_id: str, request: Request,
              "email_verified": identity.email_verified, "trust_email": p.trust_email,
              "would_pass": would_pass, "claims": identity.claims}
     resp = _probe_page(probe)
-    resp.delete_cookie(oauth.TX_COOKIE)
+    resp.delete_cookie(oauth.TX_COOKIE, path="/api/oauth-providers")
     return resp
 
 
