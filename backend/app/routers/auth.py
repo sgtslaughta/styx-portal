@@ -155,7 +155,7 @@ async def login(body: LoginRequest, request: Request, response: Response,
     ip, resolved = client_ip_resolved(request)
     if not resolved:
         logger.error("client IP not resolved; check DEPLOY_MODE/TRUSTED_PROXY_CIDRS "
-                     "(per-IP ban and tracking skipped for this login)")
+                     "(limited by peer address; per-IP ban skipped for this login)")
     result = await session.exec(select(User).where(User.username == body.username))
     user = result.first()
 
@@ -190,7 +190,9 @@ async def login(body: LoginRequest, request: Request, response: Response,
         # Per-IP abuse detector -> proxy ban (L3). Thresholds are live-tunable.
         fail_tracker.threshold = sys_settings.get("BAN_FAIL_THRESHOLD")
         fail_tracker.window = sys_settings.get("BAN_FAIL_WINDOW")
-        if resolved and fail_tracker.record(ip):
+        # Unresolved: still tracked under the peer address, but a misconfiguration must never
+        # persist a ban on the proxy itself (it would lock out the whole portal).
+        if fail_tracker.record(ip) and resolved:
             await ban_ip(session, ip, "brute-force: failed logins",
                          sys_settings.get("BAN_DURATION"))
             ban_cache.invalidate()

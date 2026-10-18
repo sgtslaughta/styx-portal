@@ -202,11 +202,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if is_rate_limit_exempt(request.url.path):
             return await call_next(request)
         from app.services.settings_store import settings
-        ip, resolved = client_ip_resolved(request)
-        if not resolved:
-            # Unknown client behind a proxy: a shared bucket would let one caller lock out
-            # everyone. Traefik's own rate limit and per-username lockout still apply.
-            return await call_next(request)
+        # Unresolved (unrecognised proxy) is limited by the peer IP: fail closed, never open.
+        ip = client_ip_from_headers(request)
         strict = is_strict_auth(request.method, request.url.path)
         spec = settings.get("RATE_LIMIT_AUTH") if strict else settings.get("RATE_LIMIT_DEFAULT")
         window = self._window_for(spec)

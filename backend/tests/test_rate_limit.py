@@ -233,22 +233,42 @@ def test_unrecognised_private_proxy_is_unresolved(caplog):
         == ("8.8.4.4", True)
 
 
-async def test_unresolved_requests_skip_per_ip_limit(monkeypatch):
+async def test_unresolved_requests_limited_by_peer(monkeypatch):
+    """Fail closed: an unrecognised proxy is throttled as one client, not exempted."""
     from app.middleware import rate_limit
     monkeypatch.setattr(rate_limit._settings, "TRUSTED_PROXY_CIDRS", "127.0.0.1/32")
-    seen = []
+    from app.services.settings_store import settings
+    monkeypatch.setattr(settings, "get", lambda k: "2/60")
+    mw = rate_limit.RateLimitMiddleware(app=None)
 
     async def call_next(r):
-        seen.append(1)
         return "ok"
-    mw = rate_limit.RateLimitMiddleware(app=None)
-    monkeypatch.setattr(mw, "_window_for", lambda spec: pytest.fail("limiter used"))
     req = _FakeReq({"x-forwarded-for": "5.6.7.8"}, host="192.168.50.2")
     req.url = type("U", (), {"path": "/api/x"})()
     req.method = "GET"
-    for _ in range(3):
-        assert await mw.dispatch(req, call_next) == "ok"
-    assert len(seen) == 3
+    assert [await mw.dispatch(req, call_next) for _ in range(2)] == ["ok", "ok"]
+    assert (await mw.dispatch(req, call_next)).status_code == 429
+    assert "192.168.50.2:False" in mw._window_for("2/60")._hits
+
+
+async def test_unresolved_login_tracked_but_never_banned(client, session, monkeypatch, caplog):
+    from unittest.mock import AsyncMock
+
+    from app.middleware import rate_limit
+    from app.routers import auth as auth_router
+    from app.services.abuse import fail_tracker
+    monkeypatch.setattr(rate_limit._settings, "TRUSTED_PROXY_CIDRS", "127.0.0.1/32")
+    monkeypatch.setattr(auth_router, "client_ip_resolved", lambda r: ("192.168.50.2", False))
+    ban = AsyncMock()
+    monkeypatch.setattr(auth_router, "ban_ip", ban)
+    seen = []
+    monkeypatch.setattr(fail_tracker, "record", lambda ip: seen.append(ip) or True)
+    with caplog.at_level("ERROR"):
+        r = await client.post("/api/auth/login", json={"username": "x", "password": "y"})
+    assert r.status_code == 401
+    assert seen == ["192.168.50.2"]        # tracker ran under the peer IP and tripped
+    ban.assert_not_awaited()
+    assert any("not resolved" in m.message for m in caplog.records)
 
 
 def test_empty_snapshot_logs_error(tmp_path, caplog):
