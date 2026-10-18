@@ -45,6 +45,7 @@ Traefik will automatically request and renew wildcard `*.your.domain.com` certif
 
 The `db-data` volume contains:
 - **SQLite database** (`/app/data/styx-portal.db`) — templates, instances, users, OAuth providers
+- **Mount backups** (`/app/data/mount-backups/<service-id>/<timestamp>/`) — copies of app settings files Styx saved before changing an app's base path (last 5 per service). Included in the data-volume backup below; see [Services](SERVICES.md#letting-styx-configure-an-app)
 - **Secrets file** (`/app/data/secrets.json`, mode 0600) — JWT secret for signing tokens and deriving encryption keys
 
 **Losing `secrets.json` logs out all users and invalidates stored OAuth client secrets.**
@@ -64,6 +65,7 @@ For production, set up automated daily backups and test restore procedures.
 
 All of the following are already implemented:
 
+- **Socket-proxy writes:** managed mounts write settings files with the Docker archive API, so the socket-proxy needs `POST=1` (set in `docker-compose.yml`). Exec, build and system calls stay blocked.
 - **docker-socket-proxy:** Backend communicates with a read-only socket-proxy; direct socket access is denied. Dangerous operations (exec, build, system commands) are explicitly blocked.
 - **Container isolation:** Instances run with `cap_drop: ["ALL"]` + minimal needed capabilities. DinD (Docker-in-Docker) templates are privileged, admin-only, and require memory/CPU limits.
 - **No Traefik dashboard:** API dashboard is disabled (`api.insecure: false`). Optional opt-in via basicAuth environment variable (not enabled by default).
@@ -71,6 +73,20 @@ All of the following are already implemented:
 - **Per-user instance networks:** Each user gets an isolated Docker bridge network (`styx-u-{user_id}`). Instance containers are confined to their user's network.
 - **Security headers:** CSP, HSTS (direct mode only), X-Frame-Options, X-Content-Type-Options all enforced.
 - **Audit log:** All auth, role, instance, and provider changes are logged to the audit table with timestamp, user, IP, and action. Accessible at `GET /api/audit` (admin).
+- **Trusted proxies:** The backend believes `CF-Connecting-IP` / `X-Forwarded-For` only from peers in `TRUSTED_PROXY_CIDRS` (default `127.0.0.1/32,::1/128,172.16.0.0/12,192.168.0.0/16`, docker's default bridge pools). Widen it only if your docker `daemon.json` uses other address pools. `CF-Connecting-IP` is ignored in direct mode.
+- **Proxied-service network:** Containers exposed as services join the `styx-services` network, shared only with Traefik (not the backend). forwardAuth checks run on `/internal/...`, a path no Traefik router exposes. Service health for these containers comes from the Docker API (container state / `HEALTHCHECK`), not HTTP.
+- **Session cookie split:** `access_token` is scoped to `Path=/api` and `refresh_token` to `Path=/api/auth`, so proxied apps (same origin, other paths) never receive Styx API tokens. Proxied apps and workstation streams are gated by a separate `styx_proxy` cookie (`Path=/`, HttpOnly, SameSite=Strict) holding a `proxy`-type token that the API refuses and that dies with the refresh-token family (logout, password change, reuse detection, user deactivation). Old `Path=/` cookies are expired automatically on next login/refresh.
+- **Instance desktops require login + ownership:** `/i/<subdomain>/` (and its extra ports) is gated by a per-instance forwardAuth `/internal/instances/<id>/auth-check` (the instance is bound by the route, never parsed from the request): a valid `styx_proxy` cookie and the instance's owner or an admin. Subdomains are user-chosen, so the URL is not a secret. Anonymous browser navigations are redirected to `/login?next=…` (XHR/websocket get 401), other users get 403, stopped/unknown instances show the unavailable page. Direct-mode extra ports on `<sub>.<domain>` only see the cookie if `COOKIE_DOMAIN` covers subdomains.
+- **Safe `next=`:** Login redirects (SPA and every backend redirect builder) only follow same-site paths that do not start with `api`, `internal`, `_styx`, `login`, `logout`, `setup`, `accept-invite` or `change-password` (any case, after decoding) and contain no encoded `.`/`/`/`\` or dot segments, so a cross-site `/login?next=/api/...` link cannot become a same-site request carrying SameSite=Strict cookies.
+- **Cookie strip:** Styx strips its cookies from every proxied request; upstream servers never see Styx credentials. Each forwardAuth (service auth-check, workstation auth-check, instance auth-check, a strip-only check for app-native services) returns the request's `Cookie` minus `styx_proxy`, `access_token`, `refresh_token`, `csrf_token` and `styx_svc`, and Traefik swaps it in via `authResponseHeaders`. App cookies pass through unchanged.
+
+### Proxied apps are trusted code
+
+The cookie split and strip stop an upstream **server** from capturing and replaying any Styx credential, and a stolen `styx_proxy` cookie cannot call the API. They do **not** isolate an app's **JavaScript**: a proxied app is still same-origin, so its scripts (which can't read HttpOnly cookies) can call `/api/...` through the user's browser with that user's full Styx rights (the browser attaches the `/api` cookies; `HttpOnly` only prevents reading them).
+
+- Only proxy apps you would trust with the viewing user's Styx account.
+- Admins: use a separate **non-admin** account for day-to-day app use; keep the admin account for administration.
+- Prefer apps from trusted sources and keep them patched; an XSS in a proxied app is an XSS in Styx.
 
 ## Health Monitoring
 

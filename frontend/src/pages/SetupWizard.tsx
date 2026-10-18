@@ -14,7 +14,7 @@ const STRENGTH_LABELS = ["Very weak", "Weak", "Fair", "Good", "Strong"];
 const STRENGTH_COLORS = ["bg-destructive", "bg-warning", "bg-warning", "bg-success", "bg-success"];
 
 function PreRow({ ok, label, detail, warnOnly }: { ok: boolean; label: string; detail: string; warnOnly?: boolean }) {
-  const color = ok ? "text-success" : warnOnly ? "text-warning" : "text-destructive";
+  const color = ok ? "text-success" : warnOnly ? "text-warning-foreground" : "text-destructive";
   return (
     <div className="flex items-center justify-between">
       <span>{label}</span>
@@ -29,7 +29,7 @@ export function SetupWizard() {
   const [err, setErr] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const nav = useNavigate();
-  const { refresh, setupRequired, loading } = useAuth();
+  const { refresh, setupRequired, loading, user } = useAuth();
   const score = password ? zxcvbn(password).score : 0;
   const { data: pre } = useQuery({ queryKey: ["setup-preflight"], queryFn: api.setupPreflight, retry: false });
 
@@ -46,6 +46,8 @@ export function SetupWizard() {
   }
 
   // Setup is a one-time flow: once an admin exists, never show it again.
+  // Signed in (e.g. just created the admin) → home, not the login page.
+  if (!loading && !setupRequired && user) return <Navigate to="/" replace />;
   if (!loading && !setupRequired) return <Navigate to="/login" replace />;
 
   return (
@@ -104,7 +106,7 @@ export function SetupWizard() {
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">Strength:</span>
                     <span className={`text-xs font-medium ${
-                      score < 2 ? "text-destructive" : score < 3 ? "text-warning" : "text-success"
+                      score < 2 ? "text-destructive" : score < 3 ? "text-warning-foreground" : "text-success"
                     }`}>
                       {STRENGTH_LABELS[score]}
                     </span>

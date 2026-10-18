@@ -21,17 +21,31 @@ backend/           FastAPI application
       workstations.py   Workstation admin CRUD + token minting
       enroll.py    Public enrollment API (register, script/artifact serving)
       agent.py     Agent-facing API (heartbeat, deregister)
+      groups.py    Group CRUD + per-user membership
+      services.py  Proxied services CRUD, presets, docker discovery
+      services_auth.py  forwardAuth (/internal), cookie-root enter/exit
+      service_mounts.py Managed-path plan/apply/job API (admin, consent)
     services/
       docker_manager.py    Docker API wrapper
+      docker_files.py      Container file read/write + probe container (mixin)
       traefik_labels.py    Label generation for Traefik routing
       session_monitor.py   Idle detection background loop
       workstations.py      Subdomain slug, stale-offline detection
       artifacts.py         Selkies tarball cache + download
       route_writer.py      Traefik dynamic config (extended for workstation routes)
+      service_routes.py    Traefik routers/middlewares for proxied services
+      service_health.py    Proxied service health loop (HTTP / docker state)
+      mount_edit.py        Managed mount edits: xml/json/ini config writes, backups
+      mount_jobs.py        Mount apply job runner (steps, verify, restart, rollback)
+  security/
+    page_style.py      Styx-styled HTML pages (title escaped; body trusted)
   tests/           pytest test suite
+frontend/          React app (Vite)
+  src/shell/       Styx shell: framed app, edge tab, dock (second build, shell.html)
+e2e/               Playwright full-stack suite (real Sonarr/Jellyfin, shell, screenshots)
 docker-compose.yml Infrastructure services
 traefik/           Traefik static config
-templates/         Default JSON templates (seeded on first run)
+templates/         Default JSON templates (seeded on first run); services/ = proxy presets
 plans/             Original requirements and implementation plans
 ```
 

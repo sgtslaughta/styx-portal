@@ -1,0 +1,34 @@
+{
+  "id": "radarr",
+  "name": "Radarr",
+  "icon": "🎬",
+  "default_port": 7878,
+  "mount_mode": "path",
+  "auth_mode": "sso-with-bypass",
+  "bypass_rules": [
+    {
+      "path_prefix": "/radarr/api",
+      "required_header": "X-Api-Key"
+    }
+  ],
+  "health_path": "/radarr/ping",
+  "verify_tls": true,
+  "base_url_hint": "Settings → General → URL Base = /radarr, then restart Radarr.",
+  "warnings": [
+    "/radarr/api is reachable without Styx login so mobile apps can use the API key."
+  ],
+  "subpath": {
+    "methods": [
+      {
+        "type": "config_file",
+        "paths": [
+          "/config/config.xml"
+        ],
+        "format": "xml",
+        "key": "/Config/UrlBase"
+      }
+    ],
+    "restart": true,
+    "verify_path": "/{slug}/ping"
+  }
+}

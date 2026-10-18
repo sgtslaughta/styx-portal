@@ -61,6 +61,14 @@ pytest:
   <<: *on_push_or_mr
   script: [.venv/bin/python -m pytest -q]
 
+plugin-test:
+  stage: test
+  image: golang:1.22
+  <<: *on_push_or_mr
+  script:
+    - cd traefik/plugins-local/src/github.com/styx-portal/styxlocation
+    - go test ./...
+
 vitest:
   stage: test
   <<: *node_setup

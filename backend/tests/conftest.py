@@ -146,3 +146,9 @@ async def second_member_client(session):
         yield client
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def _no_background_favicon(monkeypatch):
+    """Service create/mount jobs would otherwise fetch favicons on the app's real DB sessions."""
+    monkeypatch.setattr("app.services.service_favicon.schedule_favicon", lambda *a, **k: None)

@@ -1,0 +1,59 @@
+{
+  "id": "jellyfin",
+  "name": "Jellyfin",
+  "icon": "🎬",
+  "default_port": 8096,
+  "mount_mode": "path",
+  "auth_mode": "sso",
+  "bypass_rules": [
+    {
+      "path_prefix": "/jellyfin/",
+      "required_header": "Authorization",
+      "header_prefix": "MediaBrowser"
+    },
+    {
+      "path_prefix": "/jellyfin/",
+      "required_header": "X-Emby-Authorization",
+      "header_prefix": "MediaBrowser"
+    },
+    {
+      "path_prefix": "/jellyfin/",
+      "required_header": "X-Emby-Token"
+    },
+    {
+      "path_prefix": "/jellyfin/",
+      "required_header": "X-MediaBrowser-Token"
+    },
+    {
+      "path_prefix": "/jellyfin/",
+      "required_query": "api_key"
+    }
+  ],
+  "health_path": "/jellyfin/health",
+  "verify_tls": true,
+  "base_url_hint": "Dashboard → Networking → Base URL = /jellyfin, then restart Jellyfin.",
+  "warnings": [
+    "Allow native apps lets Jellyfin apps sign in with Jellyfin's own login, so that login is reachable from the internet."
+  ],
+  "subpath": {
+    "methods": [
+      {
+        "type": "config_file",
+        "paths": [
+          "/config/config/network.xml",
+          "/config/network.xml"
+        ],
+        "format": "xml",
+        "key": "/NetworkConfiguration/BaseUrl",
+        "create": {
+          "path": "/config/config/network.xml",
+          "owner_from": "/config/config/system.xml",
+          "template": "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<NetworkConfiguration xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">\n  <BaseUrl />\n</NetworkConfiguration>\n"
+        }
+      }
+    ],
+    "restart": true,
+    "verify_path": "/{slug}/health",
+    "missing_hint": "Open Jellyfin, go to Dashboard \u203a Networking and click Save once so it writes its network settings, then try again."
+  }
+}

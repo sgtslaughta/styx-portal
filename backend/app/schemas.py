@@ -1,8 +1,8 @@
 import re
 import ipaddress
 from dataclasses import dataclass
-from typing import Any
-from pydantic import BaseModel, Field, field_validator
+from typing import Any, Literal
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 SUBDOMAIN_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 RESERVED_SUBDOMAINS = {"api", "traefik", "www", "admin", "auth", "portal"}
@@ -150,6 +150,18 @@ class UserOut(BaseModel):
     last_login: str | None = None
     locked_until: str | None = None
     failed_count: int = 0
+    open_workspaces: str | None = None
+    open_apps: str | None = None
+
+
+OpenMode = Literal["new_tab", "same_tab"]
+
+
+class OpenPreferences(BaseModel):
+    """Where Workspaces / Apps open. None = ask. Only keys sent are changed."""
+    model_config = ConfigDict(extra="forbid")
+    open_workspaces: OpenMode | None = None
+    open_apps: OpenMode | None = None
 
 
 class CreateInviteRequest(BaseModel):
@@ -274,6 +286,13 @@ class WorkstationOut(BaseModel):
     in_use: bool = False
     in_use_by: str | None = None     # username, never id
     in_use_self: bool = False
+    icon_kind: str = "auto"          # auto | emoji | image
+    icon_etag: str = ""              # cache-buster for /{id}/icon?v=
+
+
+class WorkstationIconUpdate(BaseModel):
+    kind: Literal["auto", "emoji", "image"]
+    value: str | None = Field(default=None, max_length=400_000)
 
 
 class EnrollTokenOut(BaseModel):
@@ -347,6 +366,8 @@ class WorkstationHeartbeatResponse(BaseModel):
     # One-shot: when True the agent restarts its gateway, dropping live stream
     # clients (set by logout-with-active-session teardown).
     disconnect_clients: bool = False
+    # Hash of the workstation icon; the agent re-fetches /api/agent/icon on change.
+    icon_etag: str = ""
 
 
 class WorkstationUpdate(BaseModel):
@@ -374,3 +395,11 @@ class WorkstationUpdateCommandOut(BaseModel):
 class ChangePasswordRequest(BaseModel):
     old_password: str
     new_password: str = Field(min_length=8, max_length=256)
+
+
+from app.schemas_services import (  # noqa: E402,F401  (re-export)
+    AUTH_MODES, CONTAINER_NAME_RE, MOUNT_MODES, RESERVED_SERVICE_SLUGS, SERVICE_KINDS,
+    SERVICE_SLUG_RE, BypassRule, DiscoveredContainer, GroupCreate, GroupOut,
+    ProxiedServiceCreate, ProxiedServiceOut, ProxiedServiceUpdate, ServicePresetOut, ServiceTileOut,
+    UserGroupsUpdate, _ServiceFields,
+)

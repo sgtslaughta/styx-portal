@@ -419,3 +419,217 @@ def test_create_container_no_stale_is_fine(mock_docker):
     manager.create_container(name="selkies-new", image="img", labels={},
                              environment={}, volumes={}, port=3001)
     client.containers.create.assert_called_once()
+
+
+def _probe(client, out: bytes = b"  HTTP/1.1 200 OK\n"):
+    c = MagicMock()
+    c.logs.return_value = out
+    client.containers.create.return_value = c
+    return c
+
+
+def test_probe_http_runs_hardened_container_and_parses_status(mock_docker):
+    manager, client = mock_docker
+    c = _probe(client, b"  HTTP/1.1 200 OK\n")
+    assert manager.probe_http("http://sonarr:8989/sonarr/ping", "styx-services",
+                              extra_hosts={"h": "host-gateway"}) == 200
+    args, kw = client.containers.create.call_args
+    assert args[0] == "busybox:1.36"
+    assert args[1] == ["wget", "-q", "-S", "-O", "/dev/null", "-T", "5", "http://sonarr:8989/sonarr/ping"]
+    assert kw["network"] == "styx-services" and kw["read_only"] is True
+    assert kw["cap_drop"] == ["ALL"] and kw["mem_limit"] == "32m"
+    assert kw["user"] == "65534:65534"
+    assert kw["pids_limit"] == 32 and kw["security_opt"] == ["no-new-privileges"]
+    assert kw["labels"] == {"styx.probe": "true"} and kw["extra_hosts"] == {"h": "host-gateway"}
+    c.remove.assert_called_once_with(force=True)
+
+
+def test_probe_http_404_and_failure(mock_docker):
+    manager, client = mock_docker
+    _probe(client, b"  HTTP/1.1 404 Not Found\n")
+    assert manager.probe_http("http://a:1/", "n") == 404
+    _probe(client, b"wget: bad address 'a'\n")
+    assert manager.probe_http("http://a:1/", "n") == 0
+
+
+def test_probe_http_removes_container_on_exception(mock_docker):
+    manager, client = mock_docker
+    c = _probe(client)
+    c.wait.side_effect = RuntimeError("timeout")
+    assert manager.probe_http("http://a:1/", "n") == 0
+    c.remove.assert_called_once_with(force=True)
+
+
+@pytest.mark.parametrize("url", ["file:///etc/passwd", "http://a;rm -rf /", "http://a b/", "http://a`x`/"])
+def test_probe_http_rejects_bad_urls(mock_docker, url):
+    with pytest.raises(ValueError):
+        mock_docker[0].probe_http(url, "n")
+
+
+def test_probe_http_redirect_counts_by_first_status(mock_docker):
+    manager, client = mock_docker
+    _probe(client, b"  HTTP/1.1 302 Found\n  HTTP/1.1 500 Oops\n")
+    assert manager.probe_http("http://a:1/", "n") == 302
+
+
+def test_probe_http_pull_failure_returns_minus_one(mock_docker):
+    manager, client = mock_docker
+    client.images.get.side_effect = docker.errors.ImageNotFound("nope")
+    client.images.pull.side_effect = docker.errors.APIError("registry down")
+    assert manager.probe_http("http://a:1/", "n") == -1
+    client.containers.create.assert_not_called()
+
+
+def test_probe_http_start_failure_returns_minus_one_and_removes(mock_docker):
+    manager, client = mock_docker
+    c = _probe(client)
+    c.start.side_effect = RuntimeError("no start")
+    assert manager.probe_http("http://a:1/", "n") == -1
+    c.remove.assert_called_once_with(force=True)
+
+
+def test_remove_probe_containers(mock_docker):
+    manager, client = mock_docker
+    a, b = MagicMock(), MagicMock()
+    client.containers.list.return_value = [a, b]
+    assert manager.remove_probe_containers() == 2
+    client.containers.list.assert_called_once_with(all=True, filters={"label": "styx.probe=true"})
+    a.remove.assert_called_once_with(force=True)
+
+
+def _raw(status: str, headers: str = "", body: bytes = b"") -> bytes:
+    import base64
+    return base64.encodebytes(f"HTTP/1.0 {status}\r\n{headers}\r\n".encode() + body)
+
+
+def _hops(client, *responses: bytes):
+    """One container per hop, each answering with the next canned raw response."""
+    made = []
+    for r in responses:
+        c = MagicMock()
+        c.logs.return_value = r
+        made.append(c)
+    client.containers.create.side_effect = list(made)
+    return made
+
+
+def _same(u):
+    return u.startswith("http://app:80/")
+
+
+def test_probe_fetch_hardened_request_built_in_python(mock_docker):
+    manager, client = mock_docker
+    made = _hops(client, _raw("200 OK", "", b"PNGDATA"))
+    assert manager.probe_fetch("http://app:80/x/y?a=1", "styx-services", 1000) == b"PNGDATA"
+    args, kw = client.containers.create.call_args
+    cmd = args[1]
+    assert cmd[:2] == ["sh", "-c"] and "$1" in cmd[2] and "nc" in cmd[2]
+    assert "app" not in cmd[2] and "/x/y" not in cmd[2]
+    req = cmd[4]
+    assert cmd[3] == "probe" and req.startswith("GET /x/y?a=1 HTTP/1.0\r\nHost: app\r\n")
+    assert req.endswith("\r\n\r\n") and "styx-favicon" in req
+    assert cmd[5:] == ["5", "app", "80", str(1000 + 16384)]
+    assert kw["network"] == "styx-services" and kw["read_only"] is True
+    assert kw["cap_drop"] == ["ALL"] and kw["user"] == "65534:65534"
+    assert kw["security_opt"] == ["no-new-privileges"] and kw["labels"] == {"styx.probe": "true"}
+    made[0].remove.assert_called_once_with(force=True)
+
+
+def test_probe_fetch_caps_body_and_failures_return_none(mock_docker):
+    manager, client = mock_docker
+    _hops(client, _raw("200 OK", "", b"x" * 50))
+    assert manager.probe_fetch("http://a:1/", "n", 10) == b"x" * 10
+    _hops(client, b"")
+    assert manager.probe_fetch("http://a:1/", "n", 10) is None
+    _hops(client, b"!!not base64!!")
+    assert manager.probe_fetch("http://a:1/", "n", 10) is None
+    _hops(client, _raw("404 Not Found", "", b"x"))
+    assert manager.probe_fetch("http://a:1/", "n", 10) is None
+    made = _hops(client, _raw("200 OK", "", b"x"))
+    made[0].wait.side_effect = RuntimeError("t")
+    assert manager.probe_fetch("http://a:1/", "n", 10) is None
+    made[0].remove.assert_called_once_with(force=True)
+
+
+@pytest.mark.parametrize("url", ["https://a/x", "ftp://a/", "http://a b/", "http://a;rm/",
+                                 "http://a/p a", "http://a/p\r\nX: y", "http://a:0/", "http://a:99999/",
+                                 "http://a/`x`", "http://a/p\"q"])
+def test_probe_fetch_rejects_bad_urls_without_a_container(mock_docker, url):
+    manager, client = mock_docker
+    assert manager.probe_fetch(url, "n", 10) is None
+    client.containers.create.assert_not_called()
+
+
+def test_probe_fetch_decodes_chunked_and_rejects_malformed(mock_docker):
+    manager, client = mock_docker
+    chunked = b"5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n"
+    _hops(client, _raw("200 OK", "Transfer-Encoding: chunked\r\n", chunked))
+    assert manager.probe_fetch("http://a:1/", "n", 100) == b"hello world"
+    _hops(client, _raw("200 OK", "transfer-encoding: Chunked\r\n", b"zz\r\nhello"))
+    assert manager.probe_fetch("http://a:1/", "n", 100) is None
+
+
+def test_probe_fetch_with_url_returns_the_final_url_after_redirects(mock_docker):
+    manager, client = mock_docker
+    _hops(client, _raw("302 Found", "Location: web/\r\n"), _raw("200 OK", "", b"page"))
+    assert manager.probe_fetch("http://app:80/", "n", 100, allow_redirect_to=_same,
+                               with_url=True) == (b"page", "http://app:80/web/")
+
+
+def test_probe_fetch_keeps_its_send_side_open_until_the_reply(mock_docker):
+    # Kestrel (Sonarr, Jellyfin) drops a request whose client half-closes right after
+    # sending it, which busybox nc does on stdin EOF: stdin must stay open for the timeout.
+    manager, client = mock_docker
+    _hops(client, _raw("200 OK", "", b"x"))
+    manager.probe_fetch("http://a:1/", "n", 100)
+    script = client.containers.create.call_args_list[0].args[1][2]
+    assert script.startswith('{ printf "%s" "$1"; sleep "$2"; } | nc -w "$2" "$3" "$4"')
+
+
+@pytest.mark.parametrize("size", [b"-10", b"-6", b"+5", b"0x5", b" 5 5", b"1" * 9])
+def test_dechunk_rejects_signed_or_odd_sizes_without_looping(size):
+    import threading
+    from app.services.docker_files import _dechunk
+    # a negative size used to move the read position backwards: an endless loop
+    got = []
+    t = threading.Thread(target=lambda: got.append(
+        _dechunk(b"5\r\nhello\r\n" + size + b"\r\nabcdefghijklmnop\r\n0\r\n\r\n")), daemon=True)
+    t.start()
+    t.join(2)
+    assert not t.is_alive(), "dechunk looped"
+    assert got == [b""]
+
+
+def test_probe_fetch_follows_same_origin_redirect_from_python_parse(mock_docker):
+    manager, client = mock_docker
+    made = _hops(client, _raw("301 Moved", "location: /b/c\r\n"), _raw("200 OK", "", b"icon"))
+    assert manager.probe_fetch("http://app:80/a", "n", 100, allow_redirect_to=_same) == b"icon"
+    second = client.containers.create.call_args_list[1].args[1]
+    assert second[4].startswith("GET /b/c HTTP/1.0\r\nHost: app\r\n") and second[6:8] == ["app", "80"]
+    assert all(m.remove.called for m in made)
+
+
+def test_probe_fetch_rejected_location_makes_no_second_container(mock_docker):
+    manager, client = mock_docker
+    _hops(client, _raw("302 Found", "Location: http://169.254.169.254/x\r\n"), _raw("200 OK", "", b"s"))
+    assert manager.probe_fetch("http://app:80/a", "n", 100, allow_redirect_to=_same) is None
+    assert client.containers.create.call_count == 1
+    _hops(client, _raw("302 Found", "Location: /ok\r\n"))
+    client.containers.create.reset_mock()
+    assert manager.probe_fetch("http://app:80/a", "n", 100) is None      # no predicate: refuse
+    assert client.containers.create.call_count == 1
+
+
+def test_probe_fetch_more_than_three_redirects_is_refused(mock_docker):
+    manager, client = mock_docker
+    hop = lambda i: _raw("302 Found", f"Location: /h{i}\r\n")  # noqa: E731
+    _hops(client, *(hop(i) for i in range(5)))
+    assert manager.probe_fetch("http://app:80/a", "n", 100, allow_redirect_to=_same) is None
+    assert client.containers.create.call_count == 4          # first request + 3 redirects
+
+
+def test_probe_fetch_location_in_body_is_ignored(mock_docker):
+    manager, client = mock_docker
+    body = b"Location: http://evil.test/\r\n\r\n"
+    _hops(client, _raw("200 OK", "", body))
+    assert manager.probe_fetch("http://app:80/a", "n", 100, allow_redirect_to=_same) == body

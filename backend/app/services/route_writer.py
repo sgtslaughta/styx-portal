@@ -10,6 +10,16 @@ logger = logging.getLogger("styx-portal")
 _settings = Settings()
 
 
+def _forward_auth(address: str) -> dict:
+    """forwardAuth that also swaps in the Cookie header minus Styx cookies."""
+    return {"forwardAuth": {"address": address, "authResponseHeaders": ["Cookie"]}}
+
+
+def _seg(prefix: str) -> str:
+    """Segment-bounded path rule: /i/dev must not capture /i/devx."""
+    return f"Path(`{prefix}`) || PathPrefix(`{prefix}/`)"
+
+
 def _router_transport(deploy_mode: str, domain: str) -> dict:
     """Return entryPoints and TLS config dict based on deploy mode."""
     if deploy_mode == "direct":
@@ -27,7 +37,8 @@ def _router_transport(deploy_mode: str, domain: str) -> dict:
 
 def build_routes_config(instances: list[dict], domain: str,
                         deploy_mode: str = "tunnel",
-                        workstations: list[dict] | None = None) -> dict:
+                        workstations: list[dict] | None = None,
+                        services: list[dict] | None = None) -> dict:
     """Build the Traefik dynamic config dict for all services + running instances.
 
     Always emits the static `unavailable-rewrite` / `instance-unavailable-errors`
@@ -121,6 +132,11 @@ def build_routes_config(instances: list[dict], domain: str,
 
         strip_mw = f"strip-{subdomain}"
         middlewares[strip_mw] = {"stripPrefix": {"prefixes": [f"/i/{subdomain}"]}}
+        # Styx login + owner-or-admin, bound to THIS instance by the address
+        # (never parsed from the request); also strips Styx cookies.
+        auth_mw = f"inst-auth-{inst_id}"
+        middlewares[auth_mw] = _forward_auth(
+            f"http://backend:8000/internal/instances/{inst_id}/auth-check")
 
         # Capture primary router transport config for reuse by extra ports
         primary_transport = _router_transport(deploy_mode, domain)
@@ -128,8 +144,8 @@ def build_routes_config(instances: list[dict], domain: str,
         primary_tls = primary_transport.get("tls")
 
         config["http"]["routers"][inst_id] = {
-            "rule": f"Host(`{domain}`) && PathPrefix(`/i/{subdomain}`)",
-            "middlewares": ["instance-unavailable-errors", strip_mw],
+            "rule": f"Host(`{domain}`) && ({_seg(f'/i/{subdomain}')})",
+            "middlewares": ["instance-unavailable-errors", auth_mw, strip_mw],
             "service": inst_id,
             "priority": 50,
             **primary_transport,
@@ -150,13 +166,13 @@ def build_routes_config(instances: list[dict], domain: str,
 
             # Build rule based on deploy mode
             if deploy_mode == "direct":
-                rule = f"Host(`{subdomain}.{domain}`) && PathPrefix(`/p/{slug}`)"
+                rule = f"Host(`{subdomain}.{domain}`) && ({_seg(f'/p/{slug}')})"
             else:
                 # LAN/tunnel: nests under the instance's path
-                rule = f"PathPrefix(`/i/{subdomain}/p/{slug}`)"
+                rule = _seg(f"/i/{subdomain}/p/{slug}")
 
             # Prepare middlewares: error handling + strip-prefix if needed
-            ep_middlewares = ["instance-unavailable-errors"]
+            ep_middlewares = ["instance-unavailable-errors", auth_mw]
 
             if ep.get("strip_prefix", True):
                 if deploy_mode == "direct":
@@ -188,7 +204,6 @@ def build_routes_config(instances: list[dict], domain: str,
                 has_https = True
             config["http"]["services"][rid] = {"loadBalancer": ep_svc_config}
 
-    has_workstations = bool(workstations)
     for ws in workstations or []:
         sub = ws["subdomain"]
         strip_mw = f"strip-w-{sub}"
@@ -203,11 +218,14 @@ def build_routes_config(instances: list[dict], domain: str,
                 "Authorization": f"Basic {creds}"}}}
 
         rid = f"ws-{ws['id']}"
-        router_middlewares = ["instance-unavailable-errors", "ws-forward-auth", strip_mw]
+        ws_auth = f"ws-auth-{ws['id']}"
+        middlewares[ws_auth] = _forward_auth(
+            f"http://backend:8000/internal/workstations/{ws['id']}/auth-check")
+        router_middlewares = ["instance-unavailable-errors", ws_auth, strip_mw]
         if "selkies_password" in ws and ws["selkies_password"]:
             router_middlewares.insert(2, auth_header_mw)
         config["http"]["routers"][rid] = {
-            "rule": f"Host(`{domain}`) && PathPrefix(`/w/{sub}`)",
+            "rule": f"Host(`{domain}`) && ({_seg(f'/w/{sub}')})",
             "middlewares": router_middlewares,
             "service": rid,
             "priority": 50,
@@ -215,7 +233,7 @@ def build_routes_config(instances: list[dict], domain: str,
         }
         if lan_serving:
             config["http"]["routers"][f"{rid}-lan"] = _lan_router(
-                f"PathPrefix(`/w/{sub}`)", rid, 50, router_middlewares)
+                _seg(f"/w/{sub}"), rid, 50, router_middlewares)
         protocol = ws.get("protocol", "http")
         svc: dict = {"servers": [{"url": f"{protocol}://{ws['lan_ip']}:{ws['port']}"}]}
         if protocol == "https":
@@ -225,22 +243,24 @@ def build_routes_config(instances: list[dict], domain: str,
 
     # Host-agnostic LAN routers (IP / LAN hostname access via websecure).
     # api beats frontend on /api; ws-*-lan above (prio 50) beats frontend on /w.
+    # Proxied services (spec §2: "No LAN bypass") are only routed on the public
+    # Host() routers. api-lan is deliberately NOT gated by the cookie-root
+    # takeover: LAN-IP access always reaches the Styx portal, never a service.
     if lan_serving:
         config["http"]["routers"]["api-lan"] = _lan_router(
             "PathPrefix(`/api`)", "api", 100, ["ip-ban-gate", "styx-ratelimit"])
         config["http"]["routers"]["frontend-lan"] = _lan_router(
             "PathPrefix(`/`)", "frontend", 1, ["styx-ratelimit"])
 
-    # Add shared forwardAuth middleware if any workstations exist
-    if has_workstations:
-        middlewares["ws-forward-auth"] = {"forwardAuth": {
-            "address": "http://backend:8000/api/workstations/auth-check"}}
-
-    config["http"]["middlewares"] = middlewares
     if has_https:
         config["http"]["serversTransports"] = {
             "selkies-transport": {"insecureSkipVerify": True}
         }
+    if services:
+        from app.services.service_routes import add_service_routes
+        add_service_routes(config, middlewares, services, domain,
+                           _router_transport(deploy_mode, domain))
+    config["http"]["middlewares"] = middlewares
 
     # Serve the self-signed LAN certificate (generated by lan_tls) when it
     # exists. defaultCertificate covers SNI-less requests (IP-address URLs);
@@ -260,18 +280,21 @@ def build_routes_config(instances: list[dict], domain: str,
 
 
 def write_routes(instances: list[dict], domain: str | None = None,
-                 workstations: list[dict] | None = None):
+                 workstations: list[dict] | None = None,
+                 services: list[dict] | None = None, strict: bool = False):
     """Render the Traefik dynamic config to the file provider directory.
 
     A PermissionError here means the shared traefik-dynamic volume is not
     writable by the (non-root) backend user — log and continue rather than
     crash-looping startup; routing degrades but the portal stays up.
+    strict=True re-raises so an admin action can report the failure.
     """
     domain = domain or _settings.DOMAIN
     out_dir = Path(_settings.TRAEFIK_DYNAMIC_DIR)
     try:
         out_dir.mkdir(parents=True, exist_ok=True)
-        config = build_routes_config(instances, domain, _settings.DEPLOY_MODE, workstations)
+        config = build_routes_config(instances, domain, _settings.DEPLOY_MODE,
+                                     workstations, services)
         (out_dir / "routes.yml").write_text(yaml.dump(config, default_flow_style=False))
     except PermissionError:
         logger.error(
@@ -279,12 +302,24 @@ def write_routes(instances: list[dict], domain: str | None = None,
             "user. Instance routing will not update. Fix volume ownership "
             "(chown 1000:1000) and restart.", out_dir,
         )
+        if strict:
+            raise
 
 
-async def refresh_routes_from_db(session):
+def _service_dict(s) -> dict:
+    from app.models import proxy_hostname, upstream_base
+    return {
+        "id": s.id, "slug": s.slug, "upstream": upstream_base(s), "mount_mode": s.mount_mode,
+        "auth_mode": s.auth_mode, "verify_tls": s.verify_tls, "enabled": s.enabled,
+        "upstream_host": proxy_hostname(s),   # url kind behind a name-based proxy, else None
+    }
+
+
+async def refresh_routes_from_db(session, strict: bool = False):
     """Query running/idle instances and (re)write the Traefik routes file."""
     from sqlmodel import select
-    from app.models import Instance, ServiceTemplate, Workstation
+    from app.models import (
+        Instance, ProxiedService, ServiceTemplate, Workstation)
     from app.security.crypto import decrypt_secret
 
     result = await session.exec(
@@ -314,4 +349,7 @@ async def refresh_routes_from_db(session):
         if w.selkies_password_enc:
             ws_dict["selkies_password"] = decrypt_secret(w.selkies_password_enc)
         ws_data.append(ws_dict)
-    write_routes(data, workstations=ws_data)
+    svc_result = await session.exec(
+        select(ProxiedService).where(ProxiedService.enabled == True))  # noqa: E712
+    svc_data = [_service_dict(s) for s in svc_result.all()]
+    write_routes(data, workstations=ws_data, services=svc_data, strict=strict)

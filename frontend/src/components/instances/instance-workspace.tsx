@@ -1,47 +1,57 @@
 import { useState } from "react";
+import { ChevronLeft } from "lucide-react";
 import { InstanceGrid } from "./instance-grid";
 import { InstanceDetailPane } from "./instance-detail-pane";
 import { WorkstationList } from "./workstation-list";
+import { HomeTabs } from "@/components/home/home-tabs";
+import { AppsGrid } from "@/components/home/apps-grid";
 import { cn } from "@/lib/utils";
 
 interface InstanceWorkspaceProps {
   onLaunch: () => void;
+  onOpenSettings?: () => void;
 }
 
-export function InstanceWorkspace({ onLaunch }: InstanceWorkspaceProps) {
+export function InstanceWorkspace({ onLaunch, onOpenSettings }: InstanceWorkspaceProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   return (
-    <div className="relative flex h-[calc(100vh-8.5rem)] gap-3">
-      {/* List pane: 40% on md+, full-width on narrow */}
-      <div className="w-full overflow-y-auto md:w-2/5 md:min-w-[320px]">
-        <WorkstationList />
-        <InstanceGrid
-          dense
-          selectedId={selectedId ?? undefined}
-          onSelect={(i) => setSelectedId(i.id)}
-          onLaunch={onLaunch}
-        />
-      </div>
+    <HomeTabs
+      apps={<AppsGrid onOpenSettings={onOpenSettings} />}
+      workspaces={
+        <div className="relative flex h-full gap-3">
+          {/* List pane: 40% on md+, full-width on narrow */}
+          <div className="-m-1 w-full overflow-y-auto p-1 md:w-2/5 md:min-w-[320px]">
+            <WorkstationList />
+            <h3 className="mb-2 text-sm font-medium text-muted-foreground">Instances</h3>
+            <InstanceGrid
+              dense
+              selectedId={selectedId ?? undefined}
+              onSelect={(i) => setSelectedId(i.id)}
+              onLaunch={onLaunch}
+            />
+          </div>
 
-      {/* Detail pane: inline on md+, overlay on narrow */}
-      <div
-        className={cn(
-          "overflow-y-auto rounded-lg border border-border bg-card md:block md:w-3/5",
-          selectedId ? "fixed inset-0 z-40 m-2 md:static md:m-0" : "hidden md:block"
-        )}
-      >
-        {/* Back button for narrow screens */}
-        {selectedId && (
-          <button
-            className="m-2 text-sm text-muted-foreground hover:text-foreground transition-colors md:hidden"
-            onClick={() => setSelectedId(null)}
+          {/* Detail pane: inline on md+, overlay on narrow */}
+          <div
+            className={cn(
+              "overflow-y-auto rounded-lg border border-border bg-card md:block md:w-3/5",
+              selectedId ? "fixed inset-0 z-40 m-2 md:static md:m-0" : "hidden md:block"
+            )}
           >
-            ← Back
-          </button>
-        )}
-        <InstanceDetailPane key={selectedId} instanceId={selectedId} />
-      </div>
-    </div>
+            {/* Back button for narrow screens */}
+            {selectedId && (
+              <button
+                className="m-2 inline-flex min-h-11 items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors md:hidden"
+                onClick={() => setSelectedId(null)}
+              >
+                <ChevronLeft className="size-4" aria-hidden />Back
+              </button>
+            )}
+            <InstanceDetailPane key={selectedId} instanceId={selectedId} />
+          </div>
+        </div>
+      }
+    />
   );
 }

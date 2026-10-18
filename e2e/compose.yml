@@ -1,0 +1,184 @@
+# Isolated full-stack e2e for proxied services. Always run via e2e/run.sh, or:
+#   docker compose -p styx-e2e -f e2e/compose.yml up -d --build --wait
+# Only port: 127.0.0.1:18080 (Traefik `web`, plain HTTP). No container_names.
+# The backend reaches docker only through docker-shim, which confines every
+# write to this project (TRAEFIK_CONTAINER/COMPOSE_PROJECT point the backend at
+# the e2e Traefik; the shim stays as the safety guard against the live `styx-traefik`).
+
+networks:
+  edge:            # traefik <-> backend/frontend, plus the url-kind upstream
+    name: styx-e2e-edge
+  dockerapi:       # backend <-> docker-shim only
+    internal: true
+  services:        # SERVICES_NETWORK: traefik only; backend attaches whoami here
+    name: styx-e2e-services
+  apps:            # whoami's own network: unreachable until Styx attaches it
+    internal: true
+
+volumes:
+  dynamic:
+  presets:
+
+services:
+  docker-shim:
+    image: python:3.12-alpine
+    command: ["python", "-u", "/shim/shim.py"]
+    environment:
+      E2E_PROJECT: styx-e2e
+      E2E_SERVICES_NETWORK: styx-e2e-services
+    volumes:
+      - ./docker-shim:/shim:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [dockerapi]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 2375))"]
+      interval: 2s
+      retries: 15
+
+  volume-init:
+    image: busybox:1.36
+    # A file bind inside the ro ../templates mount cannot create its mountpoint,
+    # so the backend's presets dir is assembled here: real presets + e2e extras.
+    command: sh -c "chown -R 1000:1000 /dyn && cp /src/*.json /extra/*.json /presets/"
+    user: "0:0"
+    restart: "no"
+    volumes:
+      - dynamic:/dyn
+      - presets:/presets
+      - ../templates/services:/src:ro
+      - ./presets:/extra:ro
+
+  traefik:
+    image: traefik:v3.4
+    ports:
+      - "127.0.0.1:18080:80"
+    volumes:
+      - ./traefik.yml:/etc/traefik/traefik.yml:ro
+      - ../traefik/plugins-local:/plugins-local:ro
+      - dynamic:/etc/traefik/dynamic:ro
+    networks: [edge, services]
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 3s
+      retries: 20
+
+  backend:
+    build: ../backend
+    depends_on:
+      docker-shim: {condition: service_healthy}
+      volume-init: {condition: service_completed_successfully}
+    environment:
+      # 127.0.0.1, not localhost: forwardAuth login redirects keep the :18080 port
+      # only for IP hosts (_redirect_host), and Traefik Host() ignores the port.
+      DOMAIN: 127.0.0.1
+      DATABASE_URL: sqlite+aiosqlite:///./data/styx-portal.db
+      DOCKER_SOCKET: tcp://docker-shim:2375
+      DOCKER_NETWORK: styx-e2e-edge
+      SERVICES_NETWORK: styx-e2e-services
+      TRAEFIK_CONTAINER: styx-e2e-traefik-1
+      # whoami lives in this same project but must stay discoverable; the shim's
+      # label filter already hides everything else. Non-matching sentinel = hide nothing.
+      COMPOSE_PROJECT: e2e-no-own-project-filter
+      TEMPLATES_DIR: /app/templates
+      SERVICE_PRESETS_DIR: /app/presets  # real presets + e2e extras, merged by volume-init
+      JWT_SECRET: e2e-only-jwt-secret-not-for-production-0123456789abcdef
+      COOKIE_SECURE: "false"
+      DEPLOY_MODE: tunnel
+      # One client IP drives the whole suite; keep limits out of the way.
+      RATE_LIMIT_AUTH: "1000/60"
+      RATE_LIMIT_DEFAULT: "100000/60"
+      TRAEFIK_RATELIMIT_AVERAGE: "1000"
+      TRAEFIK_RATELIMIT_BURST: "1000"
+    tmpfs:
+      - /app/data:uid=1000,gid=1000
+    volumes:
+      - dynamic:/app/traefik-dynamic
+      - ../templates:/app/templates:ro
+      - presets:/app/presets:ro
+    networks: [edge, dockerapi]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 3s
+      retries: 40
+      start_period: 10s
+
+  frontend:
+    build: ../frontend
+    depends_on: [backend]
+    networks: [edge]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 3s
+      retries: 20
+
+  # docker-local upstream, found via "Add from container" (label below).
+  whoami:
+    image: traefik/whoami:v1.10.3
+    labels:
+      styx-e2e.discoverable: "true"
+    networks: [apps]
+
+  # url-kind upstream: Traefik reaches it at http://whoami-url:80.
+  whoami-url:
+    image: traefik/whoami:v1.10.3
+    command: ["--name", "whoami-url"]
+    networks: [edge]
+
+  # url-kind upstream that routes by Host like NPM/Caddy: only app.proxy.test reaches whoami-url.
+  revproxy:
+    image: nginx:1.27-alpine
+    volumes: ["./apps/revproxy/nginx.conf:/etc/nginx/conf.d/default.conf:ro"]
+    depends_on: [whoami-url]
+    networks:
+      edge:
+        aliases: [app.proxy.test]   # the upstream URL's hostname: Styx sends it as Host/SNI
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:4.0.15
+    environment: {PUID: "1000", PGID: "1000", TZ: Etc/UTC}
+    volumes: ["/config"]  # not tmpfs: the Docker archive API (read/write config) cannot see tmpfs
+    labels:
+      styx-e2e.discoverable: "true"
+    networks: [apps]
+
+  jellyfin:
+    image: jellyfin/jellyfin:10.10.7
+    volumes: ["/config", "/cache"]  # not tmpfs: the Docker archive API cannot see tmpfs
+    labels:
+      styx-e2e.discoverable: "true"
+    networks: [apps]
+
+  # root-only app with a service worker
+  focusapp:
+    image: nginx:1.27-alpine
+    volumes: ["./apps/focusapp:/usr/share/nginx/html:ro", "./apps/focusapp/nginx.conf:/etc/nginx/conf.d/default.conf:ro"]
+    labels:
+      styx-e2e.discoverable: "true"
+    networks: [apps]
+
+  # sends frame-ancestors 'none'
+  frameblock:
+    image: nginx:1.27-alpine
+    volumes: ["./apps/frameblock/nginx.conf:/etc/nginx/conf.d/default.conf:ro"]
+    labels:
+      styx-e2e.discoverable: "true"
+    networks: [apps]
+
+  # plain framable app the shell spec stops mid-session
+  stoppable:
+    image: nginx:1.27-alpine
+    volumes: ["./apps/stoppable/nginx.conf:/etc/nginx/conf.d/default.conf:ro"]
+    labels:
+      styx-e2e.discoverable: "true"
+    networks: [apps]
+
+  # config.xml exists, but /brokenapp/ping never answers -> rollback
+  brokenapp:
+    image: nginx:1.27-alpine
+    # a file bind mount cannot be replaced through the archive API ("device or resource busy"),
+    # so /config is a volume seeded at start
+    volumes: ["/config"]
+    command: ["sh", "-c", "echo '<Config><UrlBase></UrlBase></Config>' > /config/config.xml && exec nginx -g 'daemon off;'"]
+    labels:
+      styx-e2e.discoverable: "true"
+    networks: [apps]

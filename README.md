@@ -69,10 +69,19 @@ Massive shoutout to LinuxServer.io. I discovered their transition away from Kasm
   - Tested on `Ubuntu 24.04` using `Wayland`
     - Should work on other `Debian` systems
   - No plan for `Windows` or `MacOS` yet, send demand signal if interested
+- Proxied services: put Jellyfin, the *arr stack, Nextcloud etc. behind one hostname with SSO and group access ([docs](docs/SERVICES.md))
+  - Managed base paths: Styx sets the app's URL base, restarts it, checks it and rolls back on failure (asks consent for containers it didn't create)
+  - Focus mode for root-only apps such as Home Assistant and Immich
+  - The Styx shell: every app opens in a frame with a draggable dock (Alt+Shift+S) to swap apps, go home or pop out
+  - Optional native-app access (Jellyfin apps) and opt-in identity headers (Grafana, Paperless)
 - Basic multi user isolation
 - SSO
   - generic OAuth2 (Authentik/Keycloak/Google)
   - GitHub OAuth
+
+![Styx consent dialog before changing an app's settings](docs/assets/services-consent.png)
+
+![An app open in the Styx shell with the dock](docs/assets/shell-dock.png)
 
 ## Quickstart
 
@@ -87,6 +96,7 @@ Full docs (Zensical site, also published to GitHub/GitLab Pages):
 - [Instances](docs/INSTANCES.md)
 - [Workstations](docs/WORKSTATIONS.md)
 - [GPU](docs/GPU.md)
+- [Services](docs/SERVICES.md)
 - [Admin](docs/ADMIN.md)
 - [Production](docs/PRODUCTION.md)
 - [Agent Build](docs/AGENT_BUILD.md)

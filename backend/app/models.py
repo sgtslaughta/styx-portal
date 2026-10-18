@@ -1,4 +1,5 @@
 import uuid
+from urllib.parse import urlsplit
 from datetime import datetime, timezone
 from typing import Any
 
@@ -28,6 +29,8 @@ class User(SQLModel, table=True):
     last_login: datetime | None = None
     failed_count: int = 0
     locked_until: datetime | None = None
+    open_workspaces: str | None = None  # None = ask | new_tab | same_tab
+    open_apps: str | None = None
 
 
 class BannedIP(SQLModel, table=True):
@@ -243,6 +246,8 @@ class Workstation(SQLModel, table=True):
         sa_column=Column(JSON),
     )
     all_users: bool = False
+    # None = auto badge; "emoji:<char>" or a "data:<mime>;base64,..." image.
+    icon: str | None = None
     last_heartbeat: datetime | None = None
     last_error: str | None = None
     # Occupancy: live stream-connection count reported by the agent's
@@ -283,3 +288,95 @@ class WorkstationAccess(SQLModel, table=True):
     workstation_id: str = Field(foreign_key="workstations.id", index=True)
     user_id: str = Field(foreign_key="users.id", index=True)
     created_at: datetime = Field(default_factory=_now)
+
+
+class Group(SQLModel, table=True):
+    __tablename__ = "groups"
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    name: str = Field(unique=True, index=True)
+    description: str | None = None
+    created_at: datetime = Field(default_factory=_now)
+
+
+class UserGroup(SQLModel, table=True):
+    __tablename__ = "user_groups"
+    user_id: str = Field(foreign_key="users.id", primary_key=True)
+    group_id: str = Field(foreign_key="groups.id", primary_key=True)
+
+
+class ServicePreset(SQLModel, table=True):
+    """Routing preset seeded from templates/services/*.json (upserted on startup)."""
+    __tablename__ = "service_presets"
+    id: str = Field(primary_key=True)          # e.g. "sonarr"
+    name: str
+    icon: str | None = None
+    default_port: int | None = None
+    mount_mode: str = "path"
+    auth_mode: str = "sso"
+    bypass_rules: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
+    health_path: str | None = None
+    verify_tls: bool = True
+    base_url_hint: str | None = None
+    warnings: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    subpath: dict | None = Field(default=None, sa_column=Column(JSON))
+
+
+class ProxiedService(SQLModel, table=True):
+    __tablename__ = "proxied_services"
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    slug: str = Field(unique=True, index=True)
+    name: str
+    icon: str | None = None
+    kind: str = "url"                          # url | docker-local
+    upstream_url: str | None = None            # url kind
+    container: str | None = None               # docker-local kind
+    container_port: int | None = None
+    # Set when connecting the container to the styx network failed and we
+    # fell back to host.docker.internal (see routers/services.py).
+    upstream_fallback: str | None = None
+    mount_mode: str = "path"                   # path | cookie-root
+    auth_mode: str = "sso"                     # sso | sso-with-bypass | app-native
+    bypass_rules: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
+    allowed_groups: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    verify_tls: bool = True
+    upstream_is_proxy: bool = False            # url kind: send the URL hostname as Host/SNI
+    health_path: str | None = None
+    health_status: str = "unknown"             # healthy | unhealthy | unknown
+    health_checked_at: datetime | None = None
+    preset_id: str | None = None
+    enabled: bool = True
+    mount_managed: bool = False   # base path confirmed: Styx set it, or found it already set (spec §3)
+    icon_custom: bool = False     # admin set the icon by hand; auto-fetch never overwrites it
+    pass_identity: bool = False   # forward X-Styx-User/Email/Groups upstream
+    frame_ok: bool = True         # False = "Open without overlay"
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+
+
+def upstream_base(svc: "ProxiedService") -> str:
+    """Base URL Traefik and the health loop use to reach the service."""
+    if svc.kind == "docker-local":
+        return svc.upstream_fallback or f"http://{svc.container}:{svc.container_port}"
+    return (svc.upstream_url or "").rstrip("/")
+
+
+def proxy_hostname(svc: "ProxiedService") -> str | None:
+    """Lowercased URL hostname to send as Host/SNI to a name-based reverse proxy, else None."""
+    if svc.kind != "url" or not svc.upstream_is_proxy or not svc.upstream_url:
+        return None
+    return urlsplit(svc.upstream_url).hostname
+
+
+class MountJob(SQLModel, table=True):
+    """One base-path apply run (spec §3.2). steps: [{id,label,state,detail}]."""
+    __tablename__ = "mount_jobs"
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    service_id: str = Field(index=True)
+    state: str = "pending"        # pending|running|done|rolled_back|failed
+    steps: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
+    changes: list[dict] = Field(default_factory=list, sa_column=Column(JSON))
+    backup_dir: str | None = None
+    changed: bool = False         # True once a write to the container may have landed
+    log_excerpt: str | None = None
+    created_at: datetime = Field(default_factory=_now)
+    finished_at: datetime | None = None

@@ -11,7 +11,8 @@ import {
   useDeleteInstance,
 } from "@/hooks/use-instances";
 import { useSessionEvents } from "@/hooks/use-system";
-import { openConnectWipe } from "@/lib/connect-wipe";
+import { openPending } from "@/lib/connect-wipe";
+import { useOpenChoice } from "@/components/open-prompt";
 import { StatusBadge } from "@/components/instances/status-badge";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { formatDuration } from "@/lib/utils";
@@ -166,6 +167,7 @@ function SessionRow({
   const pause = usePauseInstance();
   const unpause = useUnpauseInstance();
   const reduce = useReducedMotion();
+  const choose = useOpenChoice();
   const { data: events } = useSessionEvents(instance.id, expanded);
 
   const isRunning = instance.status === "running" || instance.status === "idle";
@@ -177,6 +179,13 @@ function SessionRow({
   const idleSeconds = instance.last_activity && isRunning
     ? (Date.now() - new Date(instance.last_activity + "Z").getTime()) / 1000
     : null;
+
+  function connect() {
+    choose("workspaces", instance.name, (mode) => {
+      openPending(mode, `Launching ${instance.name}…`, async () => `/i/${instance.subdomain}/`)
+        .catch((e: Error) => toast.error(`Connect failed: ${e.message}`));
+    });
+  }
 
   return (
     <div>
@@ -198,13 +207,13 @@ function SessionRow({
         <span className="text-xs text-muted-foreground tabular-nums">
           {uptimeSeconds != null ? formatDuration(uptimeSeconds) : "—"}
         </span>
-        <span className={cn("text-xs tabular-nums", idleSeconds && idleSeconds > 300 ? "text-warning" : "text-muted-foreground")}>
+        <span className={cn("text-xs tabular-nums", idleSeconds && idleSeconds > 300 ? "text-warning-foreground" : "text-muted-foreground")}>
           {idleSeconds != null ? formatDuration(idleSeconds) : "—"}
         </span>
         <div className="flex gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
           {isRunning && (
             <>
-              <ActionBtn icon={ExternalLink} color="emerald" title="Connect" onClick={() => openConnectWipe(`/i/${instance.subdomain}/`, `Launching ${instance.name}…`)} />
+              <ActionBtn icon={ExternalLink} color="success" title="Connect" onClick={connect} />
               <ActionBtn icon={RotateCcw} color="blue" title="Restart" onClick={() => restart.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />
               <ActionBtn icon={Pause} color="warning" title="Pause" onClick={() => pause.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />
               <ActionBtn icon={Square} color="destructive" title="Stop" onClick={() => stop.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />
@@ -212,13 +221,13 @@ function SessionRow({
           )}
           {isPaused && (
             <>
-              <ActionBtn icon={Play} color="emerald" title="Resume" onClick={() => unpause.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />
+              <ActionBtn icon={Play} color="success" title="Resume" onClick={() => unpause.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />
               <ActionBtn icon={Square} color="destructive" title="Stop" onClick={() => stop.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />
             </>
           )}
           {!isRunning && !isPaused && (
             <>
-              <ActionBtn icon={Play} color="emerald" title="Start" onClick={() => start.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />
+              <ActionBtn icon={Play} color="success" title="Start" onClick={() => start.mutate(instance.id, { onError: (e) => toast.error(e.message) })} />
               <ActionBtn icon={Trash2} color="destructive" title="Destroy" onClick={() => onDestroyClick(instance)} />
             </>
           )}
@@ -251,9 +260,9 @@ function SessionRow({
                       <span className={cn(
                         "font-medium",
                         ev.type === "error" ? "text-destructive" :
-                        ev.type === "started" ? "text-emerald-400" :
+                        ev.type === "started" ? "text-success-foreground" :
                         ev.type === "stopped" ? "text-muted-foreground" :
-                        "text-blue-400"
+                        "text-primary"
                       )}>
                         {ev.type}
                       </span>
@@ -277,13 +286,13 @@ function ActionBtn({
   onClick,
 }: {
   icon: LucideIcon;
-  color: "emerald" | "blue" | "warning" | "destructive";
+  color: "success" | "blue" | "warning" | "destructive";
   title: string;
   onClick: () => void;
 }) {
   const colors = {
-    emerald: "text-emerald-400 hover:bg-emerald-500/15",
-    blue: "text-blue-400 hover:bg-blue-500/15",
+    success: "text-success-foreground hover:bg-success/15",
+    blue: "text-primary hover:bg-primary/15",
     warning: "text-warning hover:bg-warning/15",
     destructive: "text-destructive hover:bg-destructive/15",
   };

@@ -1,0 +1,15 @@
+{
+  "id": "gitlab",
+  "name": "GitLab",
+  "icon": "🦊",
+  "default_port": 80,
+  "mount_mode": "path",
+  "auth_mode": "sso",
+  "bypass_rules": [],
+  "health_path": "/gitlab/-/readiness",
+  "verify_tls": true,
+  "base_url_hint": "gitlab.rb: external_url 'https://<host>/gitlab' then gitlab-ctl reconfigure.",
+  "warnings": [
+    "Git over HTTPS from the CLI will not pass Styx SSO; use SSH remotes or app-native mode."
+  ]
+}

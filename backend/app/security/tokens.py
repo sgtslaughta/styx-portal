@@ -52,3 +52,20 @@ def decode_token(token: str) -> dict:
         return jwt.decode(token, _secret(), algorithms=[_ALGO])
     except jwt.PyJWTError as e:
         raise TokenError(str(e)) from e
+
+
+def create_proxy_token(user_id: str, family_id: str, ttl: int | None = None) -> str:
+    """forwardAuth-only token (styx_proxy cookie). Bound to a refresh-token
+    family: it dies with logout, rotation-reuse kill or password change."""
+    from app.services.settings_store import settings
+    ttl = settings.get("REFRESH_TTL") if ttl is None else ttl
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": user_id,
+        "type": "proxy",
+        "fam": family_id,
+        "jti": str(uuid.uuid4()),
+        "iat": now,
+        "exp": now + timedelta(seconds=ttl),
+    }
+    return jwt.encode(payload, _secret(), algorithm=_ALGO)

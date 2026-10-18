@@ -17,7 +17,7 @@ export function SettingsNav({ categories, activeId, onSelect }: Props) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   return (
-    <nav className="hidden md:block md:w-56 md:shrink-0 md:space-y-5 md:border-r md:border-border md:pr-6">
+    <nav className="hidden md:block md:w-[272px] md:shrink-0 md:space-y-5 md:border-r md:border-border md:pr-6">
       {categories.map((cat) => {
         const CatIcon = cat.icon;
         const isCollapsed = collapsed[cat.id];
@@ -31,12 +31,12 @@ export function SettingsNav({ categories, activeId, onSelect }: Props) {
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               )}
             >
-              <CatIcon className="h-4 w-4" />
-              <span className="flex-1 text-left">{cat.label}</span>
+              <CatIcon className="h-4 w-4 shrink-0" />
+              <span className="min-w-0 flex-1 truncate text-left">{cat.label}</span>
               {cat.adminOnly && (
                 <Badge variant="outline" className="px-1.5 py-0 text-[10px]">Admin</Badge>
               )}
-              <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", isCollapsed && "-rotate-90")} />
+              <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 transition-transform duration-200", isCollapsed && "-rotate-90")} />
             </button>
             <AnimatePresence initial={false}>
               {!isCollapsed && (

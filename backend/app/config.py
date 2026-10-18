@@ -19,13 +19,27 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./data/styx-portal.db"
     DOCKER_SOCKET: str = "unix:///var/run/docker.sock"
     DOCKER_NETWORK: str = "styx-portal"
+    # Proxied docker-local services join this network; only Traefik shares it
+    # (backend/frontend do not), so an app container cannot reach Styx directly.
+    SERVICES_NETWORK: str = "styx-services"
+    TRAEFIK_CONTAINER: str = "styx-traefik"  # attached to per-user/service networks
+    # Compose project whose containers are "ours" (hidden from discovery).
+    # Empty = derive it from the Traefik container's compose label.
+    COMPOSE_PROJECT: str = ""
     SELKIES_DEFAULT_PORT: int = 3001
     TEMPLATES_DIR: str = "/app/templates"
+    SERVICE_PRESETS_DIR: str = "/app/templates/services"
     SCREENSHOT_CACHE_DIR: str = "/app/data/screenshots"
     SCREENSHOT_INTERVAL_SECONDS: int = 30
+    MOUNT_BACKUP_DIR: str = "./data/mount-backups"
+    MOUNT_PROBE_IMAGE: str = "busybox:1.36"
     TRAEFIK_DYNAMIC_DIR: str = "/app/traefik-dynamic"
     AUTHENTIK_MIDDLEWARE: str = "authentik@file"
     DEPLOY_MODE: str = "tunnel"   # tunnel | direct
+    # Direct peers whose CF-Connecting-IP / X-Forwarded-For are believed
+    # (Traefik). Default: loopback + docker's default bridge pools
+    # (172.17-31.x, 192.168.x). Add yours if daemon.json sets other pools.
+    TRUSTED_PROXY_CIDRS: str = "127.0.0.1/32,::1/128,172.16.0.0/12,192.168.0.0/16"
     JWT_SECRET: str = ""
     ACCESS_TTL: int = 900          # 15 minutes
     REFRESH_TTL: int = 604800      # 7 days

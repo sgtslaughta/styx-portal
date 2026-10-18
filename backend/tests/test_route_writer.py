@@ -35,10 +35,15 @@ def test_instance_router_wraps_errors_then_strip():
     inst = {"id": "abc", "subdomain": "dev", "port": 3001, "protocol": "https", "tls_skip_verify": True}
     cfg = build_routes_config([inst], "example.com")
     router = cfg["http"]["routers"]["abc"]
-    assert router["rule"] == "Host(`example.com`) && PathPrefix(`/i/dev`)"
+    assert router["rule"] == "Host(`example.com`) && (Path(`/i/dev`) || PathPrefix(`/i/dev/`))"
     assert router["priority"] == 50
     # errors middleware must wrap (come before) the strip middleware
-    assert router["middlewares"] == ["instance-unavailable-errors", "strip-dev"]
+    assert router["middlewares"] == ["instance-unavailable-errors", "inst-auth-abc", "strip-dev"]
+    # one forwardAuth: login + ownership, and it strips Styx cookies (spec §10.1)
+    assert cfg["http"]["middlewares"]["inst-auth-abc"] == {"forwardAuth": {
+        "address": "http://backend:8000/internal/instances/abc/auth-check",
+        "authResponseHeaders": ["Cookie"]}}
+    assert "styx-cookie-strip" not in cfg["http"]["middlewares"]
     assert cfg["http"]["middlewares"]["strip-dev"] == {
         "stripPrefix": {"prefixes": ["/i/dev"]}
     }

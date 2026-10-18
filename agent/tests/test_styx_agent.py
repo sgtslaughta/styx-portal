@@ -28,7 +28,7 @@ def test_load_config(tmp_path):
 
 
 def test_agent_version_bumped():
-    assert styx_agent.AGENT_VERSION == "0.6.12"
+    assert styx_agent.AGENT_VERSION == "0.8.0"
 
 
 def test_gateway_cmd_secrets_via_env(tmp_path):
@@ -71,7 +71,7 @@ def test_health_payload_reports_mode_and_engine(tmp_path):
     h = styx_agent.health_payload(cfg, selkies_alive=True, gateway_alive=False)
     assert h["mode"] == "seat"
     assert h["engine"] == "pixelflux"
-    assert h["agent_version"] == "0.6.12"
+    assert h["agent_version"] == "0.8.0"
     assert "needs_consent" not in h
     assert h["selkies_alive"] is True and h["gateway_alive"] is False
     assert h["active_connections"] == 0
@@ -184,7 +184,7 @@ def test_run_config_from_0411_is_accepted(tmp_path, monkeypatch):
     monkeypatch.setattr(styx_agent.seat_gnome, "gnome_available", lambda: (True, ""))
     assert styx_agent.pick_seat_shell(cfg) == "gnome"
     p = styx_agent.health_payload(cfg, True, True)
-    assert p["agent_version"] == "0.6.12" and "needs_consent" not in p
+    assert p["agent_version"] == "0.8.0" and "needs_consent" not in p
 
 
 def test_rollback_swaps_dirs(tmp_path, monkeypatch):
@@ -272,3 +272,87 @@ def test_uninstall_removes_prev(monkeypatch, tmp_path):
     monkeypatch.setattr(styx_agent.subprocess, "run", lambda *a, **k: None)
     assert styx_agent.uninstall(None) == 0
     assert not inst.exists() and not prev.exists()
+
+
+def test_snap_scope_props_pins_caller_and_strips_exec():
+    import pytest
+    pytest.importorskip("dbus")
+    import seat_portal
+
+    ok = [("PIDs", [4242]), ("Description", "firefox"), ("Slice", "evil.slice"),
+          ("ExecStart", [["/bin/sh", ["sh", "-c", "id"], False]])]
+    assert seat_portal.snap_scope_props("snap.firefox.firefox-1.scope", ok, [], 4242) == [
+        ("PIDs", [4242]), ("Description", "firefox")]
+    with pytest.raises(ValueError):  # another process of the same uid
+        seat_portal.snap_scope_props("snap.firefox.firefox-1.scope", [("PIDs", [1])], [], 4242)
+    with pytest.raises(ValueError):  # no PIDs at all
+        seat_portal.snap_scope_props("snap.firefox.firefox-1.scope", [], [], 4242)
+    with pytest.raises(ValueError):  # service unit with ExecStart, not a scope
+        seat_portal.snap_scope_props("snap.x.service", ok, [], 4242)
+    with pytest.raises(ValueError):  # not a snap at all
+        seat_portal.snap_scope_props("evil.scope", ok, [], 4242)
+    with pytest.raises(ValueError):  # aux units
+        seat_portal.snap_scope_props("snap.firefox.firefox-1.scope", ok, [("x.service", [])], 4242)
+
+
+def test_viewers_connected(tmp_path):
+    p = tmp_path / "gw_state.json"
+    assert styx_agent.viewers_connected(p) is False  # missing
+    p.write_text("not json")
+    assert styx_agent.viewers_connected(p) is False
+    p.write_text(json.dumps({"active_connections": 0}))
+    assert styx_agent.viewers_connected(p) is False
+    p.write_text(json.dumps({"active_connections": 2}))
+    assert styx_agent.viewers_connected(p) is True
+
+
+def test_merge_pending_unions_keys_and_keeps_first_old():
+    a, b, c = {"x": 1}, {"x": 2}, {"x": 3}
+    p = styx_agent.merge_pending(None, a, b)
+    assert p["old"] == a and "seat" not in p["keys"]
+    p = styx_agent.merge_pending(p, b, c)
+    assert p["old"] == a
+    assert set(p["keys"]) == set(styx_agent.settings_restart_keys(a, b))
+
+
+def test_merge_pending_seat_change_in_either_push():
+    base = {"seat_width": 2560}
+    wide = {"seat_width": 1920}
+    p = styx_agent.merge_pending(None, base, wide)
+    assert "seat" in p["keys"]
+    p = styx_agent.merge_pending(p, wide, {"seat_width": 1920, "idle_timeout_s": 5})
+    assert "seat" in p["keys"]  # earlier push's seat change is kept
+    q = styx_agent.merge_pending(None, base, {"idle_timeout_s": 5})
+    assert "seat" not in q["keys"]
+    q = styx_agent.merge_pending(q, {"idle_timeout_s": 5}, wide)
+    assert "seat" in q["keys"]
+
+
+def test_idle_timeout_changes_apply_immediately():
+    from agent_procs import must_apply_now
+    assert must_apply_now({"idle_timeout_s": 900}, {"idle_timeout_s": 600})
+    assert must_apply_now({}, {"idle_timeout_enabled": True})
+    assert not must_apply_now({"video_crf": 25}, {"video_crf": 30})
+
+
+def test_restart_plan():
+    from agent_procs import merge_pending, restart_plan
+    idle = merge_pending(None, {}, {"idle_timeout_s": 5})
+    now, left = restart_plan(idle, True, True)       # idle change, viewers: gateway only
+    assert now == ("gateway",) and left["keys"] == ("selkies", "standby", "shell", "clipboard")
+    assert restart_plan(left, False, True) == ((), left)   # rest waits
+    now, left = restart_plan(left, False, False)     # last viewer gone: the rest
+    assert now == ("selkies", "standby", "shell", "clipboard") and left is None
+    now, left = restart_plan(idle, True, False)      # nobody connected: everything
+    assert now == idle["keys"] and left is None
+    seat = merge_pending(None, {}, {"seat_width": 1920, "idle_timeout_s": 5})
+    now, left = restart_plan(seat, True, True)
+    assert now == ("gateway",) and "seat" in left["keys"] and "gateway" not in left["keys"]
+    assert restart_plan(None, True, True) == ((), None)
+
+
+def test_gateway_gets_icon_dir():
+    cfg = {"install_dir": "/opt/x", "port": 8443, "selkies_user": "u",
+           "selkies_password": "p", "stream_settings": {}}
+    _, env = styx_agent.build_gateway_cmd(cfg, 18444)
+    assert env["STYX_GW_ICON_DIR"] == "/opt/x"

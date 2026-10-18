@@ -26,6 +26,12 @@ export function WorkstationStreamSettings({
   const [paintOver, setPaintOver] = useState<boolean>(
     ss.use_paint_over_quality !== false
   );
+  const [fullColor, setFullColor] = useState<boolean>(
+    ss.video_fullcolor === true
+  );
+  const [bitrate, setBitrate] = useState<string>(
+    ss.bitrate_kbps != null ? String(ss.bitrate_kbps) : ""
+  );
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -35,12 +41,19 @@ export function WorkstationStreamSettings({
       framerate,
       h264_streaming_mode: gaming,
       use_paint_over_quality: paintOver,
+      video_fullcolor: fullColor,
     };
     const crfNum = parseInt(crf, 10);
     if (!Number.isNaN(crfNum) && crfNum >= 5 && crfNum <= 50) {
       next.h264_crf = crfNum;
     } else {
       delete next.h264_crf;
+    }
+    const brNum = parseInt(bitrate, 10);
+    if (!Number.isNaN(brNum) && brNum >= 1000) {
+      next.bitrate_kbps = brNum;
+    } else {
+      delete next.bitrate_kbps;
     }
     try {
       await api.updateWorkstation(ws.id, { stream_settings: next });
@@ -65,7 +78,10 @@ export function WorkstationStreamSettings({
       </button>
       {open && (
         <div className="mt-2 flex flex-wrap items-center gap-4 rounded-md bg-muted/40 p-3">
-          <label className="flex items-center gap-1.5">
+          <label
+            className="flex items-center gap-1.5"
+            title="Default; viewers can change it from the stream panel."
+          >
             FPS
             <select
               className="rounded border border-border bg-surface px-1 py-0.5"
@@ -81,7 +97,7 @@ export function WorkstationStreamSettings({
           </label>
           <label
             className="flex items-center gap-1.5"
-            title="H.264 CRF 5-50; lower = higher quality/bitrate. Blank = default (25)."
+            title="H.264 CRF 5-50; lower = higher quality/bitrate. Blank = default (25). Default; viewers can change it from the stream panel."
           >
             Quality (CRF)
             <input
@@ -92,6 +108,20 @@ export function WorkstationStreamSettings({
               placeholder="25"
               value={crf}
               onChange={(e) => setCrf(e.target.value)}
+            />
+          </label>
+          <label
+            className="flex items-center gap-1.5"
+            title="Viewers start here and can lower it from the stream panel."
+          >
+            Max bitrate (kbps)
+            <input
+              className="w-20 rounded border border-border bg-surface px-1 py-0.5"
+              type="number"
+              min={1000}
+              placeholder="16000"
+              value={bitrate}
+              onChange={(e) => setBitrate(e.target.value)}
             />
           </label>
           <label
@@ -116,11 +146,22 @@ export function WorkstationStreamSettings({
             />
             Sharpen static screen
           </label>
+          <label
+            className="flex items-center gap-1.5"
+            title="4:4:4 chroma for crisp text. Warning: VA-API GPUs cannot encode H.264 4:4:4, so this switches to software x264 (more CPU, larger frames) and can make audio stutter on slow uplinks."
+          >
+            <input
+              type="checkbox"
+              checked={fullColor}
+              onChange={(e) => setFullColor(e.target.checked)}
+            />
+            Full colour (4:4:4)
+          </label>
           <Button size="sm" onClick={save} disabled={saving}>
             {saving ? "Saving…" : "Save"}
           </Button>
           <span className="text-xs text-muted-foreground">
-            Applying restarts the stream.
+            Changes apply the next time nobody is connected.
           </span>
         </div>
       )}

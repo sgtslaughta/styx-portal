@@ -1,0 +1,425 @@
+# Service Proxy Core (SP1) — Design
+
+Date: 2026-10-12
+Status: draft for review
+Program: Unified Remote Access (SP1 of 4)
+
+## 1. Program context
+
+Styx becomes a unified remote-access gateway. One whitelisted hostname
+(`g.jmolabs.dev`, via Cloudflare Tunnel) proxies any internal HTTP service:
+containers on the Styx host, containers on other LAN docker hosts, anything
+reachable at `ip:port`. Admins add and configure services in the Styx UI.
+Access is multi-user and group-based. The deployment is internet-exposed,
+so security wins over convenience and every risk is spelled out in the UI
+and the docs.
+
+Hard constraints:
+
+- **One hostname.** No subdomains, no wildcards (corporate allowlist).
+  Everything is path-multiplexed on the single host.
+- **No HTML/JS rewriting.** Apps either support a base URL (`path` mode) or
+  take over the root via a routing cookie (`cookie-root` mode).
+- **HTTP(S) only.** No raw TCP/UDP.
+- **All traffic CF → Traefik → Styx host → internal host.** No LAN bypass.
+
+Sub-projects, each with its own spec and plan:
+
+| # | Sub-project | Summary |
+|---|-------------|---------|
+| SP1 | Service proxy core (this spec) | `proxied_services` + groups, route_writer modes, Styx-side auth-check, local docker discovery, health, UI, presets |
+| SP2 | Authentik SSO | compose profile (server/worker/postgres/redis), path-multiplexed on the same host, bootstrap + auto-provisioning, Styx login via Authentik OIDC, domain-level forwardAuth chained to Styx auth-check, external-Authentik option |
+| SP3 | Remote docker hosts | SSH docker contexts (`ssh://user@host`, key Fernet-encrypted), discovery on remote hosts |
+| SP4 | Deploy from template | service presets gain a `deploy` block; Styx launches the app container itself and sets its base URL |
+
+SP1 is useful standalone with current Styx native auth. SP2 swaps identity
+underneath without changing SP1's routing or ACL model.
+
+## 2. Verified facts
+
+- Styx reserves `/api`, `/i/`, `/w/`, `/assets`, `/login`, `/setup`,
+  `/connecting`, `/change-password`, `/accept-invite`.
+- Authentik serves only namespaced prefixes: `/if/`, `/api/v3/`,
+  `/application/`, `/outpost.goauthentik.io/`, `/static/`, `/media/`,
+  `/flows/`, `/ws/`, `/-/`, `/.well-known/`, `/source/`. None collide with
+  Styx. SP1 reserves them now so SP2 needs no slug migration.
+- `route_writer.build_routes_config` already emits Host-scoped routers with
+  priorities (`/api` 100, workstations 50, frontend 1), shared middlewares
+  `ip-ban-gate`, `styx-ratelimit`, and a forwardAuth pattern
+  (`/api/workstations/auth-check`; since moved to
+  `/internal/workstations/auth-check`, §10.1).
+- `docker-proxy` (linuxserver socket-proxy) already allows
+  `CONTAINERS=1 NETWORKS=1 POST=1`, enough to list containers and connect
+  them to a network.
+- `audit_log` table exists. Users have `role` (`admin|user`) only; no groups.
+
+## 3. Data model
+
+### 3.1 `proxied_services`
+
+| column | type | notes |
+|--------|------|-------|
+| id | int pk | |
+| slug | str unique | URL-safe, validated against reserved list (§4.5) |
+| name | str | display |
+| icon | str | optional, preset-provided or URL |
+| kind | `url` \| `docker-local` | |
+| upstream_url | str | `url` kind: `http(s)://host:port[/base]` |
+| container | str | `docker-local` kind: container name/id |
+| container_port | int | `docker-local` kind |
+| mount_mode | `path` \| `cookie-root` | |
+| auth_mode | `sso` \| `sso-with-bypass` \| `app-native` | |
+| bypass_rules | JSON | `[{"path_prefix": str, "required_header": str\|null}]` |
+| allowed_groups | JSON | list of group names; empty = any logged-in user |
+| verify_tls | bool | default true |
+| health_path | str | optional, relative to upstream |
+| health_status | `healthy` \| `unhealthy` \| `unknown` | written by health loop |
+| health_checked_at | datetime | |
+| preset_id | str | optional, which preset seeded it |
+| enabled | bool | disabled = no routes emitted, tile hidden |
+| created_at / updated_at | datetime | |
+
+`host` mount mode is deliberately absent (one-hostname rule).
+
+### 3.2 `groups`, `user_groups`
+
+- `groups`: `id`, `name` unique, `description`.
+- `user_groups`: `user_id`, `group_id` composite pk.
+- SP2 overwrites a user's memberships from the Authentik groups claim on
+  each login; Styx becomes a cache, Authentik the source of truth.
+
+### 3.3 Service presets
+
+JSON files in `templates/services/*.json`, seeded into a `service_presets`
+table on startup (same pattern as instance templates). Fields: `id`, `name`,
+`icon`, `default_port`, `mount_mode`, `auth_mode`, `bypass_rules`,
+`health_path`, `verify_tls`, `base_url_hint` (human instructions for the
+app's base-URL setting), `warnings` (list of strings shown in the UI).
+
+v1 presets:
+
+| preset | mode | auth | bypass | notes |
+|--------|------|------|--------|-------|
+| sonarr / radarr / prowlarr / lidarr | path | sso-with-bypass | `/<slug>/api` + `X-Api-Key` | hint: `UrlBase=/<slug>` |
+| jellyfin | path | sso-with-bypass | `/<slug>/` + `Authorization` (MediaBrowser token) | hint: base URL `/<slug>` |
+| nextcloud | path | sso | — | hint: `overwritewebroot` |
+| gitlab | path | sso | — | hint: `relative_url_root` |
+| audiobookshelf | cookie-root | sso-with-bypass | `/api` + `Authorization` | no subpath support upstream |
+| unraid | cookie-root | sso | — | `verify_tls=false`, warning |
+| generic-url | path | sso | — | blank |
+
+## 4. Routing (route_writer extension)
+
+All service routers are `Host(<domain>) && ...`, get `ip-ban-gate` and
+`styx-ratelimit`, and a per-service `svc-auth-<slug>` forwardAuth
+(omitted for `app-native`). Disabled services emit nothing.
+
+### 4.1 `path` mode
+
+- Rule: `Path(`/<slug>`) || PathPrefix(`/<slug>/`)` (segment boundary), priority 60. No StripPrefix: the app is
+  configured with its base URL and expects the prefix.
+
+### 4.2 `cookie-root` mode
+
+- Rule: `HeaderRegexp(`Cookie`, `styx_svc=<slug>`)`, priority 40.
+  Catches `/` and everything the app serves. Sits above the frontend
+  router (1) and below `/api` (100), `/i/`, `/w/`, and Authentik prefixes.
+- Styx frontend sends `X-Styx-Client: 1` on every API request (one line in
+  the fetch wrapper). When at least one cookie-root service exists, the
+  `/api` router rule becomes
+  `PathPrefix(`/api`) && Header(`X-Styx-Client`, `1`)` so Styx's own API
+  keeps working while the cookie is set, and the app's `/api` reaches the
+  app.
+- Entering: the Styx tile calls `POST /api/services/<slug>/enter` through
+  the frontend fetch wrapper (so the `X-Styx-Client` header and CSRF token
+  are present even if another takeover cookie is already set). Backend
+  checks the ACL, sets `styx_svc=<slug>; Path=/; Secure; HttpOnly;
+  SameSite=Lax`, and the frontend then navigates to `/`.
+- Escape hatch: `GET /_styx/exit` (backend route, Traefik priority 90)
+  clears the cookie and redirects to `/`. While the cookie is set the portal
+  itself is not reachable, so there is no in-portal banner; the tile tooltip
+  and the docs name `/_styx/exit`, and the unavailable page links to it.
+- Limits (documented, shown in UI): one cookie-root service active per
+  browser; browser-only (mobile apps cannot set the cookie).
+
+### 4.3 Middlewares per service
+
+- `svc-auth-<slug>`: forwardAuth to
+  `http://backend:8000/internal/services/<slug>/auth-check`, `trustForwardHeader`
+  false, `authResponseHeaders: [X-Styx-User, X-Styx-Groups]`.
+- `styx-strip-identity` (shared): headers middleware
+  that deletes client-supplied `X-Styx-*` and `X-authentik-*` request
+  headers before forwardAuth runs. Spoof-proof.
+- Unavailable upstream: Traefik `errors` middleware on 502/503/504 →
+  `/api/service-unavailable?slug=<slug>` (reuses the instance-unavailable
+  page pattern).
+
+### 4.4 Upstream transport
+
+- `url` kind: Traefik service `loadBalancer.servers[0].url = upstream_url`.
+  `verify_tls=false` emits a per-service `serversTransport` with
+  `insecureSkipVerify: true`.
+- `docker-local` kind: on create/enable, backend connects the container to
+  the `styx-services` network (Traefik-only, §10.1) via docker-proxy; upstream is
+  `http://<container>:<container_port>`. If the connect fails (e.g.
+  `network_mode: host`), fall back to `http://host.docker.internal:<published
+  port>` and record the fallback in the service row.
+
+### 4.5 Reserved slugs
+
+Rejected at create/update (400 with explanation):
+
+`api i w assets login setup connecting change-password accept-invite _styx`
+plus Authentik: `if application outpost.goauthentik.io static media flows
+ws - .well-known source` (and the `api/v3` prefix is covered by `api`).
+
+## 5. Auth-check endpoint
+
+`GET /internal/services/{slug}/auth-check` (no Traefik router matches `/internal`) — called by Traefik forwardAuth with
+`X-Forwarded-Uri`, `X-Forwarded-Method`, and the original cookies/headers.
+
+Order:
+
+1. Service missing or disabled → 404.
+2. `auth_mode == sso-with-bypass` and a bypass rule matches: `X-Forwarded-Uri`
+   starts with `path_prefix` AND (`required_header` is null OR that header is
+   present, any value) → 200. Nothing else is checked.
+3. No valid Styx session cookie → 302 to `/login?next=<X-Forwarded-Uri>`.
+4. Session valid → admin always 200. Otherwise user must be in at least one
+   of `allowed_groups` (empty list = any user) → 200, else 403 rendered by
+   the Styx "no access" page.
+5. On 200, respond with `X-Styx-User: <username>` and
+   `X-Styx-Groups: a,b` (SP2 adds `X-authentik-*` passthrough).
+
+Rate limit and ban gate run in Traefik before this endpoint.
+
+## 6. Discovery
+
+`GET /api/services/discover` (admin): lists running local containers via
+docker-proxy with name, image, exposed ports, networks. Excludes containers
+Styx launched (instance label) and the Styx stack itself (compose project
+label). UI "Add from container" prefills `kind=docker-local`, container,
+port, and suggests a preset by image name match.
+
+## 7. Health loop
+
+Background task (same shape as `session_monitor`): every 30s, for each
+enabled service with `health_path`, GET `<upstream><health_path>` with a
+5s timeout, honoring `verify_tls`. 2xx/3xx → `healthy`, else `unhealthy`.
+Without `health_path` → `unknown`. `docker-local` services use the Docker
+API instead (§10.1), with or without `health_path`. Tiles show a dot;
+unhealthy tiles stay clickable.
+
+## 8. API surface
+
+Admin-only unless noted. All mutations write `audit_log`.
+
+| method | path | notes |
+|--------|------|-------|
+| GET | `/api/services` | any user; filtered to services the caller may open; includes health |
+| POST | `/api/services` | create; validates slug, mode/auth combo, bypass rules |
+| PUT | `/api/services/{id}` | update |
+| DELETE | `/api/services/{id}` | delete, disconnect container from network if we connected it |
+| POST | `/api/services/{id}/enable` / `disable` | |
+| GET | `/api/services/discover` | §6 |
+| GET | `/api/services/presets` | seeded presets |
+| POST | `/api/services/{slug}/enter` | any user; cookie-root entry, checks ACL first |
+| GET | `/_styx/exit` | any; clears cookie |
+| GET | `/internal/services/{slug}/auth-check` | Traefik only (internal network), §5 |
+| GET | `/api/groups`, POST, PUT, DELETE | groups CRUD |
+| GET, PUT | `/api/users/{id}/groups` | read / set memberships |
+
+Every write triggers `route_writer.write_routes` (extend signature with
+`services=`), same as instances/workstations.
+
+## 9. UI
+
+- **Home:** new "Services" tile section, filtered by the caller's groups,
+  with health dot. Path-mode tile opens `/<slug>` in a new tab;
+  cookie-root tile calls `enter` and opens `/`.
+- **Admin → Services:** table (name, slug, mode, auth, health, enabled).
+  Add/edit drawer: preset picker, "Add from container" discovery picker,
+  kind fields, mount mode, auth mode, bypass rule editor, allowed groups
+  multi-select, `verify_tls` toggle, `health_path`, base-URL hint shown
+  read-only from preset.
+- **Admin → Users → Groups:** groups CRUD, per-user group multi-select.
+- **Risk messaging (required, not optional):**
+  - Each bypass rule: red callout "Requests matching `<prefix>` are
+    reachable from the internet WITHOUT Styx login. Only the app's own
+    credential and rate limiting protect them."
+  - `app-native`: callout "Styx does not authenticate this service. The app
+    must enforce its own login."
+  - `verify_tls=false`: callout "Upstream certificate is not verified.
+    Traffic between Styx and this host can be intercepted on your LAN."
+  - `cookie-root`: callout "Takes over the root of the hostname for this
+    browser. One service at a time. Mobile apps cannot use this mode."
+- **Docs:** new page `docs/security-model.md` section "Proxied services":
+  exposure model, the three auth modes, bypass risk, cookie-root mechanics
+  and escape hatch, TLS verification, what is and is not protected by
+  Styx. Linked from every callout.
+
+## 10. Security summary
+
+- Internet-exposed by design; every service router carries
+  `ip-ban-gate` + `styx-ratelimit`.
+- Identity headers are stripped from client requests before forwardAuth.
+- Bypass rules are the only unauthenticated surface and require an explicit
+  admin opt-in per rule with a red warning; `required_header` filters
+  scanners but is not authentication.
+- The routing cookie is a selector, never a credential; ACL is enforced on
+  every request by `auth-check`, not at `enter` time only.
+- `auth-check` lives at `/internal/services/{slug}/auth-check`. No Traefik
+  router matches `/internal` (asserted by a route_writer test), so only
+  Traefik's forwardAuth, over the docker network, can reach it.
+- Secrets introduced later (SSH keys, Authentik token) use the existing
+  Fernet pattern. SP1 stores no new secrets.
+- Admin-only CRUD, every mutation audited.
+
+### 10.1 Security model (post-review hardening, 2026-10-12)
+
+- **Network isolation.** `docker-local` containers are attached to a
+  dedicated bridge `styx-services` (setting `SERVICES_NETWORK`, created on
+  demand, defined in compose). Only Traefik joins it; backend and frontend
+  do not, so a proxied app cannot reach Styx's API or the docker
+  socket-proxy directly. Updating a service to another container or kind,
+  or deleting it, disconnects the old container unless another service row
+  still references it. The backend cannot probe attached containers over
+  HTTP, so `docker-local` health comes from the Docker API: running =
+  healthy unless a Docker `HEALTHCHECK` says otherwise (`starting` =
+  unknown); stopped or missing = unhealthy; Docker unreachable = unknown.
+  `url` services keep the HTTP `health_path` probe.
+- **Client IP trust.** `CF-Connecting-IP` / `X-Forwarded-For` are honoured
+  only when the socket peer is in `TRUSTED_PROXY_CIDRS` (default
+  `127.0.0.1/32,::1/128,172.16.0.0/12,192.168.0.0/16`, docker's default
+  bridge pools; widen it if `daemon.json` sets other address pools).
+  `CF-Connecting-IP` is ignored in `DEPLOY_MODE=direct`, where no Cloudflare
+  edge sets it. Rate limits, IP bans and the audit log use this IP.
+- **auth-check** is internal-only (see above), for services
+  (`/internal/services/{slug}/auth-check`) and workstation streams
+  (`/internal/workstations/<id>/auth-check`, moved from the public
+  `/api/workstations/auth-check`, which mutated seat occupancy). Both
+  authenticate only via the `styx_proxy` cookie (below). The backend rate
+  limiter skips `/internal/`; Traefik's `styx-ratelimit` already runs
+  before forwardAuth, and per-asset checks would otherwise hit 429.
+- **Routing.** Path rules are `Path(/slug) || PathPrefix(/slug/)`; a slug
+  never captures a sibling prefix (`a` vs `/assets`, `son` vs `sonarr`).
+  Bypass rules match on segment boundaries against the normalised path;
+  any `..` segment, backslash or encoded `.`/`/`/`\` (raw or decoded)
+  disqualifies the request from bypass.
+- **Cookie-root login** redirects via `/_styx/exit?next=/login?next=...`
+  because `/login` routes to the app while `styx_svc` is set. `exit`
+  accepts only a same-site absolute path as `next`.
+- **Safe next (2026-10-13).** A cross-site link to `/login?next=/api/...`
+  would be followed by the SPA as a same-site navigation carrying
+  SameSite=Strict cookies. One rule, `app/security/safe_next.py` mirrored by
+  `frontend/src/lib/safe-next.ts`, applies to the login page and every
+  backend `next=` builder (service, workstation and instance auth-check,
+  `/_styx/exit`): a single leading `/`, no whitespace/controls/backslash, no
+  percent-encoded `.`/`/`/`\` (raw or once-decoded), no `.`/`..`
+  segments, and the first segment (decoded, any case) is not `api`,
+  `internal`, `_styx`, `login`, `logout`, `setup`, `accept-invite` or
+  `change-password`. `/_styx/exit` alone may target `/login` (the login
+  page re-validates its own `next`). Unsafe values are dropped, not
+  rewritten.
+- **Instance desktops require Styx login + ownership (2026-10-13).**
+  Instance routers (`/i/<sub>` and extra ports) previously only stripped
+  cookies, so any running desktop was public to anyone who guessed its
+  user-chosen subdomain. Each instance now gets its own middleware
+  `inst-auth-<id>` → `/internal/instances/<id>/auth-check` on its primary
+  and extra-port routers (replacing `styx-cookie-strip`): it authenticates
+  the `styx_proxy` cookie and allows only the owner or an admin
+  (`require_owner_or_admin`, as `/api/instances`). **The instance is bound
+  by the auth address route_writer emits, never parsed from
+  `X-Forwarded-Uri`/`X-Forwarded-Host`**, so no parser differential (dot
+  segments, encoded `/`, `//`, case, query strings, Host port/trailing
+  dot, absolute-form URIs) can make the check authorize a different
+  instance than Traefik routed to. Workstations use the same scheme
+  (`ws-auth-<id>` → `/internal/workstations/<id>/auth-check`, replacing
+  the shared, path-parsing `ws-forward-auth`). Instance, extra-port and
+  workstation rules are segment-bounded (`Path(/i/dev) ||
+  PathPrefix(/i/dev/)`), so `/i/devx` never rides `dev`'s router. Anonymous navigations
+  302 to `/login?next=<uri>` (no `next` for host-routed extra ports),
+  XHR/websocket 401; other users 403; unknown or not running/idle 503,
+  which `instance-unavailable-errors` (listed first) turns into the same
+  page `instances_fallback` serves. On 2xx it returns the cleaned `Cookie`
+  header, so there is still one forwardAuth per router.
+- **Groups.** Deleting a group removes its name from every service's
+  `allowed_groups`; a service whose list becomes empty is disabled (empty
+  means "any user"). Unknown group names are rejected (422).
+- **Member listing** returns tile fields only (no upstream or container).
+- **Cookie split (same-origin mitigation).** Proxied apps share the Styx
+  origin, so Styx scopes its cookies:
+
+  | Cookie | Path | Token type | Accepted by |
+  |---|---|---|---|
+  | `access_token` | `/api` | `access` | API deps only |
+  | `refresh_token` | `/api/auth` | `refresh` | `/api/auth/refresh`, `/logout` |
+  | `styx_proxy` | `/` | `proxy` | forwardAuth `auth-check` only |
+  | `csrf_token` | `/` | (not a credential) | double-submit check |
+
+  All are `HttpOnly` (except CSRF), `Secure` per `COOKIE_SECURE`,
+  `SameSite=Strict`. `styx_proxy` is a JWT of type `proxy` bound to the
+  refresh-token family (`fam` claim); it lives as long as the refresh
+  token, is issued wherever a refresh token is (login, setup, accept-invite,
+  SSO callback, change-password) and rotated on refresh. It is valid only
+  while its family has an unrevoked, unexpired refresh row and the user is
+  active, so logout, refresh-reuse family kill, password change, admin
+  reset/deactivation all kill it. Every issue and logout also expires
+  legacy `Path=/` copies of `access_token`/`refresh_token`.
+
+- **Cookie strip (2026-10-13).** Path scoping alone still let the browser
+  send `styx_proxy`, `csrf_token` and `styx_svc` (all `Path=/`) to every
+  upstream, and a replayed `styx_proxy` opens the user's other services and
+  `/w/` desktops. **Styx strips its cookies from every proxied request;
+  upstream servers never see Styx credentials.** Every forwardAuth endpoint
+  returns, on 2xx, a `Cookie` response header equal to the request's Cookie
+  minus `styx_proxy`, `access_token`, `refresh_token`, `csrf_token` and
+  `styx_svc` (split on `;`, other pairs kept verbatim and in order), and
+  every upstream forwardAuth middleware lists `Cookie` in
+  `authResponseHeaders`. Traefik v3 (`pkg/middlewares/auth/forward.go`)
+  always deletes each listed request header, then copies the auth
+  response's values if present; Styx sends an empty value when nothing is
+  left, so the upstream gets an empty `Cookie:` line. Coverage:
+  `svc-auth-{slug}` (sso, incl. the bypass success path),
+  `svc-strip-{slug}` → `/internal/services/{slug}/strip` (app-native: no
+  auth, always 200), `ws-auth-<id>` (`/w/`), and `inst-auth-<id>` →
+  `/internal/instances/<id>/auth-check` on `/i/` instance and extra-port routers. Not covered:
+  `ip-ban-gate` (it guards the Styx API, which needs its cookies; no
+  response headers). Routing still works: Traefik matches the `styx_svc`
+  rule before middlewares run.
+
+  *What this protects:* upstream servers never receive Styx credentials
+  (a malicious or compromised upstream cannot log a cookie and replay it
+  against `/api`, other services or workstation streams); a stolen
+  `styx_proxy` cookie cannot call the API (every API dep requires type
+  `access`; `/refresh` requires type `refresh`).
+
+  *What it does not:* JavaScript served by a proxied app is still
+  same-origin. It cannot read HttpOnly cookies, but it can call the API
+  via the browser: it can issue same-origin `fetch('/api/...')` calls that the
+  browser sends with the user's `/api` cookies, read the CSRF cookie, and
+  so drive the API with the user's full rights. `HttpOnly` stops it reading
+  the tokens, not using them. **Treat every proxied app as trusted code with
+  the viewing user's Styx rights.** Admins should use a non-admin account
+  for daily app use. The UI asks the admin to acknowledge this when adding
+  a service. A full fix needs per-service origins (subdomains), out of
+  scope for SP1.
+
+## 11. Testing
+
+- `route_writer`: one test per mount mode, priority ordering, `/api`
+  header gating toggles only when a cookie-root service exists, reserved
+  slug rejection, `verify_tls=false` transport, disabled service emits
+  nothing.
+- `auth-check`: bypass match with/without header, anonymous redirect,
+  group allow/deny, admin override, disabled service 404.
+- Discovery with mocked docker client; Styx-managed containers excluded.
+- Health loop state transitions with mocked HTTP.
+- Groups CRUD and membership.
+- Gates: full pytest suite green, `ruff check`, frontend `npm run build`.
+
+## 12. Out of scope (later SPs)
+
+Authentik, remote docker hosts, deploy-from-template, TCP/UDP, host
+mount mode, HTML rewriting, upstream cert pinning, upstream basic-auth
+injection, LAN direct connect.

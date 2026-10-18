@@ -12,8 +12,8 @@ def _ws(**kw):
 def test_workstation_route_emitted():
     cfg = build_routes_config([], "example.com", "tunnel", workstations=[_ws()])
     r = cfg["http"]["routers"]["ws-ws1"]
-    assert r["rule"] == "Host(`example.com`) && PathPrefix(`/w/desk`)"
-    assert "ws-forward-auth" in r["middlewares"]
+    assert r["rule"] == "Host(`example.com`) && (Path(`/w/desk`) || PathPrefix(`/w/desk/`))"
+    assert "ws-auth-ws1" in r["middlewares"]
     assert "strip-w-desk" in r["middlewares"]
     assert "auth-ws-desk" in r["middlewares"]
     assert cfg["http"]["middlewares"]["strip-w-desk"] == {
@@ -24,9 +24,9 @@ def test_workstation_route_emitted():
     creds = base64.b64encode(b"styx:pw").decode()
     assert auth_mw["headers"]["customRequestHeaders"]["Authorization"] == f"Basic {creds}"
     # Check forwardAuth middleware
-    assert "ws-forward-auth" in cfg["http"]["middlewares"]
-    assert cfg["http"]["middlewares"]["ws-forward-auth"]["forwardAuth"]["address"] == \
-        "http://backend:8000/api/workstations/auth-check"
+    assert "ws-auth-ws1" in cfg["http"]["middlewares"]
+    assert cfg["http"]["middlewares"]["ws-auth-ws1"]["forwardAuth"]["address"] == \
+        "http://backend:8000/internal/workstations/ws1/auth-check"
     svc = cfg["http"]["services"]["ws-ws1"]["loadBalancer"]
     assert svc["servers"] == [{"url": "http://192.168.1.50:8443"}]
 
@@ -76,8 +76,8 @@ def test_lan_routers_emitted_for_ip_access(tmp_path, monkeypatch):
     assert routers["frontend-lan"]["rule"] == "PathPrefix(`/`)"
     # per-workstation LAN stream route carries the same forwardAuth + creds
     ws_lan = routers["ws-ws1-lan"]
-    assert ws_lan["rule"] == "PathPrefix(`/w/desk`)"
-    assert "ws-forward-auth" in ws_lan["middlewares"]
+    assert ws_lan["rule"] == "Path(`/w/desk`) || PathPrefix(`/w/desk/`)"
+    assert "ws-auth-ws1" in ws_lan["middlewares"]
     assert "auth-ws-desk" in ws_lan["middlewares"]
 
 
@@ -91,6 +91,6 @@ def test_workstation_without_password_skips_auth_header_mw():
     cfg = build_routes_config([], "example.com", "tunnel",
                               workstations=[_ws(selkies_password="")])
     r = cfg["http"]["routers"]["ws-ws1"]
-    assert "ws-forward-auth" in r["middlewares"]
+    assert "ws-auth-ws1" in r["middlewares"]
     assert "auth-ws-desk" not in r["middlewares"]
     assert "auth-ws-desk" not in cfg["http"]["middlewares"]

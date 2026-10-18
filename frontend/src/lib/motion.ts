@@ -1,5 +1,5 @@
 import type { Transition, Variants } from "framer-motion";
-import { useReducedMotion } from "framer-motion";
+import { MotionGlobalConfig, useReducedMotion } from "framer-motion";
 
 /** Calm default spring for layout/position changes. */
 export const spring: Transition = { type: "spring", stiffness: 400, damping: 32 };
@@ -27,4 +27,9 @@ export function useFadeSlideIn(): Variants {
     return { initial: { opacity: 1 }, animate: { opacity: 1 }, exit: { opacity: 1 } };
   }
   return fadeSlideIn;
+}
+
+/** MotionConfig reducedMotion="user" only drops transforms; fades still run. Skip all animations instead. */
+export function applyReducedMotion() {
+  MotionGlobalConfig.skipAnimations = matchMedia("(prefers-reduced-motion: reduce)").matches;
 }

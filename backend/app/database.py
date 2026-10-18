@@ -9,7 +9,7 @@ from sqlmodel import SQLModel, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Settings
-from app.models import ServiceTemplate
+from app.models import ServicePreset, ServiceTemplate
 
 logger = logging.getLogger("styx-portal")
 
@@ -69,6 +69,7 @@ async def init_db():
     _restrict_db_perms()
     async with async_session() as session:
         await seed_templates(session, settings.TEMPLATES_DIR)
+        await seed_service_presets(session, settings.SERVICE_PRESETS_DIR)
 
 
 async def _run_migrations(conn):
@@ -106,8 +107,18 @@ async def _run_migrations(conn):
         ("workstations", "occupied_at", "TIMESTAMP"),
         ("workstations", "disconnect_pending", "BOOLEAN"),
         ("workstations", "idle_disconnect_sent", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("workstations", "icon", "TEXT"),
         ("users", "failed_count", "INTEGER DEFAULT 0"),
+        ("service_presets", "subpath", "JSON"),
+        ("proxied_services", "mount_managed", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("mount_jobs", "changed", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("proxied_services", "pass_identity", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("proxied_services", "frame_ok", "BOOLEAN NOT NULL DEFAULT 1"),
         ("users", "locked_until", "TIMESTAMP"),
+        ("proxied_services", "icon_custom", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("users", "open_workspaces", "TEXT"),
+        ("users", "open_apps", "TEXT"),
+        ("proxied_services", "upstream_is_proxy", "BOOLEAN NOT NULL DEFAULT 0"),
     ]
     for table, column, col_type in migrations:
         try:
@@ -143,6 +154,20 @@ async def _run_migrations(conn):
                 logger.error("Backfill failed for %s.%s: %s", table, column, e)
                 raise
 
+    # Service icons are stored like workstation icons: None, "emoji:<char>" or a data: URI.
+    # Older rows hold a bare preset emoji.
+    for stmt in (
+        "UPDATE proxied_services SET icon = NULL WHERE icon = ''",
+        "UPDATE proxied_services SET icon = 'emoji:' || icon WHERE icon IS NOT NULL "
+        "AND icon NOT LIKE 'emoji:%' AND icon NOT LIKE 'data:%'",
+    ):
+        try:
+            await conn.execute(sqlalchemy.text(stmt))
+        except OperationalError as e:
+            if "no such table" not in str(e).lower():
+                logger.error("Service icon migration failed: %s", e)
+                raise
+
 
 async def get_session():
     async with async_session() as session:
@@ -169,4 +194,24 @@ async def seed_templates(session: AsyncSession, templates_dir: str):
         template = ServiceTemplate(**data)
         session.add(template)
 
+    await session.commit()
+
+
+async def seed_service_presets(session: AsyncSession, presets_dir: str):
+    """Upsert of templates/services/*.json into service_presets (built-in, read-only)."""
+    if not os.path.isdir(presets_dir):
+        return
+    for filename in sorted(os.listdir(presets_dir)):
+        if not filename.endswith(".json"):
+            continue
+        with open(os.path.join(presets_dir, filename)) as f:
+            data = json.load(f)
+        existing = await session.get(ServicePreset, data["id"])
+        if existing is None:
+            session.add(ServicePreset(**data))
+            continue
+        # Rebuild every field: a key the file dropped must not survive from an older seed.
+        for k, v in ServicePreset(**data).model_dump().items():
+            setattr(existing, k, v)
+        session.add(existing)
     await session.commit()

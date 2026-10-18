@@ -5,7 +5,8 @@ import { ExternalLink, Pause, Play, RotateCcw, Square, Trash2 } from "lucide-rea
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { statusMeta } from "@/lib/status";
-import { openConnectWipe } from "@/lib/connect-wipe";
+import { openPending } from "@/lib/connect-wipe";
+import { useOpenChoice } from "@/components/open-prompt";
 import { cn } from "@/lib/utils";
 import {
   useDeleteInstance, usePauseInstance, useRestartInstance,
@@ -23,6 +24,7 @@ interface ActionBarProps {
 type SimpleMutation = { mutate: (id: string, opts?: { onError?: (e: Error) => void; onSuccess?: () => void }) => void };
 
 export function ActionBar({ instance, size = "default", showConnect = true, className }: ActionBarProps) {
+  const choose = useOpenChoice();
   const start = useStartInstance();
   const stop = useStopInstance();
   const restart = useRestartInstance();
@@ -59,7 +61,10 @@ export function ActionBar({ instance, size = "default", showConnect = true, clas
   }
 
   function connect() {
-    openConnectWipe(`/i/${instance.subdomain}/`, `Launching ${instance.name}…`);
+    choose("workspaces", instance.name, (mode) => {
+      openPending(mode, `Launching ${instance.name}…`, async () => `/i/${instance.subdomain}/`)
+        .catch((e: Error) => toast.error(`Connect failed: ${e.message}`));
+    });
   }
 
   return (

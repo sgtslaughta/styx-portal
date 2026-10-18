@@ -1,3 +1,4 @@
+import logging
 import os
 from pathlib import Path
 
@@ -6,8 +7,9 @@ import docker.errors
 from docker.types import DeviceRequest, Ulimit
 
 from app.config import Settings
+from app.services.docker_files import ContainerFilesMixin
 
-TRAEFIK_CONTAINER = "styx-traefik"
+logger = logging.getLogger("styx-portal")
 
 # Defense-in-depth: denylist of security-critical keys that extra_docker_args
 # must never set, even if validation bypasses. These are enforced at the sink.
@@ -45,7 +47,7 @@ def detect_gpu() -> dict:
     return result
 
 
-class DockerManager:
+class DockerManager(ContainerFilesMixin):
     def __init__(self, network_name: str = "styx-portal", base_url: str | None = None):
         # Lazy connect: do NOT open the socket here. Eager construction raises if
         # the docker socket is absent (CI runners, docker-down hosts), which would
@@ -53,7 +55,10 @@ class DockerManager:
         # docker being down. The client is built on first use; ping()/version()
         # already degrade gracefully, so the failure surfaces there as a clean
         # "not reachable", not an exception.
-        self._url = base_url or Settings().DOCKER_SOCKET
+        cfg = Settings()
+        self._url = base_url or cfg.DOCKER_SOCKET
+        self._traefik = cfg.TRAEFIK_CONTAINER
+        self._project = cfg.COMPOSE_PROJECT
         self._client_obj: docker.DockerClient | None = None
         self._network_name = network_name
 
@@ -213,7 +218,7 @@ class DockerManager:
 
     def restart_container(self, container_id: str) -> None:
         container = self._client.containers.get(container_id)
-        container.restart()
+        container.restart(timeout=30)
 
     def remove_container(self, container_id: str) -> None:
         container = self._client.containers.get(container_id)
@@ -228,6 +233,26 @@ class DockerManager:
             }
         except docker.errors.NotFound:
             return {"status": "not_found"}
+
+    def container_health(self, name: str) -> str:
+        """healthy | unhealthy | unknown for a proxied docker-local service.
+
+        Not running or missing = unhealthy. A Docker HEALTHCHECK, if defined,
+        decides for a running container ("starting" = unknown). Docker API
+        errors = unknown (we can't tell, so don't claim the app is down).
+        """
+        try:
+            c = self._client.containers.get(name)
+        except docker.errors.NotFound:
+            return "unhealthy"
+        except docker.errors.DockerException:
+            return "unknown"
+        if c.status != "running":
+            return "unhealthy"
+        hc = (c.attrs.get("State") or {}).get("Health")
+        if not hc:
+            return "healthy"
+        return {"healthy": "healthy", "unhealthy": "unhealthy"}.get(hc.get("Status"), "unknown")
 
     def get_container_stats(self, container_id: str) -> dict:
         try:
@@ -275,7 +300,10 @@ class DockerManager:
     def ensure_user_network(self, user_id: str) -> str:
         """Per-user bridge network; traefik is attached so it can route to
         instance containers. Backend itself never joins user networks."""
-        name = f"styx-u-{user_id[:12]}"
+        return self.ensure_traefik_network(f"styx-u-{user_id[:12]}")
+
+    def ensure_traefik_network(self, name: str) -> str:
+        """Bridge network `name` (created if missing) with traefik attached."""
         try:
             net = self._client.networks.get(name)
         except docker.errors.NotFound:
@@ -285,7 +313,7 @@ class DockerManager:
         # the network was first made. Idempotent: a redundant connect raises
         # APIError, which we ignore.
         try:
-            net.connect(TRAEFIK_CONTAINER)
+            net.connect(self._traefik)
         except docker.errors.APIError:
             pass  # already connected, or traefik not present (tests/dev)
         return name
@@ -297,13 +325,56 @@ class DockerManager:
         except docker.errors.NotFound:
             return
         try:
-            net.disconnect(TRAEFIK_CONTAINER)
+            net.disconnect(self._traefik)
         except docker.errors.APIError:
             pass
         try:
             net.remove()
         except docker.errors.APIError:
             pass  # still has containers — leave it
+
+    def connect_to_network(self, container: str, network: str | None = None) -> bool:
+        """Attach a container to the styx network so Traefik can reach it. False on failure."""
+        try:
+            net = self._client.networks.get(network or self._network_name)
+            net.connect(container)
+            return True
+        except docker.errors.NotFound:
+            return False
+        except docker.errors.APIError as e:
+            if "already exists" in str(e).lower():
+                return True
+            logger.warning("network connect failed for %s: %s", container, e)
+            return False
+
+    def disconnect_from_network(self, container: str, network: str | None = None) -> None:
+        try:
+            self._client.networks.get(network or self._network_name).disconnect(container)
+        except docker.errors.DockerException:
+            pass
+
+    def list_containers(self) -> list[dict]:
+        """Running containers not managed by Styx and not part of the Styx compose stack."""
+        own_project = self._project or None
+        if own_project is None:
+            try:
+                own_project = self._client.containers.get(self._traefik).labels.get(
+                    "com.docker.compose.project")
+            except docker.errors.DockerException:
+                pass
+        out = []
+        for c in self._client.containers.list():
+            labels = c.labels or {}
+            if labels.get("styx-portal.managed") == "true":
+                continue
+            if own_project and labels.get("com.docker.compose.project") == own_project:
+                continue
+            ports = sorted({int(p.split("/")[0]) for p in
+                            (c.attrs.get("Config", {}).get("ExposedPorts") or {})})
+            nets = list((c.attrs.get("NetworkSettings", {}).get("Networks") or {}).keys())
+            image = c.image.tags[0] if c.image.tags else str(c.image.id)
+            out.append({"name": c.name, "image": image, "ports": ports, "networks": nets})
+        return out
 
     def ping(self) -> bool:
         try:

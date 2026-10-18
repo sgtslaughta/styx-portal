@@ -211,3 +211,32 @@ def test_restrict_db_perms_sets_0600(tmp_path, monkeypatch):
     monkeypatch.setattr(database.settings, "DATABASE_URL", f"sqlite+aiosqlite:///{f}")
     database._restrict_db_perms()
     assert stat.S_IMODE(os.stat(f).st_mode) == 0o600
+
+
+@pytest.mark.asyncio
+async def test_service_icon_migration_prefixes_raw_emoji_idempotently():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.execute(sqlalchemy.text(
+            "CREATE TABLE proxied_services (id TEXT PRIMARY KEY, icon TEXT)"))
+        for i, icon in enumerate(["📺", "emoji:🎬", "data:image/png;base64,AAAA", None, ""]):
+            await conn.execute(sqlalchemy.text("INSERT INTO proxied_services VALUES (:i, :v)"),
+                               {"i": str(i), "v": icon})
+        for _ in range(2):
+            await _run_migrations(conn)
+        rows = (await conn.execute(sqlalchemy.text(
+            "SELECT icon FROM proxied_services ORDER BY id"))).scalars().all()
+        cols = {r[1] for r in (await conn.execute(
+            sqlalchemy.text("PRAGMA table_info(proxied_services)"))).fetchall()}
+    assert rows == ["emoji:📺", "emoji:🎬", "data:image/png;base64,AAAA", None, None]
+    assert "icon_custom" in cols
+
+
+@pytest.mark.asyncio
+async def test_migrations_add_open_preference_columns_to_users():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.execute(sqlalchemy.text("CREATE TABLE users (id TEXT PRIMARY KEY)"))
+        await _run_migrations(conn)
+        rows = (await conn.execute(sqlalchemy.text("PRAGMA table_info(users)"))).fetchall()
+        assert {"open_workspaces", "open_apps"} <= {r[1] for r in rows}

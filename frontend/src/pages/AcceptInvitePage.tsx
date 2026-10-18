@@ -84,7 +84,7 @@ export function AcceptInvitePage() {
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted-foreground">Strength:</span>
                     <span className={`text-xs font-medium ${
-                      score < 2 ? "text-destructive" : score < 3 ? "text-warning" : "text-success"
+                      score < 2 ? "text-destructive" : score < 3 ? "text-warning-foreground" : "text-success"
                     }`}>
                       {STRENGTH_LABELS[score]}
                     </span>

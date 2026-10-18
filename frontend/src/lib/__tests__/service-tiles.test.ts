@@ -1,0 +1,30 @@
+import { describe, expect, it } from "vitest";
+import { HEALTH, shellHref, toTile } from "../service-tiles";
+import type { ServiceTile } from "@/api/client";
+
+const t = (o: Partial<ServiceTile> = {}): ServiceTile => ({
+  id: "1", slug: "sonarr", name: "Sonarr", icon_kind: "auto" as const, icon_etag: "e", mount_mode: "path",
+  enabled: true, up: true, frame_ok: true, needs_setup: false, ...o,
+});
+describe("shellHref", () => {
+  it("opens in the shell by default", () => expect(shellHref(t())).toBe("/_styx/app/sonarr/"));
+  it("bare path app without overlay", () => expect(shellHref(t({ frame_ok: false }))).toBe("/sonarr/"));
+  it("bare focus app without overlay", () =>
+    expect(shellHref(t({ mount_mode: "cookie-root", frame_ok: false }))).toBe("/_styx/open/sonarr"));
+  it("focus app in shell goes through open", () =>
+    expect(shellHref(t({ mount_mode: "cookie-root" }))).toBe("/_styx/open/sonarr"));
+});
+describe("toTile", () => {
+  it("maps admin rows", () =>
+    expect(toTile({ ...t(), health_status: "unhealthy" } as never).up).toBe(false));
+  it("keeps frame_ok", () =>
+    expect(toTile({ ...t(), frame_ok: false, health_status: "healthy" } as never).frame_ok).toBe(false));
+});
+describe("HEALTH", () => {
+  it("down and unknown carry a hollow-ring shape, not just a colour", () => {
+    expect(HEALTH(false).dot).toContain("ring-inset");
+    expect(HEALTH(null).dot).toContain("ring-inset");
+    expect(HEALTH(true).dot).not.toContain("ring");
+  });
+  it("healthy status is also the filled one", () => expect(HEALTH(true).dot).toBe("bg-success"));
+});

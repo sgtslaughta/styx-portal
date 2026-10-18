@@ -35,7 +35,7 @@ def test_extra_port_router_direct_mode():
     rule = extra_router["rule"]
 
     # Rule should contain PathPrefix for the extra port and Host
-    assert "PathPrefix(`/p/code`)" in rule
+    assert "PathPrefix(`/p/code/`)" in rule
     assert "app.example.com" in rule
 
     # Verify service references port 8080
@@ -117,7 +117,8 @@ def test_extra_port_strip_prefix_middleware():
     assert extra_router, "no extra-port router found"
 
     # Get the strip middleware ID from the router
-    strip_mws = [m for m in extra_router.get("middlewares", []) if "strip" in m]
+    strip_mws = [m for m in extra_router.get("middlewares", [])
+                 if "strip" in m and not m.startswith("inst-auth-")]
     assert strip_mws, "no strip middleware in extra-port router"
 
     # Verify the middleware exists and has the right prefix
@@ -171,6 +172,8 @@ def test_extra_port_inherits_primary_middlewares():
     # Both should have instance-unavailable-errors middleware
     assert "instance-unavailable-errors" in primary["middlewares"]
     assert "instance-unavailable-errors" in extra["middlewares"]
+    # extra ports reach the same container: same login + ownership gate
+    assert extra["middlewares"][:2] == ["instance-unavailable-errors", "inst-auth-i1"]
 
 
 def test_extra_port_service_with_tls_skip_verify():

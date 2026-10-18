@@ -7,6 +7,7 @@ import type {
   ServiceTemplate,
   TemplateCreate,
 } from "@/lib/types";
+import { safeNext } from "@/lib/safe-next";
 
 export type Workstation = {
   id: string; name: string; subdomain: string; hostname: string;
@@ -17,7 +18,70 @@ export type Workstation = {
   all_users: boolean; last_heartbeat: string | null; last_error: string | null;
   created_at: string; allowed_user_ids: string[];
   in_use: boolean; in_use_by: string | null; in_use_self: boolean;
+  icon_kind: "auto" | "emoji" | "image"; icon_etag: string;
 };
+export type BypassRule = {
+  path_prefix: string; required_header: string | null;
+  header_prefix?: string | null; required_query?: string | null;
+};
+export type ProxiedService = {
+  id: string; slug: string; name: string;
+  /** Server-owned: bytes are served by /api/services/{id}/icon?v=icon_etag. */
+  icon_kind: "auto" | "emoji" | "image"; icon_etag: string;
+  kind: "url" | "docker-local";
+  upstream_url: string | null; container: string | null; container_port: number | null;
+  upstream_fallback: string | null;
+  mount_mode: "path" | "cookie-root";
+  auth_mode: "sso" | "sso-with-bypass" | "app-native";
+  bypass_rules: BypassRule[]; allowed_groups: string[];
+  verify_tls: boolean; health_path: string | null;
+  /** url kind: Host/SNI sent to a name-based reverse-proxy upstream (NPM, Caddy). */
+  upstream_is_proxy?: boolean;
+  health_status: "healthy" | "unhealthy" | "unknown"; health_checked_at: string | null;
+  preset_id: string | null; enabled: boolean; created_at: string; updated_at: string;
+  /** Server-owned: true when Styx manages the app's mount config. Never sent on write. */
+  mount_managed: boolean; needs_setup: boolean; pass_identity: boolean; frame_ok: boolean;
+};
+/** Non-admin view of GET /services. `up` null = unknown. Admins receive the full ProxiedService instead. */
+export type ServiceTile = {
+  id: string; slug: string; name: string; icon_kind: ProxiedService["icon_kind"]; icon_etag: string;
+  mount_mode: ProxiedService["mount_mode"]; enabled: boolean; up: boolean | null; frame_ok: boolean;
+  needs_setup: boolean;
+};
+/** `icon` is only for create (a preset emoji); omit it on update, icons change via setServiceIcon. */
+export type ProxiedServiceInput = Omit<ProxiedService,
+  "icon_kind" | "icon_etag" | "id" | "upstream_fallback" | "health_status" | "health_checked_at" | "created_at" | "updated_at" | "mount_managed" | "needs_setup"> & { icon?: string | null };
+export type ServicePreset = {
+  id: string; name: string; icon: string | null; default_port: number | null;
+  mount_mode: ProxiedService["mount_mode"]; auth_mode: ProxiedService["auth_mode"];
+  bypass_rules: BypassRule[]; health_path: string | null; verify_tls: boolean;
+  base_url_hint: string | null; warnings: string[];
+  subpath: { methods: unknown[]; verify_path?: string } | null;
+};
+export type DiscoveredContainer = {
+  name: string; image: string; ports: number[]; networks: string[]; suggested_preset: string | null;
+};
+export type OpenMode = "new_tab" | "same_tab";
+export type Me = { id: string; username: string; email: string | null; role: string;
+  open_workspaces: OpenMode | null; open_apps: OpenMode | null };
+export type Group = { id: string; name: string; description: string | null; member_count: number };
+
+export type MountChange = { target: string; key: string; old: string | null; new: string; created?: boolean };
+export type MountPlan = {
+  method: "config_file" | null; changes: MountChange[]; needs_consent: boolean; reason: string | null; retry?: boolean;
+};
+export type JobStep = {
+  id: string; label: string;
+  state: "pending" | "active" | "done" | "failed" | "skipped"; detail: string | null;
+};
+export type MountJob = {
+  id: string; state: "pending" | "running" | "done" | "rolled_back" | "failed";
+  steps: JobStep[]; changes: MountChange[]; backup_dir: string | null;
+  /** True once a write to the app's settings may have landed (false: nothing was touched). */
+  changed: boolean;
+  log_excerpt: string | null; created_at: string; finished_at: string | null;
+};
+
 export type EnrollToken = {
   token: string; expires_at: string;
   lan_command: string | null; public_command: string;
@@ -72,9 +136,12 @@ const BASE = "/api";
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** Raw `detail` from the response (string, or FastAPI's 422 list). */
+  detail?: unknown;
+  constructor(message: string, status: number, detail?: unknown) {
     super(message);
     this.status = status;
+    this.detail = detail;
   }
 }
 
@@ -91,7 +158,8 @@ const silentRefresh = singleFlight(async (): Promise<boolean> => {
   const res = await fetch(`${BASE}/auth/refresh`, {
     method: "POST",
     credentials: "include",
-    headers: csrf !== null ? { "X-CSRF-Token": csrf } : {},
+    // X-Styx-Client: in Focus mode /api belongs to the app without it.
+    headers: { "X-Styx-Client": "1", ...(csrf !== null ? { "X-CSRF-Token": csrf } : {}) },
   });
   return res.ok;
 });
@@ -100,6 +168,7 @@ async function request<T>(path: string, init?: RequestInit, retried = false): Pr
   const method = (init?.method ?? "GET").toUpperCase();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    "X-Styx-Client": "1",
     ...(init?.headers as Record<string, string>),
   };
   if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
@@ -118,18 +187,62 @@ async function request<T>(path: string, init?: RequestInit, retried = false): Pr
     if (!retried && (await silentRefresh())) {
       return request<T>(path, init, true);
     }
-    window.location.href = "/login?expired=1";
+    window.location.href = expiredLoginUrl(window.location.pathname, window.location.search);
     throw new Error("Unauthorized");
   }
   if (!res.ok) {
     const detail = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new ApiError(detail.detail || res.statusText, res.status);
+    const d = detail.detail;
+    const msg = Array.isArray(d)
+      ? d.map((x: { msg?: string }) => x?.msg ?? "invalid").join("; ")
+      : d || res.statusText;
+    throw new ApiError(msg, res.status, d);
   }
   if (res.status === 204) return undefined as T;
-  return res.json();
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
+}
+
+/** /login URL after a 401. Inside the shell (/_styx/app/...) it carries the shell path so sign-in
+ * returns there, and goes via /_styx/exit: in Focus mode /login is the app's, and the shell-wrap
+ * redirect would send it straight back here (reload loop). */
+export function expiredLoginUrl(pathname: string, search: string): string {
+  if (!pathname.startsWith("/_styx/app/")) return "/login?expired=1";
+  const next = safeNext(pathname + search);
+  const login = next ? `/login?expired=1&next=${encodeURIComponent(next)}` : "/login?expired=1";
+  return `/_styx/exit?next=${encodeURIComponent(login)}`;
 }
 
 export const api = {
+  listServices: () => request<ProxiedService[]>("/services"),
+  /** Role-dependent shape: tiles for members, full services for admins. Always fetch fresh. */
+  listServiceTiles: () => request<(ServiceTile | ProxiedService)[]>("/services"),
+  listServicePresets: () => request<ServicePreset[]>("/services/presets"),
+  discoverContainers: () => request<DiscoveredContainer[]>("/services/discover"),
+  createService: (data: ProxiedServiceInput) =>
+    request<ProxiedService>("/services", { method: "POST", body: JSON.stringify(data) }),
+  updateService: (id: string, data: Omit<ProxiedServiceInput, "slug">) =>
+    request<ProxiedService>(`/services/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteService: (id: string) => request<void>(`/services/${id}`, { method: "DELETE" }),
+  setServiceIcon: (id: string, kind: "auto" | "emoji" | "image", value?: string) =>
+    request<ProxiedService>(`/services/${id}/icon`, { method: "PUT", body: JSON.stringify({ kind, value }) }),
+  refreshServiceIcon: (id: string) =>
+    request<ProxiedService>(`/services/${id}/icon/refresh`, { method: "POST" }),
+  setServiceEnabled: (id: string, enabled: boolean) =>
+    request<ProxiedService>(`/services/${id}/${enabled ? "enable" : "disable"}`, { method: "POST" }),
+  mountPlan: (id: string) => request<MountPlan>(`/services/${id}/mount/plan`, { method: "POST" }),
+  /** `changes` are the ones the admin reviewed; the server refuses if the file moved since. */
+  mountApply: (id: string, consent: boolean, changes?: MountChange[]) =>
+    request<{ job_id: string }>(`/services/${id}/mount/apply`, { method: "POST", body: JSON.stringify({ consent, changes }) }),
+  mountLatest: (id: string) => request<MountJob>(`/services/${id}/mount/jobs/latest`),
+  serviceFocus: () => request<{ slug: string | null }>("/services/focus"),
+  listGroups: () => request<Group[]>("/groups"),
+  createGroup: (data: { name: string; description?: string | null }) =>
+    request<Group>("/groups", { method: "POST", body: JSON.stringify(data) }),
+  deleteGroup: (id: string) => request<void>(`/groups/${id}`, { method: "DELETE" }),
+  getUserGroups: (userId: string) => request<string[]>(`/users/${userId}/groups`),
+  setUserGroups: (userId: string, groupIds: string[]) =>
+    request<string[]>(`/users/${userId}/groups`, { method: "PUT", body: JSON.stringify({ group_ids: groupIds }) }),
   listInstances: () => request<Instance[]>("/instances"),
   screenshotUrl: (id: string) => `${BASE}/instances/${id}/screenshot`,
   refreshScreenshot: (id: string) =>
@@ -229,7 +342,9 @@ export const api = {
       { method: "POST" },
     ),
   refreshSession: () => request<{ ok: boolean }>("/auth/refresh", { method: "POST" }),
-  me: () => request<{ id: string; username: string; email: string | null; role: string }>("/auth/me"),
+  me: () => request<Me>("/auth/me"),
+  setOpenPrefs: (p: Partial<Pick<Me, "open_workspaces" | "open_apps">>) =>
+    request<Me>("/auth/me/preferences", { method: "PUT", body: JSON.stringify(p) }),
   acceptInvite: (data: { token: string; username: string; password: string }) =>
     request<{ id: string; username: string; role: string }>("/auth/accept-invite", {
       method: "POST", body: JSON.stringify(data) }),
@@ -260,6 +375,8 @@ export const api = {
     request<Workstation>(`/workstations/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   setWorkstationAccess: (id: string, user_ids: string[]) =>
     request<Workstation>(`/workstations/${id}/access`, { method: "PUT", body: JSON.stringify({ user_ids }) }),
+  setWorkstationIcon: (id: string, kind: "auto" | "emoji" | "image", value?: string) =>
+    request<Workstation>(`/workstations/${id}/icon`, { method: "PUT", body: JSON.stringify({ kind, value }) }),
   revokeWorkstation: (id: string, purge = false) =>
     request<{ ok: boolean }>(`/workstations/${id}?purge=${purge}`, { method: "DELETE" }),
   workstationConnectUrl: (id: string, force = false) =>

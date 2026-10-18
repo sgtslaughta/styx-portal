@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Copy, Monitor, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowRight, Copy, Monitor, RefreshCw, Trash2 } from "lucide-react";
 import { api, type EnrollToken, type Workstation, type WorkstationUpdateCommand } from "@/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { WorkstationIcon } from "@/components/system/workstation-icon";
+import { WorkstationIconSettings } from "@/components/system/workstation-icon-settings";
 import { WorkstationSpecs } from "@/components/system/workstation-specs";
 import { WorkstationStreamSettings } from "@/components/system/workstation-stream-settings";
 
@@ -174,6 +176,7 @@ export function WorkstationsPanel() {
             <div key={ws.id} className="rounded-lg border border-border bg-surface p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <div>
+                  <WorkstationIcon ws={ws} className="mr-2 inline-block align-middle" />
                   <span className="font-medium">{ws.name}</span>
                   <span className={`ml-2 rounded px-2 py-0.5 text-xs ${STATUS_STYLES[ws.status] ?? ""}`}>
                     {ws.status}
@@ -204,6 +207,7 @@ export function WorkstationsPanel() {
                 </div>
               </div>
               <WorkstationSpecs ws={ws} />
+              <WorkstationIconSettings ws={ws} onSaved={refresh} />
               <WorkstationStreamSettings ws={ws} onSaved={refresh} />
               {ws.last_error && <p className="text-xs text-rose-400">Agent error: {ws.last_error}</p>}
               <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -263,7 +267,7 @@ export function WorkstationsPanel() {
           {updateCmd && (
             <div className="space-y-3 text-sm">
               <p className="text-muted-foreground">
-                Run on the workstation to update {updateCmd.current_version || "—"} →{" "}
+                Run on the workstation to update {updateCmd.current_version || "—"} <ArrowRight className="inline size-3.5" aria-hidden />{" "}
                 {updateCmd.latest_version}. Runs a full upgrade (new engine and wheels; the previous install is kept as a fallback). The desktop session restarts.
               </p>
               {updateCmd.lan_command && (

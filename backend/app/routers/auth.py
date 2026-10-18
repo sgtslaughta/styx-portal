@@ -11,9 +11,10 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.config import Settings
 from app.database import get_session
 from app.models import User, Invite, RefreshToken, Instance, ServiceTemplate, OAuthProvider, FederatedIdentity, Workstation
-from app.schemas import SetupRequest, LoginRequest, AcceptInviteRequest, UserOut, ConnectedIdentity, ChangePasswordRequest
+from app.schemas import SetupRequest, LoginRequest, AcceptInviteRequest, UserOut, ConnectedIdentity, ChangePasswordRequest, OpenPreferences
 from app.security import tokens, oauth
 from app.security.passwords import hash_password, verify_password, validate_password, current_policy
+from app.security.cookies import clear_auth_cookies, set_auth_cookies
 from app.security.csrf import new_csrf_token, CSRF_COOKIE
 from app.security.deps import get_current_user
 from app.security.setup_gate import users_exist
@@ -40,41 +41,22 @@ def _hash_token(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
-def _set_auth_cookies(resp: Response, access: str, refresh: str, csrf: str) -> None:
-    common = dict(
-        httponly=True,
-        secure=_settings.COOKIE_SECURE,
-        samesite="strict",
-        domain=_settings.COOKIE_DOMAIN,
-    )
-    resp.set_cookie("access_token", access, max_age=_settings.ACCESS_TTL, **common)
-    resp.set_cookie("refresh_token", refresh, max_age=_settings.REFRESH_TTL, **common)
-    resp.set_cookie(
-        CSRF_COOKIE, csrf, max_age=_settings.REFRESH_TTL,
-        httponly=False, secure=_settings.COOKIE_SECURE,
-        samesite="strict", domain=_settings.COOKIE_DOMAIN,
-    )
-
-
-def _clear_auth_cookies(resp: Response) -> None:
-    for name in ("access_token", "refresh_token", CSRF_COOKIE):
-        resp.delete_cookie(name, domain=_settings.COOKIE_DOMAIN)
-
-
 async def _issue_session(resp: Response, session: AsyncSession, user: User, request: Request,
                          family_id: str | None = None) -> None:
     access = tokens.create_access_token(user.id, user.role)
     refresh, jti = tokens.create_refresh_token(user.id)
+    family_id = family_id or jti
     session.add(RefreshToken(
         jti=jti, user_id=user.id,
-        family_id=family_id or jti,
+        family_id=family_id,
         expires_at=_now() + timedelta(seconds=sys_settings.get("REFRESH_TTL")),
         user_agent=request.headers.get("user-agent"),
     ))
     user.last_login = _now()
     session.add(user)
     await session.commit()
-    _set_auth_cookies(resp, access, refresh, new_csrf_token())
+    set_auth_cookies(resp, access, refresh, tokens.create_proxy_token(user.id, family_id),
+                     new_csrf_token())
 
 
 @router.get("/csrf")
@@ -294,14 +276,32 @@ async def logout(request: Request, response: Response,
             pass
     await audit_request(session, request, "auth.logout", user_id=user_id)
     await session.commit()
-    _clear_auth_cookies(response)
+    clear_auth_cookies(response)
     return {"ok": True}
+
+
+def _me_out(user: User) -> UserOut:
+    return UserOut(id=user.id, username=user.username, email=user.email, role=user.role,
+                   is_active=user.is_active, open_workspaces=user.open_workspaces,
+                   open_apps=user.open_apps)
 
 
 @router.get("/me", response_model=UserOut)
 async def me(user: User = Depends(get_current_user)):
-    return UserOut(id=user.id, username=user.username, email=user.email,
-                   role=user.role, is_active=user.is_active)
+    return _me_out(user)
+
+
+@router.put("/me/preferences", response_model=UserOut)
+async def set_preferences(body: OpenPreferences, session: AsyncSession = Depends(get_session),
+                          user: User = Depends(get_current_user)):
+    """Personal UI preference: no admin override, no audit entry."""
+    row = await session.get(User, user.id)
+    for k, v in body.model_dump(exclude_unset=True).items():
+        setattr(row, k, v)
+    session.add(row)
+    await session.commit()
+    await session.refresh(row)
+    return _me_out(row)
 
 
 @router.post("/change-password")

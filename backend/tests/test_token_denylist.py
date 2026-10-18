@@ -106,8 +106,8 @@ async def test_logout_revokes_current_access_token(session):
     assert await token_denylist.is_access_revoked(session, claims["jti"]) is True
     # the revoked token is now rejected at the stream reconnect gate
     with pytest.raises(HTTPException) as e:
-        await auth_check(_req(cookies={"access_token": access},
-                              headers={"x-forwarded-uri": "/w/desk/websocket"}), session)
+        await auth_check("ws1", _req(cookies={"access_token": access},
+                              headers={"x-forwarded-uri": "/w/desk/websocket"}), session=session)
     assert e.value.status_code == 401
 
 
@@ -124,5 +124,5 @@ async def test_auth_check_rejects_revoked_token(session):
     req = _req(cookies={"access_token": tok},
                headers={"x-forwarded-uri": "/w/desk/websocket"})
     with pytest.raises(HTTPException) as e:
-        await auth_check(req, session)
+        await auth_check("ws1", req, session)
     assert e.value.status_code == 401

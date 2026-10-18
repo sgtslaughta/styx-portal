@@ -23,12 +23,19 @@ from app.routers import oauth as oauth_router
 from app.routers import oauth_admin as oauth_admin_router
 from app.routers import audit as audit_router
 from app.routers import workstations as workstations_router
+from app.routers import instance_auth as instance_auth_router
 from app.routers import enroll as enroll_router
 from app.routers import agent as agent_router
 from app.routers import system_settings as system_settings_router
+from app.routers import groups as groups_router
+from app.routers import services as services_router
+from app.routers import service_mounts as service_mounts_router
+from app.routers import service_icons as service_icons_router
+from app.routers import services_auth as services_auth_router
 from app.security.deps import get_current_user, require_admin
 from app.services.docker_manager import DockerManager
 from app.services.session_monitor import SessionMonitor
+from app.services.mount_jobs import sweep_interrupted
 from app.security.csrf import csrf_valid, CSRF_COOKIE, CSRF_HEADER, UNSAFE_METHODS
 
 logger = logging.getLogger("styx-portal")
@@ -103,9 +110,21 @@ async def lifespan(app: FastAPI):
 
     await init_db()
 
+    async with async_session() as _s:
+        _n = await sweep_interrupted(_s)
+        if _n:
+            logger.warning("Marked %d interrupted mount job(s) failed", _n)
+
     from app.services.settings_store import settings as _settings_store
     async with async_session() as _s:
         await _settings_store.reload(_s)
+
+    try:
+        _p = await asyncio.to_thread(DockerManager(network_name=_settings.DOCKER_NETWORK).remove_probe_containers)
+        if _p:
+            logger.warning("Removed %d leftover probe container(s)", _p)
+    except Exception:  # noqa: BLE001 - docker may be unavailable at boot
+        logger.warning("Probe container cleanup skipped", exc_info=True)
 
     # Sync instance states — mark stale instances as stopped
     docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
@@ -139,11 +158,19 @@ async def lifespan(app: FastAPI):
     metrics_task = asyncio.create_task(_metrics_collection_loop())
     screenshot_task = asyncio.create_task(_screenshot_capture_loop())
     health_task = asyncio.create_task(_health_sample_loop())
+    svc_health_task = asyncio.create_task(_service_health_loop())
     yield
     task.cancel()
     metrics_task.cancel()
     screenshot_task.cancel()
     health_task.cancel()
+    svc_health_task.cancel()
+    await asyncio.gather(svc_health_task, return_exceptions=True)
+
+
+async def _service_health_loop():
+    from app.services.service_health import health_loop
+    await health_loop(async_session)
 
 
 async def _metrics_collection_loop():
@@ -266,7 +293,7 @@ app.add_middleware(
     allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "X-CSRF-Token"],
+    allow_headers=["Content-Type", "X-CSRF-Token", "X-Styx-Client"],
 )
 
 app.include_router(templates.router, prefix="/api/templates", tags=["templates"])
@@ -279,9 +306,22 @@ app.include_router(oauth_router.router, prefix="/api/auth/oauth", tags=["oauth"]
 app.include_router(oauth_admin_router.router, prefix="/api/oauth-providers", tags=["oauth-admin"])
 app.include_router(audit_router.router, prefix="/api/audit", tags=["audit"])
 app.include_router(workstations_router.router, prefix="/api/workstations", tags=["workstations"])
+app.include_router(workstations_router.internal_router, prefix="/internal/workstations",
+                   tags=["workstations"])
 app.include_router(enroll_router.router, prefix="/api/enroll", tags=["enroll"])
 app.include_router(agent_router.router, prefix="/api/agent", tags=["agent"])
 app.include_router(system_settings_router.router, prefix="/api/system-settings", tags=["system-settings"])
+app.include_router(groups_router.router, prefix="/api/groups", tags=["groups"])
+app.include_router(groups_router.users_router, prefix="/api/users", tags=["groups"])
+app.include_router(service_mounts_router.router, prefix="/api/services", tags=["services"])
+app.include_router(service_icons_router.router, prefix="/api/services", tags=["services"])
+app.include_router(services_router.router, prefix="/api/services", tags=["services"])
+app.include_router(services_auth_router.router, prefix="/api/services", tags=["services"])
+app.include_router(services_auth_router.internal_router, prefix="/internal", tags=["services"])
+app.include_router(instance_auth_router.internal_router, prefix="/internal/instances",
+                   tags=["instances"])
+app.include_router(services_auth_router.exit_router, prefix="/_styx", tags=["services"])
+app.include_router(services_auth_router.pages_router, prefix="/api", tags=["services"])
 
 
 @app.get("/api/health")

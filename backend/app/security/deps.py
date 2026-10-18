@@ -39,3 +39,35 @@ def require_owner_or_admin(owner_id: str | None, user: User) -> None:
         return
     if owner_id != user.id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not the owner")
+
+
+async def proxy_user_or_none(request: Request, session: AsyncSession) -> User | None:
+    """User behind a valid styx_proxy cookie, else None (forwardAuth only).
+
+    Valid = signature + exp, type "proxy", its refresh family still has a live
+    (unrevoked, unexpired) row for the same user, and the user is active. API
+    tokens are never accepted here; the proxy token is never accepted by the API.
+    """
+    from datetime import datetime, timezone
+    from sqlmodel import select
+    from app.models import RefreshToken
+    from app.security.cookies import PROXY_COOKIE
+    raw = request.cookies.get(PROXY_COOKIE)
+    if not raw:
+        return None
+    try:
+        claims = tokens.decode_token(raw)
+    except tokens.TokenError:
+        return None
+    if claims.get("type") != "proxy" or not claims.get("fam"):
+        return None
+    rows = (await session.exec(select(RefreshToken).where(
+        RefreshToken.family_id == claims["fam"],
+        RefreshToken.user_id == claims.get("sub"),
+        RefreshToken.revoked == False))).all()  # noqa: E712
+    now = datetime.now(timezone.utc)
+    if not any((r.expires_at if r.expires_at.tzinfo else
+                r.expires_at.replace(tzinfo=timezone.utc)) > now for r in rows):
+        return None
+    user = await session.get(User, claims["sub"])
+    return user if user and user.is_active else None

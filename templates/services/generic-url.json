@@ -1,0 +1,13 @@
+{
+  "id": "generic-url",
+  "name": "Generic HTTP service",
+  "icon": "🔗",
+  "default_port": null,
+  "mount_mode": "path",
+  "auth_mode": "sso",
+  "bypass_rules": [],
+  "health_path": null,
+  "verify_tls": true,
+  "base_url_hint": "Configure the app's base URL / URL base to /<slug> if it supports one; otherwise use cookie-root mode.",
+  "warnings": []
+}

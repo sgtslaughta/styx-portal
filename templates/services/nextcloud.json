@@ -1,0 +1,13 @@
+{
+  "id": "nextcloud",
+  "name": "Nextcloud",
+  "icon": "☁️",
+  "default_port": 80,
+  "mount_mode": "path",
+  "auth_mode": "sso",
+  "bypass_rules": [],
+  "health_path": "/nextcloud/status.php",
+  "verify_tls": true,
+  "base_url_hint": "config.php: 'overwritewebroot' => '/nextcloud', 'overwrite.cli.url' => 'https://<host>/nextcloud'.",
+  "warnings": []
+}

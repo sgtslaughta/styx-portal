@@ -1,25 +1,51 @@
+import ipaddress
 import time
 from collections import defaultdict, deque
+from functools import lru_cache
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.config import Settings
+
+_settings = Settings()
+
+
+@lru_cache(maxsize=8)
+def _trusted_networks(spec: str) -> tuple:
+    return tuple(ipaddress.ip_network(c.strip(), strict=False)
+                 for c in spec.split(",") if c.strip())
+
+
+def _peer_is_trusted_proxy(host: str | None) -> bool:
+    try:
+        ip = ipaddress.ip_address(host or "")
+    except ValueError:
+        return False
+    return any(ip in net for net in _trusted_networks(_settings.TRUSTED_PROXY_CIDRS))
+
 
 def client_ip_from_headers(request) -> str:
     """Resolve the real client IP behind a trusted proxy (Cloudflare/Traefik).
 
-    Backend is only reachable via the proxy, so these headers are trustworthy here.
-    Prefers Cloudflare's CF-Connecting-IP, then the left-most X-Forwarded-For hop,
-    then the direct socket peer.
+    Forwarded headers are only honoured when the direct socket peer is in
+    TRUSTED_PROXY_CIDRS (Traefik on a docker bridge); anyone else reaching the
+    backend directly gets their socket address. CF-Connecting-IP is only
+    meaningful behind Cloudflare (tunnel mode); in direct mode it is
+    client-controlled, so the left-most X-Forwarded-For hop (which Traefik
+    rewrites, as it trusts no upstream forwarded headers) is used instead.
     """
+    peer = request.client.host if request.client else "unknown"
+    if not _peer_is_trusted_proxy(peer):
+        return peer
     cf = request.headers.get("cf-connecting-ip")
-    if cf:
+    if cf and _settings.DEPLOY_MODE == "tunnel":
         return cf.strip()
     xff = request.headers.get("x-forwarded-for")
     if xff:
         return xff.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    return peer
 
 
 class SlidingWindow:
@@ -62,7 +88,8 @@ _EXEMPT_PATHS = frozenset({"/api/auth/ban-check"})
 
 
 def is_rate_limit_exempt(path: str) -> bool:
-    return path in _EXEMPT_PATHS
+    # /internal/: forwardAuth targets, already rate-limited by Traefik upstream.
+    return path in _EXEMPT_PATHS or path.startswith("/internal/")
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlmodel import select, delete
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -13,10 +13,14 @@ from app.config import Settings
 from app.database import get_session
 from app.models import User, WorkstationEnrollmentToken, Workstation, WorkstationAccess
 from app.schemas import (
-    EnrollTokenOut, WorkstationAccessUpdate, WorkstationConnectOut, WorkstationOut,
+    EnrollTokenOut, WorkstationAccessUpdate, WorkstationIconUpdate, WorkstationConnectOut, WorkstationOut,
     WorkstationUpdate, WorkstationUpdateCommandOut,
 )
+from app.security.cookies import clean_cookie_header
+from app.security.nav import is_navigation, no_access
+from app.security.safe_next import safe_next
 from app.security.deps import require_admin, get_current_user
+from app.services import ws_icon
 from app.services.audit import audit_request
 from app.services.workstations import (
     build_enroll_command, build_update_command, get_latest_agent_version, lan_ca_pin,
@@ -24,6 +28,8 @@ from app.services.workstations import (
 )
 
 router = APIRouter()
+# Mounted at /internal/workstations: reachable only by Traefik's forwardAuth.
+internal_router = APIRouter()
 _settings = Settings()
 
 
@@ -94,7 +100,9 @@ def _out(ws: Workstation, allowed: list[str],
         allowed_user_ids=allowed,
         in_use=in_use,
         in_use_by=occupant.username if (in_use and occupant) else None,
-        in_use_self=bool(in_use and viewer_id and ws.occupied_by == viewer_id))
+        in_use_self=bool(in_use and viewer_id and ws.occupied_by == viewer_id),
+        icon_kind=ws_icon.icon_kind(ws.icon),
+        icon_etag=ws_icon.icon_etag(ws.icon, ws.name, ws.id))
 
 
 async def _occupant(session, ws: Workstation) -> User | None:
@@ -131,20 +139,29 @@ def _redirect_host(request: Request) -> str:
     """X-Forwarded-Host mirrors the client's Host header, so it is
     attacker-influenced — only honor hosts we actually serve: the public
     domain, the configured LAN URL, or a private/loopback address (the LAN
-    routers are host-agnostic). Anything else falls back to DOMAIN."""
+    routers are host-agnostic). Anything else falls back to DOMAIN. A
+    non-standard port (from the host or X-Forwarded-Port) is kept for an
+    honored host: validation is on the hostname, the port is digits only."""
     raw = request.headers.get("x-forwarded-host", "").split(",")[0].strip().lower()
-    if not raw or not re.fullmatch(r"[a-z0-9.\-]+(:\d+)?", raw):
+    if not raw or not re.fullmatch(r"[a-z0-9.\-]+(:\d{1,5})?", raw):
         return _settings.DOMAIN
-    allowed = {_settings.DOMAIN.lower()}
+    host, _, port = raw.partition(":")
+    if not port:
+        xp = request.headers.get("x-forwarded-port", "").split(",")[0].strip()
+        port = xp if re.fullmatch(r"\d{1,5}", xp) and xp not in ("80", "443") else ""
+    if port and not 0 < int(port) < 65536:
+        port = ""
+    with_port = f"{host}:{port}" if port else host
+    allowed = {_settings.DOMAIN.lower().partition(":")[0]}
     if _settings.SERVER_LAN_URL:
-        allowed.add(_settings.SERVER_LAN_URL.split("://", 1)[-1].rstrip("/").lower())
-    if raw in allowed:
-        return raw
-    bare = raw.rsplit(":", 1)[0] if re.search(r":\d+$", raw) else raw
+        allowed.add(_settings.SERVER_LAN_URL.split("://", 1)[-1].rstrip("/")
+                    .lower().partition(":")[0])
+    if host in allowed:
+        return with_port
     try:
-        addr = ipaddress.ip_address(bare)
+        addr = ipaddress.ip_address(host)
         if addr.is_private or addr.is_loopback:
-            return raw
+            return with_port
     except ValueError:
         pass
     return _settings.DOMAIN
@@ -154,9 +171,7 @@ def _unauthenticated(request: Request, msg: str):
     """401 for ws/XHR; 302 to the login page for browser navigations —
     Traefik relays a forwardAuth non-2xx response (incl. Location) verbatim,
     so without this an expired cookie shows raw JSON at /w/{sub}/."""
-    is_nav = (request.headers.get("sec-fetch-mode") == "navigate"
-              or "text/html" in request.headers.get("accept", ""))
-    if not is_nav:
+    if not is_navigation(request):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, msg)
     uri = request.headers.get("x-forwarded-uri", "")
     # Absolute URL required: Traefik resolves a relative Location against
@@ -165,42 +180,34 @@ def _unauthenticated(request: Request, msg: str):
     if proto not in ("http", "https"):
         proto = "https"
     target = f"{proto}://{_redirect_host(request)}/login"
-    # next= only for known-shape stream paths (no open redirect).
-    if re.match(r"^/w/[a-z0-9-]+(/|$)", uri):
+    # next= only for known-shape stream paths passing the shared rule.
+    if re.match(r"^/w/[a-z0-9-]+(/|$)", uri) and safe_next(uri):
         target += f"?next={quote(uri, safe='/')}"
     return RedirectResponse(target, status_code=302)
 
 
-@router.get("/auth-check")
-async def auth_check(request: Request,
+@internal_router.get("/{ws_id}/auth-check")
+async def auth_check(ws_id: str, request: Request,
                      session: AsyncSession = Depends(get_session)):
-    """Traefik forwardAuth target gating /w/ stream routes. 200 = allow."""
-    from app.security import tokens as _tokens
-    raw = request.cookies.get("access_token")
-    if not raw:
+    """Traefik forwardAuth target gating /w/ stream routes. 200 = allow.
+
+    Served under /internal (never routed by Traefik) and authenticated only by
+    the styx_proxy cookie: it mutates seat occupancy, so it must not be public.
+    The workstation comes from the router's auth address (route_writer emits
+    one per workstation), never from parsing the request, so Traefik's routing
+    and this check cannot disagree about which desktop is being opened.
+    """
+    from app.security.deps import proxy_user_or_none
+    user = await proxy_user_or_none(request, session)
+    if user is None:
         return _unauthenticated(request, "Not authenticated")
-    try:
-        claims = _tokens.decode_token(raw)
-    except _tokens.TokenError:
-        return _unauthenticated(request, "Invalid token")
-    from app.services import token_denylist
-    if await token_denylist.is_access_revoked(session, claims.get("jti")):
-        return _unauthenticated(request, "Token revoked")
-    user = await session.get(User, claims.get("sub"))
-    if not user or not user.is_active:
-        return _unauthenticated(request, "User inactive")
     uri = request.headers.get("x-forwarded-uri", "")
-    m = re.match(r"^/w/([a-z0-9-]+)", uri)
-    if not m:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Unknown stream path")
-    result = await session.exec(select(Workstation).where(
-        Workstation.subdomain == m.group(1)))
-    ws = result.first()
+    ws = await session.get(Workstation, ws_id)
     if ws is None:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Unknown workstation")
+        return no_access(request, "Unknown workstation")
     allowed = await _allowed_ids(session, ws.id)
     if not (user.role == "admin" or ws.all_users or user.id in allowed):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "No access")
+        return no_access(request, "No access")
     # A websocket upgrade passing auth = someone is (re)taking the desktop.
     # Record who; the agent's connection count decides whether it's live.
     if "/websocket" in uri:
@@ -208,7 +215,7 @@ async def auth_check(request: Request,
         ws.occupied_at = datetime.now(timezone.utc)
         session.add(ws)
         await session.commit()
-    return {"ok": True}
+    return JSONResponse({"ok": True}, headers=clean_cookie_header(request))
 
 
 @router.get("/mine", response_model=list[WorkstationOut])
@@ -266,6 +273,34 @@ async def update_workstation(ws_id: str, body: WorkstationUpdate,
                         user_id=admin.id, resource=ws.id)
     await session.commit()
     return _out(ws, await _allowed_ids(session, ws.id))
+
+
+@router.put("/{ws_id}/icon", response_model=WorkstationOut)
+async def set_icon(ws_id: str, body: WorkstationIconUpdate, request: Request,
+                   admin: User = Depends(require_admin),
+                   session: AsyncSession = Depends(get_session)):
+    ws = await _get_or_404(session, ws_id)
+    try:
+        ws.icon = ws_icon.validate_icon(body.kind, body.value)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
+    session.add(ws)
+    await audit_request(session, request, "workstation.icon_change",
+                        user_id=admin.id, resource=ws.id,
+                        detail={"kind": body.kind})
+    await session.commit()
+    return _out(ws, await _allowed_ids(session, ws.id))
+
+
+@router.get("/{ws_id}/icon")
+async def get_icon(ws_id: str, request: Request,
+                   user: User = Depends(get_current_user),
+                   session: AsyncSession = Depends(get_session)):
+    ws = await _get_or_404(session, ws_id)
+    allowed = await _allowed_ids(session, ws.id)
+    if not (user.role == "admin" or ws.all_users or user.id in allowed):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this workstation")
+    return ws_icon.icon_response(request, ws.icon, ws.name, ws.id)
 
 
 @router.put("/{ws_id}/access", response_model=WorkstationOut)

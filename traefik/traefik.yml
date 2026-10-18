@@ -19,3 +19,9 @@ providers:
   file:
     directory: /etc/traefik/dynamic
     watch: true
+
+# Local plugin (see traefik/plugins-local); the compose file mounts it at /plugins-local.
+experimental:
+  localPlugins:
+    styxlocation:
+      moduleName: github.com/styx-portal/styxlocation

@@ -3,8 +3,10 @@ import { ChevronDown, Search } from "lucide-react";
 import { api, ApiError, type Workstation } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { WorkstationIcon } from "@/components/system/workstation-icon";
 import { WorkstationSpecs } from "@/components/system/workstation-specs";
-import { openConnectWipe } from "@/lib/connect-wipe";
+import { useOpenChoice } from "@/components/open-prompt";
+import { openPending } from "@/lib/connect-wipe";
 import { cn } from "@/lib/utils";
 
 /* ---------- OS badge: brand-colored glyph keyed off os_info.distro ------- */
@@ -48,7 +50,7 @@ type Led = { color: string; pulse: boolean; label: string };
 
 function ledFor(ws: Workstation): Led {
   if (ws.status === "revoked") return { color: "bg-rose-500", pulse: false, label: "Revoked" };
-  if (ws.status !== "online")  return { color: "bg-zinc-500", pulse: false, label: "Offline" };
+  if (ws.status !== "online")  return { color: "bg-muted-foreground", pulse: false, label: "Offline" };
   if (ws.last_error)           return { color: "bg-rose-400", pulse: true,  label: "Error" };
   if (ws.in_use)               return { color: "bg-amber-400", pulse: true, label: ws.in_use_self ? "Connected (you)" : `In use by ${ws.in_use_by ?? "someone"}` };
   return { color: "bg-emerald-400", pulse: true, label: "Online" };
@@ -100,6 +102,7 @@ export function WorkstationList() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [takeover, setTakeover] = useState<Workstation | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const choose = useOpenChoice();
 
   useEffect(() => {
     const load = () => api.myWorkstations().then(setRows).catch(() => {});
@@ -130,15 +133,17 @@ export function WorkstationList() {
 
   if (rows.length === 0) return null;
 
-  const connect = async (ws: Workstation, force = false) => {
+  const connect = (ws: Workstation, force = false) => {
     setErr(null);
-    try {
-      const { url } = await api.workstationConnectUrl(ws.id, force);
-      openConnectWipe(url, `Connecting to ${ws.name}…`);
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 423) setTakeover(ws);
-      else setErr((e as Error).message);
-    }
+    // Takeover is confirmed here, in this tab, before any new tab opens.
+    if (!force && ws.in_use && !ws.in_use_self) { setTakeover(ws); return; }
+    choose("workspaces", ws.name, (mode) => {
+      openPending(mode, `Connecting to ${ws.name}…`, async () => (await api.workstationConnectUrl(ws.id, force)).url)
+        .catch((e) => {
+          if (e instanceof ApiError && e.status === 423) setTakeover(ws); // raced: someone joined meanwhile
+          else setErr((e as Error).message);
+        });
+    });
   };
 
   return (
@@ -196,6 +201,7 @@ export function WorkstationList() {
             <li key={ws.id} className="px-3 py-2">
               <div className="flex items-center gap-3">
                 <LedDot led={led} />
+                <WorkstationIcon ws={ws} />
                 {osBadge(ws)}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{ws.name}</p>
