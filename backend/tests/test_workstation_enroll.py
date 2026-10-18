@@ -232,7 +232,7 @@ async def test_artifact_endpoint_missing_prebuilt_503(client, tmp_path, monkeypa
     monkeypatch.setattr(artifacts._settings, "ARTIFACT_CACHE_DIR", str(tmp_path))
     r = await client.get("/api/enroll/artifacts/wheelhouse-x86_64.tar.gz")
     assert r.status_code == 503
-    assert "build_agent_artifacts" in r.json()["detail"]
+    assert r.json()["detail"] == "Enrollment files unavailable"
 
 
 @pytest.mark.asyncio

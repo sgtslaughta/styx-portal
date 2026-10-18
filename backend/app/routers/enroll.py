@@ -2,6 +2,7 @@
 
 CSRF-exempt by path prefix (see main.py): agents have no cookies.
 """
+import logging
 import secrets
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +24,7 @@ from app.services.workstations import (
 )
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 _settings = Settings()
 
 # Allowlist: URL name -> file in the agent dir. Only these keys are served.
@@ -41,26 +43,22 @@ def _agent_dir() -> Path:
 def _serve(filename: str) -> PlainTextResponse:
     path = _agent_dir() / filename
     if not path.is_file():
+        log.error("agent file %s missing; check the ./agent mount (AGENT_DIR)", filename)
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
-                            f"Agent file {filename} missing on server — "
-                            f"check the ./agent mount (AGENT_DIR).")
+                            "Enrollment files unavailable")
     return PlainTextResponse(path.read_text())
 
 
 @router.get("/artifacts/{name}")
 async def artifact(name: str):
-    from app.services.artifacts import ARTIFACTS, ArtifactMissing, ensure_artifact
+    from app.services.artifacts import ARTIFACTS, ensure_artifact
     if name not in ARTIFACTS:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"No such artifact: {name}")
     try:
         path = await ensure_artifact(name)
-    except ArtifactMissing as e:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e))
-    except Exception as e:
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            f"Artifact {name} unavailable ({e.__class__.__name__}). "
-            "Check network or pre-place it in the artifact cache.")
+    except Exception:   # detail (paths, exception class) goes to the log, not the caller
+        log.warning("enroll artifact %s unavailable", name, exc_info=True)
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Enrollment files unavailable")
     return FileResponse(path, media_type="application/gzip", filename=name)
 
 
