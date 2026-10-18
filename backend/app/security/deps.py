@@ -33,7 +33,9 @@ async def get_current_user(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token revoked")
     if user.must_change_pw and request.url.path not in _PW_CHANGE_OK:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Password change required")
-    if user.role == "admin":
+    from app.security.same_origin import _FOCUS_WRITE_OK
+    if user.role == "admin" and request.url.path not in _FOCUS_WRITE_OK:
+        # Self-service paths (shell/dock live under /_styx/app) are exempt.
         # Admin powers are also exercised inline (privileged templates/launches), so every
         # admin write must come from the Styx SPA, not only require_admin routes.
         from app.security.same_origin import require_spa_origin

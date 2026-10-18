@@ -72,3 +72,12 @@ async def test_admin_inline_privileged_writes_checked(admin_client):
     assert r.status_code == 403, r.text
     r = await admin_client.post("/api/instances", json={"template_id": "t", "name": "n"}, headers=bad)
     assert r.status_code == 403, r.text
+
+
+async def test_admin_self_service_writes_allowed_from_app_shell(admin_client):
+    """Shell/dock pages live under /_styx/app; preferences must still save for admins."""
+    h = {"sec-fetch-dest": "empty", "referer": "https://test/_styx/app/sonarr/"}
+    r = await admin_client.put("/api/auth/me/preferences", json={"open_apps": "same_tab"}, headers=h)
+    assert r.status_code == 200, r.text
+    r = await admin_client.post("/api/groups", json={"name": "g"}, headers=h)
+    assert r.status_code == 403, r.text
