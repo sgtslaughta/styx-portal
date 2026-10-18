@@ -1,4 +1,5 @@
 import ipaddress
+import socket
 import time
 from collections import deque
 from functools import lru_cache
@@ -27,6 +28,30 @@ def _peer_is_trusted_proxy(host: str | None) -> bool:
     return any(ip in net for net in _trusted_networks(_settings.TRUSTED_PROXY_CIDRS))
 
 
+_peer_cache: dict = {"at": 0.0, "ips": set()}
+
+
+def _tunnel_peers() -> set[str]:
+    """IPs of the `cloudflared` container (re-resolved every 60 s; empty when absent)."""
+    now = time.monotonic()
+    if now - _peer_cache["at"] > 60:
+        try:
+            ips = {ai[4][0] for ai in socket.getaddrinfo("cloudflared", None)}
+        except OSError:
+            ips = set()
+        _peer_cache.update(at=now, ips=ips)
+    return _peer_cache["ips"]
+
+
+def _is_tunnel_peer(ip: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return (ip in _tunnel_peers()
+            or any(addr in n for n in _trusted_networks(_settings.TUNNEL_PEER_CIDRS)))
+
+
 def client_ip_resolved(request) -> tuple[str, bool]:
     """Returns (ip, resolved). Resolve the real client IP behind a trusted proxy (Cloudflare/Traefik).
 
@@ -41,9 +66,13 @@ def client_ip_resolved(request) -> tuple[str, bool]:
     if not _peer_is_trusted_proxy(peer):
         return peer, True
     cf = request.headers.get("cf-connecting-ip")
-    if cf and _settings.DEPLOY_MODE == "tunnel":
-        return cf.strip(), True
     xff = request.headers.get("x-forwarded-for")
+    # CF-Connecting-IP is only believed when the peer Traefik saw (the XFF entry it
+    # appended: the last one) is cloudflared; Traefik passes the header through
+    # unchanged, so anyone reaching a published Traefik port could forge it.
+    if (cf and xff and _settings.DEPLOY_MODE == "tunnel"
+            and _is_tunnel_peer(xff.split(",")[-1].strip())):
+        return cf.strip(), True
     if xff:
         return xff.split(",")[0].strip(), True
     return peer, False   # fell back to the proxy itself: the real client is unknown
