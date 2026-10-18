@@ -15,8 +15,9 @@ async def test_lockout_after_threshold(client, session):
         assert r.status_code == 401, r.text
     r = await client.post("/api/auth/login",
                           json={"username": "victim", "password": "nope"})
-    assert r.status_code == 423
-    assert r.headers.get("Retry-After")
+    assert r.status_code == 401          # locked looks exactly like a bad password
+    assert r.json() == {"detail": "Invalid credentials"}
+    assert "Retry-After" not in r.headers
 
 
 async def test_lockout_blocks_correct_password(client, session):
@@ -28,7 +29,7 @@ async def test_lockout_blocks_correct_password(client, session):
     r = await client.post("/api/auth/login",
                           json={"username": "victim",
                                 "password": "correct horse battery staple"})
-    assert r.status_code == 423
+    assert r.status_code == 401
 
 
 async def test_success_resets_failed_count(client, session):
@@ -47,33 +48,63 @@ async def test_success_resets_failed_count(client, session):
     assert u.locked_until is None
 
 
-async def test_lockout_expires_and_allows_login(client, session):
-    from datetime import datetime, timezone, timedelta
-    from app.models import User
-    from sqlmodel import select
+async def test_lockout_expires_and_allows_login(client, session, monkeypatch):
+    import time as _t
     await _make_user(session)
-    # Lock the account, but with an already-past expiry.
-    u = (await session.exec(select(User).where(User.username == "victim"))).first()
-    u.locked_until = datetime.now(timezone.utc) - timedelta(seconds=1)
-    session.add(u)
-    await session.commit()
-    # Expired lock must NOT return 423; correct password logs in.
+    for _ in range(10):
+        await client.post("/api/auth/login", json={"username": "victim", "password": "nope"})
+    real = _t.monotonic
+    monkeypatch.setattr("app.services.abuse.time.monotonic", lambda: real() + 901)
     r = await client.post("/api/auth/login",
                           json={"username": "victim",
                                 "password": "correct horse battery staple"})
     assert r.status_code == 200, r.text
 
 
-async def test_retry_after_within_lockout_duration(client, session):
+async def test_lockout_is_per_ip_not_global(client, session):
+    # An attacker on one IP locks only their own (username, IP) pair.
     await _make_user(session)
     for _ in range(10):
-        await client.post("/api/auth/login",
+        await client.post("/api/auth/login", headers={"X-Forwarded-For": "6.6.6.6"},
                           json={"username": "victim", "password": "nope"})
-    r = await client.post("/api/auth/login",
-                          json={"username": "victim", "password": "nope"})
-    assert r.status_code == 423
-    retry = int(r.headers["Retry-After"])
-    assert 0 < retry <= 900   # within LOCKOUT_DURATION (15 min)
+    r = await client.post("/api/auth/login", headers={"X-Forwarded-For": "6.6.6.6"},
+                          json={"username": "victim", "password": "correct horse battery staple"})
+    assert r.status_code == 401
+    r = await client.post("/api/auth/login", headers={"X-Forwarded-For": "8.8.4.4"},
+                          json={"username": "victim", "password": "correct horse battery staple"})
+    assert r.status_code == 200, r.text
+
+
+async def test_unknown_and_locked_users_take_the_dummy_hash_path(client, session, monkeypatch):
+    calls = []
+    import app.routers.auth as auth_mod
+    real = auth_mod.verify_password
+    monkeypatch.setattr(auth_mod, "verify_password",
+                        lambda pw, h: (calls.append(h), real(pw, h))[1])
+    r = await client.post("/api/auth/login", json={"username": "ghost", "password": "x"})
+    assert r.status_code == 401
+    assert len(calls) == 1               # a hash is verified even for a missing user
+    await _make_user(session)
+    for _ in range(10):
+        await client.post("/api/auth/login", json={"username": "victim", "password": "nope"})
+    calls.clear()
+    await client.post("/api/auth/login", json={"username": "victim", "password": "nope"})
+    assert len(calls) == 1               # and for a locked one
+
+
+async def test_admin_unlock_clears_lockout(admin_client, session):
+    from sqlmodel import select
+    from app.models import User
+    await _make_user(session)
+    for _ in range(10):
+        await admin_client.post("/api/auth/login", json={"username": "victim", "password": "nope"})
+    victim = (await session.exec(select(User).where(User.username == "victim"))).first()
+    r = await admin_client.post(f"/api/users/{victim.id}/unlock")
+    assert r.status_code == 200, r.text
+    r = await admin_client.post("/api/auth/login",
+                                json={"username": "victim",
+                                      "password": "correct horse battery staple"})
+    assert r.status_code == 200, r.text
 
 
 async def test_locked_user_does_not_feed_ip_tracker(client, session):
@@ -90,7 +121,7 @@ async def test_locked_user_does_not_feed_ip_tracker(client, session):
         r = await client.post("/api/auth/login",
                               headers={"X-Forwarded-For": "7.7.7.7"},
                               json={"username": "victim", "password": "nope"})
-        assert r.status_code == 423
+        assert r.status_code == 401
     # The 30 locked attempts did not feed the tracker: the IP's recorded-fail
     # deque still holds only the original 10 (< BAN_FAIL_THRESHOLD 20), so no
     # ban row was written for this IP.
@@ -142,4 +173,19 @@ async def test_lockout_threshold_is_live(client, session):
         assert r.status_code == 401, r.text
     r = await client.post("/api/auth/login",
                           json={"username": "victim", "password": "nope"})
-    assert r.status_code == 423
+    assert r.status_code == 401
+
+
+async def test_login_input_is_length_limited(client):
+    r = await client.post("/api/auth/login", json={"username": "u", "password": "p" * 5000})
+    assert r.status_code == 422
+    r = await client.post("/api/auth/login", json={"username": "u" * 500, "password": "p"})
+    assert r.status_code == 422
+
+
+async def test_never_bans_a_trusted_proxy_address(client, session):
+    from app.models import BannedIP
+    # No usable forwarded header: the resolved "client" is the proxy peer itself.
+    for i in range(20):
+        await client.post("/api/auth/login", json={"username": f"nobody{i}", "password": "nope"})
+    assert await session.get(BannedIP, "127.0.0.1") is None

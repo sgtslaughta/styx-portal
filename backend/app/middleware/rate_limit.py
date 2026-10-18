@@ -1,6 +1,6 @@
 import ipaddress
 import time
-from collections import defaultdict, deque
+from collections import deque
 from functools import lru_cache
 
 from fastapi import Request
@@ -10,6 +10,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.config import Settings
 
 _settings = Settings()
+MAX_TRACKED = 100_000   # cap on the per-key hit map (oldest key evicted)
 
 
 @lru_cache(maxsize=8)
@@ -52,11 +53,15 @@ class SlidingWindow:
     def __init__(self, limit: int, window: int):
         self.limit = limit
         self.window = window
-        self._hits: dict[str, deque] = defaultdict(deque)
+        self._hits: dict[str, deque] = {}
 
     def allow(self, key: str, now: float | None = None) -> bool:
         now = time.monotonic() if now is None else now
-        q = self._hits[key]
+        q = self._hits.get(key)
+        if q is None:
+            if len(self._hits) >= MAX_TRACKED:
+                self._hits.pop(next(iter(self._hits)))
+            q = self._hits[key] = deque()
         while q and q[0] <= now - self.window:
             q.popleft()
         if len(q) >= self.limit:

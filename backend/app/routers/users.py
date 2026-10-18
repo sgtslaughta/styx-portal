@@ -12,6 +12,7 @@ from app.schemas import UserOut, CreateInviteRequest, InviteOut, TempPasswordOut
 from app.security.deps import require_admin
 from app.security.passwords import hash_password, current_policy
 from app.services.audit import audit_request
+from app.services.abuse import login_lockout
 
 router = APIRouter()
 INVITE_TTL_HOURS = 72
@@ -91,6 +92,7 @@ async def unlock_user(user_id: str, request: Request,
         raise HTTPException(status.HTTP_404_NOT_FOUND)
     user.failed_count = 0
     user.locked_until = None
+    login_lockout.clear_user(user.username)
     session.add(user)
     await audit_request(session, request, "user.unlock", user_id=admin.id, resource=user.id)
     await session.commit()
@@ -127,6 +129,7 @@ async def reset_password(user_id: str, request: Request,
     user.must_change_pw = True
     user.failed_count = 0
     user.locked_until = None
+    login_lockout.clear_user(user.username)
     session.add(user)
     await session.exec(update(RefreshToken)
                        .where(RefreshToken.user_id == user.id)

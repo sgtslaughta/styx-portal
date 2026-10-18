@@ -1,5 +1,7 @@
+import ipaddress
+import logging
 import time
-from collections import defaultdict, deque
+from collections import deque
 from datetime import datetime, timedelta, timezone
 
 from sqlmodel import select
@@ -9,10 +11,33 @@ from app.config import Settings
 from app.models import BannedIP
 
 _settings = Settings()
+logger = logging.getLogger("styx-portal")
+
+MAX_TRACKED = 100_000   # cap on in-memory per-key maps (oldest key evicted)
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def ip_key(ip: str) -> str:
+    """Ban/track key for an IP: IPv6 collapses to its /64 (one host owns the whole prefix)."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+    if addr.version == 6:
+        return str(ipaddress.ip_network(f"{ip}/64", strict=False))
+    return str(addr)
+
+
+def _bounded_deque(d: dict, key: str) -> deque:
+    q = d.get(key)
+    if q is None:
+        if len(d) >= MAX_TRACKED:
+            d.pop(next(iter(d)))
+        q = d[key] = deque()
+    return q
 
 
 class IpFailTracker:
@@ -26,21 +51,82 @@ class IpFailTracker:
     def __init__(self, threshold: int, window: int):
         self.threshold = threshold
         self.window = window
-        self._hits: dict[str, deque] = defaultdict(deque)
+        self._hits: dict[str, deque] = {}
 
     def record(self, ip: str, now: float | None = None) -> bool:
         now = time.monotonic() if now is None else now
-        q = self._hits[ip]
+        key = ip_key(ip)
+        q = _bounded_deque(self._hits, key)
         q.append(now)
         while q and q[0] <= now - self.window:
             q.popleft()
         if len(q) >= self.threshold:
-            q.clear()
+            self._hits.pop(key, None)
             return True
         return False
 
     def reset(self) -> None:
         self._hits.clear()
+
+
+class LoginLockout:
+    """Per-(username, client IP) login lockout, in memory.
+
+    Keyed on the pair so a stranger failing against the admin's username only locks
+    their own address out, never the real user on another IP. Thresholds are passed
+    per call so the live admin settings apply.
+    """
+
+    def __init__(self) -> None:
+        self._fails: dict[str, deque] = {}
+        self._locked: dict[str, float] = {}
+
+    @staticmethod
+    def _key(username: str, ip: str) -> str:
+        return f"{username.strip().lower()}|{ip_key(ip)}"
+
+    def is_locked(self, username: str, ip: str, now: float | None = None) -> bool:
+        now = time.monotonic() if now is None else now
+        key = self._key(username, ip)
+        until = self._locked.get(key)
+        if until is None:
+            return False
+        if until <= now:
+            del self._locked[key]
+            return False
+        return True
+
+    def record_fail(self, username: str, ip: str, threshold: int, duration: int,
+                    now: float | None = None) -> bool:
+        """Count a failure; True when this failure trips the lock."""
+        now = time.monotonic() if now is None else now
+        key = self._key(username, ip)
+        q = _bounded_deque(self._fails, key)
+        q.append(now)
+        while q and q[0] <= now - duration:
+            q.popleft()
+        if len(q) >= threshold:
+            self._fails.pop(key, None)
+            if len(self._locked) >= MAX_TRACKED:
+                self._locked.pop(next(iter(self._locked)))
+            self._locked[key] = now + duration
+            return True
+        return False
+
+    def clear(self, username: str, ip: str) -> None:
+        key = self._key(username, ip)
+        self._fails.pop(key, None)
+        self._locked.pop(key, None)
+
+    def clear_user(self, username: str) -> None:
+        prefix = f"{username.strip().lower()}|"
+        for d in (self._fails, self._locked):
+            for k in [k for k in d if k.startswith(prefix)]:
+                del d[k]
+
+    def reset(self) -> None:
+        self._fails.clear()
+        self._locked.clear()
 
 
 class BanCache:
@@ -74,14 +160,22 @@ class BanCache:
         if self._loaded_at is None or mono - self._loaded_at >= self.ttl:
             await self.refresh(session, now)
             self._loaded_at = mono
-        exp = self._bans.get(ip)
+        exp = self._bans.get(ip_key(ip))
         # Convert to naive datetime for comparison (SQLite stores as naive)
         now_naive = now.replace(tzinfo=None) if now.tzinfo else now
         return exp is not None and exp > now_naive
 
 
 async def ban_ip(session: AsyncSession, ip: str, reason: str, duration: int,
-                 now: datetime | None = None) -> None:
+                 now: datetime | None = None) -> bool:
+    """Persist a ban. Refuses (False) for the reverse proxy's own address: that means the
+    real client IP could not be resolved, and banning it would lock everyone out."""
+    from app.middleware.rate_limit import _peer_is_trusted_proxy
+    if _peer_is_trusted_proxy(ip):
+        logger.error("Refusing to ban %s: it is a trusted proxy address (client IP not "
+                     "resolved; check DEPLOY_MODE / TRUSTED_PROXY_CIDRS). Reason: %s", ip, reason)
+        return False
+    ip = ip_key(ip)
     now = now or _now()
     expires = now + timedelta(seconds=duration)
     existing = await session.get(BannedIP, ip)
@@ -92,8 +186,10 @@ async def ban_ip(session: AsyncSession, ip: str, reason: str, duration: int,
         session.add(existing)
     else:
         session.add(BannedIP(ip=ip, reason=reason, banned_at=now, expires_at=expires))
+    return True
 
 
 # Module singletons shared by the login flow and the ban-check endpoint.
 fail_tracker = IpFailTracker(_settings.BAN_FAIL_THRESHOLD, _settings.BAN_FAIL_WINDOW)
 ban_cache = BanCache(_settings.BAN_CACHE_TTL)
+login_lockout = LoginLockout()

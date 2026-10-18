@@ -75,3 +75,26 @@ async def test_ban_cache_invalidate_forces_refresh(session):
     # without invalidate the long TTL would hide the new ban
     cache.invalidate()
     assert await cache.is_banned(session, "192.0.2.1", now=now, mono=1.0) is True
+
+
+def test_ip_key_collapses_ipv6_to_64():
+    from app.services.abuse import ip_key
+    assert ip_key("2001:db8:1:2:aaaa:bbbb:cccc:dddd") == "2001:db8:1:2::/64"
+    assert ip_key("2001:db8:1:2::1") == ip_key("2001:db8:1:2:ffff::9")
+    assert ip_key("1.2.3.4") == "1.2.3.4"
+
+
+def test_trackers_are_bounded(monkeypatch):
+    import app.services.abuse as ab
+    monkeypatch.setattr(ab, "MAX_TRACKED", 5)
+    t = ab.IpFailTracker(threshold=100, window=60)
+    for i in range(50):
+        t.record(f"10.0.0.{i}")
+    assert len(t._hits) <= 5
+    from app.middleware.rate_limit import SlidingWindow
+    import app.middleware.rate_limit as rl
+    monkeypatch.setattr(rl, "MAX_TRACKED", 5)
+    w = SlidingWindow(10, 60)
+    for i in range(50):
+        w.allow(f"k{i}")
+    assert len(w._hits) <= 5
