@@ -373,8 +373,9 @@ What Styx does about it, and where it stops:
   shell only needs those plus reads.
 - Admin writes from a browser must be a `fetch` (`Sec-Fetch-Dest: empty`) whose Referer is
   a Styx page, not `/<slug>/...`, `/i/...`, `/w/...` or `/_styx/app`. With no Referer, the
-  Origin must match the host. Clients that send no `Sec-Fetch-Dest` (scripts) are not page
-  scripts and keep working.
+  a missing Referer is refused too (a page script can suppress it). Clients that send no
+  `Sec-Fetch-Dest` (curl, scripts) keep working with CSRF. Focus app pages live at root
+  paths, so their Referer looks like a Styx page; the Focus write guard above covers them.
 - OAuth callbacks and `/accept-invite` always reach Styx, never a Focus app.
 
 The ceiling: any proxied app can still act as its viewer for member-level calls. Open

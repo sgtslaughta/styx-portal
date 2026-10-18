@@ -40,8 +40,9 @@ async def test_stale_or_path_mode_cookie_is_not_focus(admin_client, session):
 @pytest.mark.parametrize("headers,ok", [
     ({}, True),                                                      # non-browser client
     ({"sec-fetch-dest": "empty", "referer": "http://test/admin/groups"}, True),
-    ({"sec-fetch-dest": "empty", "origin": "http://test"}, True),   # no referer, matching origin
-    ({"sec-fetch-dest": "empty"}, False),                            # no referer, no origin
+    ({"sec-fetch-dest": "empty", "referer": "http://test/settings"}, True),
+    ({"sec-fetch-dest": "empty", "origin": "http://test"}, False),  # no-referrer fetch (browser)
+    ({"sec-fetch-dest": "empty"}, False),
     ({"sec-fetch-dest": "empty", "origin": "http://evil"}, False),
     ({"sec-fetch-dest": "iframe", "referer": "http://test/groups"}, False),
     ({"sec-fetch-dest": "empty", "referer": "http://test/i/dev/app"}, False),

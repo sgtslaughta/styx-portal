@@ -52,16 +52,18 @@ async def require_spa_origin(request: Request, session: AsyncSession) -> None:
     deny = HTTPException(status.HTTP_403_FORBIDDEN, "Admin changes must come from the Styx app")
     if dest != "empty":
         raise deny
+    # A page script can send referrerPolicy "no-referrer", so for a browser request a
+    # missing Referer is a deny (the SPA sends strict-origin-when-cross-origin, which
+    # keeps same-origin referers). Ceiling: Focus (cookie-root) app pages live at root
+    # paths, indistinguishable from SPA paths by Referer; svc_cookie_guard covers them
+    # by refusing writes while a valid Focus cookie is set.
     ref = request.headers.get("referer")
-    if ref:
-        path = urlsplit(ref).path or "/"
-        if path.startswith(_APP_PREFIXES):
-            raise deny
-        first = path.split("/")[1] if path.count("/") else ""
-        if first and (await session.exec(
-                select(ProxiedService.id).where(ProxiedService.slug == first))).first():
-            raise deny
-        return
-    origin = request.headers.get("origin")
-    if not origin or urlsplit(origin).netloc != request.headers.get("host"):
+    if not ref:
+        raise deny
+    path = urlsplit(ref).path or "/"
+    if path.startswith(_APP_PREFIXES):
+        raise deny
+    first = path.split("/")[1] if path.count("/") else ""
+    if first and (await session.exec(
+            select(ProxiedService.id).where(ProxiedService.slug == first))).first():
         raise deny
