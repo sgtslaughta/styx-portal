@@ -141,7 +141,7 @@ async def test_start_existing_container_reattaches_user_network(
     resp = await admin_client.post(f"/api/instances/{inst.id}/start")
     assert resp.status_code == 200
     shared_docker.start_container.assert_called_once()
-    assert shared_docker.ensure_user_network.call_count == 1
+    shared_docker.ensure_isolated.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -154,7 +154,7 @@ async def test_restart_reattaches_user_network(
     resp = await admin_client.post(f"/api/instances/{inst.id}/restart")
     assert resp.status_code == 200
     shared_docker.restart_container.assert_called_once()
-    assert shared_docker.ensure_user_network.call_count == 1
+    shared_docker.ensure_isolated.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -400,3 +400,44 @@ async def test_start_with_legacy_volume_name_is_422(admin_client, template_id, s
     resp = await admin_client.post(f"/api/instances/{iid}/start")
     assert resp.status_code == 422, resp.text
     assert "instance_id" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_start_isolates_before_starting(admin_client, session, shared_docker):
+    inst = await _make_owned_instance(session, status="stopped")
+    resp = await admin_client.post(f"/api/instances/{inst.id}/start")
+    assert resp.status_code == 200
+    shared_docker.ensure_isolated.assert_called_once_with("container-abc123", inst.owner_id)
+    names = [c[0] for c in shared_docker.method_calls]
+    assert names.index("ensure_isolated") < names.index("start_container")
+
+
+@pytest.mark.asyncio
+async def test_start_isolation_failure_is_409_and_not_started(admin_client, session, shared_docker):
+    inst = await _make_owned_instance(session, status="stopped")
+    shared_docker.ensure_isolated.side_effect = RuntimeError("detach failed")
+    resp = await admin_client.post(f"/api/instances/{inst.id}/start")
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "Instance network could not be isolated"
+    shared_docker.start_container.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_restart_isolation_failure_is_409_and_not_restarted(admin_client, session, shared_docker):
+    inst = await _make_owned_instance(session, status="running")
+    shared_docker.ensure_isolated.side_effect = RuntimeError("detach failed")
+    resp = await admin_client.post(f"/api/instances/{inst.id}/restart")
+    assert resp.status_code == 409
+    shared_docker.restart_container.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_boot_logs_portal_instances_without_mutating(caplog):
+    from unittest.mock import MagicMock
+    from app.main import _log_portal_instances
+    d = MagicMock()
+    d.on_portal_network.return_value = ["selkies-foo"]
+    with caplog.at_level("ERROR"):
+        await _log_portal_instances(d)
+    assert "selkies-foo" in caplog.text and "isolate" in caplog.text
+    assert [c[0] for c in d.method_calls] == ["on_portal_network"]

@@ -351,10 +351,21 @@ class DockerManager(ContainerFilesMixin):
             logger.warning("network connect failed for %s: %s", container, e)
             return False
 
-    def isolate_ownerless(self, container: str) -> None:
-        """Move a legacy ownerless container off the shared portal network (once, at boot)."""
-        self.ensure_user_network("ownerless")
-        self.disconnect_from_network(container)
+    def ensure_isolated(self, container: str, owner_id: str | None) -> None:
+        """Attach to the owner's user network and make sure the container is NOT on the
+        portal network (where the backend lives). Raises on any failure (fail closed)."""
+        net = self.ensure_user_network(owner_id or "ownerless")
+        if not self.connect_to_network(container, net):
+            raise RuntimeError(f"could not attach {container} to {net}")
+        attached = self._client.containers.get(container).attrs["NetworkSettings"]["Networks"]
+        if self._network_name in attached:
+            self._client.networks.get(self._network_name).disconnect(container)
+
+    def on_portal_network(self, network: str | None = None) -> list[str]:
+        """Names of Styx-managed instance containers attached to the portal network (read-only)."""
+        net = self._client.networks.get(network or self._network_name)
+        net.reload()
+        return [c.name for c in net.containers if c.name.startswith("selkies-")]
 
     def disconnect_from_network(self, container: str, network: str | None = None) -> None:
         try:

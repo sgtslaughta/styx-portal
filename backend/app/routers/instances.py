@@ -54,6 +54,15 @@ async def _refresh_routes(session: AsyncSession):
     await refresh_routes_from_db(session)
 
 
+async def _isolate_or_409(docker, instance, container_id):
+    """Fail closed: never start an instance container that may share styx-portal with the backend."""
+    try:
+        await asyncio.to_thread(docker.ensure_isolated, container_id, instance.owner_id)
+    except Exception:  # noqa: BLE001
+        logger.error("could not isolate instance %s network", instance.name, exc_info=True)
+        raise HTTPException(409, "Instance network could not be isolated")
+
+
 async def _build_and_start_container(instance, template, docker):
     """(Re)create the Docker container for an instance from its template,
     mounting the instance's existing named volumes (data preserved), then start it.
@@ -112,6 +121,11 @@ async def _build_and_start_container(instance, template, docker):
         privileged=template.privileged,
         extra_docker_args=template.extra_docker_args,
     )
+    try:
+        await _isolate_or_409(docker, instance, container_id)
+    except HTTPException:
+        await asyncio.to_thread(docker.remove_container, container_id)
+        raise
     instance.container_id = container_id
     await asyncio.to_thread(docker.start_container, container_id)
     return container_id
@@ -234,6 +248,7 @@ async def _launch_instance_background(instance_id: str, template_id: str):
             session.add(instance)
             await session.commit()
 
+            await _isolate_or_409(docker, instance, container_id)
             await asyncio.to_thread(docker.start_container, container_id)
 
             now = datetime.now(timezone.utc)
@@ -359,7 +374,7 @@ async def start_instance(
         # Reattach Traefik to the per-user network before starting. The network
         # membership is only established on the create/build path, so a Traefik
         # restart leaves it off the net and routing 502s until reattached.
-        await asyncio.to_thread(docker.ensure_user_network, instance.owner_id or "ownerless")
+        await _isolate_or_409(docker, instance, instance.container_id)
         await asyncio.to_thread(docker.start_container, instance.container_id)
     else:
         template = await session.get(ServiceTemplate, instance.template_id)
@@ -434,7 +449,7 @@ async def restart_instance(
 
     # Reattach Traefik to the per-user network (see start_instance) — a Traefik
     # restart drops its membership and routing 502s until reattached.
-    await asyncio.to_thread(docker.ensure_user_network, instance.owner_id or "ownerless")
+    await _isolate_or_409(docker, instance, instance.container_id)
     await asyncio.to_thread(docker.restart_container, instance.container_id)
 
     now = datetime.now(timezone.utc)

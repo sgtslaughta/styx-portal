@@ -99,6 +99,18 @@ async def _session_monitor_loop():
             pass
 
 
+async def _log_portal_instances(docker) -> None:
+    """Read-only: legacy instance containers may still sit on styx-portal next to the backend."""
+    try:
+        names = await asyncio.to_thread(docker.on_portal_network)
+    except Exception:  # noqa: BLE001 - docker may be unavailable at boot
+        logger.warning("portal network inspection skipped", exc_info=True)
+        return
+    for name in names:
+        logger.error("instance container %s is on the portal network; "
+                     "starting it again will isolate it", name)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Fail fast at boot if the auth secret is misconfigured, rather than
@@ -158,13 +170,7 @@ async def lifespan(app: FastAPI):
                 inst.status = "stopped"
                 session.add(inst)
         await session.commit()
-        # Legacy ownerless containers may still sit on styx-portal next to the backend.
-        for inst in (await session.exec(select(Instance).where(
-                Instance.owner_id == None, Instance.container_id != None))).all():  # noqa: E711
-            try:
-                await asyncio.to_thread(docker.isolate_ownerless, inst.container_id)
-            except Exception:  # noqa: BLE001
-                logger.warning("could not isolate ownerless container %s", inst.name, exc_info=True)
+        await _log_portal_instances(docker)
 
     # Write initial Traefik routes on startup
     from app.services.route_writer import refresh_routes_from_db
