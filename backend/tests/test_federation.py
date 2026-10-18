@@ -325,3 +325,26 @@ async def test_suppressed_claim_logged_pending_signup(session):
         role_map=rm, allow_signup=True, auto_promote_admins=False)
     rows = (await session.exec(select(AuditLog))).all()
     assert any(r.action == "admin_claim_pending" for r in rows)
+
+
+@pytest.mark.asyncio
+async def test_admin_email_match_is_not_auto_linked(session):
+    from sqlmodel import select
+    session.add(User(username="root", email="a@b.c", role="admin",
+                     password_hash=hash_password("x")))
+    await session.commit()
+    with pytest.raises(federation.NotAuthorized):
+        await federation.resolve_identity(session, "google", _ident())
+    rows = (await session.exec(select(FederatedIdentity))).all()
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_member_email_match_still_auto_links(session):
+    from sqlmodel import select
+    session.add(User(username="mem", email="a@b.c", role="user",
+                     password_hash=hash_password("x")))
+    await session.commit()
+    out = await federation.resolve_identity(session, "google", _ident())
+    assert out.username == "mem"
+    assert len((await session.exec(select(FederatedIdentity))).all()) == 1

@@ -131,6 +131,8 @@ async def resolve_identity(session: AsyncSession, provider_name: str,
             existing = matches[0]
             if not existing.is_active:
                 raise Disabled("account disabled")
+            if existing.role == "admin":
+                raise NotAuthorized("admins link sign-in providers from their account page")
             session.add(FederatedIdentity(user_id=existing.id, provider=provider_name,
                                           subject=identity.sub, email=identity.email))
             await session.commit()

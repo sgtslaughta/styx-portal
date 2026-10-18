@@ -86,7 +86,7 @@ Logged-in users can link their account to a provider under **System → Connecte
 - Link: Adds a provider identity to their account
 - Unlink: Removes a provider identity (cannot unlink the only login method)
 
-**Security:** Linking always requires a verified email address, regardless of the provider's `trust_email` setting.
+**Security:** Linking always requires a verified email address, regardless of the provider's `trust_email` setting. SSO sign-in never auto-links to an admin account: admins link providers while signed in, from their Account page.
 
 ## Templates
 
