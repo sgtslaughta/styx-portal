@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlmodel import select
+from sqlmodel import func, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models import User, Invite, FederatedIdentity
@@ -28,6 +28,13 @@ def _now():
     return datetime.now(timezone.utc)
 
 
+_BAD_SUBJECTS = {"", "none", "null"}
+
+
+def _aware(dt: datetime) -> datetime:
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
 def _groups(claims: dict, role_map: dict | None) -> list[str]:
     claim = (role_map or {}).get("claim") or "groups"
     present = claims.get(claim) or []
@@ -47,8 +54,8 @@ def _elevate(role: str, claims: dict, role_map: dict | None) -> str:
 def _signup_role(claims: dict, role_map: dict | None, auto_promote_admins: bool = True) -> str | None:
     """Role for invite-less self-service signup, or None if not permitted.
 
-    When auto_promote_admins=True: admin group → admin; if a user group is configured it is required for 'user';
-    if no user group is configured, signup is open and grants 'user'.
+    When auto_promote_admins=True: admin group → admin; a user group is required for 'user'
+    (no user group configured = signup refused, never open).
 
     When auto_promote_admins=False: admin group acts like user_group (authorizes signup as 'user', not 'admin').
     """
@@ -66,10 +73,11 @@ def _signup_role(claims: dict, role_map: dict | None, auto_promote_admins: bool 
         return "user"
 
     # Check user_group
+    # No group gate = open to everyone the IdP authenticates: never allowed.
     if user_group:
         return "user" if user_group in groups else None
 
-    return "user"
+    return None
 
 
 async def _provision(session: AsyncSession, provider_name: str,
@@ -91,6 +99,8 @@ async def resolve_identity(session: AsyncSession, provider_name: str,
                            identity: OAuthIdentity, role_map: dict | None = None,
                            trust_email: bool = False, allow_signup: bool = False,
                            auto_promote_admins: bool = True) -> User:
+    if str(identity.sub).strip().lower() in _BAD_SUBJECTS:
+        raise NotAuthorized("IdP returned no usable subject")
     if not identity.email:
         raise EmailUnverified("IdP did not provide an email")
     if not identity.email_verified and not trust_email:
@@ -106,20 +116,33 @@ async def resolve_identity(session: AsyncSession, provider_name: str,
             raise Disabled("account disabled")
         return user
 
-    # 2. verified email matches an existing user → link
-    existing = (await session.exec(select(User).where(User.email == identity.email))).first()
-    if existing:
-        if not existing.is_active:
-            raise Disabled("account disabled")
-        session.add(FederatedIdentity(user_id=existing.id, provider=provider_name,
-                                      subject=identity.sub, email=identity.email))
-        await session.commit()
-        return existing
+    matches = (await session.exec(select(User).where(
+        func.lower(User.email) == identity.email.lower()))).all()
+    if not identity.email_verified:
+        # trust_email only vouches for subjects that are already linked; it never
+        # links to an account, matches an invite, or squats an existing email.
+        if matches:
+            raise NotAuthorized("unverified email matches an existing account")
+    else:
+        # 2. verified email matches exactly one existing user → link
+        if len(matches) > 1:
+            raise NotAuthorized("email matches more than one account")
+        if matches:
+            existing = matches[0]
+            if not existing.is_active:
+                raise Disabled("account disabled")
+            session.add(FederatedIdentity(user_id=existing.id, provider=provider_name,
+                                          subject=identity.sub, email=identity.email))
+            await session.commit()
+            return existing
 
     # 3. verified email matches an open invite → provision
-    invite = (await session.exec(select(Invite).where(
-        Invite.email == identity.email, Invite.used_at == None))).first()  # noqa: E711
-    if invite and not (invite.expires_at and invite.expires_at < _now()):
+    invite = None
+    if identity.email_verified:
+        invite = (await session.exec(select(Invite).where(
+            func.lower(Invite.email) == identity.email.lower(),
+            Invite.used_at == None))).first()  # noqa: E711
+    if invite and not (invite.expires_at and _aware(invite.expires_at) < _now()):
         if auto_promote_admins:
             role = _elevate(invite.role, identity.claims, role_map)
         else:
@@ -175,6 +198,8 @@ async def link_identity(session: AsyncSession, user: User, provider_name: str,
     # email regardless of the provider's trust_email login setting.
     if not identity.email_verified:
         raise EmailUnverified("IdP did not provide a verified email")
+    if str(identity.sub).strip().lower() in _BAD_SUBJECTS:
+        raise NotAuthorized("IdP returned no usable subject")
     taken = (await session.exec(select(FederatedIdentity).where(
         FederatedIdentity.provider == provider_name,
         FederatedIdentity.subject == identity.sub))).first()

@@ -75,12 +75,80 @@ async def test_rejects_disabled_user(session):
 
 
 @pytest.mark.asyncio
-async def test_trust_email_allows_unverified(session):
+async def test_trust_email_does_not_match_invite(session):
     session.add(Invite(token_hash="h", email="a@b.c", role="user", created_by="admin"))
+    await session.commit()
+    with pytest.raises(federation.NotAuthorized):
+        await federation.resolve_identity(
+            session, "authentik", _ident(verified=False), trust_email=True)
+
+
+@pytest.mark.asyncio
+async def test_trust_email_does_not_link_existing_user(session):
+    session.add(User(username="bob", email="a@b.c", password_hash=hash_password("x")))
+    await session.commit()
+    with pytest.raises(federation.NotAuthorized):
+        await federation.resolve_identity(
+            session, "authentik", _ident(verified=False), trust_email=True,
+            allow_signup=True, role_map={"user_group": "u"})
+
+
+@pytest.mark.asyncio
+async def test_trust_email_still_logs_in_linked_subject(session):
+    u = User(username="bob", password_hash=hash_password("x"))
+    session.add(u)
+    await session.flush()
+    session.add(FederatedIdentity(user_id=u.id, provider="authentik", subject="s1", email="a@b.c"))
     await session.commit()
     out = await federation.resolve_identity(
         session, "authentik", _ident(verified=False), trust_email=True)
+    assert out.id == u.id
+
+
+@pytest.mark.asyncio
+async def test_email_link_is_case_insensitive(session):
+    u = User(username="bob", email="A@B.C", password_hash=hash_password("x"))
+    session.add(u)
+    await session.commit()
+    out = await federation.resolve_identity(session, "google", _ident(email="a@b.c"))
+    assert out.id == u.id
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_email_refuses_link(session):
+    session.add(User(username="bob", email="a@b.c", password_hash=hash_password("x")))
+    session.add(User(username="bob2", email="A@b.c", password_hash=hash_password("x")))
+    await session.commit()
+    with pytest.raises(federation.NotAuthorized):
+        await federation.resolve_identity(session, "google", _ident())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sub", ["", "None", "null"])
+async def test_bad_subject_rejected(session, sub):
+    with pytest.raises(federation.NotAuthorized):
+        await federation.resolve_identity(session, "google", _ident(sub=sub))
+    u = User(username="bob", password_hash=hash_password("x"))
+    session.add(u)
+    await session.commit()
+    ident = _ident(sub=sub)
+    with pytest.raises(federation.NotAuthorized):
+        await federation.link_identity(session, u, "google", ident)
+
+
+@pytest.mark.asyncio
+async def test_invite_with_naive_expiry_is_compared(session):
+    from datetime import datetime, timedelta
+    session.add(Invite(token_hash="h", email="a@b.c", role="user", created_by="admin",
+                       expires_at=datetime.utcnow() + timedelta(hours=1)))
+    await session.commit()
+    out = await federation.resolve_identity(session, "google", _ident())
     assert out.email == "a@b.c"
+    session.add(Invite(token_hash="h2", email="x@b.c", role="user", created_by="admin",
+                       expires_at=datetime.utcnow() - timedelta(hours=1)))
+    await session.commit()
+    with pytest.raises(federation.NotAuthorized):
+        await federation.resolve_identity(session, "google", _ident(sub="s2", email="x@b.c"))
 
 
 @pytest.mark.asyncio
@@ -102,9 +170,17 @@ async def test_no_signup_without_allow_signup(session):
 
 
 @pytest.mark.asyncio
-async def test_allow_signup_open_provisions_user(session):
+async def test_allow_signup_without_group_gate_refused(session):
+    with pytest.raises(federation.NotAuthorized):
+        await federation.resolve_identity(
+            session, "authentik", _ident(), role_map={}, allow_signup=True)
+
+
+@pytest.mark.asyncio
+async def test_allow_signup_with_user_group_provisions_user(session):
     out = await federation.resolve_identity(
-        session, "authentik", _ident(), role_map={}, allow_signup=True)
+        session, "authentik", _ident(claims=_claims(["u"])),
+        role_map={"user_group": "u"}, allow_signup=True)
     assert out.email == "a@b.c"
     assert out.role == "user"
 

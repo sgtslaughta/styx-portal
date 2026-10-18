@@ -31,9 +31,12 @@ def scopes_for(provider: OAuthProvider) -> str:
     return GITHUB_SCOPES if provider.name == "github" else provider.scopes
 
 
-def normalize_oidc(userinfo: dict) -> OAuthIdentity:
+def normalize_oidc(userinfo: dict, subject_claim: str = "sub") -> OAuthIdentity:
+    sub = userinfo.get(subject_claim)
+    if sub is None or str(sub).strip().lower() in ("", "none", "null"):
+        raise ValueError(f"IdP userinfo has no usable {subject_claim!r} claim")
     return OAuthIdentity(
-        sub=str(userinfo.get("sub")),
+        sub=str(sub),
         email=userinfo.get("email"),
         email_verified=bool(userinfo.get("email_verified", False)),
         claims=userinfo,
@@ -144,4 +147,4 @@ async def fetch_identity(provider: OAuthProvider, mode: str,
         return OAuthIdentity(sub=str(u["id"]), email=email,
                              email_verified=email is not None, claims=u)
     userinfo = (await client.get(eps["userinfo"])).json()
-    return normalize_oidc(userinfo)
+    return normalize_oidc(userinfo, (provider.role_map or {}).get("subject_claim") or "sub")

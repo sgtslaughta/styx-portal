@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -14,6 +15,8 @@ from app.security.crypto import encrypt_secret
 from app.security.deps import require_admin
 from app.services.audit import audit_request
 import json as _json
+
+logger = logging.getLogger("styx-portal")
 
 _settings = Settings()
 
@@ -76,6 +79,12 @@ async def create_provider(request: Request, body: ProviderCreate,
         scopes=body.scopes, role_map=body.role_map, enabled=body.enabled,
         icon_url=body.icon_url, trust_email=body.trust_email,
         allow_signup=body.allow_signup, auto_promote_admins=body.auto_promote_admins)
+    if body.trust_email:
+        logger.warning("OAuth provider %r: trust_email accepts unverified IdP emails "
+                       "(only for already-linked subjects); enable only for IdPs you control", p.name)
+    if body.allow_signup and not (body.role_map or {}).get("user_group"):
+        logger.warning("OAuth provider %r: allow_signup without role_map.user_group "
+                       "is refused at sign-in; set a user group to enable self-signup", p.name)
     session.add(p)
     await session.flush()
     if request:
