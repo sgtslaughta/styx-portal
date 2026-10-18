@@ -304,6 +304,8 @@ class DockerManager(ContainerFilesMixin):
 
     def ensure_traefik_network(self, name: str) -> str:
         """Bridge network `name` (created if missing) with traefik attached."""
+        if name == "styx-tunnel":
+            raise ValueError("styx-tunnel is reserved")
         try:
             net = self._client.networks.get(name)
         except docker.errors.NotFound:
@@ -335,6 +337,8 @@ class DockerManager(ContainerFilesMixin):
 
     def connect_to_network(self, container: str, network: str | None = None) -> bool:
         """Attach a container to the styx network so Traefik can reach it. False on failure."""
+        if (network or self._network_name) == "styx-tunnel":
+            return False   # reserved for cloudflared + Traefik (CF-Connecting-IP trust)
         try:
             net = self._client.networks.get(network or self._network_name)
             net.connect(container)

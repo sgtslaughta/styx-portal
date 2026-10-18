@@ -49,26 +49,24 @@ class _FakeReq:
         self.client = type("C", (), {"host": host})()
 
 
-@pytest.fixture
-def cloudflared_at(monkeypatch):
-    from app.middleware import rate_limit
-    monkeypatch.setattr(rate_limit, "_tunnel_peers", lambda: {"172.18.0.9"})
+@pytest.fixture(autouse=True)
+def _no_dns(monkeypatch):
+    import socket
+
+    def boom(*a, **k):
+        raise AssertionError("peer trust must not use DNS")
+    monkeypatch.setattr(socket, "getaddrinfo", boom)
 
 
-def test_prefers_cf_connecting_ip_from_cloudflared(cloudflared_at):
-    req = _FakeReq({"cf-connecting-ip": "203.0.113.7", "x-forwarded-for": "172.18.0.9"})
+def test_cf_connecting_ip_from_tunnel_subnet():
+    req = _FakeReq({"cf-connecting-ip": "203.0.113.7", "x-forwarded-for": "172.31.254.2"})
     assert client_ip_from_headers(req) == "203.0.113.7"
 
 
-def test_cf_header_ignored_when_peer_is_not_cloudflared(cloudflared_at):
+def test_cf_header_ignored_when_peer_outside_tunnel_subnet():
     """Traefik published on the host: a direct client sets CF-Connecting-IP itself."""
-    req = _FakeReq({"cf-connecting-ip": "1.1.1.1", "x-forwarded-for": "198.51.100.1"})
-    assert client_ip_from_headers(req) == "198.51.100.1"
-
-
-def test_cf_header_ignored_when_cloudflared_unresolvable(monkeypatch):
-    from app.middleware import rate_limit
-    monkeypatch.setattr(rate_limit, "_tunnel_peers", lambda: set())
+    req = _FakeReq({"cf-connecting-ip": "1.1.1.1", "x-forwarded-for": "172.18.0.5"})
+    assert client_ip_from_headers(req) == "172.18.0.5"
     req = _FakeReq({"cf-connecting-ip": "1.1.1.1", "x-forwarded-for": "198.51.100.1"})
     assert client_ip_from_headers(req) == "198.51.100.1"
 
@@ -76,20 +74,10 @@ def test_cf_header_ignored_when_cloudflared_unresolvable(monkeypatch):
 def test_tunnel_peer_cidrs_env_override(monkeypatch):
     from app.middleware import rate_limit
     monkeypatch.setattr(rate_limit._settings, "TUNNEL_PEER_CIDRS", "172.30.0.0/24")
-    monkeypatch.setattr(rate_limit, "_tunnel_peers", lambda: set())
-    assert rate_limit._is_tunnel_peer("172.30.0.7") and not rate_limit._is_tunnel_peer("172.30.1.7")
-
-
-def test_cloudflared_resolution_is_cached(monkeypatch):
-    from app.middleware import rate_limit
-    calls = []
-    monkeypatch.setattr(rate_limit.socket, "getaddrinfo",
-                        lambda *a, **k: calls.append(a) or [(2, 1, 6, "", ("172.18.0.9", 0))])
-    monkeypatch.setattr(rate_limit._settings, "TUNNEL_PEER_CIDRS", "")
-    rate_limit._peer_cache.update(at=0.0, ips=set())
-    assert rate_limit._tunnel_peers() == {"172.18.0.9"}
-    rate_limit._tunnel_peers()
-    assert len(calls) == 1
+    req = {"cf-connecting-ip": "203.0.113.7", "x-forwarded-for": "172.30.0.7"}
+    assert client_ip_from_headers(_FakeReq(req)) == "203.0.113.7"
+    req["x-forwarded-for"] = "172.31.254.2"
+    assert client_ip_from_headers(_FakeReq(req)) == "172.31.254.2"
 
 
 def test_falls_back_to_first_xff():

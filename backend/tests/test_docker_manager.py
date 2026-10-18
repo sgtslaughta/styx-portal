@@ -633,3 +633,11 @@ def test_probe_fetch_location_in_body_is_ignored(mock_docker):
     body = b"Location: http://evil.test/\r\n\r\n"
     _hops(client, _raw("200 OK", "", body))
     assert manager.probe_fetch("http://app:80/a", "n", 100, allow_redirect_to=_same) == body
+
+
+def test_backend_never_attaches_to_tunnel_network(mock_docker):
+    manager, client = mock_docker
+    assert manager.connect_to_network("c1", "styx-tunnel") is False
+    with pytest.raises(ValueError):
+        manager.ensure_traefik_network("styx-tunnel")
+    client.networks.get.assert_not_called()

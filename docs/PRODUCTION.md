@@ -16,7 +16,7 @@ CF_TUNNEL_TOKEN=<your-token>
 
 TLS terminates at Cloudflare's edge; backend traffic is plaintext but encrypted in transit. Traefik dashboard is disabled by default.
 
-**Tunnel origin:** the tunnel's public hostname must point at `http://traefik:80` (service name `traefik`, container `styx-traefik`). Never `frontend` or `backend`: those skip forwardAuth and the ban gate or expose `/internal/*`. Ports 80/443 stay published for LAN workstations; the backend believes `CF-Connecting-IP` only when the peer Traefik saw is the `cloudflared` container (`TUNNEL_PEER_CIDRS` adds more), so direct hits on those ports cannot forge a client IP. Firewall them from the internet if you have no workstations.
+**Tunnel origin:** the tunnel's public hostname must point at `http://styx-traefik:80`. cloudflared sits alone with Traefik on the dedicated `styx-tunnel` network (172.31.254.0/28) and cannot reach `frontend` or `backend` (which would skip forwardAuth and the ban gate, or expose `/internal/*`). Ports 80/443 stay published for LAN workstations; the backend believes `CF-Connecting-IP` only when the peer Traefik saw is in `TUNNEL_PEER_CIDRS` (default that subnet), so direct hits on those ports cannot forge a client IP. Traefik also has an address in the subnet but is never its own peer. Firewall the ports from the internet if you have no workstations.
 
 ### Direct Mode (Let's Encrypt Wildcard)
 

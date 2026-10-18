@@ -39,8 +39,9 @@ class Settings(BaseSettings):
     # (Traefik). Default: loopback + docker's default bridge pools
     # (172.16-31.x). LAN clients are not proxies. Add yours if daemon.json sets other pools.
     TRUSTED_PROXY_CIDRS: str = "127.0.0.1/32,::1/128,172.16.0.0/12"
-    # Peers (besides the resolved `cloudflared` container) allowed to vouch for CF-Connecting-IP.
-    TUNNEL_PEER_CIDRS: str = ""
+    # Only peers in this subnet (compose network `styx-tunnel`, shared solely by cloudflared and
+    # Traefik) may vouch for CF-Connecting-IP. Traefik also sits in it, but is never its own peer.
+    TUNNEL_PEER_CIDRS: str = "172.31.254.0/28"
     JWT_SECRET: str = ""
     ACCESS_TTL: int = 900          # 15 minutes
     REFRESH_TTL: int = 604800      # 7 days

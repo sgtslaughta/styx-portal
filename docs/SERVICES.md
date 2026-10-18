@@ -304,8 +304,8 @@ Read this section before exposing anything.
   `X-Forwarded-For` only when the socket peer is in `TRUSTED_PROXY_CIDRS` (default:
   loopback plus Docker's default bridge pools `172.16.0.0/12`; widen it if
   `daemon.json` sets other pools). `CF-Connecting-IP` is ignored when
-  `DEPLOY_MODE=direct`, and in tunnel mode unless the peer Traefik saw is the
-  `cloudflared` container (`TUNNEL_PEER_CIDRS` adds more).
+  `DEPLOY_MODE=direct`, and in tunnel mode unless the peer Traefik saw is in
+  `TUNNEL_PEER_CIDRS` (default: the `styx-tunnel` subnet shared only by cloudflared and Traefik).
 - **Identity headers.** Spoofed spellings (`X_Styx_User`, mixed `-`/`_`, `Remote-User`,
   `X-Forwarded-User`, ...) are removed by Traefik; the forwardAuth handlers return 400 for
   any that still arrive disguised.
