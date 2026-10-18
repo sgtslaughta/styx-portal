@@ -339,3 +339,45 @@ async def test_device_cookie_for_another_user_or_old_version_is_ignored(client, 
 def test_device_cookie_is_stripped_before_upstream():
     from app.security.cookies import strip_styx_cookies
     assert strip_styx_cookies("a=1; styx_device=zzz") == "a=1"
+
+
+async def test_device_cookie_has_its_own_failure_budget(client, session):
+    await _make_user(session, "boss")
+    good = {"username": "boss", "password": "correct horse battery staple"}
+    await client.post("/api/auth/login", headers={"X-Forwarded-For": "1.1.1.1"}, json=good)
+    device = client.cookies.get("styx_device")
+    client.cookies.clear()
+    await _throttle_admin(client, session)
+    client.cookies.set("styx_device", device, path="/api/auth")
+    # a script holding the cookie guesses: bypass works for the first LOCKOUT_THRESHOLD misses
+    for i in range(10):
+        r = await client.post("/api/auth/login",
+                              headers={"X-Forwarded-For": f"192.0.2.{i + 1}"},
+                              json={"username": "boss", "password": "nope"})
+        assert r.status_code == 401
+    # budget spent: the cookie no longer bypasses, so the throttle applies like any client
+    r = await client.post("/api/auth/login", headers={"X-Forwarded-For": "192.0.2.99"}, json=good)
+    assert r.status_code == 401
+
+
+async def test_successful_login_rotates_the_device_token(client, session):
+    await _make_user(session, "boss")
+    good = {"username": "boss", "password": "correct horse battery staple"}
+    await client.post("/api/auth/login", json=good)
+    first = client.cookies.get("styx_device")
+    await client.post("/api/auth/login", json=good)
+    assert client.cookies.get("styx_device") != first
+
+
+def test_device_budget_is_bounded_and_blocks_survive(monkeypatch):
+    import app.services.abuse as ab
+    monkeypatch.setattr(ab, "MAX_TRACKED", 100)
+    lo = ab.LoginLockout()
+    for _ in range(10):
+        lo.device_fail("victim-rnd", 10, 900, now=1.0)
+    assert lo.device_blocked("victim-rnd", now=2.0)
+    for i in range(1000):
+        lo.device_fail(f"r{i}", 10, 900, now=3.0)
+    assert lo.device_blocked("victim-rnd", now=4.0)
+    assert len(lo._device_fails) <= 100
+    assert not lo.device_blocked("victim-rnd", now=1000.0)

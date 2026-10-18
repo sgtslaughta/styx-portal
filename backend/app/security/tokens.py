@@ -59,15 +59,18 @@ def create_device_token(user_id: str, tv: int) -> str:
                       _secret(), algorithm=_ALGO)
 
 
-def device_cookie_valid(raw: str | None, user) -> bool:
+def device_rnd(raw: str | None, user) -> str | None:
+    """The token's rnd if it is a valid device token for this very user, else None."""
     if not raw or user is None:
-        return False
+        return None
     try:
         c = decode_token(raw)
     except TokenError:
-        return False
-    return (c.get("type") == "device" and c.get("sub") == user.id
-            and c.get("tv", 0) == user.token_version)
+        return None
+    if (c.get("type") == "device" and c.get("sub") == user.id
+            and c.get("tv", 0) == user.token_version):
+        return c.get("rnd")
+    return None
 
 
 def decode_token(token: str) -> dict:

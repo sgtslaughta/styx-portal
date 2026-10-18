@@ -88,6 +88,8 @@ class LoginLockout:
         self._global: dict[str, deque] = {}    # username -> failure times, any IP
         self._last_check: dict[str, float] = {}
         self._last_purge = 0.0
+        self._device_fails: dict[str, deque] = {}   # device-token rnd -> failure times
+        self._device_blocked: dict[str, float] = {}
 
     @staticmethod
     def _key(username: str, ip: str) -> str:
@@ -96,20 +98,53 @@ class LoginLockout:
     def _purge(self, now: float, duration: int) -> None:
         for k in [k for k, u in self._locked.items() if u <= now]:
             del self._locked[k]
+        for k in [k for k, u in self._device_blocked.items() if u <= now]:
+            del self._device_blocked[k]
+        for k in [k for k, q in self._device_fails.items() if not q or q[-1] <= now - duration]:
+            del self._device_fails[k]
         for k in [k for k, q in self._fails.items() if not q or q[-1] <= now - duration]:
             del self._fails[k]
         self._last_purge = now
 
-    def _fail_deque(self, key: str, now: float, duration: int) -> deque:
-        q = self._fails.get(key)
+    def _fail_deque(self, key: str, now: float, duration: int,
+                    store: dict | None = None) -> deque:
+        store = self._fails if store is None else store
+        q = store.get(key)
         if q is None:
-            if len(self._fails) >= MAX_TRACKED:
+            if len(store) >= MAX_TRACKED:
                 if now - self._last_purge >= self.PURGE_EVERY:
                     self._purge(now, duration)
-                if len(self._fails) >= MAX_TRACKED:      # fail counters only, never locks
-                    self._fails.pop(next(iter(self._fails)))
-            q = self._fails[key] = deque()
+                if len(store) >= MAX_TRACKED:      # fail counters only, never blocks/locks
+                    store.pop(next(iter(store)))
+            q = store[key] = deque()
         return q
+
+    # --- trusted-device tokens: each has its own failure budget -------------------
+    def device_blocked(self, rnd: str, now: float | None = None) -> bool:
+        now = time.monotonic() if now is None else now
+        until = self._device_blocked.get(rnd)
+        if until is None:
+            return False
+        if until <= now:
+            del self._device_blocked[rnd]
+            return False
+        return True
+
+    def device_fail(self, rnd: str, threshold: int, duration: int,
+                    now: float | None = None) -> None:
+        """Count a failed attempt made with this (validly signed) device token."""
+        now = time.monotonic() if now is None else now
+        q = self._fail_deque(rnd, now, duration, self._device_fails)
+        q.append(now)
+        while q and q[0] <= now - duration:
+            q.popleft()
+        if len(q) >= threshold:
+            self._device_fails.pop(rnd, None)
+            self._device_blocked[rnd] = now + duration
+
+    def device_clear(self, rnd: str) -> None:
+        self._device_fails.pop(rnd, None)
+        self._device_blocked.pop(rnd, None)
 
     def is_locked(self, username: str, ip: str, now: float | None = None) -> bool:
         now = time.monotonic() if now is None else now
@@ -179,6 +214,8 @@ class LoginLockout:
         self._locked.clear()
         self._global.clear()
         self._last_check.clear()
+        self._device_fails.clear()
+        self._device_blocked.clear()
 
 
 class BanCache:

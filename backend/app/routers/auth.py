@@ -163,7 +163,9 @@ async def login(body: LoginRequest, request: Request, response: Response,
     # password (same 401, same Argon2 work), so lockout never reveals which names exist.
     # A valid trusted-device cookie for this very account skips the lock and the
     # distributed throttle (not Argon2, not the per-IP ban): the owner is never shut out.
-    device_ok = tokens.device_cookie_valid(request.cookies.get(DEVICE_COOKIE), user)
+    # Each device token has its own failure budget; once spent it bypasses nothing.
+    rnd = tokens.device_rnd(request.cookies.get(DEVICE_COOKIE), user)
+    device_ok = rnd is not None and not login_lockout.device_blocked(rnd)
     if not device_ok and (
             login_lockout.is_locked(body.username, ip)
             or login_lockout.throttled(body.username, _settings.LOGIN_GLOBAL_THRESHOLD,
@@ -179,6 +181,9 @@ async def login(body: LoginRequest, request: Request, response: Response,
     if not (ok and pw_ok):
         # Only real accounts are tracked (keeps the maps bounded by the user count and
         # un-floodable); the response path is identical either way.
+        if rnd:
+            login_lockout.device_fail(rnd, sys_settings.get("LOCKOUT_THRESHOLD"),
+                                      sys_settings.get("LOCKOUT_DURATION"))
         if user:
             login_lockout.record_fail(body.username, ip, sys_settings.get("LOCKOUT_THRESHOLD"),
                                       sys_settings.get("LOCKOUT_DURATION"))
@@ -198,6 +203,8 @@ async def login(body: LoginRequest, request: Request, response: Response,
     user.failed_count = 0
     user.locked_until = None
     login_lockout.clear(body.username, ip)
+    if rnd:
+        login_lockout.device_clear(rnd)    # the fresh cookie below carries a new rnd
     session.add(user)
     await _issue_session(response, session, user, request)
     set_device_cookie(response, tokens.create_device_token(user.id, user.token_version))
