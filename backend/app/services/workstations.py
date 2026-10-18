@@ -205,3 +205,30 @@ async def mark_stale_offline(session) -> bool:
             session.add(ws)
             changed = True
     return changed
+
+
+async def kick_unqualified(session, user_id: str | None = None, ws_id: str | None = None,
+                         force: bool = False) -> int:
+    """Flag the agent to drop live streams whose occupant lost access (revoked,
+    disabled, access list changed). The next heartbeat carries disconnect_clients.
+    Caller commits. Returns the number of workstations flagged."""
+    from app.models import User, WorkstationAccess
+    stmt = select(Workstation).where(Workstation.occupied_by != None)  # noqa: E711
+    if user_id:
+        stmt = stmt.where(Workstation.occupied_by == user_id)
+    if ws_id:
+        stmt = stmt.where(Workstation.id == ws_id)
+    n = 0
+    for ws in (await session.exec(stmt)).all():
+        u = await session.get(User, ws.occupied_by)
+        ok = not force and bool(u and u.is_active and (u.role == "admin" or ws.all_users or (
+            await session.exec(select(WorkstationAccess).where(
+                WorkstationAccess.workstation_id == ws.id,
+                WorkstationAccess.user_id == u.id))).first()))
+        if not ok:
+            ws.disconnect_pending = True
+            ws.occupied_by = None
+            ws.occupied_at = None
+            session.add(ws)
+            n += 1
+    return n

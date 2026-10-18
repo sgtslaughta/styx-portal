@@ -1,3 +1,4 @@
+import time
 import ipaddress
 import re
 import secrets
@@ -23,9 +24,14 @@ from app.security.deps import require_admin, get_current_user
 from app.services import ws_icon
 from app.services.audit import audit_request
 from app.services.workstations import (
+    kick_unqualified,
     build_enroll_command, build_update_command, get_latest_agent_version, lan_ca_pin,
     lan_enroll_url, sha256_hex,
 )
+
+# (workstation, user) -> monotonic expiry of a /connect?force=true takeover grant.
+_force_grants: dict[tuple[str, str], float] = {}
+_FORCE_TTL_S = 60
 
 router = APIRouter()
 # Mounted at /internal/workstations: reachable only by Traefik's forwardAuth.
@@ -211,6 +217,12 @@ async def auth_check(ws_id: str, request: Request,
     # A websocket upgrade passing auth = someone is (re)taking the desktop.
     # Record who; the agent's connection count decides whether it's live.
     if "/websocket" in uri:
+        # Takeover lock: another user's live seat needs /connect?force=true,
+        # which hands the seat over; opening the URL directly is refused.
+        granted = _force_grants.pop((ws.id, user.id), 0) > time.monotonic()
+        if (ws.active_connections > 0 and ws.occupied_by
+                and ws.occupied_by != user.id and not granted):
+            return no_access(request, "Workstation in use")
         ws.occupied_by = user.id
         ws.occupied_at = datetime.now(timezone.utc)
         session.add(ws)
@@ -252,6 +264,8 @@ async def connect_url(ws_id: str, force: bool = False,
         raise HTTPException(
             status.HTTP_423_LOCKED,
             f"In use by {occ.username if occ else 'another user'}")
+    if force:
+        _force_grants[(ws.id, user.id)] = time.monotonic() + _FORCE_TTL_S
     url = f"https://{_settings.DOMAIN}/w/{ws.subdomain}/"
     return WorkstationConnectOut(url=url)
 
@@ -269,6 +283,8 @@ async def update_workstation(ws_id: str, body: WorkstationUpdate,
     if body.stream_settings is not None:
         ws.stream_settings = body.stream_settings
     session.add(ws)
+    await session.flush()
+    await kick_unqualified(session, ws_id=ws.id)
     await audit_request(session, request, "workstation.update",
                         user_id=admin.id, resource=ws.id)
     await session.commit()
@@ -313,6 +329,8 @@ async def set_access(ws_id: str, body: WorkstationAccessUpdate,
         WorkstationAccess.workstation_id == ws.id))
     for uid in set(body.user_ids):
         session.add(WorkstationAccess(workstation_id=ws.id, user_id=uid))
+    await session.flush()
+    await kick_unqualified(session, ws_id=ws.id)
     await audit_request(session, request, "workstation.access_change",
                         user_id=admin.id, resource=ws.id,
                         detail={"user_ids": body.user_ids})

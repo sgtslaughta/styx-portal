@@ -13,6 +13,7 @@ from app.security.deps import require_admin
 from app.security.passwords import hash_password, current_policy
 from app.services.audit import audit_request
 from app.services.abuse import login_lockout
+from app.services.workstations import kick_unqualified
 
 router = APIRouter()
 INVITE_TTL_HOURS = 72
@@ -55,6 +56,8 @@ async def disable_user(user_id: str, request: Request,
     user.is_active = False
     user.token_version += 1
     session.add(user)
+    await session.flush()
+    await kick_unqualified(session, user_id=user.id)
     await audit_request(session, request, "user.disable", user_id=admin.id,
                         resource=user.id)
     await session.commit()
@@ -79,6 +82,8 @@ async def change_role(user_id: str, role: str, request: Request,
     user.role = role
     user.token_version += 1
     session.add(user)
+    await session.flush()
+    await kick_unqualified(session, user_id=user.id)
     await audit_request(session, request, "user.role_change", user_id=admin.id,
                         resource=user.id, detail={"new_role": role, "via": "manual"})
     await session.commit()
@@ -183,6 +188,8 @@ async def delete_user(user_id: str, request: Request,
     fids = (await session.exec(select(FederatedIdentity).where(FederatedIdentity.user_id == user.id))).all()
     for f in fids:
         await session.delete(f)
+    await session.flush()
+    await kick_unqualified(session, user_id=user.id, force=True)
     await session.delete(user)
     await audit_request(session, request, "user.delete", user_id=admin.id, resource=user_id)
     await session.commit()
