@@ -376,7 +376,13 @@ What Styx does about it, and where it stops:
   a missing Referer is refused too (a page script can suppress it). Clients that send no
   `Sec-Fetch-Dest` (curl, scripts) keep working with CSRF. Focus app pages live at root
   paths, so their Referer looks like a Styx page; the Focus write guard above covers them.
-- OAuth callbacks and `/accept-invite` always reach Styx, never a Focus app.
+- OAuth callbacks (`/api/auth/oauth/`, `/api/auth/link/`, `/api/oauth-providers/`) and
+  `/accept-invite` always reach Styx, never a Focus app.
+- Known bypasses of the Focus write guard: a hostile Focus app can clear its own `styx_svc`
+  cookie (Set-Cookie from its upstream) or frame `/_styx/exit`; its pages then send a
+  root-path Referer, which passes the origin check. A path-mounted app can fake an SPA
+  Referer with `history.replaceState`. Styx does not strip upstream Set-Cookie headers.
+  The origin check now covers every write made by an admin account, not only admin routes.
 
 The ceiling: any proxied app can still act as its viewer for member-level calls. Open
 untrusted apps with a member account, not an admin account.

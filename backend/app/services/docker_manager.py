@@ -351,6 +351,11 @@ class DockerManager(ContainerFilesMixin):
             logger.warning("network connect failed for %s: %s", container, e)
             return False
 
+    def isolate_ownerless(self, container: str) -> None:
+        """Move a legacy ownerless container off the shared portal network (once, at boot)."""
+        self.ensure_user_network("ownerless")
+        self.disconnect_from_network(container)
+
     def disconnect_from_network(self, container: str, network: str | None = None) -> None:
         try:
             self._client.networks.get(network or self._network_name).disconnect(container)

@@ -641,3 +641,13 @@ def test_backend_never_attaches_to_tunnel_network(mock_docker):
     with pytest.raises(ValueError):
         manager.ensure_traefik_network("styx-tunnel")
     client.networks.get.assert_not_called()
+
+
+def test_isolate_ownerless_moves_off_portal_network(mock_docker):
+    """F14: legacy ownerless containers must not stay on styx-portal (backend:8000 reachable)."""
+    manager, client = mock_docker
+    manager.ensure_user_network = MagicMock(return_value="styx-u-ownerless")
+    manager.isolate_ownerless("cid")
+    manager.ensure_user_network.assert_called_once_with("ownerless")
+    client.networks.get.assert_called_with("styx-portal")
+    client.networks.get.return_value.disconnect.assert_called_with("cid")
