@@ -14,7 +14,7 @@ from app.models import User, Invite, RefreshToken, Instance, ServiceTemplate, OA
 from app.schemas import SetupRequest, LoginRequest, AcceptInviteRequest, UserOut, ConnectedIdentity, ChangePasswordRequest, OpenPreferences
 from app.security import tokens, oauth, setup_token
 from app.security.passwords import hash_password, verify_password, validate_password, current_policy
-from app.security.cookies import clear_auth_cookies, set_auth_cookies
+from app.security.cookies import TX_PATH, clear_auth_cookies, set_auth_cookies
 from app.security.csrf import new_csrf_token, CSRF_COOKIE
 from app.security.deps import get_current_user
 from app.security.setup_gate import users_exist
@@ -410,7 +410,13 @@ async def link_start(name: str, user: User = Depends(get_current_user),
     resp = RedirectResponse(url, status_code=status.HTTP_302_FOUND)
     resp.set_cookie(oauth.TX_COOKIE, oauth.pack_tx(name, state, verifier, "link", user.id),
                     max_age=oauth.TX_TTL, httponly=True,
-                    secure=_settings.COOKIE_SECURE, samesite="lax")
+                    secure=_settings.COOKIE_SECURE, samesite="lax", path=TX_PATH)
+    return resp
+
+
+def _link_redirect(code: str) -> RedirectResponse:
+    resp = RedirectResponse(f"/?link={code}", status_code=302)
+    resp.delete_cookie(oauth.TX_COOKIE, path=TX_PATH)
     return resp
 
 
@@ -420,20 +426,20 @@ async def link_callback(name: str, request: Request,
                         session: AsyncSession = Depends(get_session)):
     tx_raw = request.cookies.get(oauth.TX_COOKIE)
     if not tx_raw:
-        return RedirectResponse("/?link=missing_state", status_code=302)
+        return _link_redirect("missing_state")
     try:
         tx = oauth.unpack_tx(tx_raw)
     except Exception:
-        return RedirectResponse("/?link=bad_state", status_code=302)
+        return _link_redirect("bad_state")
     if tx["provider"] != name or tx["mode"] != "link" or \
             request.query_params.get("state") != tx["state"]:
-        return RedirectResponse("/?link=bad_state", status_code=302)
+        return _link_redirect("bad_state")
     if tx["uid"] != user.id:
-        return RedirectResponse("/?link=error", status_code=302)
+        return _link_redirect("error")
     provider = (await session.exec(select(OAuthProvider).where(
         OAuthProvider.name == name))).first()
     if not provider:
-        return RedirectResponse("/?link=error", status_code=302)
+        return _link_redirect("error")
     try:
         identity = await oauth.fetch_identity(provider, "link", str(request.url), tx["verifier"])
         await federation.link_identity(session, user, name, identity)
@@ -441,12 +447,10 @@ async def link_callback(name: str, request: Request,
                             resource=name, detail={"email": identity.email})
         await session.commit()
     except federation.FederationError:
-        return RedirectResponse("/?link=conflict", status_code=302)
+        return _link_redirect("conflict")
     except Exception:
-        return RedirectResponse("/?link=error", status_code=302)
-    resp = RedirectResponse("/?link=ok", status_code=302)
-    resp.delete_cookie(oauth.TX_COOKIE)
-    return resp
+        return _link_redirect("error")
+    return _link_redirect("ok")
 
 
 @router.delete("/link/{name}")

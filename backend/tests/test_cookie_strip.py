@@ -164,3 +164,8 @@ def test_every_proxied_router_strips_cookies():
     # every non-Styx upstream router is covered
     upstream = {k for k, r in routers.items() if r["service"] not in ("api", "frontend")}
     assert upstream == set(expect)
+
+
+def test_oauth_tx_is_stripped_before_upstream():
+    from app.security.cookies import strip_styx_cookies
+    assert strip_styx_cookies("a=1; oauth_tx=zzz; b=2") == "a=1; b=2"

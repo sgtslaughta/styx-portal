@@ -18,7 +18,8 @@ ACCESS_PATH = "/api"
 REFRESH_PATH = "/api/auth"      # only /refresh and /logout read it
 PROXY_COOKIE = "styx_proxy"
 _LEGACY = ("access_token", "refresh_token")   # pre-split cookies lived at Path=/
-STYX_COOKIES = frozenset({PROXY_COOKIE, *_LEGACY, CSRF_COOKIE, "styx_svc"})
+TX_PATH = "/api/auth"           # oauth_tx (state + PKCE verifier): both callbacks live here
+STYX_COOKIES = frozenset({PROXY_COOKIE, *_LEGACY, CSRF_COOKIE, "styx_svc", "oauth_tx"})
 
 
 def strip_styx_cookies(header: str) -> str:
