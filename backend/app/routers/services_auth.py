@@ -18,6 +18,7 @@ from app.config import Settings
 from app.security.cookies import clean_cookie_header
 from app.security.page_style import styx_page
 from app.middleware.security_headers import SAMEORIGIN_HEADERS
+from app.security.identity_headers import reject_disguised_identity
 from app.security.nav import is_navigation, no_access
 from app.security.deps import get_current_user, proxy_user_or_none
 from app.security.safe_next import safe_next
@@ -148,7 +149,7 @@ def _top_level_get(request: Request) -> bool:
             and h.get("sec-fetch-mode") == "navigate")
 
 
-@internal_router.get("/services/{slug}/auth-check")
+@internal_router.get("/services/{slug}/auth-check", dependencies=[Depends(reject_disguised_identity)])
 async def auth_check(slug: str, request: Request,
                      session: AsyncSession = Depends(get_session)):
     svc = await get_service_by_slug(session, slug)
@@ -177,8 +178,8 @@ async def auth_check(slug: str, request: Request,
     return Response(status_code=200, headers=hdrs)
 
 
-@internal_router.get("/strip")
-@internal_router.get("/services/{slug}/strip")
+@internal_router.get("/strip", dependencies=[Depends(reject_disguised_identity)])
+@internal_router.get("/services/{slug}/strip", dependencies=[Depends(reject_disguised_identity)])
 async def strip_cookies(request: Request, slug: str | None = None):
     """Strip-only forwardAuth (app-native services): no auth,
     always 200 with the Cookie header minus Styx cookies."""
