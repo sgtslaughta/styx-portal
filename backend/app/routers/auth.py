@@ -223,7 +223,14 @@ async def refresh(request: Request, response: Response,
     stored = await session.get(RefreshToken, claims["jti"])
     if not stored:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Refresh revoked")
-    if stored.revoked:
+    # Atomic claim: only one concurrent use of a refresh token can win the rotation.
+    claimed = 0
+    if not stored.revoked:
+        res = await session.exec(update(RefreshToken).where(
+            RefreshToken.jti == stored.jti, RefreshToken.revoked == False)  # noqa: E712
+            .values(revoked=True))
+        claimed = res.rowcount
+    if not claimed:
         # RFC 9700: replay of a rotated token — assume theft, kill the family
         await session.exec(
             update(RefreshToken)
@@ -237,8 +244,12 @@ async def refresh(request: Request, response: Response,
     user = await session.get(User, claims["sub"])
     if not user or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User inactive")
-    stored.revoked = True
-    session.add(stored)
+    root = await session.get(RefreshToken, stored.family_id) or stored
+    if _now() - _aware(root.created_at) > timedelta(seconds=_settings.SESSION_MAX_AGE):
+        await session.exec(update(RefreshToken).where(
+            RefreshToken.family_id == stored.family_id).values(revoked=True))
+        await session.commit()
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired")
     await _issue_session(response, session, user, request, family_id=stored.family_id)
     return {"ok": True}
 
@@ -280,6 +291,9 @@ async def logout(request: Request, response: Response,
         session.add(ws)
 
     if stored:
+        # Whole family: a forked/rotated sibling must not keep the proxy cookie alive.
+        await session.exec(update(RefreshToken).where(
+            RefreshToken.family_id == (stored.family_id or stored.jti)).values(revoked=True))
         stored.revoked = True
         session.add(stored)
     # Hard kill-on-logout: revoke the current access-token jti so the stateless

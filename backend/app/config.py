@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     JWT_SECRET: str = ""
     ACCESS_TTL: int = 900          # 15 minutes
     REFRESH_TTL: int = 604800      # 7 days
+    SESSION_MAX_AGE: int = 2592000  # 30 days: absolute cap on a refresh family
     COOKIE_SECURE: bool = True
     COOKIE_DOMAIN: str | None = None
     RATE_LIMIT_AUTH: str = "5/60"        # 5 requests per 60s on /auth/*
