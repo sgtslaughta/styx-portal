@@ -53,6 +53,7 @@ async def disable_user(user_id: str, request: Request,
     if user.id == admin.id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Cannot disable yourself")
     user.is_active = False
+    user.token_version += 1
     session.add(user)
     await audit_request(session, request, "user.disable", user_id=admin.id,
                         resource=user.id)
@@ -76,6 +77,7 @@ async def change_role(user_id: str, role: str, request: Request,
             raise HTTPException(status.HTTP_400_BAD_REQUEST,
                                 "cannot demote the last admin")
     user.role = role
+    user.token_version += 1
     session.add(user)
     await audit_request(session, request, "user.role_change", user_id=admin.id,
                         resource=user.id, detail={"new_role": role, "via": "manual"})
@@ -127,6 +129,7 @@ async def reset_password(user_id: str, request: Request,
     temp = _gen_temp_password(current_policy())
     user.password_hash = hash_password(temp)
     user.must_change_pw = True
+    user.token_version += 1
     user.failed_count = 0
     user.locked_until = None
     login_lockout.clear_user(user.username)

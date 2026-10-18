@@ -6,6 +6,10 @@ from app.models import User
 from app.security import tokens
 
 
+# Everything else is refused while a temporary/forced password is still in place.
+_PW_CHANGE_OK = frozenset({"/api/auth/me", "/api/auth/change-password", "/api/auth/logout"})
+
+
 async def get_current_user(
     request: Request,
     session: AsyncSession = Depends(get_session),
@@ -25,6 +29,10 @@ async def get_current_user(
     user = await session.get(User, claims["sub"])
     if not user or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User inactive")
+    if claims.get("tv", 0) != user.token_version:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token revoked")
+    if user.must_change_pw and request.url.path not in _PW_CHANGE_OK:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Password change required")
     return user
 
 

@@ -54,7 +54,7 @@ def _hash_token(raw: str) -> str:
 
 async def _issue_session(resp: Response, session: AsyncSession, user: User, request: Request,
                          family_id: str | None = None) -> None:
-    access = tokens.create_access_token(user.id, user.role)
+    access = tokens.create_access_token(user.id, user.role, tv=user.token_version)
     refresh, jti = tokens.create_refresh_token(user.id)
     family_id = family_id or jti
     session.add(RefreshToken(
@@ -337,6 +337,7 @@ async def change_password(body: ChangePasswordRequest, request: Request, respons
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
     user.password_hash = hash_password(body.new_password)
     user.must_change_pw = False
+    user.token_version += 1     # kills every access token minted before this change
     session.add(user)
     await session.exec(update(RefreshToken)
                        .where(RefreshToken.user_id == user.id)

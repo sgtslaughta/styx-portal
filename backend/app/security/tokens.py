@@ -17,7 +17,7 @@ def _secret() -> str:
     return _settings.jwt_secret_or_raise()
 
 
-def create_access_token(user_id: str, role: str, ttl: int | None = None) -> str:
+def create_access_token(user_id: str, role: str, ttl: int | None = None, tv: int = 0) -> str:
     from app.services.settings_store import settings
     ttl = settings.get("ACCESS_TTL") if ttl is None else ttl
     now = datetime.now(timezone.utc)
@@ -25,6 +25,7 @@ def create_access_token(user_id: str, role: str, ttl: int | None = None) -> str:
         "sub": user_id,
         "role": role,
         "type": "access",
+        "tv": tv,                   # user.token_version at issue; mismatch = revoked
         "jti": str(uuid.uuid4()),   # enables hard revocation on logout
         "iat": now,
         "exp": now + timedelta(seconds=ttl),
