@@ -14,6 +14,7 @@ from app.schemas import InstanceCreate, InstanceUpdate, SessionConfigUpdate, Ins
 from app.security.deps import get_current_user, require_owner_or_admin
 from app.services.docker_manager import DockerManager
 from app.services.screenshot import ScreenshotService
+from app.services.template_validation import resolve_volume_name, validate_volumes
 from app.services.traefik_labels import generate_traefik_labels
 from app.services.audit import audit
 from app.services.settings_store import settings as sys_settings
@@ -57,8 +58,10 @@ async def _build_and_start_container(instance, template, docker):
     """(Re)create the Docker container for an instance from its template,
     mounting the instance's existing named volumes (data preserved), then start it.
     Sets instance.container_id. Caller commits."""
+    validate_volumes(template.volumes)
     volumes = {}
-    for vol, vol_name in zip(template.volumes, instance.volume_names):
+    for vol in template.volumes:
+        vol_name = resolve_volume_name(vol["name"], instance.id)
         await asyncio.to_thread(docker.create_volume, vol_name)
         volumes[vol_name] = {"bind": vol["mount"], "mode": "rw"}
 
@@ -154,9 +157,10 @@ async def _launch_instance_background(instance_id: str, template_id: str):
                 finally:
                     pull_progress.clear(instance.id)  # never leave stale progress
 
+            validate_volumes(template.volumes)
             volume_names = []
             for vol in template.volumes:
-                vol_name = vol["name"].replace("{instance_id}", instance.id)
+                vol_name = resolve_volume_name(vol["name"], instance.id)
                 await asyncio.to_thread(docker.create_volume, vol_name)
                 volume_names.append(vol_name)
             instance.volume_names = volume_names
@@ -476,9 +480,12 @@ async def recreate_instance(
     # Recompute volume names from the (possibly updated) template. instance.id is stable,
     # so unchanged volume defs yield identical names -> create_volume returns the existing
     # volume -> data preserved. New defs create new volumes; removed defs are left orphaned.
-    instance.volume_names = [
-        vol["name"].replace("{instance_id}", instance.id) for vol in template.volumes
-    ]
+    try:
+        instance.volume_names = [
+            resolve_volume_name(vol["name"], instance.id) for vol in template.volumes
+        ]
+    except ValueError as e:
+        raise HTTPException(422, f"Template volumes invalid: {e}")
 
     await _build_and_start_container(instance, template, docker)
 

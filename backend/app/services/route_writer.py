@@ -4,6 +4,7 @@ import yaml
 from pathlib import Path
 
 from app.config import Settings
+from app.services.template_validation import valid_extra_port
 from app.services.settings_store import settings as _sys_settings
 
 logger = logging.getLogger("styx-portal")
@@ -128,6 +129,9 @@ def build_routes_config(instances: list[dict], domain: str,
         subdomain = inst["subdomain"]
         port = inst.get("port", 3001)
         protocol = inst.get("protocol", "https")
+        if protocol not in ("http", "https") or not isinstance(port, int) \
+                or isinstance(port, bool) or not 1 <= port <= 65535:
+            continue  # defense in depth for legacy DB rows
         container_name = f"selkies-{subdomain}"
 
         strip_mw = f"strip-{subdomain}"
@@ -160,6 +164,8 @@ def build_routes_config(instances: list[dict], domain: str,
 
         # Extra-port routers and services
         for ep in inst.get("extra_ports", []) or []:
+            if not valid_extra_port(ep):
+                continue
             slug = ep["slug"]
             cport = ep["container_port"]
             rid = f"{inst_id}-p-{slug}"

@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.services import template_validation as _tv
+
 SUBDOMAIN_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
 RESERVED_SUBDOMAINS = {"api", "traefik", "www", "admin", "auth", "portal"}
 
@@ -43,6 +45,28 @@ class TemplateCreate(BaseModel):
     privileged: bool = False
     extra_docker_args: dict = {}
 
+    @field_validator("volumes")
+    @classmethod
+    def _v_volumes(cls, v):
+        return v if v is None else _tv.validate_volumes(v)
+
+    @field_validator("extra_ports")
+    @classmethod
+    def _v_ports(cls, v):
+        return v if v is None else _tv.validate_extra_ports(v)
+
+    @field_validator("internal_protocol")
+    @classmethod
+    def _v_proto(cls, v):
+        return v if v is None else _tv.validate_protocol(v)
+
+    @field_validator("internal_port")
+    @classmethod
+    def _v_port(cls, v):
+        if v is not None and not 1 <= v <= 65535:
+            raise ValueError("internal_port must be 1-65535")
+        return v
+
 
 class TemplateUpdate(BaseModel):
     display_name: str | None = None
@@ -77,6 +101,28 @@ class TemplateUpdate(BaseModel):
     devices: list[str] | None = None
     privileged: bool | None = None
     extra_docker_args: dict | None = None
+
+    @field_validator("volumes")
+    @classmethod
+    def _v_volumes(cls, v):
+        return v if v is None else _tv.validate_volumes(v)
+
+    @field_validator("extra_ports")
+    @classmethod
+    def _v_ports(cls, v):
+        return v if v is None else _tv.validate_extra_ports(v)
+
+    @field_validator("internal_protocol")
+    @classmethod
+    def _v_proto(cls, v):
+        return v if v is None else _tv.validate_protocol(v)
+
+    @field_validator("internal_port")
+    @classmethod
+    def _v_port(cls, v):
+        if v is not None and not 1 <= v <= 65535:
+            raise ValueError("internal_port must be 1-65535")
+        return v
 
 
 class InstanceCreate(BaseModel):
