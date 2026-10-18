@@ -16,6 +16,7 @@ from app.database import get_session
 from app.models import Workstation, WorkstationEnrollmentToken
 from app.schemas import WorkstationRegisterRequest, WorkstationRegisterResponse
 from app.security.crypto import encrypt_secret
+from app.services import single_use
 from app.services.audit import audit_request
 from app.services.workstations import (
     AGENT_UPDATE_FILES, SELKIES_USER, sha256_hex, unique_subdomain,
@@ -77,8 +78,9 @@ async def register(body: WorkstationRegisterRequest, request: Request,
     if tok is None or tok.used_at is not None or (expires and expires < now):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED,
                             "Invalid, expired, or already-used enrollment token")
-    tok.used_at = now
-    session.add(tok)
+    if not await single_use.claim(session, WorkstationEnrollmentToken, tok.id):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED,
+                            "Invalid, expired, or already-used enrollment token")
 
     agent_token = secrets.token_urlsafe(32)
     selkies_password = secrets.token_urlsafe(16)

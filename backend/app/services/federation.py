@@ -5,6 +5,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models import User, Invite, FederatedIdentity
 from app.schemas import OAuthIdentity
+from app.services import single_use
 from app.services.audit import audit
 
 
@@ -154,8 +155,8 @@ async def resolve_identity(session: AsyncSession, provider_name: str,
             if admin_group and admin_group in _groups(identity.claims, role_map):
                 await audit(session, "admin_claim_pending", resource=identity.email,
                            detail={"provider": provider_name})
-        invite.used_at = _now()
-        session.add(invite)
+        if not await single_use.claim(session, Invite, invite.id):
+            raise NotAuthorized("invite already used")
         user = await _provision(session, provider_name, identity, role)
         # Audit role elevation via group claim (invite path)
         if auto_promote_admins and role == "admin" and invite.role != "admin":

@@ -20,7 +20,7 @@ from app.security.cookies import (DEVICE_COOKIE, TX_PATH, clear_auth_cookies, se
 from app.security.csrf import new_csrf_token, CSRF_COOKIE
 from app.security.deps import get_current_user
 from app.security.setup_gate import users_exist
-from app.services import federation
+from app.services import federation, single_use
 from app.services.audit import audit_request
 from app.middleware.rate_limit import client_ip_from_headers, client_ip_resolved
 from app.services.abuse import fail_tracker, ban_cache, ban_ip, login_lockout
@@ -392,10 +392,11 @@ async def accept_invite(body: AcceptInviteRequest, request: Request, response: R
         validate_password(body.password, current_policy())
     except ValueError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
+    if not await single_use.claim(session, Invite, inv.id):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid or used invite")
     user = User(username=body.username, email=inv.email,
                 password_hash=hash_password(body.password), role=inv.role)
-    inv.used_at = _now()
-    session.add_all([user, inv])
+    session.add(user)
     await _issue_session(response, session, user, request)
     await audit_request(session, request, "auth.accept_invite", user_id=user.id,
                         detail={"role": user.role})
