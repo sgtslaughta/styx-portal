@@ -12,7 +12,7 @@ from sqlmodel import update
 from app.config import Settings
 from app.models import ProxiedService, proxy_hostname, upstream_base
 from app.services import ws_icon
-from app.services.service_health import _forbidden_target, host_override
+from app.services.service_health import _checked, _pinned
 
 log = logging.getLogger(__name__)
 PAGE_CAP = 512 * 1024
@@ -104,9 +104,13 @@ async def _get_httpx(url: str, cap: int, verify: bool, origin_of: str,
     async with httpx.AsyncClient(verify=verify, timeout=TIMEOUT,  # nosec B501
                                  follow_redirects=False, transport=transport) as c:
         for _ in range(MAX_REDIRECTS + 1):
-            if not same_origin(url, origin_of) or await _forbidden_target(url):
+            if not same_origin(url, origin_of):
                 return None
-            async with c.stream("GET", url, **host_override(upstream_host)) as r:
+            reason, pin = await _checked(url)
+            if reason:
+                return None
+            req_url, extra = _pinned(url, pin, upstream_host)
+            async with c.stream("GET", req_url, **extra) as r:
                 if r.is_redirect:
                     url = urljoin(url, r.headers.get("location", ""))
                     continue
