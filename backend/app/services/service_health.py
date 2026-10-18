@@ -56,7 +56,7 @@ async def _checked(url: str) -> tuple[str | None, str | None]:
         addrs = await _resolve(host)
         if not addrs:
             return None, None                # unresolvable: the GET fails on its own
-        pin = str(sorted(addrs, key=str)[0])
+        pin = str(sorted(addrs, key=lambda a: (_unmap(a).version != 4, str(a)))[0])
     addrs = {_unmap(a) for a in addrs}
     bad = [a for a in addrs if any(a in n for n in _FORBIDDEN_NETS)]
     if not bad:

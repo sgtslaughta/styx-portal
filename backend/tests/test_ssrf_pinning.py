@@ -47,3 +47,16 @@ async def test_connect_pinned_to_checked_ip(monkeypatch):
     assert calls == ["app.lan"]
 
 
+
+
+async def test_dual_stack_pins_ipv4(monkeypatch):
+    """F7: IPv6 inside IPv4-only docker would make health/favicons fail."""
+    import ipaddress
+
+    async def fake_resolve(host):
+        if host != "dual.lan":
+            return set()
+        return {ipaddress.ip_address("1001:db8::1"), ipaddress.ip_address("192.168.1.60")}
+    monkeypatch.setattr(service_health, "_resolve", fake_resolve)
+    reason, pin = await service_health._checked("http://dual.lan/")
+    assert pin == "192.168.1.60"

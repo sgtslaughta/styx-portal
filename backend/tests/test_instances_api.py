@@ -382,3 +382,21 @@ async def test_launch_dind_instance_mounts_docker_store(admin_client, session):
     assert inst.volume_names is not None
     assert any(v.endswith("-dockerstore") for v in inst.volume_names), \
         f"Expected dockerstore volume in {inst.volume_names}"
+
+
+async def test_start_with_legacy_volume_name_is_422(admin_client, template_id, session):
+    """F6: an old template whose volume lacks {instance_id} must not 500 on start."""
+    from app.models import ServiceTemplate
+    create = await admin_client.post(
+        "/api/instances", json={"template_id": template_id, "name": "lv", "subdomain": "lv"})
+    iid = create.json()["id"]
+    await admin_client.post(f"/api/instances/{iid}/stop")
+    inst = await session.get(Instance, iid)
+    inst.container_id = None
+    t = await session.get(ServiceTemplate, template_id)
+    t.volumes = [{"name": "shared-data", "mount": "/config"}]
+    session.add_all([inst, t])
+    await session.commit()
+    resp = await admin_client.post(f"/api/instances/{iid}/start")
+    assert resp.status_code == 422, resp.text
+    assert "instance_id" in resp.json()["detail"]

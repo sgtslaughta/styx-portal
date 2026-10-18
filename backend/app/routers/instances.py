@@ -366,7 +366,10 @@ async def start_instance(
         if not template:
             raise HTTPException(400, "Template no longer exists, cannot recreate")
 
-        await _build_and_start_container(instance, template, docker)
+        try:
+            await _build_and_start_container(instance, template, docker)
+        except ValueError as e:
+            raise HTTPException(422, f"Template volumes invalid: {e}")
 
     now = datetime.now(timezone.utc)
     instance.status = "running"
