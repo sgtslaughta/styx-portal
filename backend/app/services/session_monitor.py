@@ -12,7 +12,7 @@ class SessionMonitor:
         self._docker = docker_manager
 
     def _parse_duration(self, value: str) -> timedelta:
-        match = _DURATION_RE.match(value)
+        match = _DURATION_RE.fullmatch(value)
         if not match:
             return timedelta(minutes=30)
         amount, unit = int(match.group(1)), match.group(2)

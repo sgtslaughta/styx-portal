@@ -124,3 +124,12 @@ async def test_open_keeps_safe_inner_path(admin_client, session, nxt, framed, ba
     assert r.status_code == 302 and r.headers["location"].split("://", 1)[-1].removeprefix("test") == framed
     r = await admin_client.get("/_styx/open/ha", params={"next": nxt}, headers=h, follow_redirects=False)
     assert r.headers["location"].split("://", 1)[-1].removeprefix("test") == bare
+
+
+@pytest.mark.parametrize("uri", [
+    "/jellyfin/..;/admin", "/jellyfin/.;/x", "/jellyfin/a;jsessionid=1/b", "/jellyfin/%2e%2e%3b/x",
+    "/jellyfin/%00", "/jellyfin/a%0ab", "/jellyfin/./x", "/jellyfin/café", "/jellyfin/%C3%A9",
+    "/jellyfin/a\tb",
+])
+def test_bypass_rejects_path_params_dots_and_control_chars(uri):
+    assert bypass_matches([{"path_prefix": "/jellyfin/"}], uri, {}) is False

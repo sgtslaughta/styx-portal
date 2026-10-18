@@ -139,7 +139,7 @@ def _check_svg(data: bytes) -> bytes:
             if local.startswith("on") or "javascript:" in squashed:
                 raise ValueError("SVG may not contain scripts")
             if local == "href":
-                if not (val.startswith("#") or (tag == "image" and _IMG_DATA.match(val))):
+                if not (val.startswith("#") or (tag == "image" and _IMG_DATA.fullmatch(val))):
                     raise ValueError("SVG may not reference external resources")
             if len(val) > MAX_ATTR_CHARS:
                 raise ValueError("SVG attribute value is too long")
@@ -187,7 +187,7 @@ def validate_icon(kind: str, value: str | None) -> str | None:
         return f"emoji:{value}"
     if kind != "image":
         raise ValueError("Unknown icon kind")
-    m = _DATA_URI.match(value or "")
+    m = _DATA_URI.fullmatch(value or "")
     if not m or len(value) > MAX_IMAGE_BYTES * 4 // 3 + 200:
         raise ValueError("Image must be a base64 data URI under 256 KB")
     try:
@@ -216,7 +216,7 @@ def _svg(glyph: str, bg: str, font: int) -> bytes:
 def render_icon(icon: str | None, name: str, ws_id: str) -> tuple[bytes, str]:
     """(body, content-type). Only stored/derived values are emitted."""
     if icon and icon.startswith("data:"):
-        m = _DATA_URI.match(icon)
+        m = _DATA_URI.fullmatch(icon)
         return base64.b64decode(m.group(2)), m.group(1)
     bg = PALETTE[int(hashlib.sha256(ws_id.encode()).hexdigest()[:8], 16) % len(PALETTE)]
     if icon and icon.startswith("emoji:"):

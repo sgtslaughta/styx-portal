@@ -181,7 +181,7 @@ def _unauthenticated(request: Request, msg: str):
         proto = "https"
     target = f"{proto}://{_redirect_host(request)}/login"
     # next= only for known-shape stream paths passing the shared rule.
-    if re.match(r"^/w/[a-z0-9-]+(/|$)", uri) and safe_next(uri):
+    if re.match(r"/w/[a-z0-9-]+(/|\Z)", uri) and safe_next(uri):
         target += f"?next={quote(uri, safe='/')}"
     return RedirectResponse(target, status_code=302)
 

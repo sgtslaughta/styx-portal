@@ -42,14 +42,19 @@ def _bypass_path(uri: str) -> str | None:
     """Normalised request path, or None if it smells of traversal/encoding tricks.
 
     The upstream may decode or normalise differently than a string compare, so
-    any encoded ".", "/", "\\", backslash or ".." segment (raw or decoded,
-    which also catches double-encoding) disqualifies the request from bypass.
+    any encoded ".", "/", "\\", backslash, ";" path parameter (`..;` for servlet stacks),
+    "." or ".." segment (raw or decoded, which also catches double-encoding), control
+    or non-ASCII character disqualifies the request from bypass.
     """
     raw = uri.split("?", 1)[0].split("#", 1)[0]
     decoded = unquote(raw)
     for p in (raw, decoded):
-        if "\\" in p or _ENCODED_SEP.search(p) or ".." in p.split("/"):
+        if ("\\" in p or _ENCODED_SEP.search(p) or ";" in p
+                or {".", ".."} & set(p.split("/"))):
             return None
+    # Control characters and non-ASCII never appear in a legitimate bypass path.
+    if not decoded.isascii() or not decoded.isprintable():
+        return None
     if not decoded.startswith("/"):
         return None
     norm = re.sub(r"/+", "/", posixpath.normpath(decoded))
@@ -233,7 +238,7 @@ async def open_service(slug: str, request: Request, next: str | None = None,
                        session: AsyncSession = Depends(get_session)):
     # Missing/other Sec-Fetch-Site = possibly cross-site: confirm page, no auth/DB.
     if request.headers.get("sec-fetch-site") not in ("same-origin", "none"):
-        if not SERVICE_SLUG_RE.match(slug):
+        if not SERVICE_SLUG_RE.fullmatch(slug):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown service")
         return HTMLResponse(styx_page("Open app?", _CONFIRM_BODY.format(slug=html.escape(slug))),
                             headers={"Cache-Control": "no-store", **SAMEORIGIN_HEADERS})

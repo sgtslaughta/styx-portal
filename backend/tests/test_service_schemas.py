@@ -59,3 +59,8 @@ def test_bypass_prefix_must_start_with_slash():
 def test_every_reserved_segment_rejected(slug):
     with pytest.raises(ValidationError):
         ProxiedServiceCreate(**_base(slug=slug))
+
+
+def test_slug_trailing_newline_rejected():
+    with pytest.raises(ValidationError):
+        ProxiedServiceCreate(**_base(slug="sonarr\n"))

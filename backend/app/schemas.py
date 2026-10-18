@@ -89,7 +89,7 @@ class InstanceCreate(BaseModel):
     @field_validator("subdomain")
     @classmethod
     def _valid_subdomain(cls, v: str) -> str:
-        if not SUBDOMAIN_RE.match(v):
+        if not SUBDOMAIN_RE.fullmatch(v):
             raise ValueError(
                 "subdomain must be 1-63 chars: lowercase letters, digits, "
                 "hyphens (no leading/trailing hyphen)"
