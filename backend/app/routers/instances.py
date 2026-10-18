@@ -81,9 +81,8 @@ async def _build_and_start_container(instance, template, docker):
         template_name=template.name,
     )
 
-    net = None
-    if instance.owner_id:
-        net = await asyncio.to_thread(docker.ensure_user_network, instance.owner_id)
+    # Ownerless (legacy) instances get their own network, never styx-portal.
+    net = await asyncio.to_thread(docker.ensure_user_network, instance.owner_id or "ownerless")
 
     container_id = await asyncio.to_thread(
         docker.create_container,
@@ -186,9 +185,8 @@ async def _launch_instance_background(instance_id: str, template_id: str):
                 template_name=template.name,
             )
 
-            net = None
-            if instance.owner_id:
-                net = await asyncio.to_thread(docker.ensure_user_network, instance.owner_id)
+            # Ownerless (legacy) instances get their own network, never styx-portal.
+            net = await asyncio.to_thread(docker.ensure_user_network, instance.owner_id or "ownerless")
 
             container_id = await asyncio.to_thread(
                 docker.create_container,
@@ -361,8 +359,7 @@ async def start_instance(
         # Reattach Traefik to the per-user network before starting. The network
         # membership is only established on the create/build path, so a Traefik
         # restart leaves it off the net and routing 502s until reattached.
-        if instance.owner_id:
-            await asyncio.to_thread(docker.ensure_user_network, instance.owner_id)
+        await asyncio.to_thread(docker.ensure_user_network, instance.owner_id or "ownerless")
         await asyncio.to_thread(docker.start_container, instance.container_id)
     else:
         template = await session.get(ServiceTemplate, instance.template_id)
@@ -434,8 +431,7 @@ async def restart_instance(
 
     # Reattach Traefik to the per-user network (see start_instance) — a Traefik
     # restart drops its membership and routing 502s until reattached.
-    if instance.owner_id:
-        await asyncio.to_thread(docker.ensure_user_network, instance.owner_id)
+    await asyncio.to_thread(docker.ensure_user_network, instance.owner_id or "ownerless")
     await asyncio.to_thread(docker.restart_container, instance.container_id)
 
     now = datetime.now(timezone.utc)
