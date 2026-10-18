@@ -14,6 +14,15 @@ export function openTab(href: string): Window | null {
   return w;
 }
 
+/** True only for http(s) URLs: third-party data (e.g. the image registry) must never reach window.open as javascript:/data:. */
+export function isWebUrl(u: string | null | undefined): boolean {
+  try { return !!u && /^https?:$/.test(new URL(u).protocol); } catch { return false; }
+}
+
+export function openExternal(href: string | null | undefined): void {
+  if (href && isWebUrl(href)) openTab(href);
+}
+
 /** Open a plain link (an app) per the preference; blocked popup -> this tab + toast. */
 export function openHref(mode: OpenMode, href: string): void {
   if (mode === "new_tab") {

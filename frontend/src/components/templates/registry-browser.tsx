@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SearchSortBar } from "@/components/common/search-sort-bar";
 import { useRegistryImages } from "@/hooks/use-registry";
+import { isWebUrl, openExternal } from "@/lib/connect-wipe";
 import type { RegistryImage } from "@/lib/types";
 
 interface RegistryBrowserProps {
@@ -150,7 +151,7 @@ function RegistryCard({ image: img, onImport }: { image: RegistryImage; onImport
               <ExternalLink className="h-2.5 w-2.5" /> GitHub
             </a>
           )}
-          {img.project_url && (
+          {isWebUrl(img.project_url) && (
             <a href={img.project_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5 hover:text-foreground">
               <ExternalLink className="h-2.5 w-2.5" /> Site
             </a>
@@ -159,7 +160,7 @@ function RegistryCard({ image: img, onImport }: { image: RegistryImage; onImport
         {img.version && <div className="mt-1 text-[10px] text-muted-foreground/60">{img.version}</div>}
       </div>
 
-      {showPreview && img.project_url && (
+      {showPreview && isWebUrl(img.project_url) && (
         <div
           className={`styx-card fixed z-50 overflow-hidden rounded-lg shadow-2xl transition-all duration-200 ${previewReady ? "opacity-100" : "opacity-0 pointer-events-none"}`}
           style={{
@@ -172,7 +173,7 @@ function RegistryCard({ image: img, onImport }: { image: RegistryImage; onImport
           onMouseLeave={scheduleDismiss}
         >
           <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
-            <span className="text-[10px] text-muted-foreground truncate cursor-pointer" onClick={(e) => { e.stopPropagation(); window.open(img.project_url, "_blank"); }}>{img.project_url}</span>
+            <span className="text-[10px] text-muted-foreground truncate cursor-pointer" onClick={(e) => { e.stopPropagation(); openExternal(img.project_url); }}>{img.project_url}</span>
             <div className="flex items-center gap-1.5 shrink-0">
               <button
                 className="rounded p-0.5 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
@@ -183,7 +184,7 @@ function RegistryCard({ image: img, onImport }: { image: RegistryImage; onImport
               </button>
               <button
                 className="rounded p-0.5 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
-                onClick={(e) => { e.stopPropagation(); window.open(img.project_url, "_blank"); }}
+                onClick={(e) => { e.stopPropagation(); openExternal(img.project_url); }}
                 title="Open in new tab"
               >
                 <ExternalLink className="h-3 w-3" />
