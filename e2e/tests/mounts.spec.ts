@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { expect, request, test, type APIRequestContext, type BrowserContext, type Page } from "@playwright/test";
-import { ADMIN, SHOTS, STYX_COOKIES, eventually, jellyfinToken, openSettings, uiLogin } from "./helpers";
+import { ADMIN, SHOTS, STYX_COOKIES, eventually, jellyfinToken, openSettings, setupCode, uiLogin } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -17,6 +17,7 @@ test.beforeAll(async ({ browser }) => {
   await expect(create.or(signIn)).toBeVisible();
   if (await create.isVisible()) { // run alone (-g): the services spec did not bootstrap the admin
     await page.locator("#username").fill(ADMIN.username);
+    await page.locator("#setup-code").fill(setupCode());
     await page.locator("#password").fill(ADMIN.password);
     await create.click();
     await expect(page).not.toHaveURL(/\/setup$/);

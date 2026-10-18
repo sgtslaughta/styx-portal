@@ -17,6 +17,7 @@ _test_tmpdir = tempfile.mkdtemp()
 os.environ.setdefault("SECRETS_FILE", os.path.join(_test_tmpdir, "secrets.json"))
 
 from app.main import app  # noqa: E402
+from tests.helpers_setup import st  # noqa: E402
 from app.database import get_session  # noqa: E402
 from app.routers.instances import get_docker_manager, get_screenshot_service  # noqa: E402
 
@@ -75,7 +76,7 @@ async def client_fixture(session):
 @pytest.fixture
 async def admin_client(client):
     """An AsyncClient that has completed first-run setup and holds admin cookies + CSRF header."""
-    r = await client.post("/api/auth/setup", json={
+    r = await client.post("/api/auth/setup", json={**st(), 
         "username": "admin", "password": "correct horse battery staple"})
     assert r.status_code == 201, r.text
     csrf = client.cookies.get("csrf_token")

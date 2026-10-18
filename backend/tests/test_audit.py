@@ -3,6 +3,7 @@ from sqlmodel import select
 
 from app.models import AuditLog
 from app.services.audit import audit
+from tests.helpers_setup import st
 
 
 @pytest.mark.asyncio
@@ -117,7 +118,7 @@ async def test_audit_list_returns_ordered_by_id_desc(admin_client, session):
 @pytest.mark.asyncio
 async def test_setup_audit_logged(client, session):
     """Verify setup endpoint audits the user creation as auth.signup."""
-    r = await client.post("/api/auth/setup", json={
+    r = await client.post("/api/auth/setup", json={**st(), 
         "username": "admin", "password": "correct horse battery staple"})
     assert r.status_code == 201
     admin_id = r.json()["id"]

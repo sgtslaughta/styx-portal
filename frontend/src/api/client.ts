@@ -330,7 +330,7 @@ export const api = {
 
   setupRequired: () => request<{ setup_required: boolean }>("/auth/setup-required"),
   setupPreflight: () => request<SetupPreflight>("/auth/setup-preflight"),
-  setup: (data: { username: string; email?: string; password: string }) =>
+  setup: (data: { username: string; email?: string; password: string; setup_token: string }) =>
     request<{ id: string; username: string; role: string }>("/auth/setup", {
       method: "POST", body: JSON.stringify(data) }),
   login: (data: { username: string; password: string }) =>

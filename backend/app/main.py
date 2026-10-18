@@ -111,6 +111,11 @@ async def lifespan(app: FastAPI):
     await init_db()
 
     async with async_session() as _s:
+        from app.security import setup_token
+        from app.security.setup_gate import users_exist
+        setup_token.announce(not await users_exist(_s))
+
+    async with async_session() as _s:
         _n = await sweep_interrupted(_s)
         if _n:
             logger.warning("Marked %d interrupted mount job(s) failed", _n)

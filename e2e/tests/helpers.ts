@@ -7,6 +7,12 @@ export const OUTSIDER = { username: "bob", password: "Styx-e2e-Outsider-Cobalt-M
 export const STYX_COOKIES = ["access_token", "refresh_token", "styx_proxy", "csrf_token", "styx_svc"];
 export const SHOTS = "screenshots";
 
+/** First-run setup code, read from the backend's data volume (POST /api/auth/setup needs it). */
+export function setupCode(): string {
+  return execFileSync("docker", ["compose", "-p", "styx-e2e", "exec", "-T", "backend", "cat", "/app/data/setup-token"],
+    { stdio: "pipe" }).toString().trim();
+}
+
 /** traefik/whoami echoes the request line and headers as plain text. */
 export const isWhoami = (body: string) => /^Hostname: /m.test(body) && /^RemoteAddr: /m.test(body);
 export const headerLines = (body: string, name: string) =>

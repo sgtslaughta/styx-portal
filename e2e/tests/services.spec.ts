@@ -1,7 +1,7 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import {
   ADMIN, MEMBER, OUTSIDER, STYX_COOKIES, apiCall, eventually, getNoRedirect, headerLines,
-  isWhoami, openSettings, uiLogin, updateService,
+  isWhoami, openSettings, setupCode, uiLogin, updateService,
 } from "./helpers";
 import { captureAll } from "./screens";
 
@@ -45,6 +45,7 @@ test("a. admin bootstraps, creates group, users and membership", async ({ browse
   await p.goto("/");
   await expect(p).toHaveURL(/\/setup$/);
   await p.locator("#username").fill(ADMIN.username);
+  await p.locator("#setup-code").fill(setupCode());
   await p.locator("#password").fill(ADMIN.password);
   await p.getByRole("button", { name: "Create admin" }).click();
   await expect(p).not.toHaveURL(/\/setup$/);

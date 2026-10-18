@@ -12,7 +12,7 @@ from app.config import Settings
 from app.database import get_session
 from app.models import User, Invite, RefreshToken, Instance, ServiceTemplate, OAuthProvider, FederatedIdentity, Workstation
 from app.schemas import SetupRequest, LoginRequest, AcceptInviteRequest, UserOut, ConnectedIdentity, ChangePasswordRequest, OpenPreferences
-from app.security import tokens, oauth
+from app.security import tokens, oauth, setup_token
 from app.security.passwords import hash_password, verify_password, validate_password, current_policy
 from app.security.cookies import clear_auth_cookies, set_auth_cookies
 from app.security.csrf import new_csrf_token, CSRF_COOKIE
@@ -107,22 +107,30 @@ async def setup_preflight(session: AsyncSession = Depends(get_session)):
 @router.post("/setup", response_model=UserOut, status_code=201)
 async def setup(body: SetupRequest, request: Request, response: Response,
                 session: AsyncSession = Depends(get_session)):
+    if request.headers.get("sec-fetch-site", "same-origin") not in ("same-origin", "none"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Cross-site setup refused")
     if await users_exist(session):
         raise HTTPException(status.HTTP_404_NOT_FOUND)
+    if not setup_token.verify(body.setup_token):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Invalid setup code")
     try:
         validate_password(body.password, current_policy())
     except ValueError as e:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
-    user = User(username=body.username, email=body.email,
-                password_hash=hash_password(body.password), role="admin")
-    session.add(user)
-    await session.flush()
-    await session.exec(update(Instance).where(Instance.owner_id == None).values(owner_id=user.id))  # noqa: E711
-    await session.exec(update(ServiceTemplate).where(ServiceTemplate.owner_id == None).values(owner_id=user.id))  # noqa: E711
-    await _issue_session(response, session, user, request)
-    await audit_request(session, request, "auth.signup", user_id=user.id,
-                        detail={"role": user.role, "via": "setup"})
-    await session.commit()
+    async with setup_token.setup_lock:
+        if await users_exist(session):  # lost the race to a concurrent request
+            raise HTTPException(status.HTTP_404_NOT_FOUND)
+        user = User(username=body.username, email=body.email,
+                    password_hash=hash_password(body.password), role="admin")
+        session.add(user)
+        await session.flush()
+        await session.exec(update(Instance).where(Instance.owner_id == None).values(owner_id=user.id))  # noqa: E711
+        await session.exec(update(ServiceTemplate).where(ServiceTemplate.owner_id == None).values(owner_id=user.id))  # noqa: E711
+        await _issue_session(response, session, user, request)
+        await audit_request(session, request, "auth.signup", user_id=user.id,
+                            detail={"role": user.role, "via": "setup"})
+        await session.commit()
+    setup_token.clear()
     return UserOut(id=user.id, username=user.username, email=user.email,
                    role=user.role, is_active=user.is_active)
 
