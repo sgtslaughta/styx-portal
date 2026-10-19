@@ -59,7 +59,7 @@ and Settings/Services/dock carry visual noise and missing states.
     (display_server), Agent (version; "update available" if agent_outdated).
   - Footer line: `seen <relative>`; `last_error` shown in a warning callout.
   - States: online+free → **Connect**; in use by other → **Join** (with the
-    existing shared-control confirm) and admin-only **Take over**; in use by
+    existing shared-control confirm); no Take over until the backend can evict; in use by
     self → **Reconnect**; offline → disabled, hero greyscale, "offline since"
     + last_error hint.
 - Instance pane: unchanged content, same header/hero framing so both kinds
@@ -80,7 +80,7 @@ and Settings/Services/dock carry visual noise and missing states.
    whole admin area is admin-only already), inner "Settings" item renamed
    "General", content uses available width (max ~1100 px).
 6. **Services list**: drop the inner "Proxied services" card and repeated
-   title; actions in the page header. Status dot gets a tooltip + small legend
+   title; actions in a section toolbar; public-hostname note kept as one muted line. Status dot gets a tooltip + small legend
    (healthy / not checked / failing). Mode chips: one neutral chip style;
    amber only for risk (bypass, TLS off, Focus).
 7. **Service form**: section headings Address · Access · Advanced with
@@ -111,7 +111,7 @@ preview (agent batch). New backend fields (uptime, session history).
 
 - Vitest per component: list grouping, sticky header collapse persistence,
   search across kinds, selection kinds, pane state per workstation status
-  (Connect/Join/Take over/Reconnect/disabled), recent-workspace fallback,
+  (Connect/Join/Reconnect/disabled), recent-workspace fallback,
   `formatDuration` cases, nav items + account-menu logout.
 - `npm run build` (tsc -b) + lint gate.
 - e2e: update `workspaces.spec.ts`/`shots-home.spec.ts` for the new nav and
