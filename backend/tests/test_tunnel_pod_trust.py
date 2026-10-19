@@ -236,3 +236,12 @@ def test_cache_miss_stale_respects_retry_guard(k8s_tunnel, monkeypatch):
     assert k8s_tunnel.client_ip_resolved(_k8s_req("10.42.3.71")) == ("10.42.3.71", False)
     _settle(k8s_tunnel)
     assert client.calls == []
+
+
+def test_empty_pod_set_warns(k8s_tunnel, monkeypatch, caplog):
+    from app.services import k8s_api
+    fake = type("K", (), {"list_pod_ips": lambda self, *a, **k: set()})()
+    monkeypatch.setattr(k8s_api, "incluster_client", lambda: fake)
+    with caplog.at_level("WARNING"):
+        k8s_tunnel._refresh_tunnel_pod_ips("cloudflared:pod=cloudflared")
+    assert any("matched no Running pods" in r.message for r in caplog.records)

@@ -102,6 +102,9 @@ def _refresh_tunnel_pod_ips(spec: str) -> None:
         _pod_ips_seen = dict(list(seen.items())[-_POD_SEEN_MAX:])   # rebind: readers never race
         _pod_ips, _pod_ok_at = ips, time.monotonic()
         _pod_next = _pod_ok_at + _POD_REFRESH
+        if not ips:
+            logger.warning("TUNNEL_PEER_K8S %r matched no Running pods: CF-Connecting-IP is "
+                           "untrusted, all tunnel users share one IP", spec)
     except Exception as e:
         _pod_next = time.monotonic() + _POD_RETRY
         logger.warning("cloudflared pod lookup failed, keeping %d cached IPs: %s",
