@@ -8,4 +8,17 @@ spec:
   storageClassName: longhorn-styx
   resources:
     requests:
+      storage: 5Gi
+---
+# Daily DB/secrets backups (see backup-cronjob.yaml).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: styx-backups
+  namespace: styx
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: longhorn-styx
+  resources:
+    requests:
       storage: 2Gi

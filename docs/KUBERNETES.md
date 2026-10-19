@@ -8,9 +8,8 @@ and (optionally) kube-prometheus-stack.
 
 - k3s 1.34+ with a CNI that enforces `NetworkPolicy` (Cilium).
 - Traefik in namespace `traefik` (IngressRoute CRDs under `traefik.io`).
-- Longhorn (`driver.longhorn.io`) for the data volume.
+- Longhorn (`driver.longhorn.io`) for the data and backup volumes.
 - `cloudflared` pods in namespace `cloudflared` labelled `pod=cloudflared`.
-- MinIO reachable at `minio.minio.svc.cluster.local:9000` with a `styx-backups` bucket (for backups).
 - kube-prometheus-stack in `monitoring` (for the alert rules; the `PrometheusRule` CRD must exist).
 
 Edit `deploy/k8s/configmap.yaml` first (`DOMAIN`, `TRUSTED_PROXY_CIDRS` = your
@@ -19,19 +18,18 @@ pod CIDR, `WORKSTATION_ALLOW_CIDRS` = your LAN) and set the image tag in
 
 ## Install
 
+`JWT_SECRET` must be the one your portal already uses. The Fernet key that
+encrypts stored OAuth client secrets is derived from it, so a fresh random
+value makes migrated SSO providers unreadable. Take it from the compose
+`.env`, or from `jwt_secret` in compose's `/app/data/secrets.json`. Only for a
+brand-new portal with nothing to migrate, generate one with `openssl rand -base64 48`.
+
 ```bash
 kubectl apply -f deploy/k8s/namespace.yaml
 
 # Secrets are created by hand and never committed. See secrets.example.env.
 kubectl -n styx create secret generic styx-secrets \
-  --from-literal=JWT_SECRET="$(openssl rand -base64 48)"
-kubectl -n styx create secret generic styx-backup-s3 \
-  --from-literal=MC_HOST_local='http://ACCESS_KEY:SECRET_KEY@minio.minio.svc.cluster.local:9000'
-
-# The backup bucket must exist before the first backup runs:
-kubectl -n minio run mc --rm -it --restart=Never --image=minio/mc:RELEASE.2024-11-21T17-21-54Z \
-  --env MC_HOST_local='http://ACCESS_KEY:SECRET_KEY@minio.minio.svc.cluster.local:9000' \
-  --command -- mc mb --ignore-existing local/styx-backups
+  --from-literal=JWT_SECRET='<the compose JWT_SECRET>'
 
 kubectl apply -k deploy/k8s
 kubectl -n styx rollout status deploy/backend deploy/frontend
@@ -40,26 +38,51 @@ kubectl -n styx rollout status deploy/backend deploy/frontend
 Preview first with `kubectl apply -k deploy/k8s --dry-run=server` (the
 namespace must already exist).
 
-## Database migration from compose
+## Data migration from compose
 
-SQLite lives on the `styx-data` volume. To carry over an existing portal:
+Copy what the backend needs at runtime from the compose data dir into the
+`styx-data` volume: `styx-portal.db`, `secrets.json` (if present) and
+`artifacts/` (agent tarballs, about 510M). Skip `screenshots/`, `lan-certs/`
+and `*.pre-*` backups.
 
 ```bash
-# on the compose host: consistent copy of the DB and secrets file
-docker compose exec backend sqlite3 /app/data/styx-portal.db ".backup /app/data/migrate.db"
-docker compose cp backend:/app/data/migrate.db ./styx-portal.db
-docker compose cp backend:/app/data/secrets.json ./secrets.json   # only if you did not pin JWT_SECRET
+# 1. On the compose host: stage a consistent DB copy + needed files, tar them.
+docker compose exec -T backend python - <<'PY'
+import os, shutil, sqlite3, tarfile
+os.makedirs('/tmp/stage', exist_ok=True)
+d = sqlite3.connect('/tmp/stage/styx-portal.db')
+sqlite3.connect('/app/data/styx-portal.db').backup(d)
+print('integrity:', d.execute('PRAGMA integrity_check').fetchone()[0])
+d.close()
+if os.path.exists('/app/data/secrets.json'):
+    shutil.copy('/app/data/secrets.json', '/tmp/stage/')
+shutil.copytree('/app/data/artifacts', '/tmp/stage/artifacts', dirs_exist_ok=True)
+with tarfile.open('/tmp/styx-data.tar', 'w') as t:
+    for n in os.listdir('/tmp/stage'):
+        t.add('/tmp/stage/' + n, arcname=n)
+PY
+docker compose cp backend:/tmp/styx-data.tar ./styx-data.tar
+docker compose exec backend rm -rf /tmp/stage /tmp/styx-data.tar
 
-# scale the backend down, copy into the volume, scale back up
+# 2. Stop the k8s backend and start a restore pod (busybox, uid 1000) on the volume.
 kubectl -n styx scale deploy/backend --replicas=0
-kubectl -n styx run restore --rm -it --restart=Never --image=busybox:1.37 \
-  --overrides='{"spec":{"securityContext":{"runAsUser":1000,"fsGroup":1000},"containers":[{"name":"restore","image":"busybox:1.37","stdin":true,"tty":true,"command":["sh"],"volumeMounts":[{"name":"d","mountPath":"/app/data"}]}],"volumes":[{"name":"d","persistentVolumeClaim":{"claimName":"styx-data"}}]}}'
-# in another terminal: kubectl -n styx cp styx-portal.db restore:/app/data/styx-portal.db
+kubectl -n styx run restore --restart=Never --image=busybox:1.37 --overrides='{"spec":{"securityContext":{"runAsUser":1000,"runAsGroup":1000,"fsGroup":1000},"containers":[{"name":"restore","image":"busybox:1.37","command":["sleep","3600"],"volumeMounts":[{"name":"d","mountPath":"/app/data"}]}],"volumes":[{"name":"d","persistentVolumeClaim":{"claimName":"styx-data"}}]}}'
+kubectl -n styx wait --for=condition=Ready pod/restore
+
+# 3. Copy and unpack (files end up owned by 1000 through the pod uid/fsGroup).
+kubectl -n styx cp styx-data.tar restore:/tmp/styx-data.tar
+kubectl -n styx exec restore -- sh -c 'tar xf /tmp/styx-data.tar -C /app/data && rm /tmp/styx-data.tar && chown -R 1000:1000 /app/data && ls -la /app/data'
+
+# 4. Clean up and start the backend.
+kubectl -n styx delete pod restore
 kubectl -n styx scale deploy/backend --replicas=1
 ```
 
-Keep the same `JWT_SECRET` (or copy `secrets.json`); otherwise everyone is
-logged out and stored OAuth client secrets become unreadable.
+If the tar layout looks wrong, check `ls /app/data` in the restore pod: you want
+`styx-portal.db`, `secrets.json` and `artifacts/` at the top level.
+
+OAuth providers migrated from another hostname keep their old redirect URIs.
+Add `https://g.jmolabs.dev/...` to each identity provider or SSO fails after cutover.
 
 ## Cloudflare cutover
 
@@ -88,36 +111,44 @@ non-Docker services work.
 
 - Backend: 1 replica, `Recreate` strategy (RWO volume + SQLite allow one writer).
   Startup probe allows 150s to boot; liveness is deliberately slow (6 failures x 20s) so a busy backend is never killed.
-- Node loss: `not-ready`/`unreachable` tolerations of 30s reschedule the pod in about 30s instead of the default 300s. Longhorn volume failover still applies.
+- Node loss: `not-ready`/`unreachable` tolerations of 30s evict the pod about 30s after the node is declared lost, but that does not mean the replacement starts in 30s. With Longhorn `node-down-pod-deletion-policy=do-nothing` (the current cluster setting) the old pod stays `Terminating` and the RWO volume stays attached to the dead node, so the new pod waits on Multi-Attach until Kubernetes force-detaches (about 6 minutes). To recover immediately, force-delete the stuck pod:
+  `kubectl -n styx delete pod -l app=styx-backend --force --grace-period=0`.
+  To make this automatic, set the Longhorn setting `node-down-pod-deletion-policy` to `delete-both-statefulset-and-deployment-pod`. That is a shared cluster component, so it is your decision; these manifests do not change it.
 - Backend prefers to avoid node `k1-n4` (the single control-plane node).
 - Frontend: 2 replicas spread across nodes, PodDisruptionBudget `minAvailable: 1`.
 - Both use PriorityClass `styx-critical` so they preempt ordinary workloads under pressure.
-- Storage: StorageClass `longhorn-styx` keeps 3 replicas, `Retain`: deleting the PVC never deletes the volume.
-- Alerts (`prometheusrule.yaml`): `StyxBackendDown` (critical), `StyxBackupFailed`, `StyxBackupStale`.
+- Storage: StorageClass `longhorn-styx` keeps 3 replicas, `Retain`: deleting a PVC never deletes the volume.
+- Alerts (`prometheusrule.yaml`): `StyxBackendDown` (critical), `StyxBackupFailed`, `StyxBackupStale`. `StyxBackupStale` also fires while no backup has ever succeeded, which is expected right after install until the first run completes.
 
 ## Backup & restore
 
-CronJob `styx-db-backup` runs daily at 03:17 on the backend's node. An
-init container takes a consistent `sqlite3 .backup`, verifies
-`PRAGMA integrity_check`, then `mc` uploads `styx-YYYY-MM-DD.db` to
-`styx-backups` and deletes objects older than 14 days.
+CronJob `styx-db-backup` runs daily at 03:17 on the backend's node, using the
+backend image (no extra images or credentials). It writes to the `styx-backups`
+volume: a consistent SQLite copy `styx-portal-YYYY-MM-DD.db` (read-only source,
+`PRAGMA integrity_check` must return `ok` or the job fails) and
+`secrets-YYYY-MM-DD.json` if `secrets.json` exists. Files older than 14 days
+are deleted. The job has a 30 minute deadline.
 
-Run one on demand:
+Run one on demand and list results:
 
 ```bash
 kubectl -n styx create job --from=cronjob/styx-db-backup backup-now
+kubectl -n styx logs job/backup-now
 ```
 
-Restore (backend stopped, then copy the dump over the DB):
+The backup volume lives in the same Longhorn cluster as the data. Periodically
+copy it off-cluster (for example `kubectl cp` from a pod mounting `styx-backups`).
+
+Restore (backend stopped, then copy a dump over the DB using the restore pod
+from the migration section, mounting `styx-backups` as well):
 
 ```bash
 kubectl -n styx scale deploy/backend --replicas=0
-# fetch styx-YYYY-MM-DD.db with mc, then copy into the volume as in "Database migration"
-# remove any stale styx-portal.db-wal / -shm files in /app/data before starting
+# in a restore pod: cp /backups/styx-portal-YYYY-MM-DD.db /app/data/styx-portal.db
 kubectl -n styx scale deploy/backend --replicas=1
 ```
 
-Also keep a copy of `JWT_SECRET` (or `secrets.json`) outside the cluster.
+Also keep a copy of `JWT_SECRET` outside the cluster.
 
 ## Fallback access
 

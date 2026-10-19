@@ -16,14 +16,15 @@ spec:
           annotations:
             summary: Styx backend has no available replicas
         - alert: StyxBackupFailed
-          expr: kube_job_status_failed{namespace="styx",job_name=~"styx-db-backup.*"} > 0
+          expr: kube_job_failed{namespace="styx",job_name=~"styx-db-backup.*",condition="true"} > 0
           for: 5m
           labels: {severity: warning}
           annotations:
             summary: Styx DB backup job failed
         - alert: StyxBackupStale
-          expr: time() - kube_cronjob_status_last_successful_time{namespace="styx",cronjob="styx-db-backup"} > 129600
-          for: 10m
+          # absent() fires until the first success (expected right after install)
+          expr: (time() - kube_cronjob_status_last_successful_time{namespace="styx",cronjob="styx-db-backup"}) > 129600 or absent(kube_cronjob_status_last_successful_time{namespace="styx",cronjob="styx-db-backup"})
+          for: 30m
           labels: {severity: warning}
           annotations:
             summary: No successful Styx DB backup in over 36h

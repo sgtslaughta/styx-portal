@@ -1,4 +1,5 @@
-# Daily consistent SQLite backup -> MinIO. Runs on the backend's node (RWO volume).
+# Daily consistent SQLite backup onto the styx-backups volume, using the backend
+# image (python sqlite3; no extra images). Runs on the backend's node (RWO volume).
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -12,6 +13,7 @@ spec:
   jobTemplate:
     spec:
       backoffLimit: 2
+      activeDeadlineSeconds: 1800
       template:
         spec:
           restartPolicy: Never
@@ -20,6 +22,7 @@ spec:
             runAsUser: 1000
             runAsGroup: 1000
             fsGroup: 1000
+            fsGroupChangePolicy: OnRootMismatch
             runAsNonRoot: true
             seccompProfile: {type: RuntimeDefault}
           affinity:
@@ -28,36 +31,34 @@ spec:
                 - topologyKey: kubernetes.io/hostname
                   labelSelector:
                     matchLabels: {app: styx-backend}
-          initContainers:
-            - name: dump
-              image: keinos/sqlite3:3.46.1
+          containers:
+            - name: backup
+              image: ghcr.io/sgtslaughta/styx-backend
               command: [sh, -ec]
               args:
                 - |
-                  sqlite3 /app/data/styx-portal.db ".backup /tmp/styx.db"
-                  test "$(sqlite3 /tmp/styx.db 'PRAGMA integrity_check;')" = ok
+                  D=$(date +%F)
+                  python -c "
+                  import sqlite3, sys
+                  src = sqlite3.connect('file:/app/data/styx-portal.db?mode=ro', uri=True)
+                  dst = sqlite3.connect('/backups/styx-portal-$D.db')
+                  src.backup(dst)
+                  r = dst.execute('PRAGMA integrity_check').fetchone()[0]
+                  dst.close()
+                  sys.exit(0 if r == 'ok' else 1)
+                  "
+                  if [ -f /app/data/secrets.json ]; then
+                    cp /app/data/secrets.json "/backups/secrets-$D.json"
+                  fi
+                  find /backups -type f \( -name 'styx-*' -o -name 'secrets-*' \) -mtime +14 -delete
               securityContext:
                 allowPrivilegeEscalation: false
                 capabilities: {drop: [ALL]}
               volumeMounts:
                 - {name: data, mountPath: /app/data, readOnly: true}
-                - {name: tmp, mountPath: /tmp}
-          containers:
-            - name: upload
-              image: minio/mc:RELEASE.2024-11-21T17-21-54Z
-              command: [sh, -ec]
-              args:
-                - |
-                  mc --config-dir /tmp/mc cp /tmp/styx.db "local/styx-backups/styx-$(date +%F).db"
-                  mc --config-dir /tmp/mc rm --recursive --force --older-than 14d local/styx-backups/
-              envFrom:
-                - secretRef: {name: styx-backup-s3}
-              securityContext:
-                allowPrivilegeEscalation: false
-                capabilities: {drop: [ALL]}
-              volumeMounts:
-                - {name: tmp, mountPath: /tmp}
+                - {name: backups, mountPath: /backups}
           volumes:
             - name: data
               persistentVolumeClaim: {claimName: styx-data, readOnly: true}
-            - {name: tmp, emptyDir: {}}
+            - name: backups
+              persistentVolumeClaim: {claimName: styx-backups}
