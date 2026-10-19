@@ -28,7 +28,7 @@ def test_load_config(tmp_path):
 
 
 def test_agent_version_bumped():
-    assert styx_agent.AGENT_VERSION == "0.8.0"
+    assert styx_agent.AGENT_VERSION == "0.8.1"
 
 
 def test_gateway_cmd_secrets_via_env(tmp_path):
@@ -71,7 +71,7 @@ def test_health_payload_reports_mode_and_engine(tmp_path):
     h = styx_agent.health_payload(cfg, selkies_alive=True, gateway_alive=False)
     assert h["mode"] == "seat"
     assert h["engine"] == "pixelflux"
-    assert h["agent_version"] == "0.8.0"
+    assert h["agent_version"] == "0.8.1"
     assert "needs_consent" not in h
     assert h["selkies_alive"] is True and h["gateway_alive"] is False
     assert h["active_connections"] == 0
@@ -184,7 +184,7 @@ def test_run_config_from_0411_is_accepted(tmp_path, monkeypatch):
     monkeypatch.setattr(styx_agent.seat_gnome, "gnome_available", lambda: (True, ""))
     assert styx_agent.pick_seat_shell(cfg) == "gnome"
     p = styx_agent.health_payload(cfg, True, True)
-    assert p["agent_version"] == "0.8.0" and "needs_consent" not in p
+    assert p["agent_version"] == "0.8.1" and "needs_consent" not in p
 
 
 def test_rollback_swaps_dirs(tmp_path, monkeypatch):
@@ -356,3 +356,67 @@ def test_gateway_gets_icon_dir():
            "selkies_password": "p", "stream_settings": {}}
     _, env = styx_agent.build_gateway_cmd(cfg, 18444)
     assert env["STYX_GW_ICON_DIR"] == "/opt/x"
+
+
+def test_framerate_change_relaunches_portal_not_seat():
+    old = {"video_crf": 25, "framerate": 60}
+    k = styx_agent.settings_restart_keys(old, {**old, "framerate": 120})
+    assert "portal" in k and "seat" not in k
+    assert "portal" not in styx_agent.settings_restart_keys(old, {**old, "video_crf": 30})
+    assert "portal" not in styx_agent.settings_restart_keys(
+        {"video_crf": 25}, {"video_crf": 25, "framerate": 60})
+    assert "portal" not in styx_agent.settings_restart_keys(
+        {"seat_shell": "labwc"}, {"seat_shell": "labwc", "framerate": 120})
+
+
+def test_parse_fps_tolerant():
+    f = styx_agent.parse_fps
+    assert [f(v) for v in (None, "", "auto", "60fps", float("nan"), float("inf"))] == [60] * 6
+    assert f("120") == 120 and f(120.0) == 120 and f(1e9) == 240 and f(0) == 60 and f(-5) == 1
+
+
+def test_framerate_string_vs_int_is_not_a_change():
+    assert "portal" not in styx_agent.settings_restart_keys(
+        {"framerate": "120"}, {"framerate": 120})
+
+
+class _G:
+    def __init__(self, results, alive=True):
+        self.alive_after = alive
+        self.results, self.alive_v, self.calls, self.stopped = list(results), True, [], False
+
+    def alive(self):
+        return self.alive_v
+
+    def restart_helper(self, fps=None):
+        self.calls.append(fps)
+        self.alive_v = self.alive_after
+        return self.results.pop(0)
+
+    def stop(self):
+        self.stopped = True
+
+
+def test_apply_portal_restart_success():
+    g = _G([True])
+    assert styx_agent.apply_portal_restart(g, {"framerate": "120"}) is None
+    assert g.calls == [120] and not g.stopped
+
+
+def test_apply_portal_restart_fallback_keeps_gnome():
+    g = _G([False])
+    err = styx_agent.apply_portal_restart(g, {"framerate": 120})
+    assert err and not g.stopped
+
+
+def test_apply_portal_restart_double_failure_stops_seat():
+    g = _G([False], alive=False)
+    assert styx_agent.apply_portal_restart(g, {"framerate": 120})
+    assert g.stopped
+
+
+def test_apply_portal_restart_noop():
+    assert styx_agent.apply_portal_restart(None, {"framerate": 120}) is None
+    g = _G([True])
+    g.alive_v = False
+    assert styx_agent.apply_portal_restart(g, {"framerate": 120}) is None and g.calls == []

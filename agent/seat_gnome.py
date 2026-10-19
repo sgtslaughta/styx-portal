@@ -135,6 +135,7 @@ class GnomeSeat:
         self.size: tuple[int, int] | None = None
         self._helper = None
         self._heal = False
+        self.fps = 60   # capture cap; styx_agent sets it from stream_settings
 
     def start(self, width: int, height: int) -> None:
         from engine import SEAT_SINK
@@ -208,7 +209,7 @@ class GnomeSeat:
                     "STYX_PORTAL_READY": str(self.ready_file),
                     "STYX_SEAT_SCALE_FILE": str(self.install_dir / "seat-scale")})
         return subprocess.Popen([SYS_PYTHON, str(self.install_dir / "seat_portal.py"),
-                                 f"{w}x{h}"], env=env, stdout=self.log, stderr=self.log,
+                                 f"{w}x{h}", "--max-fps", str(self.fps)], env=env, stdout=self.log, stderr=self.log,
                                 start_new_session=True)
 
     def _start_helper(self, w: int, h: int) -> bool:
@@ -264,6 +265,19 @@ class GnomeSeat:
             return True
         if old:
             self._start_helper(*old)
+        return False
+
+    def restart_helper(self, fps: int) -> bool:
+        """Relaunch only seat_portal at a new fps cap; GNOME stays up. On failure
+        retry at the previous fps (like refit) so the seat is never left dead.
+        Caller stops selkies first."""
+        if not self.size:
+            return False
+        old, self.fps = self.fps, fps
+        if self._start_helper(*self.size):
+            return True
+        self.fps = old
+        self._start_helper(*self.size)
         return False
 
     def _stop_helper(self) -> None:
