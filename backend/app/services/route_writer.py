@@ -1,5 +1,7 @@
+import asyncio
 import base64
 import logging
+import threading
 import yaml
 from pathlib import Path
 
@@ -9,6 +11,7 @@ from app.services.settings_store import settings as _sys_settings
 
 logger = logging.getLogger("styx-portal")
 _settings = Settings()
+_write_lock = threading.Lock()  # serialize file writes / k8s apply+prune
 _k8s_client = None  # lazy in-cluster client (ROUTE_BACKEND=k8s)
 
 
@@ -305,7 +308,7 @@ def _write_routes_k8s(instances, domain, workstations, strict):
             raise
 
 
-def write_routes(instances: list[dict], domain: str | None = None,
+def _write_routes_locked(instances: list[dict], domain: str | None = None,
                  workstations: list[dict] | None = None,
                  services: list[dict] | None = None, strict: bool = False):
     """Render the Traefik dynamic config to the file provider directory.
@@ -332,6 +335,15 @@ def write_routes(instances: list[dict], domain: str | None = None,
         )
         if strict:
             raise
+
+
+def write_routes(instances: list[dict], domain: str | None = None,
+                 workstations: list[dict] | None = None,
+                 services: list[dict] | None = None, strict: bool = False):
+    """Serialized entry point; see _write_routes_locked."""
+    with _write_lock:
+        return _write_routes_locked(instances, domain, workstations,
+                                    services, strict)
 
 
 def _service_dict(s) -> dict:
@@ -380,4 +392,5 @@ async def refresh_routes_from_db(session, strict: bool = False):
     svc_result = await session.exec(
         select(ProxiedService).where(ProxiedService.enabled == True))  # noqa: E712
     svc_data = [_service_dict(s) for s in svc_result.all()]
-    write_routes(data, workstations=ws_data, services=svc_data, strict=strict)
+    await asyncio.to_thread(write_routes, data, workstations=ws_data,
+                            services=svc_data, strict=strict)

@@ -136,3 +136,40 @@ def test_build_routes_config_k8s_skips_lan_and_services(tmp_path, monkeypatch):
                                 workstations=[_ws()], services=[svc])
     assert [n for n in plain["http"]["routers"] if "sonarr" in n]
     assert not [n for n in routers if "sonarr" in n]
+
+
+@pytest.mark.asyncio
+async def test_refresh_routes_runs_write_off_loop(monkeypatch):
+    import threading
+
+    class _R:
+        def all(self):
+            return []
+
+    class _S:
+        async def exec(self, *_):
+            return _R()
+
+    seen = []
+    monkeypatch.setattr(route_writer, "write_routes",
+                        lambda *a, **k: seen.append(threading.current_thread()))
+    await route_writer.refresh_routes_from_db(_S())
+    assert seen and seen[0] is not threading.main_thread()
+
+
+@pytest.mark.asyncio
+async def test_refresh_routes_strict_error_propagates(monkeypatch):
+    class _R:
+        def all(self):
+            return []
+
+    class _S:
+        async def exec(self, *_):
+            return _R()
+
+    def boom(*a, **k):
+        raise RuntimeError("x")
+
+    monkeypatch.setattr(route_writer, "write_routes", boom)
+    with pytest.raises(RuntimeError):
+        await route_writer.refresh_routes_from_db(_S(), strict=True)
