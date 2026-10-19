@@ -1,3 +1,4 @@
+import base64
 import time
 import ipaddress
 import re
@@ -18,6 +19,7 @@ from app.schemas import (
     WorkstationUpdate, WorkstationUpdateCommandOut,
 )
 from app.security.cookies import clean_cookie_header
+from app.security.crypto import decrypt_secret
 from app.security.nav import is_navigation, no_access
 from app.security.safe_next import safe_next
 from app.security.deps import require_admin, get_current_user
@@ -259,7 +261,13 @@ async def auth_check(ws_id: str, request: Request,
         ws.occupied_at = datetime.now(timezone.utc)
         session.add(ws)
         await session.commit()
-    return JSONResponse({"ok": True}, headers=clean_cookie_header(request))
+    headers = clean_cookie_header(request)
+    if ws.selkies_password_enc:
+        # Traefik copies this onto the upstream request (authResponseHeaders)
+        creds = base64.b64encode(
+            f"styx:{decrypt_secret(ws.selkies_password_enc)}".encode()).decode()
+        headers = {**headers, "Authorization": f"Basic {creds}"}
+    return JSONResponse({"ok": True}, headers=headers)
 
 
 @router.get("/mine", response_model=list[WorkstationOut])

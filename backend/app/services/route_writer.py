@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import logging
 import threading
 import yaml
@@ -14,9 +13,10 @@ _settings = Settings()
 _write_lock = threading.Lock()  # serialize file writes / k8s apply+prune
 
 
-def _forward_auth(address: str) -> dict:
+def _forward_auth(address: str, extra_headers: tuple[str, ...] = ()) -> dict:
     """forwardAuth that also swaps in the Cookie header minus Styx cookies."""
-    return {"forwardAuth": {"address": address, "authResponseHeaders": ["Cookie"]}}
+    return {"forwardAuth": {"address": address,
+                            "authResponseHeaders": ["Cookie", *extra_headers]}}
 
 
 def _seg(prefix: str) -> str:
@@ -217,23 +217,15 @@ def build_routes_config(instances: list[dict], domain: str,
     for ws in workstations or []:
         sub = ws["subdomain"]
         strip_mw = f"strip-w-{sub}"
-        auth_header_mw = f"auth-ws-{sub}"
         middlewares[strip_mw] = {"stripPrefix": {"prefixes": [f"/w/{sub}"]}}
-
-        # Credential injection middleware (if selkies_password is available)
-        if "selkies_password" in ws and ws["selkies_password"]:
-            creds = base64.b64encode(
-                f"styx:{ws['selkies_password']}".encode()).decode()
-            middlewares[auth_header_mw] = {"headers": {"customRequestHeaders": {
-                "Authorization": f"Basic {creds}"}}}
 
         rid = f"ws-{ws['id']}"
         ws_auth = f"ws-auth-{ws['id']}"
         middlewares[ws_auth] = _forward_auth(
-            f"{_settings.BACKEND_INTERNAL_URL}/internal/workstations/{ws['id']}/auth-check")
+            f"{_settings.BACKEND_INTERNAL_URL}/internal/workstations/{ws['id']}/auth-check",
+            # auth-check injects the stream Basic credential; never in route config
+            extra_headers=("Authorization",))
         router_middlewares = ["instance-unavailable-errors", ws_auth, strip_mw]
-        if "selkies_password" in ws and ws["selkies_password"]:
-            router_middlewares.insert(2, auth_header_mw)
         config["http"]["routers"][rid] = {
             "rule": f"Host(`{domain}`) && ({_seg(f'/w/{sub}')})",
             "middlewares": router_middlewares,
@@ -359,7 +351,6 @@ async def refresh_routes_from_db(session, strict: bool = False):
     from sqlmodel import select
     from app.models import (
         Instance, ProxiedService, ServiceTemplate, Workstation)
-    from app.security.crypto import decrypt_secret
 
     result = await session.exec(
         select(Instance).where(Instance.status.in_(["running", "idle"]))
@@ -384,9 +375,6 @@ async def refresh_routes_from_db(session, strict: bool = False):
             "id": w.id, "subdomain": w.subdomain, "lan_ip": w.lan_ip,
             "port": w.port, "protocol": w.protocol,
         }
-        # Include decrypted password if available
-        if w.selkies_password_enc:
-            ws_dict["selkies_password"] = decrypt_secret(w.selkies_password_enc)
         ws_data.append(ws_dict)
     svc_result = await session.exec(
         select(ProxiedService).where(ProxiedService.enabled == True))  # noqa: E712

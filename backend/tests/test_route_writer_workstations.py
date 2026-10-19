@@ -15,14 +15,9 @@ def test_workstation_route_emitted():
     assert r["rule"] == "Host(`example.com`) && (Path(`/w/desk`) || PathPrefix(`/w/desk/`))"
     assert "ws-auth-ws1" in r["middlewares"]
     assert "strip-w-desk" in r["middlewares"]
-    assert "auth-ws-desk" in r["middlewares"]
+    assert "auth-ws-desk" not in r["middlewares"]
     assert cfg["http"]["middlewares"]["strip-w-desk"] == {
         "stripPrefix": {"prefixes": ["/w/desk"]}}
-    # Check auth header middleware
-    assert "auth-ws-desk" in cfg["http"]["middlewares"]
-    auth_mw = cfg["http"]["middlewares"]["auth-ws-desk"]
-    creds = base64.b64encode(b"styx:pw").decode()
-    assert auth_mw["headers"]["customRequestHeaders"]["Authorization"] == f"Basic {creds}"
     # Check forwardAuth middleware
     assert "ws-auth-ws1" in cfg["http"]["middlewares"]
     assert cfg["http"]["middlewares"]["ws-auth-ws1"]["forwardAuth"]["address"] == \
@@ -74,11 +69,11 @@ def test_lan_routers_emitted_for_ip_access(tmp_path, monkeypatch):
     assert routers["api-lan"]["entryPoints"] == ["websecure"]
     assert routers["api-lan"]["tls"] == {}
     assert routers["frontend-lan"]["rule"] == "PathPrefix(`/`)"
-    # per-workstation LAN stream route carries the same forwardAuth + creds
+    # per-workstation LAN stream route carries the same forwardAuth
     ws_lan = routers["ws-ws1-lan"]
     assert ws_lan["rule"] == "Path(`/w/desk`) || PathPrefix(`/w/desk/`)"
     assert "ws-auth-ws1" in ws_lan["middlewares"]
-    assert "auth-ws-desk" in ws_lan["middlewares"]
+    assert "auth-ws-desk" not in ws_lan["middlewares"]
 
 
 def test_no_workstations_is_default():
@@ -86,7 +81,7 @@ def test_no_workstations_is_default():
     assert not any(k.startswith("ws-") for k in cfg["http"]["routers"])
 
 
-def test_workstation_without_password_skips_auth_header_mw():
+def test_workstation_without_password_has_only_forward_auth():
     # Workstations without a password should still have forwardAuth but no auth-header
     cfg = build_routes_config([], "example.com", "tunnel",
                               workstations=[_ws(selkies_password="")])
@@ -105,3 +100,19 @@ def test_forward_auth_uses_backend_internal_url(monkeypatch):
     assert mws["ws-auth-ws1"]["forwardAuth"]["address"] == \
         f"{base}/internal/workstations/ws1/auth-check"
     assert mws["ip-ban-gate"]["forwardAuth"]["address"] == f"{base}/api/auth/ban-check"
+
+
+def test_workstation_route_has_no_credentials():
+    import yaml
+    cfg = build_routes_config([], "example.com", "tunnel",
+                              workstations=[_ws(selkies_password="pw")])
+    assert "auth-ws-desk" not in cfg["http"]["middlewares"]
+    assert "auth-ws-desk" not in cfg["http"]["routers"]["ws-ws1"]["middlewares"]
+    dumped = yaml.dump(cfg)
+    assert base64.b64encode(b"styx:pw").decode() not in dumped
+    assert "Basic" not in dumped and "customRequestHeaders" not in dumped
+    fa = cfg["http"]["middlewares"]["ws-auth-ws1"]["forwardAuth"]
+    assert fa["authResponseHeaders"] == ["Cookie", "Authorization"]
+    # instances/services keep Cookie only
+    assert cfg["http"]["middlewares"]["strip-w-desk"] == {
+        "stripPrefix": {"prefixes": ["/w/desk"]}}
