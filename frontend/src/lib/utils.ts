@@ -5,13 +5,16 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** Largest two units, minute precision: "6d 5h", "3h 12m", "45m"; seconds only under a minute. */
 export function formatDuration(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return "—";
   if (seconds < 60) return `${Math.floor(seconds)}s`;
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  const s = Math.floor(seconds);
+  const d = Math.floor(s / 86_400);
+  const h = Math.floor((s % 86_400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const [big, small] = d ? [`${d}d`, h ? `${h}h` : ""] : h ? [`${h}h`, m ? `${m}m` : ""] : [`${m}m`, ""];
+  return small ? `${big} ${small}` : big;
 }
 
 export function slugify(text: string): string {
