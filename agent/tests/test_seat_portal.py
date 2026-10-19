@@ -33,3 +33,7 @@ def test_caps_fps_default_and_clamp():
 def test_main_argv_fps_flag():
     assert seat_portal.parse_args(["p", "800x600"]) == (800, 600, 60)
     assert seat_portal.parse_args(["p", "800x600", "--max-fps", "120"]) == (800, 600, 120)
+
+
+def test_max_fps_as_last_arg_falls_back():
+    assert seat_portal.parse_args(["p", "800x600", "--max-fps"]) == (800, 600, 60)

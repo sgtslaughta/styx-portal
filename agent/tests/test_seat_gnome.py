@@ -248,9 +248,19 @@ def test_helper_gets_max_fps_arg(tmp_path, monkeypatch):
 
 def test_restart_helper_applies_new_fps_without_touching_shell(tmp_path, monkeypatch):
     seat = seat_gnome.GnomeSeat(tmp_path, str(tmp_path), log=subprocess.DEVNULL)
-    seat.size, seat.fps = (1920, 1080), 120
+    seat.size = (1920, 1080)
     calls = []
-    monkeypatch.setattr(seat, "_start_helper", lambda w, h: calls.append((w, h)) or True)
-    assert seat.restart_helper() is True and calls == [(1920, 1080)]
+    monkeypatch.setattr(seat, "_start_helper", lambda w, h: calls.append((w, h, seat.fps)) or True)
+    assert seat.restart_helper(120) is True and calls == [(1920, 1080, 120)]
     seat.size = None
-    assert seat.restart_helper() is False
+    assert seat.restart_helper(60) is False
+
+
+def test_restart_helper_failure_retries_old_fps(tmp_path, monkeypatch):
+    seat = seat_gnome.GnomeSeat(tmp_path, str(tmp_path), log=subprocess.DEVNULL)
+    seat.size, seat.fps = (1920, 1080), 60
+    calls = []
+    monkeypatch.setattr(seat, "_start_helper",
+                        lambda w, h: calls.append(seat.fps) or len(calls) > 1)
+    assert seat.restart_helper(120) is False
+    assert calls == [120, 60] and seat.fps == 60

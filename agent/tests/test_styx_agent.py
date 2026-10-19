@@ -367,3 +367,56 @@ def test_framerate_change_relaunches_portal_not_seat():
         {"video_crf": 25}, {"video_crf": 25, "framerate": 60})
     assert "portal" not in styx_agent.settings_restart_keys(
         {"seat_shell": "labwc"}, {"seat_shell": "labwc", "framerate": 120})
+
+
+def test_parse_fps_tolerant():
+    f = styx_agent.parse_fps
+    assert [f(v) for v in (None, "", "auto", "60fps", float("nan"), float("inf"))] == [60] * 6
+    assert f("120") == 120 and f(120.0) == 120 and f(1e9) == 240 and f(0) == 60 and f(-5) == 1
+
+
+def test_framerate_string_vs_int_is_not_a_change():
+    assert "portal" not in styx_agent.settings_restart_keys(
+        {"framerate": "120"}, {"framerate": 120})
+
+
+class _G:
+    def __init__(self, results, alive=True):
+        self.alive_after = alive
+        self.results, self.alive_v, self.calls, self.stopped = list(results), True, [], False
+
+    def alive(self):
+        return self.alive_v
+
+    def restart_helper(self, fps=None):
+        self.calls.append(fps)
+        self.alive_v = self.alive_after
+        return self.results.pop(0)
+
+    def stop(self):
+        self.stopped = True
+
+
+def test_apply_portal_restart_success():
+    g = _G([True])
+    assert styx_agent.apply_portal_restart(g, {"framerate": "120"}) is None
+    assert g.calls == [120] and not g.stopped
+
+
+def test_apply_portal_restart_fallback_keeps_gnome():
+    g = _G([False])
+    err = styx_agent.apply_portal_restart(g, {"framerate": 120})
+    assert err and not g.stopped
+
+
+def test_apply_portal_restart_double_failure_stops_seat():
+    g = _G([False], alive=False)
+    assert styx_agent.apply_portal_restart(g, {"framerate": 120})
+    assert g.stopped
+
+
+def test_apply_portal_restart_noop():
+    assert styx_agent.apply_portal_restart(None, {"framerate": 120}) is None
+    g = _G([True])
+    g.alive_v = False
+    assert styx_agent.apply_portal_restart(g, {"framerate": 120}) is None and g.calls == []

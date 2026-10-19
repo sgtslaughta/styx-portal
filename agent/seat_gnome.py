@@ -267,10 +267,18 @@ class GnomeSeat:
             self._start_helper(*old)
         return False
 
-    def restart_helper(self) -> bool:
-        """Relaunch only seat_portal (picks up a new self.fps); GNOME stays up.
+    def restart_helper(self, fps: int) -> bool:
+        """Relaunch only seat_portal at a new fps cap; GNOME stays up. On failure
+        retry at the previous fps (like refit) so the seat is never left dead.
         Caller stops selkies first."""
-        return bool(self.size) and self._start_helper(*self.size)
+        if not self.size:
+            return False
+        old, self.fps = self.fps, fps
+        if self._start_helper(*self.size):
+            return True
+        self.fps = old
+        self._start_helper(*self.size)
+        return False
 
     def _stop_helper(self) -> None:
         p, self._helper = self._helper, None

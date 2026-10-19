@@ -59,13 +59,15 @@ def parse_fps(arg) -> int:
 
 
 def caps(w, h, fps=60) -> str:
+    # fps = admin stream_settings.framerate: the capture CEILING; the selkies
+    # panel may pick any rate up to it, never above.
     return f"video/x-raw,width={w},height={h},max-framerate={parse_fps(fps)}/1"
 
 
 def parse_args(argv) -> tuple[int, int, int]:
     """argv: prog WxH [--max-fps N]"""
     w, h = parse_size(argv[1])
-    fps = argv[argv.index("--max-fps") + 1] if "--max-fps" in argv[2:] else None
+    fps = argv[i + 1] if "--max-fps" in argv[2:-1] and (i := argv.index("--max-fps")) else None
     return w, h, parse_fps(fps)
 
 
