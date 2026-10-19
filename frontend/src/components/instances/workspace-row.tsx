@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { ChevronDown, ExternalLink } from "lucide-react";
+import { Box, ChevronDown, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { readLocal, writeLocal } from "@/lib/local";
 import { cn } from "@/lib/utils";
@@ -71,4 +71,11 @@ export function EmptyLine({ text, action }: { text: string; action?: { label: st
       {action && <Button size="sm" variant="outline" onClick={action.onClick}>{action.label}</Button>}
     </div>
   );
+}
+
+/** Template icon: an image URL or emoji from the template; lucide Box when there is none. */
+export function TemplateIcon({ icon, className }: { icon: string | null; className?: string }) {
+  if (icon?.startsWith("http")) return <img src={icon} alt="" className={cn("size-7 object-contain", className)} draggable={false} />;
+  if (icon) return <span className={cn("text-xl leading-none", className)} aria-hidden>{icon}</span>;
+  return <Box className={cn("size-6 text-muted-foreground", className)} aria-hidden />;
 }

@@ -16,7 +16,7 @@ const REFRESH_MS = 30000;
  * Live preview tile for the detail pane: shows the cached screenshot for a
  * running/idle instance, refreshed every 30s, falling back to the template
  * icon when no screenshot is available (404/error) or the instance isn't live.
- * Unlike IconViewport it carries no name/status overlay — the pane header owns those.
+ * Unlike the old card view it carries no name/status overlay — the pane header owns those.
  */
 export function InstanceThumbnail({ instanceId, icon, isLive, fill }: InstanceThumbnailProps) {
   const [tick, setTick] = useState(0);
