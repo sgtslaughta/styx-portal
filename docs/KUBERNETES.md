@@ -28,6 +28,11 @@ kubectl -n styx create secret generic styx-secrets \
 kubectl -n styx create secret generic styx-backup-s3 \
   --from-literal=MC_HOST_local='http://ACCESS_KEY:SECRET_KEY@minio.minio.svc.cluster.local:9000'
 
+# The backup bucket must exist before the first backup runs:
+kubectl -n minio run mc --rm -it --restart=Never --image=minio/mc:RELEASE.2024-11-21T17-21-54Z \
+  --env MC_HOST_local='http://ACCESS_KEY:SECRET_KEY@minio.minio.svc.cluster.local:9000' \
+  --command -- mc mb --ignore-existing local/styx-backups
+
 kubectl apply -k deploy/k8s
 kubectl -n styx rollout status deploy/backend deploy/frontend
 ```
