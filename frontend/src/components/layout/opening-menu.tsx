@@ -1,15 +1,15 @@
-import { ChevronDown, UserRound } from "lucide-react";
+import { ChevronDown, LogOut, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { useOpenPrefs, useSavePrefs } from "@/components/open-prompt";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
 const ROWS = [["open_workspaces", "Workspaces"], ["open_apps", "Apps"]] as const;
 
 /** Username dropdown: where Workspaces and Apps open (New tab / This tab / Ask). Saves on change. */
-export function OpeningMenu({ username }: { username: string }) {
+export function OpeningMenu({ username, onLogout }: { username: string; onLogout?: () => void }) {
   const { data: me, isPending } = useOpenPrefs();
   const save = useSavePrefs();
   const set = (key: (typeof ROWS)[number][0], v: string) =>
@@ -40,6 +40,14 @@ export function OpeningMenu({ username }: { username: string }) {
             </DropdownMenuRadioGroup>
           </div>
         ))}
+        {onLogout && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={onLogout}>
+              <LogOut className="size-4" aria-hidden />Log out
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { SettingsNav } from "./settings-nav";
@@ -6,13 +6,15 @@ import { visibleCategories, type SettingsSection } from "./nav-config";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 
-export function SettingsLayout() {
+export function SettingsLayout({ jump }: { jump?: { id: string } | null } = {}) {
   const { user, loading } = useAuth();
   const reduce = useReducedMotion();
   const cats = useMemo(() => visibleCategories(user?.role === "admin"), [user?.role]);
   const sections = useMemo(() => cats.flatMap((c) => c.sections), [cats]);
   const [activeId, setActiveId] = useState<string | undefined>(
     () => (new URLSearchParams(window.location.search).has("setup") ? "services" : undefined));
+  // A new jump object (e.g. "Add a workstation" on home) opens that section.
+  useEffect(() => { if (jump) setActiveId(jump.id); }, [jump]);
 
   const active: SettingsSection | undefined =
     sections.find((s) => s.id === activeId) ?? sections[0];

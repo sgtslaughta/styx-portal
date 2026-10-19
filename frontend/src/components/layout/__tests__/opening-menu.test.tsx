@@ -31,3 +31,15 @@ test("Ask saves null", async () => {
   fireEvent.click(within(ws).getByRole("menuitemradio", { name: "Ask" }));
   await waitFor(() => expect(setOpenPrefs).toHaveBeenCalledWith({ open_workspaces: null }));
 });
+
+test("Log out is the last menu item", async () => {
+  const onLogout = vi.fn();
+  render(<QueryClientProvider client={new QueryClient()}><OpeningMenu username="alice" onLogout={onLogout} /></QueryClientProvider>);
+  const trigger = screen.getByRole("button", { name: /account menu/i });
+  await waitFor(() => expect(trigger).toBeEnabled());
+  fireEvent.keyDown(trigger, { key: "Enter" });
+  const items = await screen.findAllByRole("menuitem");
+  expect(items[items.length - 1]).toHaveTextContent("Log out");
+  fireEvent.click(items[items.length - 1]!);
+  expect(onLogout).toHaveBeenCalled();
+});

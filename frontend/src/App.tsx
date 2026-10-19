@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AlertTriangle } from "lucide-react";
 import { Header } from "@/components/layout/header";
-import { TabNav } from "@/components/layout/tab-nav";
+import { TabNav, readHomeTab, type MainTab } from "@/components/layout/tab-nav";
 import { InstanceWorkspace } from "@/components/instances/instance-workspace";
+import { AppsGrid } from "@/components/home/apps-grid";
 import { TemplateGrid } from "@/components/templates/template-grid";
 import { RegistryBrowser } from "@/components/templates/registry-browser";
 import { LaunchModal } from "@/components/templates/launch-modal";
@@ -17,7 +18,8 @@ import type { ServiceTemplate, RegistryImage } from "@/lib/types";
 export default function App() {
   const { data: templates } = useTemplates();
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState("instances");
+  const [activeTab, setActiveTab] = useState<MainTab>(readHomeTab);
+  const [settingsJump, setSettingsJump] = useState<{ id: string } | null>(null);
   const [templateSubTab, setTemplateSubTab] = useState<string | null>(null);
   const [launchRegistry, setLaunchRegistry] = useState<RegistryImage | null>(null);
   const [launchTemplate, setLaunchTemplate] = useState<ServiceTemplate | null>(null);
@@ -47,6 +49,11 @@ export default function App() {
     if (user?.role === "admin" && new URLSearchParams(window.location.search).has("setup")) setActiveTab("system");
   }, [user?.role]);
 
+  function openSettings(section?: string) {
+    if (section) setSettingsJump({ id: section });
+    setActiveTab("system");
+  }
+
   function handleImportRegistry(image: RegistryImage) {
     setLaunchRegistry(image);
     setLaunchTemplate(null);
@@ -73,8 +80,11 @@ export default function App() {
       <Header />
       <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
       <main className="min-h-0 flex-1 overflow-y-auto p-6">
-        <div className={activeTab === "instances" ? "h-full" : "hidden"}>
-          <InstanceWorkspace onLaunch={() => setActiveTab("templates")} onOpenSettings={() => setActiveTab("system")} />
+        <div className={activeTab === "workspaces" ? "h-full" : "hidden"}>
+          <InstanceWorkspace onLaunch={() => setActiveTab("templates")} onOpenSettings={openSettings} />
+        </div>
+        <div className={activeTab === "apps" ? "" : "hidden"}>
+          <AppsGrid onOpenSettings={() => openSettings("services")} />
         </div>
         <div className={activeTab === "templates" ? "" : "hidden"}>
           <div className="mb-4 flex gap-1">
@@ -97,7 +107,7 @@ export default function App() {
           </div>
         </div>
         <div className={activeTab === "system" ? "" : "hidden"}>
-          <SettingsLayout />
+          <SettingsLayout jump={settingsJump} />
         </div>
       </main>
       <LaunchModal
