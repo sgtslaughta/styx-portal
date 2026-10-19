@@ -80,10 +80,13 @@ SEAT_DEFAULTS = {"seat_shell": "gnome", "seat_width": 2560, "seat_height": 1440}
 def settings_restart_keys(old: dict, new: dict) -> tuple[str, ...]:
     """Procs to relaunch on a stream_settings push. The gateway is always in:
     idle-timeout config reaches it only through its launch env (STYX_GW_IDLE_*).
-    The GNOME seat restarts only when its shell/geometry changed."""
+    The GNOME seat restarts only when its shell/geometry/framerate changed."""
     keys = ("selkies", "standby", "shell", "clipboard", "gateway")
+    gnome = (new.get("seat_shell") or "gnome") == "gnome"
+    # framerate caps the gnome helper's capture (--max-fps); labwc ignores it
     if any((old.get(k) or d) != (new.get(k) or d)
-           for k, d in SEAT_DEFAULTS.items()):
+           for k, d in SEAT_DEFAULTS.items()) or (
+            gnome and (old.get("framerate") or 60) != (new.get("framerate") or 60)):
         keys += ("seat",)
     return keys
 

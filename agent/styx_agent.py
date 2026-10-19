@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-AGENT_VERSION = "0.8.0"
+AGENT_VERSION = "0.8.1"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -159,6 +159,7 @@ def run(cfg: dict) -> int:
             print(f"seat sink setup failed: {e}", flush=True)
         size = refit.read_size(gseat.size_file) or (
             int(ss.get("seat_width") or 2560), int(ss.get("seat_height") or 1440))
+        gseat.fps = int(ss.get("framerate") or 60)
         gseat.start(*refit.clamp(*size))
         if not gseat.ready():
             last_error = "GNOME seat failed to start — see logs/seat.log"

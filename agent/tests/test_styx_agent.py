@@ -28,7 +28,7 @@ def test_load_config(tmp_path):
 
 
 def test_agent_version_bumped():
-    assert styx_agent.AGENT_VERSION == "0.8.0"
+    assert styx_agent.AGENT_VERSION == "0.8.1"
 
 
 def test_gateway_cmd_secrets_via_env(tmp_path):
@@ -71,7 +71,7 @@ def test_health_payload_reports_mode_and_engine(tmp_path):
     h = styx_agent.health_payload(cfg, selkies_alive=True, gateway_alive=False)
     assert h["mode"] == "seat"
     assert h["engine"] == "pixelflux"
-    assert h["agent_version"] == "0.8.0"
+    assert h["agent_version"] == "0.8.1"
     assert "needs_consent" not in h
     assert h["selkies_alive"] is True and h["gateway_alive"] is False
     assert h["active_connections"] == 0
@@ -184,7 +184,7 @@ def test_run_config_from_0411_is_accepted(tmp_path, monkeypatch):
     monkeypatch.setattr(styx_agent.seat_gnome, "gnome_available", lambda: (True, ""))
     assert styx_agent.pick_seat_shell(cfg) == "gnome"
     p = styx_agent.health_payload(cfg, True, True)
-    assert p["agent_version"] == "0.8.0" and "needs_consent" not in p
+    assert p["agent_version"] == "0.8.1" and "needs_consent" not in p
 
 
 def test_rollback_swaps_dirs(tmp_path, monkeypatch):
@@ -356,3 +356,12 @@ def test_gateway_gets_icon_dir():
            "selkies_password": "p", "stream_settings": {}}
     _, env = styx_agent.build_gateway_cmd(cfg, 18444)
     assert env["STYX_GW_ICON_DIR"] == "/opt/x"
+
+
+def test_framerate_change_restarts_gnome_seat_only():
+    old = {"video_crf": 25, "framerate": 60}
+    assert "seat" in styx_agent.settings_restart_keys(old, {**old, "framerate": 120})
+    assert "seat" not in styx_agent.settings_restart_keys({"video_crf": 25}, {"video_crf": 25, "framerate": 60})
+    assert "seat" not in styx_agent.settings_restart_keys(old, {**old, "video_crf": 30})
+    assert "seat" not in styx_agent.settings_restart_keys(
+        {"seat_shell": "labwc"}, {"seat_shell": "labwc", "framerate": 120})

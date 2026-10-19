@@ -232,3 +232,15 @@ def test_dead_helper_heals_without_restarting_gnome(tmp_path, monkeypatch):
     seat.start(2434, 1262)
     assert seat.ready() is True and started == [(2434, 1262)]
     assert seat.restarts == 0
+
+
+def test_helper_gets_max_fps_arg(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(seat_gnome.subprocess, "Popen",
+                        lambda cmd, **k: calls.append(cmd) or object())
+    seat = seat_gnome.GnomeSeat(tmp_path, str(tmp_path), log=subprocess.DEVNULL)
+    seat._spawn_helper(1920, 1080)
+    assert calls[0][-2:] == ["--max-fps", "60"]
+    seat.fps = 120
+    seat._spawn_helper(1920, 1080)
+    assert calls[1][-2:] == ["--max-fps", "120"]
