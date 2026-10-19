@@ -1,5 +1,5 @@
 import { expect, test, type BrowserContext, type Locator, type Page } from "@playwright/test";
-import { ADMIN, MEMBER, SHOTS, apiCall, ensureService, eventually, isWhoami, openSettings, settled, uiLogin } from "./helpers";
+import { ADMIN, MEMBER, SHOTS, accountMenu, apiCall, ensureService, eventually, isWhoami, openHome, openSettings, settled, uiLogin } from "./helpers";
 import { CHIP_JOBS, MOUNT_STATES, mockApi } from "./shots-mocks";
 
 // Polish screenshots: <screen>-<width>-<theme>.png at 1440x900 and 390x844, light and dark.
@@ -18,7 +18,7 @@ test.beforeAll(async ({ browser }) => {
   const open = async (u?: typeof ADMIN): Promise<Ctx> => {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
-    if (u) { await uiLogin(page, u); await expect(page.getByRole("button", { name: "Log out" })).toBeVisible(); }
+    if (u) { await uiLogin(page, u); await expect(accountMenu(page)).toBeVisible(); }
     return { ctx, page };
   };
   [admin, member, anon] = [await open(ADMIN), await open(MEMBER), await open()];
@@ -118,7 +118,7 @@ test("home with a focused focus app", async () => {
   try {
     await each(async (_w, t, file) => {
       await setTheme(p, t);
-      await p.goto("/");
+      await openHome(p, "Apps");
       await expect(p.getByRole("link", { name: "Open Shot focus" })).toHaveAttribute("aria-current", "true");
       await expect(p.getByRole("link", { name: "Exit Shot focus" })).toBeVisible();
       await p.screenshot({ path: file("home-focus") });
@@ -395,7 +395,7 @@ test("empty states: services, discover, home tiles", async () => {
       await settled(dlg);
       await p.screenshot({ path: file("discover-empty") });
       await p.keyboard.press("Escape");
-      await p.goto("/");
+      await openHome(p, "Apps");
       await expect(p.getByText("No apps yet. Add your first app.")).toBeVisible();
       await p.screenshot({ path: file("home-no-services-admin") });
     });
@@ -405,8 +405,8 @@ test("empty states: services, discover, home tiles", async () => {
   try {
     await each(async (_w, t, file) => {
       await setTheme(m, t);
-      await m.goto("/");
-      await expect(m.getByRole("button", { name: "Log out" })).toBeVisible();
+      await openHome(m, "Apps");
+      await expect(accountMenu(m)).toBeVisible();
       await expect(m.getByText("No apps shared with you yet.")).toBeVisible(); // the real empty state, not the skeleton
       await m.screenshot({ path: file("home-no-tiles-member") });
     });
@@ -461,7 +461,7 @@ test("keyboard focus states", async () => {
       await m.goto("/_styx/open/shotfocus?confirm");
       await kbFocus(m, m.getByRole("link", { name: "Open app" }));
       await m.screenshot({ path: file("focus-confirm-button") });
-      await m.goto("/");
+      await openHome(m, "Apps");
       await kbFocus(m, m.getByRole("link", { name: "Open Shot who" }));
       await m.screenshot({ path: file("focus-tile") });
       await m.goto("/_styx/app/shotwho/");

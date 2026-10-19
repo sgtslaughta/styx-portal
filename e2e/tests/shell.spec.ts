@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import {
-  ADMIN, MEMBER, SHOTS, STYX_COOKIES, ensureService, eventually, headerLines, isWhoami, settled, uiLogin, updateService,
+  ADMIN, MEMBER, SHOTS, STYX_COOKIES, ensureService, eventually, headerLines, isWhoami, openHome, settled, uiLogin, updateService, accountMenu,
 } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
@@ -15,7 +15,7 @@ test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext();
     const page = await ctx.newPage();
     await uiLogin(page, u);
-    await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
+    await expect(accountMenu(page)).toBeVisible();
     if (who === "admin") admin = { ctx, page }; else member = { ctx, page };
   }
   const c = admin.ctx;
@@ -40,7 +40,7 @@ const dock = (p: Page) => p.getByRole("dialog");
 
 test("s1 shell keeps the URL in sync with the frame", async () => {
   const p = member.page;
-  await p.goto("/");
+  await openHome(p, "Apps");
   await p.getByRole("link", { name: "Open Sonarr" }).click();
   // First open asks where to open; this tab keeps the rest of the suite in one page.
   await p.getByRole("dialog", { name: "Open Sonarr" }).getByRole("button", { name: "Open here" }).click();
@@ -70,7 +70,7 @@ async function homeWhileFocused(p: Page) {
     const cookie = (h["cookie"] ?? "").split("; ").filter((c) => !c.startsWith("styx_svc=")).join("; ");
     await route.fulfill({ response: await route.fetch({ headers: { ...h, cookie } }) });
   });
-  await p.goto("/");
+  await openHome(p, "Apps");
   await expect(p.getByRole("region", { name: "Apps" })).toBeVisible();
 }
 
@@ -195,7 +195,7 @@ test("s3 focus swap clears root service workers; exit clears styx_svc", async ()
   await p.getByRole("link", { name: "Exit Focusapp Two" }).click();
   await expect.poll(async () => (await member.ctx.cookies()).some((c) => c.name === "styx_svc")).toBe(false);
   await p.unrouteAll({ behavior: "ignoreErrors" });
-  await p.goto("/");
+  await openHome(p, "Apps");
   await expect(p.getByRole("link", { name: "Open Focusapp Two" })).toBeVisible();
   expect((await member.ctx.cookies()).some((c) => c.name === "styx_svc")).toBe(false);
   } finally { await p.close(); }

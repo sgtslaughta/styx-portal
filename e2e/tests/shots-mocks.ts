@@ -53,3 +53,11 @@ export const INSTANCES = [
   inst(4, "Old build", "stopped", { started_at: null }),
   inst(5, "Broken app", "error", { error_message: "Container exited with code 1" }),
 ];
+
+const ICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#4f46e5"/><rect x="7" y="9" width="18" height="11" rx="1.5" fill="#e0e7ff"/><rect x="12" y="23" width="8" height="2" fill="#e0e7ff"/></svg>';
+
+/** Workstation icons: a small valid SVG so shots show real icons instead of broken images. */
+export async function mockWorkstationIcons(page: Page) {
+  await page.route("**/api/workstations/*/icon*", (route: Route) =>
+    route.fulfill({ status: 200, contentType: "image/svg+xml", body: ICON_SVG }));
+}

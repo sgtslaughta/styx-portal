@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-// jsdom has no CSS layout, so assert the class that right-aligns the user controls at 390.
+// jsdom has no layout: assert the source keeps the user cluster right-aligned and the chips gone.
 describe("Header", () => {
-  it("keeps user controls right-aligned when the count chips are hidden on mobile", () => {
+  it("has no instance count chips; account menu and theme toggle sit right", () => {
     const src = readFileSync("src/components/layout/header.tsx", "utf8");
-    expect(src).toContain("flex items-center gap-2 max-sm:ml-auto");
+    expect(src).not.toContain("CountChip");
+    expect(src).not.toContain("useInstances");
+    expect(src).toContain('className="ml-auto flex items-center gap-2"');
   });
 });

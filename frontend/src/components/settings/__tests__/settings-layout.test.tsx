@@ -24,4 +24,9 @@ describe("SettingsLayout", () => {
     renderLayout();
     expect(screen.getByText("pane-services")).toBeInTheDocument();
   });
+  test("jump opens the requested section", async () => {
+    render(<TooltipProvider><SettingsLayout jump={{ id: "services" }} /></TooltipProvider>);
+    // AnimatePresence mode="wait" swaps the pane after the exit animation.
+    expect(await screen.findByText("pane-services")).toBeInTheDocument();
+  });
 });

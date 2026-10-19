@@ -1,5 +1,5 @@
 import { expect, test, type BrowserContext } from "@playwright/test";
-import { ADMIN, apiCall, uiLogin } from "./helpers";
+import { ADMIN, accountMenu, apiCall, openHome, uiLogin } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
@@ -7,9 +7,9 @@ test("first app open asks, remember new tab, second open goes straight to a new 
   const ctx = await browser.newContext();
   const p = await ctx.newPage();
   await uiLogin(p, ADMIN);
-  await expect(p.getByRole("button", { name: "Log out" })).toBeVisible();
+  await expect(accountMenu(p)).toBeVisible();
   await apiCall(ctx, "PUT", "/api/auth/me/preferences", { open_apps: null, open_workspaces: null });
-  await p.goto("/");
+  await openHome(p, "Apps");
   const tile = p.getByRole("region", { name: "Apps" }).getByRole("link", { name: "Open Sonarr" });
   await tile.click();
   const dlg = p.getByRole("dialog", { name: "Open Sonarr" });
@@ -30,12 +30,12 @@ test("home tab persists across reload", async ({ browser }) => {
   const ctx = await browser.newContext();
   const p = await ctx.newPage();
   await uiLogin(p, ADMIN);
-  await p.getByRole("tab", { name: "Workspaces" }).click();
-  await p.reload();
-  await expect(p.getByRole("tab", { name: "Workspaces" })).toHaveAttribute("aria-selected", "true");
-  await p.getByRole("tab", { name: "Apps" }).click();
-  await p.reload();
-  await expect(p.getByRole("tab", { name: "Apps" })).toHaveAttribute("aria-selected", "true");
+  const nav = p.getByRole("navigation", { name: "Main" });
+  for (const tab of ["Workspaces", "Apps"] as const) {
+    await nav.getByRole("button", { name: tab, exact: true }).click();
+    await p.reload();
+    await expect(nav.getByRole("button", { name: tab, exact: true })).toHaveAttribute("aria-current", "page");
+  }
   await ctx.close();
 });
 
@@ -43,7 +43,7 @@ test("dock switches between Apps and Workspaces", async ({ browser }) => {
   const ctx = await browser.newContext();
   const p = await ctx.newPage();
   await uiLogin(p, ADMIN);
-  await expect(p.getByRole("button", { name: "Log out" })).toBeVisible(); // login must land before we navigate away
+  await expect(accountMenu(p)).toBeVisible(); // login must land before we navigate away
   await p.goto("/_styx/app/sonarr/");
   await p.locator('[aria-label="Open the Styx menu (Alt+Shift+S)"]').click();
   const dock = p.getByRole("dialog");
@@ -72,14 +72,15 @@ test("workspace Connect: prompt, new tab goes via /connecting to the stream; doc
   const ctx = await browser.newContext();
   const p = await ctx.newPage();
   await uiLogin(p, ADMIN);
-  await expect(p.getByRole("button", { name: "Log out" })).toBeVisible();
+  await expect(accountMenu(p)).toBeVisible();
   try {
     await apiCall(ctx, "PUT", "/api/auth/me/preferences", { open_apps: null, open_workspaces: null });
     await stubDesk(ctx);
     // a) home
-    await p.goto("/");
-    await p.getByRole("tab", { name: "Workspaces" }).click();
-    await p.getByRole("button", { name: "Connect" }).first().click();
+    await openHome(p, "Workspaces");
+    await p.getByRole("button", { name: /^Desk/ }).click(); // select the row: the pane owns Connect
+    await expect(p.getByRole("heading", { level: 2, name: "Desk" })).toBeVisible();
+    await p.getByRole("button", { name: "Connect", exact: true }).click();
     const dlg = p.getByRole("dialog", { name: "Open Desk" });
     const [tab] = await Promise.all([ctx.waitForEvent("page"), dlg.getByRole("button", { name: "Open in new tab" }).click()]);
     await expect(tab).toHaveURL(/\/i\/desk\/$/, { timeout: 15_000 });
