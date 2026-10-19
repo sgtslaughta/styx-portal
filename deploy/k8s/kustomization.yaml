@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - storageclass.yaml
+  - priorityclass.yaml
+  - pvc.yaml
+  - configmap.yaml
+  - rbac.yaml
+  - backend.yaml
+  - frontend.yaml
+  - networkpolicy.yaml
+  - backup-cronjob.yaml
+  - prometheusrule.yaml
+images:
+  - name: ghcr.io/sgtslaughta/styx-backend
+    newTag: 0.0.0-set-at-release
+  - name: ghcr.io/sgtslaughta/styx-frontend
+    newTag: 0.0.0-set-at-release

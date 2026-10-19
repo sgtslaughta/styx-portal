@@ -1,0 +1,63 @@
+# Daily consistent SQLite backup -> MinIO. Runs on the backend's node (RWO volume).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: styx-db-backup
+  namespace: styx
+spec:
+  schedule: "17 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          priorityClassName: styx-critical
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            runAsNonRoot: true
+            seccompProfile: {type: RuntimeDefault}
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - topologyKey: kubernetes.io/hostname
+                  labelSelector:
+                    matchLabels: {app: styx-backend}
+          initContainers:
+            - name: dump
+              image: keinos/sqlite3:3.46.1
+              command: [sh, -ec]
+              args:
+                - |
+                  sqlite3 /app/data/styx-portal.db ".backup /tmp/styx.db"
+                  test "$(sqlite3 /tmp/styx.db 'PRAGMA integrity_check;')" = ok
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: {drop: [ALL]}
+              volumeMounts:
+                - {name: data, mountPath: /app/data, readOnly: true}
+                - {name: tmp, mountPath: /tmp}
+          containers:
+            - name: upload
+              image: minio/mc:RELEASE.2024-11-21T17-21-54Z
+              command: [sh, -ec]
+              args:
+                - |
+                  mc --config-dir /tmp/mc cp /tmp/styx.db "local/styx-backups/styx-$(date +%F).db"
+                  mc --config-dir /tmp/mc rm --recursive --force --older-than 14d local/styx-backups/
+              envFrom:
+                - secretRef: {name: styx-backup-s3}
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: {drop: [ALL]}
+              volumeMounts:
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - name: data
+              persistentVolumeClaim: {claimName: styx-data, readOnly: true}
+            - {name: tmp, emptyDir: {}}

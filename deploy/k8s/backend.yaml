@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: styx
+  labels: {app: styx-backend}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate # RWO volume + SQLite: never two writers
+  selector:
+    matchLabels: {app: styx-backend}
+  template:
+    metadata:
+      labels: {app: styx-backend}
+    spec:
+      serviceAccountName: styx-backend
+      priorityClassName: styx-critical
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - {key: kubernetes.io/hostname, operator: NotIn, values: [k1-n4]}
+      tolerations:
+        - {key: node.kubernetes.io/not-ready, operator: Exists, effect: NoExecute, tolerationSeconds: 30}
+        - {key: node.kubernetes.io/unreachable, operator: Exists, effect: NoExecute, tolerationSeconds: 30}
+      containers:
+        - name: backend
+          image: ghcr.io/sgtslaughta/styx-backend
+          ports: [{name: http, containerPort: 8000}]
+          envFrom:
+            - configMapRef: {name: styx-config}
+            - secretRef: {name: styx-secrets}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          startupProbe:
+            httpGet: {path: /api/health, port: 8000}
+            periodSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /api/health, port: 8000}
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: {path: /api/health, port: 8000}
+            periodSeconds: 20
+            failureThreshold: 6
+            timeoutSeconds: 5
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}
+          volumeMounts:
+            - {name: data, mountPath: /app/data}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: styx-data}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: styx
+spec:
+  selector: {app: styx-backend}
+  ports: [{name: http, port: 8000, targetPort: 8000}]

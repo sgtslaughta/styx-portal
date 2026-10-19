@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: styx-config
+  namespace: styx
+data:
+  # backend
+  DOMAIN: g.jmolabs.dev
+  DEPLOY_MODE: tunnel
+  COOKIE_SECURE: "true"
+  DATABASE_URL: sqlite+aiosqlite:///./data/styx-portal.db
+  ROUTE_BACKEND: k8s
+  K8S_NAMESPACE: styx
+  BACKEND_INTERNAL_URL: http://backend.styx.svc.cluster.local:8000
+  TRUSTED_PROXY_CIDRS: 10.42.0.0/16
+  TUNNEL_PEER_CIDRS: ""
+  TUNNEL_PEER_K8S: cloudflared:pod=cloudflared
+  WORKSTATION_ALLOW_CIDRS: 192.168.1.0/24
+  TEMPLATES_DIR: /app/templates
+  DOCKER_SOCKET: unix:///nonexistent.sock
+  ENABLE_DOCS: "false"
+  DEV_CORS: "false"
+  # frontend (nginx)
+  NGINX_RESOLVER: 10.43.0.10
+  BACKEND_HOST: backend.styx.svc.cluster.local:8000
