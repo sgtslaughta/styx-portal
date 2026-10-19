@@ -68,3 +68,27 @@ def test_allow_cidrs_empty_default_allows():
     assert Settings.model_fields["WORKSTATION_ALLOW_CIDRS"].default == ""
     assert schemas._settings.WORKSTATION_ALLOW_CIDRS == ""
     assert WorkstationRegisterRequest(token="t", hostname="h", lan_ip="10.43.0.1").lan_ip
+
+
+def test_k8s_mode_empty_allow_list_denies(monkeypatch, caplog):
+    import logging
+    from app import schemas
+    from app.services.k8s_routes import to_k8s_objects
+    from app.services.route_writer import build_routes_config
+    monkeypatch.setattr(schemas._settings, "ROUTE_BACKEND", "k8s")
+    monkeypatch.setattr(schemas._settings, "WORKSTATION_ALLOW_CIDRS", "")
+    with pytest.raises(ValidationError, match="allowed workstation network"):
+        WorkstationRegisterRequest(token="t", hostname="h", lan_ip="192.168.1.50")
+    with pytest.raises(ValidationError, match="allowed workstation network"):
+        WorkstationHeartbeatRequest(lan_ip="192.168.1.50")
+    ws = {"id": "ws1", "subdomain": "desk", "lan_ip": "192.168.1.50", "port": 8443,
+          "protocol": "http", "selkies_password": "pw"}
+    cfg = build_routes_config([], "s.example", "tunnel", workstations=[ws])
+    with caplog.at_level(logging.ERROR, logger="styx-portal"):
+        objs = to_k8s_objects(cfg, "styx")
+    names = {(o["kind"], o["metadata"]["name"]) for o in objs}
+    assert not {("Service", "ws-ws1"), ("EndpointSlice", "ws-ws1-ep"),
+                ("IngressRoute", "ws-ws1")} & names
+    assert ("IngressRoute", "api") in names
+    assert [r for r in caplog.records if r.levelno == logging.ERROR
+            and "WORKSTATION_ALLOW_CIDRS is required" in r.getMessage()]

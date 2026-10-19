@@ -355,8 +355,15 @@ class EnrollTokenOut(BaseModel):
 _settings = Settings()
 
 
+def allow_list_missing() -> bool:
+    """k8s requires WORKSTATION_ALLOW_CIDRS (pod/service IPs are reachable); compose does not."""
+    return _settings.ROUTE_BACKEND == "k8s" and not _settings.WORKSTATION_ALLOW_CIDRS.strip()
+
+
 def workstation_ip_allowed(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    """True when ip is inside WORKSTATION_ALLOW_CIDRS (or the list is empty)."""
+    """True when ip is inside WORKSTATION_ALLOW_CIDRS. Empty list: any (compose), none (k8s)."""
+    if allow_list_missing():
+        return False
     nets = [ipaddress.ip_network(c.strip(), strict=False)
             for c in _settings.WORKSTATION_ALLOW_CIDRS.split(",") if c.strip()]
     return not nets or any(ip in n for n in nets)

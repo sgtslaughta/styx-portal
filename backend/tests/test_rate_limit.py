@@ -295,6 +295,7 @@ def k8s_tunnel(monkeypatch):
     monkeypatch.setattr(rate_limit, "_pod_ips", set())
     monkeypatch.setattr(rate_limit, "_pod_next", 0.0)
     monkeypatch.setattr(rate_limit, "_pod_thread", None)
+    monkeypatch.setattr(rate_limit, "_pod_ok_at", None)
     return rate_limit
 
 
@@ -302,18 +303,22 @@ def _k8s_req(xff):
     return _FakeReq({"cf-connecting-ip": "1.2.3.4", "x-forwarded-for": xff}, host="10.42.3.10")
 
 
-def test_cf_header_trusted_from_cloudflared_pod(k8s_tunnel, monkeypatch):
+@pytest.fixture
+def fresh_pods(k8s_tunnel, monkeypatch):
+    import time
+    monkeypatch.setattr(k8s_tunnel, "_pod_ok_at", time.monotonic())
     monkeypatch.setattr(k8s_tunnel, "_tunnel_pod_ips", lambda: {"10.42.3.70"})
+
+
+def test_cf_header_trusted_from_cloudflared_pod(k8s_tunnel, fresh_pods):
     assert k8s_tunnel.client_ip_resolved(_k8s_req("10.42.3.70")) == ("1.2.3.4", True)
 
 
-def test_cf_header_forged_from_lan_ignored(k8s_tunnel, monkeypatch):
-    monkeypatch.setattr(k8s_tunnel, "_tunnel_pod_ips", lambda: {"10.42.3.70"})
+def test_cf_header_forged_from_lan_ignored(k8s_tunnel, fresh_pods):
     assert k8s_tunnel.client_ip_resolved(_k8s_req("192.168.1.196")) == ("192.168.1.196", True)
 
 
-def test_cf_header_forged_from_other_pod_ignored(k8s_tunnel, monkeypatch):
-    monkeypatch.setattr(k8s_tunnel, "_tunnel_pod_ips", lambda: {"10.42.3.70"})
+def test_cf_header_forged_from_other_pod_ignored(k8s_tunnel, fresh_pods):
     assert k8s_tunnel.client_ip_resolved(_k8s_req("10.42.1.99")) == ("10.42.1.99", True)
 
 
@@ -337,10 +342,12 @@ def test_pod_lookup_failure_fails_closed(k8s_tunnel, monkeypatch):
     from app.services import k8s_api
     client = _PodClient(RuntimeError("k8s down"))
     monkeypatch.setattr(k8s_api, "incluster_client", lambda: client)
-    assert k8s_tunnel.client_ip_resolved(_k8s_req("10.42.3.70")) == ("10.42.3.70", True)
+    assert k8s_tunnel.client_ip_resolved(_k8s_req("10.42.3.70")) == ("10.42.3.70", False)
     _settle(k8s_tunnel)
     assert client.calls == [("cloudflared", "pod=cloudflared", 2)]
-    assert k8s_tunnel.client_ip_resolved(_k8s_req("10.42.3.70")) == ("10.42.3.70", True)
+    assert k8s_tunnel.client_ip_resolved(_k8s_req("10.42.3.70")) == ("10.42.3.70", False)
+    _settle(k8s_tunnel)
+    assert len(client.calls) == 1   # failure retry is rate-limited (_POD_RETRY)
 
 
 def test_pod_lookup_failure_keeps_last_good_set(k8s_tunnel, monkeypatch):
@@ -379,7 +386,7 @@ def test_pod_lookup_never_blocks_the_request(k8s_tunnel, monkeypatch):
             gate.wait(5)
             return {"10.42.3.70"}
     monkeypatch.setattr(k8s_api, "incluster_client", lambda: _Slow(None))
-    assert k8s_tunnel.client_ip_resolved(_k8s_req("10.42.3.70")) == ("10.42.3.70", True)
+    assert k8s_tunnel.client_ip_resolved(_k8s_req("10.42.3.70")) == ("10.42.3.70", False)
     gate.set()
     _settle(k8s_tunnel)
 
@@ -393,3 +400,50 @@ def test_no_k8s_lookup_when_tunnel_peer_k8s_empty(monkeypatch):
     req = _FakeReq({"cf-connecting-ip": "203.0.113.7", "x-forwarded-for": "172.31.254.2"})
     assert rate_limit.client_ip_resolved(req) == ("203.0.113.7", True)
     assert rate_limit._tunnel_pod_ips() == set()
+
+
+def test_cache_miss_stale_returns_unresolved(k8s_tunnel, monkeypatch):
+    """New cloudflared pod (rollout) not yet in a stale set: never a bannable resolved IP."""
+    import threading
+    import time
+    from app.services import k8s_api
+    gate = threading.Event()
+
+    class _Gated(_PodClient):
+        def list_pod_ips(self, *a, **k):
+            gate.wait(5)
+            return super().list_pod_ips(*a, **k)
+    client = _Gated({"10.42.3.70", "10.42.3.71"})
+    monkeypatch.setattr(k8s_api, "incluster_client", lambda: client)
+    monkeypatch.setattr(k8s_tunnel, "_pod_ips", {"10.42.3.70"})
+    monkeypatch.setattr(k8s_tunnel, "_pod_ok_at", time.monotonic() - 31)
+    assert k8s_tunnel.client_ip_resolved(_k8s_req("10.42.3.71")) == ("10.42.3.71", False)
+    gate.set()
+    _settle(k8s_tunnel)
+    assert len(client.calls) == 1   # the miss triggered a refresh
+    assert k8s_tunnel.client_ip_resolved(_k8s_req("10.42.3.71")) == ("1.2.3.4", True)
+
+
+def test_cache_miss_fresh_stays_resolved(k8s_tunnel, monkeypatch):
+    import time
+    from app.services import k8s_api
+    client = _PodClient({"10.42.3.70"})
+    monkeypatch.setattr(k8s_api, "incluster_client", lambda: client)
+    now = time.monotonic()
+    monkeypatch.setattr(k8s_tunnel, "_pod_ips", {"10.42.3.70"})
+    monkeypatch.setattr(k8s_tunnel, "_pod_ok_at", now)
+    monkeypatch.setattr(k8s_tunnel, "_pod_next", now + 30)
+    assert k8s_tunnel.client_ip_resolved(_k8s_req("192.168.1.196")) == ("192.168.1.196", True)
+    _settle(k8s_tunnel)
+    assert client.calls == []
+
+
+def test_cache_miss_stale_respects_retry_guard(k8s_tunnel, monkeypatch):
+    import time
+    from app.services import k8s_api
+    client = _PodClient(set())
+    monkeypatch.setattr(k8s_api, "incluster_client", lambda: client)
+    monkeypatch.setattr(k8s_tunnel, "_pod_next", time.monotonic() + 5)   # failed just now
+    assert k8s_tunnel.client_ip_resolved(_k8s_req("10.42.3.71")) == ("10.42.3.71", False)
+    _settle(k8s_tunnel)
+    assert client.calls == []

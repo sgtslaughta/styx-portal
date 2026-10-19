@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from app.schemas import workstation_ip_allowed
+from app.schemas import allow_list_missing, workstation_ip_allowed
 
 logger = logging.getLogger("styx-portal")
 MANAGED_LABEL = {"app.kubernetes.io/managed-by": "styx-backend"}
@@ -73,6 +73,9 @@ def to_k8s_objects(config: dict, namespace: str) -> list[dict]:
     objs: list[dict] = []
     refs: dict[str, dict] = {}
     skipped: set[str] = set()
+    if allow_list_missing():
+        logger.error("k8s: WORKSTATION_ALLOW_CIDRS is required with ROUTE_BACKEND=k8s; "
+                     "every IP upstream (workstation) route is skipped until it is set")
     for name, svc in http.get("services", {}).items():
         ip = _ip(urlparse(svc["loadBalancer"]["servers"][0]["url"]).hostname or "")
         if ip is not None and not workstation_ip_allowed(ip):

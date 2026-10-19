@@ -83,17 +83,19 @@ def _peer_is_trusted_proxy(host: str | None) -> bool:
 _POD_TTL, _POD_RETRY, _POD_TIMEOUT = 30, 5, 2
 _pod_ips: set[str] = set()
 _pod_next = 0.0                      # monotonic time the next refresh is due
+_pod_ok_at: float | None = None      # monotonic time of the last successful lookup
 _pod_thread: threading.Thread | None = None
 _pod_lock = threading.Lock()
 
 
 def _refresh_tunnel_pod_ips(spec: str) -> None:
-    global _pod_ips, _pod_next
+    global _pod_ips, _pod_next, _pod_ok_at
     from app.services.k8s_api import incluster_client
     ns, _, selector = spec.partition(":")
     try:
         _pod_ips = incluster_client().list_pod_ips(ns, selector, timeout=_POD_TIMEOUT)
-        _pod_next = time.monotonic() + _POD_TTL
+        _pod_ok_at = time.monotonic()
+        _pod_next = _pod_ok_at + _POD_TTL
     except Exception as e:
         _pod_next = time.monotonic() + _POD_RETRY
         logger.warning("cloudflared pod lookup failed, keeping %d cached IPs: %s",
@@ -110,6 +112,10 @@ def _tunnel_pod_ips() -> set[str]:
                                                name="tunnel-pod-ips", daemon=True)
                 _pod_thread.start()
     return _pod_ips
+
+
+def _pod_cache_fresh() -> bool:
+    return _pod_ok_at is not None and time.monotonic() - _pod_ok_at < _POD_TTL
 
 
 def _is_tunnel_peer(ip: str) -> bool:
@@ -163,9 +169,15 @@ def client_ip_resolved(request) -> tuple[str, bool]:
     # CF-Connecting-IP is only believed when the peer Traefik saw (the XFF entry it
     # appended: the last one) is in the tunnel subnet or is a live cloudflared pod (k8s);
     # Traefik passes the header through unchanged, so anyone reaching a published Traefik port could forge it.
-    if (cf and xff and _settings.DEPLOY_MODE == "tunnel"
-            and _is_tunnel_peer(xff.split(",")[-1].strip())):
-        return cf.strip(), True
+    if cf and xff and _settings.DEPLOY_MODE == "tunnel":
+        hop = xff.split(",")[-1].strip()
+        if _is_tunnel_peer(hop):
+            return cf.strip(), True
+        if _settings.TUNNEL_PEER_K8S and not _pod_cache_fresh():
+            # Pod set stale/never loaded (boot, cloudflared rollout, API down): the hop may be
+            # a new cloudflared pod carrying every tunnel user, so it must never be banned.
+            # _is_tunnel_peer already kicked the refresh (bounded by _POD_RETRY + one thread).
+            return hop, False
     if xff:
         return xff.split(",")[0].strip(), True
     return peer, False   # fell back to the proxy itself: the real client is unknown

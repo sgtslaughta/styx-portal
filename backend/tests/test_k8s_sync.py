@@ -273,3 +273,13 @@ def test_sync_aborts_on_transport_error():
     with pytest.raises(K8sSyncError, match="unreachable"):
         sync_objects(_client(handler), _desired(), "styx")
     assert len(reqs) == 1 and reqs[0].method == "PATCH"
+
+
+def test_list_pod_ips_skips_host_network():
+    def handler(r):
+        return httpx.Response(200, json={"items": [
+            {"status": {"phase": "Running", "podIP": "10.42.3.70", "hostIP": "192.168.1.11"}},
+            {"status": {"phase": "Running", "podIP": "192.168.1.12", "hostIP": "192.168.1.12"}},
+        ]})
+
+    assert _client(handler).list_pod_ips("cloudflared", "pod=cloudflared") == {"10.42.3.70"}

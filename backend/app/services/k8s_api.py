@@ -109,13 +109,16 @@ class K8sClient:
 
     def list_pod_ips(self, namespace: str, label_selector: str,
                      timeout: float = 10) -> set[str]:
+        """IPs of Running pods, excluding hostNetwork pods (podIP == hostIP: the node's
+        address, shared with everything else on that node, never identifies the pod)."""
         r = self._http.get(_path("v1", "Pod", namespace),
                            params={"labelSelector": label_selector},
                            headers=self._auth(), timeout=timeout)
         _check(r)
         return {i["status"]["podIP"] for i in r.json().get("items", [])
                 if i.get("status", {}).get("phase") == "Running"
-                and i["status"].get("podIP")}
+                and i["status"].get("podIP")
+                and i["status"]["podIP"] != i["status"].get("hostIP")}
 
 
 _client: K8sClient | None = None
