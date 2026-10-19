@@ -66,7 +66,7 @@ The owner upgraded this workstation (EliteMini, `192.168.1.196`, Ubuntu 26.04) a
 - LAN routers (`*-lan`) and `tls` LAN-cert blocks are skipped in k8s mode (decision A).
 - Proxied-service routes: skipped in k8s mode for MVP (non-goal). The UI may still list services, but no routes get emitted.
 - RBAC: ServiceAccount `styx-backend`, a Role in `styx` allowing get/list/watch/create/update/patch/delete on `ingressroutes`, `middlewares`, `serverstransports` (traefik.io), `services`, `endpointslices`/`endpoints`. Nothing cluster-scoped.
-- Static routes that compose's `traefik/dynamic.yml` provides (api, frontend, error pages, ratelimit, ip-ban-gate) ship as **static manifests in `deploy/k8s/`** (designer's call). The writer emits only per-workstation objects and never touches the static ones (they lack the managed-by label, so prune skips them).
+- Static routes that compose's `traefik/dynamic.yml` provides (api, frontend, error pages, ratelimit, ip-ban-gate) are **emitted by the writer** along with the workstation objects, translated from the same `build_routes_config()` dict (designer's call, revised during planning: one source of truth, and ratelimit stays live-tunable from Settings). `deploy/k8s/` ships no IngressRoutes.
 
 ### Client-IP trust boundary (security-critical)
 
