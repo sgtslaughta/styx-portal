@@ -5,13 +5,12 @@ import { ExternalLink, Pause, Play, RotateCcw, Square, Trash2 } from "lucide-rea
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { statusMeta } from "@/lib/status";
-import { openPending } from "@/lib/connect-wipe";
-import { useOpenChoice } from "@/components/open-prompt";
 import { cn } from "@/lib/utils";
 import {
   useDeleteInstance, usePauseInstance, useRestartInstance,
   useStartInstance, useStopInstance, useUnpauseInstance,
 } from "@/hooks/use-instances";
+import { useInstanceConnect } from "@/hooks/use-instance-connect";
 import type { Instance } from "@/lib/types";
 
 interface ActionBarProps {
@@ -24,7 +23,7 @@ interface ActionBarProps {
 type SimpleMutation = { mutate: (id: string, opts?: { onError?: (e: Error) => void; onSuccess?: () => void }) => void };
 
 export function ActionBar({ instance, size = "default", showConnect = true, className }: ActionBarProps) {
-  const choose = useOpenChoice();
+  const connect = useInstanceConnect();
   const start = useStartInstance();
   const stop = useStopInstance();
   const restart = useRestartInstance();
@@ -60,19 +59,12 @@ export function ActionBar({ instance, size = "default", showConnect = true, clas
     );
   }
 
-  function connect() {
-    choose("workspaces", instance.name, (mode) => {
-      openPending(mode, `Launching ${instance.name}…`, async () => `/i/${instance.subdomain}/`)
-        .catch((e: Error) => toast.error(`Connect failed: ${e.message}`));
-    });
-  }
-
   return (
     <div className={cn("flex items-center gap-1.5", className)}>
       {group === "running" && (
         <>
           {showConnect && (
-            <Button size={btn} onClick={connect}>
+            <Button size={btn} onClick={() => connect(instance)}>
               <ExternalLink /> Connect
             </Button>
           )}
