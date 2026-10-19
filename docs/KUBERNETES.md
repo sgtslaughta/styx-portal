@@ -15,6 +15,9 @@ and (optionally) kube-prometheus-stack.
 Edit `deploy/k8s/configmap.yaml` first (`DOMAIN`, `TRUSTED_PROXY_CIDRS` = your
 pod CIDR, `WORKSTATION_ALLOW_CIDRS` = your LAN) and set the image tag in
 `deploy/k8s/kustomization.yaml` (`images:` block) to the release you deploy.
+The tag must be **>= v2.3.0**, the first release with `ROUTE_BACKEND=k8s`; older
+tags boot healthy but publish no IngressRoutes, so every route returns 404.
+After boot, check `kubectl -n styx get ingressroutes` (expect the Styx base routes).
 
 ## Install
 
@@ -111,9 +114,7 @@ non-Docker services work.
 
 - Backend: 1 replica, `Recreate` strategy (RWO volume + SQLite allow one writer).
   Startup probe allows 150s to boot; liveness is deliberately slow (6 failures x 20s) so a busy backend is never killed.
-- Node loss: `not-ready`/`unreachable` tolerations of 30s evict the pod about 30s after the node is declared lost, but that does not mean the replacement starts in 30s. With Longhorn `node-down-pod-deletion-policy=do-nothing` (the current cluster setting) the old pod stays `Terminating` and the RWO volume stays attached to the dead node, so the new pod waits on Multi-Attach until Kubernetes force-detaches (about 6 minutes). To recover immediately, force-delete the stuck pod:
-  `kubectl -n styx delete pod -l app=styx-backend --force --grace-period=0`.
-  To make this automatic, set the Longhorn setting `node-down-pod-deletion-policy` to `delete-both-statefulset-and-deployment-pod`. That is a shared cluster component, so it is your decision; these manifests do not change it.
+- Node loss: `not-ready`/`unreachable` tolerations of 30s evict the pod about 30s after the node is declared lost, but that does not mean the replacement starts in 30s. The Longhorn setting `node-down-pod-deletion-policy` is `delete-both-statefulset-and-deployment-pod` (live), so Longhorn force-deletes pods on a down node and the `Recreate` backend reschedules after the 30s toleration plus the Longhorn detach, instead of waiting about 6 minutes on Multi-Attach. This is a shared cluster setting; these manifests do not change it.
 - Backend prefers to avoid node `k1-n4` (the single control-plane node).
 - Frontend: 2 replicas spread across nodes, PodDisruptionBudget `minAvailable: 1`.
 - Both use PriorityClass `styx-critical` so they preempt ordinary workloads under pressure.
@@ -140,7 +141,15 @@ The backup volume lives in the same Longhorn cluster as the data. Periodically
 copy it off-cluster (for example `kubectl cp` from a pod mounting `styx-backups`).
 
 Restore (backend stopped, then copy a dump over the DB using the restore pod
-from the migration section, mounting `styx-backups` as well):
+from the migration section). The pod's `--overrides` JSON must also mount the
+`styx-backups` PVC: add `{"name":"b","persistentVolumeClaim":{"claimName":"styx-backups"}}`
+to `volumes` and `{"name":"b","mountPath":"/backups"}` to `volumeMounts`.
+The backend image has no `sqlite3` CLI; use Python (busybox has neither, so run
+this in a pod from the backend image, or on a copied file):
+
+```bash
+python -c "import sqlite3,sys; sqlite3.connect(sys.argv[1]).backup(sqlite3.connect(sys.argv[2]))" SRC.db DST.db
+```
 
 ```bash
 kubectl -n styx scale deploy/backend --replicas=0

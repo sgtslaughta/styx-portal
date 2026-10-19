@@ -12,6 +12,8 @@ resources:
   - networkpolicy.yaml
   - backup-cronjob.yaml
   - prometheusrule.yaml
+# Tag must be >= v2.3.0 (first release with ROUTE_BACKEND=k8s); older tags boot
+# healthy but publish no IngressRoutes (404). Check: kubectl -n styx get ingressroutes
 images:
   - name: ghcr.io/sgtslaughta/styx-backend
     newTag: 0.0.0-set-at-release
