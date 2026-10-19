@@ -4,7 +4,7 @@ import logging
 import httpx
 import pytest
 
-from app.services import route_writer
+from app.services import k8s_api, route_writer
 from app.services.k8s_api import K8sClient
 from app.services.k8s_routes import K8sSyncError, sync_objects, to_k8s_objects
 from app.services.route_writer import build_routes_config
@@ -94,7 +94,7 @@ def test_list_pod_ips_running_only():
 
 def _k8s_mode(monkeypatch, handler):
     monkeypatch.setattr(route_writer._settings, "ROUTE_BACKEND", "k8s")
-    monkeypatch.setattr(route_writer, "_k8s_client", _client(handler))
+    monkeypatch.setattr(k8s_api, "_client", _client(handler))
 
 
 def test_write_routes_k8s_api_error_logged_not_raised(monkeypatch, caplog):

@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import ssl
+import threading
 import time
 
 import httpx
@@ -106,11 +107,25 @@ class K8sClient:
         if r.status_code != 404:
             _check(r)
 
-    def list_pod_ips(self, namespace: str, label_selector: str) -> set[str]:
+    def list_pod_ips(self, namespace: str, label_selector: str,
+                     timeout: float = 10) -> set[str]:
         r = self._http.get(_path("v1", "Pod", namespace),
                            params={"labelSelector": label_selector},
-                           headers=self._auth())
+                           headers=self._auth(), timeout=timeout)
         _check(r)
         return {i["status"]["podIP"] for i in r.json().get("items", [])
                 if i.get("status", {}).get("phase") == "Running"
                 and i["status"].get("podIP")}
+
+
+_client: K8sClient | None = None
+_client_lock = threading.Lock()
+
+
+def incluster_client() -> K8sClient:
+    """The process-wide in-cluster client, built on first use."""
+    global _client
+    with _client_lock:
+        if _client is None:
+            _client = K8sClient.from_incluster()
+        return _client

@@ -276,3 +276,120 @@ def test_empty_snapshot_logs_error(tmp_path, caplog):
     with caplog.at_level("ERROR"):
         rate_limit.snapshot_own_networks(str(tmp_path / "missing"))
     assert any("no network interfaces" in r.message for r in caplog.records)
+
+
+def test_trusted_networks_blank_is_empty():
+    from app.middleware.rate_limit import _trusted_networks
+    assert _trusted_networks("") == ()
+    assert _trusted_networks(" , ") == ()
+
+
+@pytest.fixture
+def k8s_tunnel(monkeypatch):
+    """k8s tunnel mode: Traefik's peer (last XFF hop) must be a live cloudflared pod."""
+    from app.middleware import rate_limit
+    monkeypatch.setattr(rate_limit._settings, "TUNNEL_PEER_K8S", "cloudflared:pod=cloudflared")
+    monkeypatch.setattr(rate_limit._settings, "DEPLOY_MODE", "tunnel")
+    monkeypatch.setattr(rate_limit._settings, "TUNNEL_PEER_CIDRS", "")
+    monkeypatch.setattr(rate_limit._settings, "TRUSTED_PROXY_CIDRS", "10.42.0.0/16")
+    monkeypatch.setattr(rate_limit, "_pod_ips", set())
+    monkeypatch.setattr(rate_limit, "_pod_next", 0.0)
+    monkeypatch.setattr(rate_limit, "_pod_thread", None)
+    return rate_limit
+
+
+def _k8s_req(xff):
+    return _FakeReq({"cf-connecting-ip": "1.2.3.4", "x-forwarded-for": xff}, host="10.42.3.10")
+
+
+def test_cf_header_trusted_from_cloudflared_pod(k8s_tunnel, monkeypatch):
+    monkeypatch.setattr(k8s_tunnel, "_tunnel_pod_ips", lambda: {"10.42.3.70"})
+    assert k8s_tunnel.client_ip_resolved(_k8s_req("10.42.3.70")) == ("1.2.3.4", True)
+
+
+def test_cf_header_forged_from_lan_ignored(k8s_tunnel, monkeypatch):
+    monkeypatch.setattr(k8s_tunnel, "_tunnel_pod_ips", lambda: {"10.42.3.70"})
+    assert k8s_tunnel.client_ip_resolved(_k8s_req("192.168.1.196")) == ("192.168.1.196", True)
+
+
+def test_cf_header_forged_from_other_pod_ignored(k8s_tunnel, monkeypatch):
+    monkeypatch.setattr(k8s_tunnel, "_tunnel_pod_ips", lambda: {"10.42.3.70"})
+    assert k8s_tunnel.client_ip_resolved(_k8s_req("10.42.1.99")) == ("10.42.1.99", True)
+
+
+class _PodClient:
+    def __init__(self, result):
+        self.calls, self.result = [], result
+
+    def list_pod_ips(self, namespace, selector, timeout=10):
+        self.calls.append((namespace, selector, timeout))
+        if isinstance(self.result, Exception):
+            raise self.result
+        return set(self.result)
+
+
+def _settle(rl):
+    if rl._pod_thread is not None:
+        rl._pod_thread.join(5)
+
+
+def test_pod_lookup_failure_fails_closed(k8s_tunnel, monkeypatch):
+    from app.services import k8s_api
+    client = _PodClient(RuntimeError("k8s down"))
+    monkeypatch.setattr(k8s_api, "incluster_client", lambda: client)
+    assert k8s_tunnel.client_ip_resolved(_k8s_req("10.42.3.70")) == ("10.42.3.70", True)
+    _settle(k8s_tunnel)
+    assert client.calls == [("cloudflared", "pod=cloudflared", 2)]
+    assert k8s_tunnel.client_ip_resolved(_k8s_req("10.42.3.70")) == ("10.42.3.70", True)
+
+
+def test_pod_lookup_failure_keeps_last_good_set(k8s_tunnel, monkeypatch):
+    from app.services import k8s_api
+    client = _PodClient({"10.42.3.70"})
+    monkeypatch.setattr(k8s_api, "incluster_client", lambda: client)
+    k8s_tunnel._tunnel_pod_ips()
+    _settle(k8s_tunnel)
+    client.result = RuntimeError("k8s down")
+    monkeypatch.setattr(k8s_tunnel, "_pod_next", 0.0)   # force a refresh
+    k8s_tunnel._tunnel_pod_ips()
+    _settle(k8s_tunnel)
+    assert len(client.calls) == 2
+    assert k8s_tunnel._tunnel_pod_ips() == {"10.42.3.70"}
+
+
+def test_pod_ips_cached(k8s_tunnel, monkeypatch):
+    from app.services import k8s_api
+    client = _PodClient({"10.42.3.70"})
+    monkeypatch.setattr(k8s_api, "incluster_client", lambda: client)
+    k8s_tunnel._tunnel_pod_ips()
+    _settle(k8s_tunnel)
+    assert k8s_tunnel._tunnel_pod_ips() == {"10.42.3.70"}
+    _settle(k8s_tunnel)
+    assert len(client.calls) == 1
+    assert k8s_tunnel.client_ip_resolved(_k8s_req("10.42.3.70")) == ("1.2.3.4", True)
+
+
+def test_pod_lookup_never_blocks_the_request(k8s_tunnel, monkeypatch):
+    import threading
+    from app.services import k8s_api
+    gate = threading.Event()
+
+    class _Slow(_PodClient):
+        def list_pod_ips(self, *a, **k):
+            gate.wait(5)
+            return {"10.42.3.70"}
+    monkeypatch.setattr(k8s_api, "incluster_client", lambda: _Slow(None))
+    assert k8s_tunnel.client_ip_resolved(_k8s_req("10.42.3.70")) == ("10.42.3.70", True)
+    gate.set()
+    _settle(k8s_tunnel)
+
+
+def test_no_k8s_lookup_when_tunnel_peer_k8s_empty(monkeypatch):
+    from app.middleware import rate_limit
+    from app.services import k8s_api
+    monkeypatch.setattr(rate_limit._settings, "TUNNEL_PEER_K8S", "")
+    monkeypatch.setattr(k8s_api, "incluster_client",
+                        lambda: (_ for _ in ()).throw(AssertionError("no k8s lookup")))
+    req = _FakeReq({"cf-connecting-ip": "203.0.113.7", "x-forwarded-for": "172.31.254.2"})
+    assert rate_limit.client_ip_resolved(req) == ("203.0.113.7", True)
+    assert rate_limit._tunnel_pod_ips() == set()

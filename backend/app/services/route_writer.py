@@ -12,7 +12,6 @@ from app.services.settings_store import settings as _sys_settings
 logger = logging.getLogger("styx-portal")
 _settings = Settings()
 _write_lock = threading.Lock()  # serialize file writes / k8s apply+prune
-_k8s_client = None  # lazy in-cluster client (ROUTE_BACKEND=k8s)
 
 
 def _forward_auth(address: str) -> dict:
@@ -292,17 +291,15 @@ def build_routes_config(instances: list[dict], domain: str,
 
 
 def _write_routes_k8s(instances, domain, workstations, strict):
-    global _k8s_client
-    from app.services.k8s_api import K8sClient
+    from app.services.k8s_api import incluster_client
     from app.services.k8s_routes import (
         K8sSyncError, sync_objects, to_k8s_objects)
     ns = _settings.K8S_NAMESPACE
     try:
-        if _k8s_client is None:
-            _k8s_client = K8sClient.from_incluster()
+        client = incluster_client()
         config = build_routes_config(instances, domain, _settings.DEPLOY_MODE,
                                      workstations, None, k8s=True)
-        sync_objects(_k8s_client, to_k8s_objects(config, ns), ns)
+        sync_objects(client, to_k8s_objects(config, ns), ns)
     except Exception as e:
         if not isinstance(e, K8sSyncError):  # apply failures already logged
             logger.error("k8s route sync failed", exc_info=True)

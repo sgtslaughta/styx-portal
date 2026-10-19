@@ -122,8 +122,9 @@ async def lifespan(app: FastAPI):
         raise
 
     # Before anything that can join another docker network (screenshots): see rate_limit.
-    from app.middleware.rate_limit import snapshot_own_networks
+    from app.middleware.rate_limit import _tunnel_pod_ips, snapshot_own_networks
     snapshot_own_networks()
+    _tunnel_pod_ips()   # k8s: start the first cloudflared pod lookup (no-op in compose)
 
     await init_db()
 
