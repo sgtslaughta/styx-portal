@@ -194,11 +194,56 @@ def test_token_reread_after_ttl(tmp_path, monkeypatch):
     assert seen[-1].headers["authorization"] == "Bearer new"
 
 
-def test_error_message_includes_response_body():
-    c = _client(lambda r: httpx.Response(422, text="spec.routes: Invalid"))
+def test_token_reread_failure_uses_cached(tmp_path, monkeypatch):
+    from app.services import k8s_api
+    seen = []
+    c = K8sClient("https://k8s", "cached", False,
+                  token_path=str(tmp_path / "missing"),
+                  transport=httpx.MockTransport(
+                      lambda r: (seen.append(r), httpx.Response(200, json={}))[1]))
+    c._token_read = 0
+    monkeypatch.setattr(k8s_api.time, "monotonic", lambda: 1000.0)
+    c.list_names("v1", "Service", "styx", "a=b")
+    assert seen[0].headers["authorization"] == "Bearer cached"
+
+
+def test_prune_continues_after_delete_failure():
+    deletes = []
+
+    def handler(r):
+        if r.method == "GET":
+            names = ["old1", "old2"] if r.url.path == IR else []
+            return httpx.Response(200, json={
+                "items": [{"metadata": {"name": n}} for n in names]})
+        if r.method == "DELETE":
+            deletes.append(r.url.path)
+            if len(deletes) == 1:
+                return httpx.Response(500, json={})
+        return httpx.Response(200, json={})
+
+    with pytest.raises(K8sSyncError, match="old1"):
+        sync_objects(_client(handler), _desired(), "styx")
+    assert deletes == [f"{IR}/old1", f"{IR}/old2"]
+
+
+def test_error_message_has_reason_and_field_but_not_message():
+    body = {"code": 422, "reason": "Invalid", "message": "SECRET-hunter2",
+            "details": {"causes": [{"field": "spec.routes", "reason": "FieldValueInvalid",
+                                    "message": "SECRET-hunter2"}]}}
+    c = _client(lambda r: httpx.Response(422, json=body))
     obj = next(o for o in _desired() if o["kind"] == "IngressRoute")
-    with pytest.raises(httpx.HTTPStatusError, match="spec.routes: Invalid"):
+    with pytest.raises(httpx.HTTPStatusError) as ei:
         c.apply(obj)
+    msg = str(ei.value)
+    assert "422" in msg and "Invalid" in msg and "spec.routes" in msg
+    assert "SECRET" not in msg
+
+
+def test_error_message_non_json_body_only_code():
+    c = _client(lambda r: httpx.Response(502, text="SECRET-body"))
+    with pytest.raises(httpx.HTTPStatusError) as ei:
+        c.delete("v1", "Service", "styx", "x")
+    assert "502" in str(ei.value) and "SECRET" not in str(ei.value)
 
 
 def test_sync_continues_after_one_apply_failure():

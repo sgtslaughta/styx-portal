@@ -133,8 +133,16 @@ def sync_objects(client, desired: list[dict], namespace: str) -> None:
             f"{len(failed)}/{len(desired)} k8s applies failed, prune skipped: "
             + ", ".join(failed))
     selector = ",".join(f"{k}={v}" for k, v in MANAGED_LABEL.items())
+    failed = []
     for api, kind in _MANAGED_KINDS:
         keep = {o["metadata"]["name"] for o in desired if o["kind"] == kind}
         for name in client.list_names(api, kind, namespace, selector):
-            if name not in keep:
+            if name in keep:
+                continue
+            try:
                 client.delete(api, kind, namespace, name)
+            except Exception as e:
+                logger.error("k8s prune failed for %s/%s: %s", kind, name, e)
+                failed.append(f"{kind}/{name}")
+    if failed:
+        raise K8sSyncError("k8s prune failed for: " + ", ".join(failed))

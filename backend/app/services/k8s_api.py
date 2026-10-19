@@ -1,11 +1,13 @@
 """Minimal in-cluster Kubernetes REST client (httpx, ServiceAccount token)."""
 import json
+import logging
 import os
 import ssl
 import time
 
 import httpx
 
+logger = logging.getLogger("styx-portal")
 _SA = "/var/run/secrets/kubernetes.io/serviceaccount"
 _PLURALS = {
     "IngressRoute": "ingressroutes", "Middleware": "middlewares",
@@ -25,13 +27,25 @@ def _path(api_version: str, kind: str, namespace: str) -> str:
 _TOKEN_TTL = 60  # projected SA tokens rotate; re-read the file this often
 
 
+def _status_detail(r: httpx.Response) -> str:
+    """Only code/reason/cause fields of a k8s Status; never message or raw
+    body (a 422 message can echo submitted values such as credentials)."""
+    try:
+        body = r.json()
+        causes = (body.get("details") or {}).get("causes") or []
+        parts = [f"reason={body.get('reason')}"] + [
+            f"{c.get('field')}:{c.get('reason')}" for c in causes]
+        return " ".join(parts)
+    except Exception:
+        return ""
+
+
 def _check(r: httpx.Response) -> None:
-    """raise_for_status, but with the k8s response body in the message."""
     if r.is_success:
         return
     raise httpx.HTTPStatusError(
-        f"{r.request.method} {r.request.url.path} -> {r.status_code}: "
-        f"{r.text[:500]}", request=r.request, response=r)
+        f"{r.request.method} {r.request.url.path} -> {r.status_code} "
+        f"{_status_detail(r)}".rstrip(), request=r.request, response=r)
 
 
 class K8sClient:
@@ -46,8 +60,13 @@ class K8sClient:
 
     def _auth(self) -> dict:
         if self._token_path and time.monotonic() - self._token_read > _TOKEN_TTL:
-            with open(self._token_path) as f:
-                self._token = f.read().strip()
+            try:
+                with open(self._token_path) as f:
+                    self._token = f.read().strip()
+            except OSError as e:
+                if not self._token:
+                    raise
+                logger.warning("k8s token re-read failed, using cached: %s", e)
             self._token_read = time.monotonic()
         return {"Authorization": f"Bearer {self._token}"}
 
