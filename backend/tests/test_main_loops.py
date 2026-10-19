@@ -28,3 +28,41 @@ async def test_monitor_pass_docker_error_still_marks_workstations(monkeypatch):
     mark.assert_awaited_once_with(session)
     refresh.assert_awaited_once_with(session)
     session.commit.assert_awaited_once()
+
+
+class _Docker:
+    def __init__(self, fn):
+        self.get_container_status = fn
+
+
+async def _seed(session, statuses):
+    from app.models import Instance
+    insts = [Instance(name=f"i{n}", subdomain=f"s{n}", template_id="t", status=st, container_id=f"c{n}")
+             for n, st in enumerate(statuses)]
+    for i in insts:
+        session.add(i)
+    await session.commit()
+    return insts
+
+
+@pytest.mark.asyncio
+async def test_boot_reconcile_survives_docker_down(session):
+    insts = await _seed(session, ["running", "idle"])
+
+    def boom(_cid):
+        raise docker.errors.DockerException("no docker")
+
+    await main._reconcile_instances_at_boot(session, _Docker(boom))
+    for i in insts:
+        await session.refresh(i)
+        assert i.status == "stopped"
+
+
+@pytest.mark.asyncio
+async def test_boot_reconcile_docker_up_unchanged(session):
+    up, gone = await _seed(session, ["running", "running"])
+    st = {up.container_id: "running", gone.container_id: "not_found"}
+    await main._reconcile_instances_at_boot(session, _Docker(lambda c: {"status": st[c]}))
+    await session.refresh(up)
+    await session.refresh(gone)
+    assert (up.status, gone.status) == ("running", "stopped")
