@@ -48,3 +48,23 @@ def test_dev_cors_origin_needs_explicit_flag():
     assert "http://localhost:5173" not in cors_origins(Settings(**base, DEV_CORS=False))
     assert "http://localhost:5173" in cors_origins(Settings(**base, DEV_CORS=True))
     assert "http://localhost:5173" not in cors_origins(Settings(DOMAIN="x.test", COOKIE_SECURE=True, DEV_CORS=True))
+
+
+def test_lan_ip_outside_allow_cidrs_rejected(monkeypatch):
+    from app import schemas
+    monkeypatch.setattr(schemas._settings, "WORKSTATION_ALLOW_CIDRS", "192.168.1.0/24")
+    for ip in ("10.43.0.1", "10.42.1.5"):
+        with pytest.raises(ValidationError, match="allowed workstation network"):
+            WorkstationRegisterRequest(token="t", hostname="h", lan_ip=ip)
+        with pytest.raises(ValidationError, match="allowed workstation network"):
+            WorkstationHeartbeatRequest(lan_ip=ip)
+    assert WorkstationRegisterRequest(token="t", hostname="h", lan_ip="192.168.1.50").lan_ip
+    assert WorkstationHeartbeatRequest(lan_ip="192.168.1.50").lan_ip == "192.168.1.50"
+
+
+def test_allow_cidrs_empty_default_allows():
+    from app import schemas
+    from app.config import Settings
+    assert Settings.model_fields["WORKSTATION_ALLOW_CIDRS"].default == ""
+    assert schemas._settings.WORKSTATION_ALLOW_CIDRS == ""
+    assert WorkstationRegisterRequest(token="t", hostname="h", lan_ip="10.43.0.1").lan_ip

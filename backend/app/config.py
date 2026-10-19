@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     # Only peers in this subnet (compose network `styx-tunnel`, shared solely by cloudflared and
     # Traefik) may vouch for CF-Connecting-IP. Traefik also sits in it, but is never its own peer.
     TUNNEL_PEER_CIDRS: str = "172.31.254.0/28"
+    # Workstation lan_ip must be inside one of these (comma-separated CIDRs); empty = any
+    # routable address. k8s: keeps an enrolled agent from aiming Traefik at in-cluster IPs.
+    WORKSTATION_ALLOW_CIDRS: str = ""
     JWT_SECRET: str = ""
     ACCESS_TTL: int = 900          # 15 minutes
     REFRESH_TTL: int = 604800      # 7 days

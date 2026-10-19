@@ -7,6 +7,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from app.schemas import workstation_ip_allowed
+
 logger = logging.getLogger("styx-portal")
 MANAGED_LABEL = {"app.kubernetes.io/managed-by": "styx-backend"}
 _TRAEFIK = "traefik.io/v1alpha1"
@@ -70,7 +72,15 @@ def to_k8s_objects(config: dict, namespace: str) -> list[dict]:
     ns = namespace
     objs: list[dict] = []
     refs: dict[str, dict] = {}
+    skipped: set[str] = set()
     for name, svc in http.get("services", {}).items():
+        ip = _ip(urlparse(svc["loadBalancer"]["servers"][0]["url"]).hostname or "")
+        if ip is not None and not workstation_ip_allowed(ip):
+            # Defense in depth for rows stored before the allow-list existed.
+            logger.warning("k8s: skipping service %s and its routers: upstream %s is "
+                           "outside WORKSTATION_ALLOW_CIDRS", name, ip)
+            skipped.add(name)
+            continue
         refs[name], extra = _service_objects(name, svc, ns)
         objs += extra
 
@@ -86,6 +96,8 @@ def to_k8s_objects(config: dict, namespace: str) -> list[dict]:
                          spec=t))
 
     for name, r in http.get("routers", {}).items():
+        if r["service"] in skipped:
+            continue
         route: dict = {"kind": "Rule", "match": r["rule"],
                        "services": [dict(refs[r["service"]])]}
         if "priority" in r:

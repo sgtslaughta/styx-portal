@@ -95,3 +95,27 @@ def test_k8s_name_long_and_invalid():
     assert re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", n)
     assert len(n) <= 63
     assert n == k8s_name("WS_" + "a" * 80)
+
+
+def test_k8s_skips_upstream_outside_allow_cidrs(monkeypatch, caplog):
+    import logging
+    from app import schemas
+    monkeypatch.setattr(schemas._settings, "WORKSTATION_ALLOW_CIDRS", "192.168.1.0/24")
+    with caplog.at_level(logging.WARNING, logger="styx-portal"):
+        _, objs = _objs(lan_ip="10.42.1.5")
+    names = {(o["kind"], o["metadata"]["name"]) for o in objs}
+    assert ("Service", "ws-ws1") not in names
+    assert ("EndpointSlice", "ws-ws1-ep") not in names
+    assert not [o for o in objs if o["kind"] == "IngressRoute"
+                and any(s["name"] == "ws-ws1" for r in o["spec"]["routes"]
+                        for s in r["services"])]
+    assert ("IngressRoute", "api") in names   # unrelated routes kept
+    assert "ws-ws1" in caplog.text
+
+
+def test_k8s_keeps_upstream_inside_allow_cidrs(monkeypatch):
+    from app import schemas
+    monkeypatch.setattr(schemas._settings, "WORKSTATION_ALLOW_CIDRS", "192.168.1.0/24")
+    _, objs = _objs()
+    assert _get(objs, "EndpointSlice", "ws-ws1-ep")
+    assert _get(objs, "IngressRoute", "ws-ws1")
