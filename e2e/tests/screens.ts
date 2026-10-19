@@ -1,5 +1,5 @@
 import { expect, type Page } from "@playwright/test";
-import { MEMBER, SHOTS, openSettings, setTheme } from "./helpers";
+import { MEMBER, SHOTS, openHome, openSettings, setTheme } from "./helpers";
 
 const VIEWPORTS = [
   { name: "desktop", width: 1440, height: 900 },
@@ -70,10 +70,10 @@ export async function captureAll(admin: Page, member: Page) {
         await p.goto("/");
         await setTheme(p, theme);
       }
-      await member.goto("/");
+      await openHome(member, "Apps");
       await expect(member.getByRole("region", { name: "Apps" })).toBeVisible();
       await shot(member, `home-tiles-member-${tag}`);
-      await admin.goto("/");
+      await openHome(admin, "Apps");
       await expect(admin.getByRole("region", { name: "Apps" })).toBeVisible();
       await shot(admin, `home-tiles-admin-${tag}`);
       await serviceDrawer(admin, tag);

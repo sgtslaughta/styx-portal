@@ -140,3 +140,12 @@ export async function settled(loc: Locator) {
     return same;
   }, { intervals: [60], timeout: 5000 }).toBeGreaterThanOrEqual(3);
 }
+
+/** Signed in = the account menu is in the header (Log out lives inside it). */
+export const accountMenu = (page: Page) => page.getByRole("button", { name: /^Account menu/ });
+
+/** Home via the main nav; Apps and Workspaces are top-level tabs. */
+export async function openHome(page: Page, tab: "Workspaces" | "Apps") {
+  await page.goto("/");
+  await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: tab, exact: true }).click();
+}

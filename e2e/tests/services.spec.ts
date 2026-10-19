@@ -1,7 +1,7 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
 import {
   ADMIN, MEMBER, OUTSIDER, STYX_COOKIES, apiCall, eventually, getNoRedirect, headerLines,
-  isWhoami, openSettings, setupCode, uiLogin, updateService,
+  isWhoami, openHome, openSettings, setupCode, uiLogin, updateService,
 } from "./helpers";
 import { captureAll } from "./screens";
 
@@ -128,7 +128,7 @@ test("b. admin adds a path-mode SSO service from a discovered container", async 
 test("c. member opens the tile; upstream sees identity headers but no Styx cookies", async () => {
   const p = member.page;
   await member.ctx.addCookies([{ name: "app_pref", value: "keep-me", url: "http://127.0.0.1:18080" }]);
-  await p.goto("/");
+  await openHome(p, "Apps");
   // Identity headers are opt-in per service.
   await updateService(admin.ctx, "whoami", { pass_identity: true });
   const plain = await apiCall(admin.ctx, "POST", "/api/services", {
@@ -181,7 +181,7 @@ test("c. member opens the tile; upstream sees identity headers but no Styx cooki
 
 test("d. non-member: no tile, direct access denied", async () => {
   const p = outsider.page;
-  await p.goto("/");
+  await openHome(p, "Apps");
   await expect(p.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
   await expect(p.getByRole("link", { name: "Open Whoami" })).toHaveCount(0);
   const res = await p.goto("/whoami/");
@@ -290,6 +290,7 @@ test("h. cookie-root service: enter, takeover, Styx API via X-Styx-Client, exit"
 
   await m.goto("/_styx/exit");
   await expect(m).toHaveURL("http://127.0.0.1:18080/");
+  await openHome(m, "Apps");
   await expect(m.getByRole("link", { name: "Open Whoami" })).toBeVisible();
   expect((await member.ctx.cookies()).some((c) => c.name === "styx_svc")).toBe(false);
   // After exit, / serves Styx again.
@@ -314,7 +315,7 @@ test("h2. focus: top-level loads are wrapped in the shell; stale old-format cook
 
   // Cookie from before instance binding (or a deleted/re-created service): Styx home, not the app.
   await member.ctx.addCookies([{ name: "styx_svc", value: "echoroot", url: "http://127.0.0.1:18080" }]);
-  await m.goto("/");
+  await openHome(m, "Apps");
   await expect(m.getByRole("link", { name: "Open Whoami" })).toBeVisible();
   expect(isWhoami(await (await member.ctx.request.get("/")).text())).toBe(false);
   await m.goto("/_styx/exit");
@@ -401,7 +402,7 @@ test("j. disabling a service denies members within one route refresh", async () 
   const t0 = Date.now();
   await eventually(async () => expect(isWhoami((await echo(member.page, "/whoami/")).body)).toBe(false), 10_000);
   test.info().annotations.push({ type: "deny-latency-ms", description: String(Date.now() - t0) });
-  await member.page.goto("/");
+  await openHome(member.page, "Apps");
   await expect(member.page.getByRole("link", { name: "Open Echo Root" })).toHaveAttribute("href", "/_styx/open/echoroot");
   await expect(member.page.getByRole("link", { name: "Open Whoami" })).toHaveCount(0);
   // The bypass prefix dies with the service too.
