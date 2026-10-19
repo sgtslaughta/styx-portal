@@ -1,9 +1,11 @@
 """Translate the Traefik file-provider route dict into k8s objects (pure)."""
 import hashlib
 import ipaddress
+import logging
 import re
 from urllib.parse import urlparse
 
+logger = logging.getLogger("styx-portal")
 MANAGED_LABEL = {"app.kubernetes.io/managed-by": "styx-backend"}
 _TRAEFIK = "traefik.io/v1alpha1"
 
@@ -92,3 +94,27 @@ def to_k8s_objects(config: dict, namespace: str) -> list[dict]:
         objs.append(_obj(_TRAEFIK, "IngressRoute", k8s_name(name), ns, spec={
             "entryPoints": ["websecure"], "tls": {}, "routes": [route]}))
     return objs
+
+
+_MANAGED_KINDS = (
+    (_TRAEFIK, "IngressRoute"), (_TRAEFIK, "Middleware"),
+    (_TRAEFIK, "ServersTransport"), ("v1", "Service"),
+    ("discovery.k8s.io/v1", "EndpointSlice"),
+)
+
+
+def sync_objects(client, desired: list[dict], namespace: str) -> None:
+    """Server-side apply desired objects, then delete stale managed ones."""
+    for o in desired:
+        try:
+            client.apply(o)
+        except Exception:
+            logger.error("k8s apply failed for %s/%s", o["kind"],
+                         o["metadata"]["name"])
+            raise
+    selector = ",".join(f"{k}={v}" for k, v in MANAGED_LABEL.items())
+    for api, kind in _MANAGED_KINDS:
+        keep = {o["metadata"]["name"] for o in desired if o["kind"] == kind}
+        for name in client.list_names(api, kind, namespace, selector):
+            if name not in keep:
+                client.delete(api, kind, namespace, name)

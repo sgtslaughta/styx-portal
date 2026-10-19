@@ -9,6 +9,7 @@ from app.services.settings_store import settings as _sys_settings
 
 logger = logging.getLogger("styx-portal")
 _settings = Settings()
+_k8s_client = None  # lazy in-cluster client (ROUTE_BACKEND=k8s)
 
 
 def _forward_auth(address: str) -> dict:
@@ -39,7 +40,8 @@ def _router_transport(deploy_mode: str, domain: str) -> dict:
 def build_routes_config(instances: list[dict], domain: str,
                         deploy_mode: str = "tunnel",
                         workstations: list[dict] | None = None,
-                        services: list[dict] | None = None) -> dict:
+                        services: list[dict] | None = None,
+                        k8s: bool = False) -> dict:
     """Build the Traefik dynamic config dict for all services + running instances.
 
     Always emits the static `unavailable-rewrite` / `instance-unavailable-errors`
@@ -113,7 +115,7 @@ def build_routes_config(instances: list[dict], domain: str,
     # the higher-priority Host() routers win for the real domain.
     lan_cert = Path(_settings.LAN_CERT_DIR) / "lan.crt"
     lan_key = Path(_settings.LAN_CERT_DIR) / "lan.key"
-    lan_serving = lan_cert.is_file() and lan_key.is_file()
+    lan_serving = lan_cert.is_file() and lan_key.is_file() and not k8s
 
     def _lan_router(rule: str, service: str, priority: int,
                     mw: list[str] | None = None) -> dict:
@@ -263,7 +265,7 @@ def build_routes_config(instances: list[dict], domain: str,
         config["http"]["serversTransports"] = {
             "selkies-transport": {"insecureSkipVerify": True}
         }
-    if services:
+    if services and not k8s:
         from app.services.service_routes import add_service_routes
         add_service_routes(config, middlewares, services, domain,
                            _router_transport(deploy_mode, domain))
@@ -275,7 +277,7 @@ def build_routes_config(instances: list[dict], domain: str,
     # domain certs in direct mode still win for the public domain.
     cert_file = Path(_settings.LAN_CERT_DIR) / "lan.crt"
     key_file = Path(_settings.LAN_CERT_DIR) / "lan.key"
-    if cert_file.is_file() and key_file.is_file():
+    if cert_file.is_file() and key_file.is_file() and not k8s:
         t_cert = f"{_settings.TRAEFIK_LAN_CERT_DIR}/lan.crt"
         t_key = f"{_settings.TRAEFIK_LAN_CERT_DIR}/lan.key"
         config["tls"] = {
@@ -284,6 +286,23 @@ def build_routes_config(instances: list[dict], domain: str,
             "certificates": [{"certFile": t_cert, "keyFile": t_key}],
         }
     return config
+
+
+def _write_routes_k8s(instances, domain, workstations, strict):
+    global _k8s_client
+    from app.services.k8s_api import K8sClient
+    from app.services.k8s_routes import sync_objects, to_k8s_objects
+    ns = _settings.K8S_NAMESPACE
+    try:
+        if _k8s_client is None:
+            _k8s_client = K8sClient.from_incluster()
+        config = build_routes_config(instances, domain, _settings.DEPLOY_MODE,
+                                     workstations, None, k8s=True)
+        sync_objects(_k8s_client, to_k8s_objects(config, ns), ns)
+    except Exception:
+        logger.error("k8s route sync failed", exc_info=True)
+        if strict:
+            raise
 
 
 def write_routes(instances: list[dict], domain: str | None = None,
@@ -297,6 +316,8 @@ def write_routes(instances: list[dict], domain: str | None = None,
     strict=True re-raises so an admin action can report the failure.
     """
     domain = domain or _settings.DOMAIN
+    if _settings.ROUTE_BACKEND == "k8s":
+        return _write_routes_k8s(instances, domain, workstations, strict)
     out_dir = Path(_settings.TRAEFIK_DYNAMIC_DIR)
     try:
         out_dir.mkdir(parents=True, exist_ok=True)
