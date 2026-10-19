@@ -264,6 +264,11 @@ def run(cfg: dict) -> int:
                     procs[key] = None
             if "seat" in keys_now and gseat:
                 gseat.stop()
+            elif "portal" in keys_now and gseat and gseat.alive():
+                gseat.fps = int((cfg.get("stream_settings") or {}).get("framerate") or 60)
+                if not gseat.restart_helper():
+                    last_error = "capture helper relaunch failed — seat restarting"
+                    gseat.stop()
             apply_now = False
         if gseat and not gseat.alive():
             # Seat died: selkies (and the standby) are captured against a dead

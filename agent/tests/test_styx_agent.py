@@ -358,10 +358,12 @@ def test_gateway_gets_icon_dir():
     assert env["STYX_GW_ICON_DIR"] == "/opt/x"
 
 
-def test_framerate_change_restarts_gnome_seat_only():
+def test_framerate_change_relaunches_portal_not_seat():
     old = {"video_crf": 25, "framerate": 60}
-    assert "seat" in styx_agent.settings_restart_keys(old, {**old, "framerate": 120})
-    assert "seat" not in styx_agent.settings_restart_keys({"video_crf": 25}, {"video_crf": 25, "framerate": 60})
-    assert "seat" not in styx_agent.settings_restart_keys(old, {**old, "video_crf": 30})
-    assert "seat" not in styx_agent.settings_restart_keys(
+    k = styx_agent.settings_restart_keys(old, {**old, "framerate": 120})
+    assert "portal" in k and "seat" not in k
+    assert "portal" not in styx_agent.settings_restart_keys(old, {**old, "video_crf": 30})
+    assert "portal" not in styx_agent.settings_restart_keys(
+        {"video_crf": 25}, {"video_crf": 25, "framerate": 60})
+    assert "portal" not in styx_agent.settings_restart_keys(
         {"seat_shell": "labwc"}, {"seat_shell": "labwc", "framerate": 120})

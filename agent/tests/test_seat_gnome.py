@@ -244,3 +244,13 @@ def test_helper_gets_max_fps_arg(tmp_path, monkeypatch):
     seat.fps = 120
     seat._spawn_helper(1920, 1080)
     assert calls[1][-2:] == ["--max-fps", "120"]
+
+
+def test_restart_helper_applies_new_fps_without_touching_shell(tmp_path, monkeypatch):
+    seat = seat_gnome.GnomeSeat(tmp_path, str(tmp_path), log=subprocess.DEVNULL)
+    seat.size, seat.fps = (1920, 1080), 120
+    calls = []
+    monkeypatch.setattr(seat, "_start_helper", lambda w, h: calls.append((w, h)) or True)
+    assert seat.restart_helper() is True and calls == [(1920, 1080)]
+    seat.size = None
+    assert seat.restart_helper() is False

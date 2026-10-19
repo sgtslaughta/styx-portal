@@ -267,6 +267,11 @@ class GnomeSeat:
             self._start_helper(*old)
         return False
 
+    def restart_helper(self) -> bool:
+        """Relaunch only seat_portal (picks up a new self.fps); GNOME stays up.
+        Caller stops selkies first."""
+        return bool(self.size) and self._start_helper(*self.size)
+
     def _stop_helper(self) -> None:
         p, self._helper = self._helper, None
         if p is None or p.poll() is not None:
