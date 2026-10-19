@@ -90,5 +90,5 @@ def to_k8s_objects(config: dict, namespace: str) -> list[dict]:
             route["middlewares"] = [{"name": k8s_name(m)}
                                     for m in r["middlewares"]]
         objs.append(_obj(_TRAEFIK, "IngressRoute", k8s_name(name), ns, spec={
-            "entryPoints": ["websecure"], "routes": [route]}))
+            "entryPoints": ["websecure"], "tls": {}, "routes": [route]}))
     return objs

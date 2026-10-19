@@ -25,6 +25,7 @@ def test_workstation_router_becomes_ingressroute():
     cfg, objs = _objs()
     ir = _get(objs, "IngressRoute", "ws-ws1")
     assert ir["spec"]["entryPoints"] == ["websecure"]
+    assert ir["spec"]["tls"] == {}
     (route,) = ir["spec"]["routes"]
     assert route["match"] == cfg["http"]["routers"]["ws-ws1"]["rule"]
     assert route["services"] == [{"name": "ws-ws1", "port": 8443}]
