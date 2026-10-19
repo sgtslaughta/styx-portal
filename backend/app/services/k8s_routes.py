@@ -1,0 +1,94 @@
+"""Translate the Traefik file-provider route dict into k8s objects (pure)."""
+import hashlib
+import ipaddress
+import re
+from urllib.parse import urlparse
+
+MANAGED_LABEL = {"app.kubernetes.io/managed-by": "styx-backend"}
+_TRAEFIK = "traefik.io/v1alpha1"
+
+
+def k8s_name(s: str) -> str:
+    """DNS-1123 label: lowercase, invalid chars -> '-', hashed when >63."""
+    n = re.sub(r"[^a-z0-9-]", "-", s.lower()).strip("-")
+    if len(n) > 63:
+        n = f"{n[:54]}-{hashlib.sha1(s.encode()).hexdigest()[:8]}"
+    return n
+
+
+def _obj(api: str, kind: str, name: str, ns: str, **body) -> dict:
+    return {"apiVersion": api, "kind": kind,
+            "metadata": {"name": name, "namespace": ns,
+                         "labels": dict(MANAGED_LABEL)},
+            **body}
+
+
+def _ip(host: str):
+    try:
+        return ipaddress.ip_address(host.strip("[]"))
+    except ValueError:
+        return None
+
+
+def _service_objects(name: str, svc: dict, ns: str) -> tuple[dict, list[dict]]:
+    """Return (traefik service ref, extra Service/EndpointSlice objects)."""
+    lb = svc["loadBalancer"]
+    u = urlparse(lb["servers"][0]["url"])
+    port = u.port or (443 if u.scheme == "https" else 80)
+    host = u.hostname or ""
+    ip = _ip(host)
+    extra: list[dict] = []
+    if ip is not None:
+        n = k8s_name(name)
+        ref: dict = {"name": n, "port": port}
+        extra.append(_obj("v1", "Service", n, ns, spec={
+            "ports": [{"name": "http", "port": port, "targetPort": port}]}))
+        ep = _obj("discovery.k8s.io/v1", "EndpointSlice", n + "-ep", ns,
+                  addressType=f"IPv{ip.version}",
+                  endpoints=[{"addresses": [str(ip)],
+                              "conditions": {"ready": True}}],
+                  ports=[{"name": "http", "port": port}])
+        ep["metadata"]["labels"]["kubernetes.io/service-name"] = n
+        extra.append(ep)
+    elif name == "api":
+        ref = {"name": "backend", "port": 8000}
+    else:
+        ref = {"name": host, "port": port}
+    if u.scheme == "https":
+        ref["scheme"] = "https"
+    if lb.get("serversTransport"):
+        ref["serversTransport"] = k8s_name(lb["serversTransport"])
+    return ref, extra
+
+
+def to_k8s_objects(config: dict, namespace: str) -> list[dict]:
+    http = config.get("http", {})
+    ns = namespace
+    objs: list[dict] = []
+    refs: dict[str, dict] = {}
+    for name, svc in http.get("services", {}).items():
+        refs[name], extra = _service_objects(name, svc, ns)
+        objs += extra
+
+    for name, mw in http.get("middlewares", {}).items():
+        spec = dict(mw)
+        err = spec.get("errors")
+        if err and err.get("service") in refs:
+            spec["errors"] = {**err, "service": dict(refs[err["service"]])}
+        objs.append(_obj(_TRAEFIK, "Middleware", k8s_name(name), ns, spec=spec))
+
+    for name, t in http.get("serversTransports", {}).items():
+        objs.append(_obj(_TRAEFIK, "ServersTransport", k8s_name(name), ns,
+                         spec=t))
+
+    for name, r in http.get("routers", {}).items():
+        route: dict = {"kind": "Rule", "match": r["rule"],
+                       "services": [dict(refs[r["service"]])]}
+        if "priority" in r:
+            route["priority"] = r["priority"]
+        if r.get("middlewares"):
+            route["middlewares"] = [{"name": k8s_name(m)}
+                                    for m in r["middlewares"]]
+        objs.append(_obj(_TRAEFIK, "IngressRoute", k8s_name(name), ns, spec={
+            "entryPoints": ["websecure"], "routes": [route]}))
+    return objs
