@@ -18,7 +18,7 @@ def k8s_name(s: str) -> str:
     """DNS-1123 label: lowercase, invalid chars -> '-', hashed when >63."""
     n = re.sub(r"[^a-z0-9-]", "-", s.lower()).strip("-")
     if len(n) > 63:
-        n = f"{n[:54]}-{hashlib.sha1(s.encode()).hexdigest()[:8]}"
+        n = f"{n[:54]}-{hashlib.sha1(s.encode(), usedforsecurity=False).hexdigest()[:8]}"
     return n
 
 
