@@ -81,21 +81,27 @@ def _peer_is_trusted_proxy(host: str | None) -> bool:
 # (stale-while-revalidate): a request never waits on the k8s API. No good set yet = empty
 # (fail closed: CF-Connecting-IP ignored); on error the last good set is kept.
 _POD_TTL, _POD_RETRY, _POD_TIMEOUT = 30, 5, 2
+_POD_REFRESH = 0.8 * _POD_TTL        # refresh early: routine lookups never let the set go stale
+_POD_SEEN_MAX = 64
 _pod_ips: set[str] = set()
 _pod_next = 0.0                      # monotonic time the next refresh is due
 _pod_ok_at: float | None = None      # monotonic time of the last successful lookup
+_pod_ips_seen: dict[str, None] = {}  # every cloudflared pod IP seen (insertion-ordered, bounded)
 _pod_thread: threading.Thread | None = None
 _pod_lock = threading.Lock()
 
 
 def _refresh_tunnel_pod_ips(spec: str) -> None:
-    global _pod_ips, _pod_next, _pod_ok_at
+    global _pod_ips, _pod_next, _pod_ok_at, _pod_ips_seen
     from app.services.k8s_api import incluster_client
     ns, _, selector = spec.partition(":")
     try:
-        _pod_ips = incluster_client().list_pod_ips(ns, selector, timeout=_POD_TIMEOUT)
-        _pod_ok_at = time.monotonic()
-        _pod_next = _pod_ok_at + _POD_TTL
+        ips = incluster_client().list_pod_ips(ns, selector, timeout=_POD_TIMEOUT)
+        seen = {k: None for k in _pod_ips_seen if k not in ips}
+        seen.update(dict.fromkeys(sorted(ips)))     # most recent last
+        _pod_ips_seen = dict(list(seen.items())[-_POD_SEEN_MAX:])   # rebind: readers never race
+        _pod_ips, _pod_ok_at = ips, time.monotonic()
+        _pod_next = _pod_ok_at + _POD_REFRESH
     except Exception as e:
         _pod_next = time.monotonic() + _POD_RETRY
         logger.warning("cloudflared pod lookup failed, keeping %d cached IPs: %s",
@@ -173,10 +179,12 @@ def client_ip_resolved(request) -> tuple[str, bool]:
         hop = xff.split(",")[-1].strip()
         if _is_tunnel_peer(hop):
             return cf.strip(), True
-        if _settings.TUNNEL_PEER_K8S and not _pod_cache_fresh():
-            # Pod set stale/never loaded (boot, cloudflared rollout, API down): the hop may be
-            # a new cloudflared pod carrying every tunnel user, so it must never be banned.
-            # _is_tunnel_peer already kicked the refresh (bounded by _POD_RETRY + one thread).
+        if (_settings.TUNNEL_PEER_K8S and not _pod_cache_fresh()
+                and (_pod_ok_at is None or hop in _pod_ips_seen)):
+            # Pod set stale (lookups failing) or never loaded: a hop that is, or was, a
+            # cloudflared pod may carry every tunnel user, so it must never be banned. An
+            # unknown hop (LAN SNAT, other pod) stays resolved and bannable. _is_tunnel_peer
+            # already kicked the refresh (bounded by _POD_RETRY + one thread).
             return hop, False
     if xff:
         return xff.split(",")[0].strip(), True
