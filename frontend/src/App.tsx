@@ -80,10 +80,10 @@ export default function App() {
       <Header />
       <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
       <main className="min-h-0 flex-1 overflow-y-auto p-6">
-        <div className={activeTab === "workspaces" ? "h-full" : "hidden"}>
+        <div className={activeTab === "workspaces" ? "h-full min-h-0" : "hidden"}>
           <InstanceWorkspace onLaunch={() => setActiveTab("templates")} onOpenSettings={openSettings} />
         </div>
-        <div className={activeTab === "apps" ? "" : "hidden"}>
+        <div className={activeTab === "apps" ? "relative h-full min-h-0 overflow-y-auto" : "hidden"}>
           <AppsGrid onOpenSettings={() => openSettings("services")} />
         </div>
         <div className={activeTab === "templates" ? "" : "hidden"}>
