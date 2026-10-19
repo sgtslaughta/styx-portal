@@ -294,7 +294,8 @@ def build_routes_config(instances: list[dict], domain: str,
 def _write_routes_k8s(instances, domain, workstations, strict):
     global _k8s_client
     from app.services.k8s_api import K8sClient
-    from app.services.k8s_routes import sync_objects, to_k8s_objects
+    from app.services.k8s_routes import (
+        K8sSyncError, sync_objects, to_k8s_objects)
     ns = _settings.K8S_NAMESPACE
     try:
         if _k8s_client is None:
@@ -302,8 +303,9 @@ def _write_routes_k8s(instances, domain, workstations, strict):
         config = build_routes_config(instances, domain, _settings.DEPLOY_MODE,
                                      workstations, None, k8s=True)
         sync_objects(_k8s_client, to_k8s_objects(config, ns), ns)
-    except Exception:
-        logger.error("k8s route sync failed", exc_info=True)
+    except Exception as e:
+        if not isinstance(e, K8sSyncError):  # apply failures already logged
+            logger.error("k8s route sync failed", exc_info=True)
         if strict:
             raise
 

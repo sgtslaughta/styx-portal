@@ -6,7 +6,7 @@ import pytest
 
 from app.services import route_writer
 from app.services.k8s_api import K8sClient
-from app.services.k8s_routes import sync_objects, to_k8s_objects
+from app.services.k8s_routes import K8sSyncError, sync_objects, to_k8s_objects
 from app.services.route_writer import build_routes_config
 
 IR = "/apis/traefik.io/v1alpha1/namespaces/styx/ingressroutes"
@@ -102,7 +102,7 @@ def test_write_routes_k8s_api_error_logged_not_raised(monkeypatch, caplog):
     with caplog.at_level(logging.ERROR, logger="styx-portal"):
         route_writer.write_routes([])
     assert "k8s" in caplog.text
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(K8sSyncError):
         route_writer.write_routes([], strict=True)
 
 
@@ -173,3 +173,46 @@ async def test_refresh_routes_strict_error_propagates(monkeypatch):
     monkeypatch.setattr(route_writer, "write_routes", boom)
     with pytest.raises(RuntimeError):
         await route_writer.refresh_routes_from_db(_S(), strict=True)
+
+
+def test_token_reread_after_ttl(tmp_path, monkeypatch):
+    from app.services import k8s_api
+    tok = tmp_path / "token"
+    tok.write_text("old")
+    seen = []
+    c = K8sClient("https://k8s", "old", False, token_path=str(tok),
+                  transport=httpx.MockTransport(
+                      lambda r: (seen.append(r), httpx.Response(200, json={}))[1]))
+    now = [1000.0]
+    monkeypatch.setattr(k8s_api.time, "monotonic", lambda: now[0])
+    c._token_read = now[0]
+    tok.write_text("new\n")
+    c.list_names("v1", "Service", "styx", "a=b")
+    assert seen[-1].headers["authorization"] == "Bearer old"
+    now[0] += 61
+    c.list_names("v1", "Service", "styx", "a=b")
+    assert seen[-1].headers["authorization"] == "Bearer new"
+
+
+def test_error_message_includes_response_body():
+    c = _client(lambda r: httpx.Response(422, text="spec.routes: Invalid"))
+    obj = next(o for o in _desired() if o["kind"] == "IngressRoute")
+    with pytest.raises(httpx.HTTPStatusError, match="spec.routes: Invalid"):
+        c.apply(obj)
+
+
+def test_sync_continues_after_one_apply_failure():
+    reqs = []
+
+    def handler(r):
+        reqs.append(r)
+        n = sum(1 for x in reqs if x.method == "PATCH")
+        if r.method == "PATCH" and n == 2:
+            return httpx.Response(422, text="bad spec")
+        return httpx.Response(200, json={"items": []})
+
+    desired = _desired()[:3]
+    with pytest.raises(K8sSyncError, match="1/3"):
+        sync_objects(_client(handler), desired, "styx")
+    assert sum(r.method == "PATCH" for r in reqs) == 3
+    assert not [r for r in reqs if r.method in ("DELETE", "GET")]

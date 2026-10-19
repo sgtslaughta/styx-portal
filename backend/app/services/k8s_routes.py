@@ -103,15 +103,28 @@ _MANAGED_KINDS = (
 )
 
 
+class K8sSyncError(RuntimeError):
+    """One or more objects failed to apply (already logged per object)."""
+
+
 def sync_objects(client, desired: list[dict], namespace: str) -> None:
-    """Server-side apply desired objects, then delete stale managed ones."""
+    """Apply every desired object, then prune stale managed ones.
+
+    Prune is skipped if any apply failed (a partial desired set must not
+    delete live routes); failures are logged per object and raised together.
+    """
+    failed = []
     for o in desired:
         try:
             client.apply(o)
-        except Exception:
-            logger.error("k8s apply failed for %s/%s", o["kind"],
-                         o["metadata"]["name"])
-            raise
+        except Exception as e:
+            ref = f"{o['kind']}/{o['metadata']['name']}"
+            logger.error("k8s apply failed for %s: %s", ref, e)
+            failed.append(ref)
+    if failed:
+        raise K8sSyncError(
+            f"{len(failed)}/{len(desired)} k8s applies failed, prune skipped: "
+            + ", ".join(failed))
     selector = ",".join(f"{k}={v}" for k, v in MANAGED_LABEL.items())
     for api, kind in _MANAGED_KINDS:
         keep = {o["metadata"]["name"] for o in desired if o["kind"] == kind}
