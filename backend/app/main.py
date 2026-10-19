@@ -80,21 +80,31 @@ async def _run_monitor_pass(session, monitor, docker) -> bool:
     return changed
 
 
-async def _session_monitor_loop():
+async def _monitor_tick(session, monitor, docker) -> None:
+    """One monitor tick. The Docker pass may fail (no Docker on k8s); that must
+    not stop workstation offline-marking or route refresh."""
     from app.services.route_writer import refresh_routes_from_db
+    from app.services.workstations import mark_stale_offline
 
+    try:
+        changed = await _run_monitor_pass(session, monitor, docker)
+    except Exception:  # noqa: BLE001 - docker may be absent (k8s); keep ticking
+        logger.debug("docker monitor pass skipped", exc_info=True)
+        changed = False
+    ws_changed = await mark_stale_offline(session)
+    await session.commit()
+    if changed or ws_changed:
+        await refresh_routes_from_db(session)
+
+
+async def _session_monitor_loop():
     docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
     monitor = SessionMonitor(docker)
     while True:
         await asyncio.sleep(60)
         try:
             async with async_session() as session:
-                changed = await _run_monitor_pass(session, monitor, docker)
-                from app.services.workstations import mark_stale_offline
-                ws_changed = await mark_stale_offline(session)
-                await session.commit()
-                if changed or ws_changed:
-                    await refresh_routes_from_db(session)
+                await _monitor_tick(session, monitor, docker)
         except Exception:
             pass
 
