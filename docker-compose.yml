@@ -143,9 +143,9 @@ services:
 
   backend:
     # Hosted image (default): `docker compose pull` fetches it from GHCR.
-    # Local build: `docker compose up --build` uses the ./backend context below.
+    # Local build: `docker compose up --build` uses the repo-root context (backend/Dockerfile) below.
     image: ${REGISTRY:-ghcr.io/sgtslaughta}/styx-backend:${STYX_TAG:-latest}
-    build: ./backend
+    build: {context: ., dockerfile: backend/Dockerfile}
     restart: unless-stopped
     depends_on:
       docker-proxy:
