@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     MOUNT_BACKUP_DIR: str = "./data/mount-backups"
     MOUNT_PROBE_IMAGE: str = "busybox:1.36"
     TRAEFIK_DYNAMIC_DIR: str = "/app/traefik-dynamic"
+    ROUTE_BACKEND: str = "file"   # file | k8s
+    K8S_NAMESPACE: str = "styx"
+    # Base for every forwardAuth/errors address Traefik calls back to
+    BACKEND_INTERNAL_URL: str = "http://backend:8000"
+    # "<namespace>:<labelSelector>", e.g. cloudflared:pod=cloudflared; empty = disabled
+    TUNNEL_PEER_K8S: str = ""
     DEPLOY_MODE: str = "tunnel"   # tunnel | direct
     # Direct peers whose CF-Connecting-IP / X-Forwarded-For are believed
     # (Traefik). Default: loopback only; peers on the subnets of the backend's own interfaces

@@ -94,3 +94,14 @@ def test_workstation_without_password_skips_auth_header_mw():
     assert "ws-auth-ws1" in r["middlewares"]
     assert "auth-ws-desk" not in r["middlewares"]
     assert "auth-ws-desk" not in cfg["http"]["middlewares"]
+
+
+def test_forward_auth_uses_backend_internal_url(monkeypatch):
+    from app.services import route_writer
+    base = "http://backend.styx.svc.cluster.local:8000"
+    monkeypatch.setattr(route_writer._settings, "BACKEND_INTERNAL_URL", base)
+    cfg = build_routes_config([], "example.com", "tunnel", workstations=[_ws()])
+    mws = cfg["http"]["middlewares"]
+    assert mws["ws-auth-ws1"]["forwardAuth"]["address"] == \
+        f"{base}/internal/workstations/ws1/auth-check"
+    assert mws["ip-ban-gate"]["forwardAuth"]["address"] == f"{base}/api/auth/ban-check"

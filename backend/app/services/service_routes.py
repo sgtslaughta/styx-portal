@@ -6,6 +6,8 @@ Mounted on the single Styx hostname. `path` services get Path(/slug) || PathPref
 """
 import re
 
+from app.services.route_writer import _settings
+
 COOKIE_NAME = "styx_svc"
 
 
@@ -26,8 +28,8 @@ def focus_slug(value: str | None) -> str | None:
 
 
 # /internal is never routed by Traefik (see test_auth_check_is_internal_and_unrouted).
-AUTH_CHECK = "http://backend:8000/internal/services/{slug}/auth-check"
-STRIP = "http://backend:8000/internal/services/{slug}/strip"
+AUTH_CHECK = "{base}/internal/services/{slug}/auth-check"
+STRIP = "{base}/internal/services/{slug}/strip"
 # Same origin: the browser sends Styx's Path=/ cookies (styx_proxy, csrf_token,
 # styx_svc) to every proxied app. Each service forwardAuth answers with the
 # Cookie header minus Styx cookies and Traefik swaps it in (authResponseHeaders
@@ -60,12 +62,12 @@ def add_service_routes(config: dict, middlewares: dict, services: list[dict],
         mws = list(BASE_MW)
         if s["auth_mode"] != "app-native":
             middlewares[f"svc-auth-{slug}"] = {"forwardAuth": {
-                "address": AUTH_CHECK.format(slug=slug),
+                "address": AUTH_CHECK.format(base=_settings.BACKEND_INTERNAL_URL, slug=slug),
                 "authResponseHeaders": ["X-Styx-User", "X-Styx-Email", "X-Styx-Groups", "Cookie"]}}
             mws.append(f"svc-auth-{slug}")
         else:
             middlewares[f"svc-strip-{slug}"] = {"forwardAuth": {
-                "address": STRIP.format(slug=slug), "authResponseHeaders": ["Cookie"]}}
+                "address": STRIP.format(base=_settings.BACKEND_INTERNAL_URL, slug=slug), "authResponseHeaders": ["Cookie"]}}
             mws.append(f"svc-strip-{slug}")
         if s["mount_mode"] == "cookie-root":
             focus_vals.append(re.escape(focus_value(slug, s["id"])))

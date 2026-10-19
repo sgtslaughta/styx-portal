@@ -65,7 +65,7 @@ def build_routes_config(instances: list[dict], domain: str,
         },
         "ip-ban-gate": {
             "forwardAuth": {
-                "address": "http://backend:8000/api/auth/ban-check"
+                "address": f"{_settings.BACKEND_INTERNAL_URL}/api/auth/ban-check"
             }
         },
     }
@@ -140,7 +140,7 @@ def build_routes_config(instances: list[dict], domain: str,
         # (never parsed from the request); also strips Styx cookies.
         auth_mw = f"inst-auth-{inst_id}"
         middlewares[auth_mw] = _forward_auth(
-            f"http://backend:8000/internal/instances/{inst_id}/auth-check")
+            f"{_settings.BACKEND_INTERNAL_URL}/internal/instances/{inst_id}/auth-check")
 
         # Capture primary router transport config for reuse by extra ports
         primary_transport = _router_transport(deploy_mode, domain)
@@ -226,7 +226,7 @@ def build_routes_config(instances: list[dict], domain: str,
         rid = f"ws-{ws['id']}"
         ws_auth = f"ws-auth-{ws['id']}"
         middlewares[ws_auth] = _forward_auth(
-            f"http://backend:8000/internal/workstations/{ws['id']}/auth-check")
+            f"{_settings.BACKEND_INTERNAL_URL}/internal/workstations/{ws['id']}/auth-check")
         router_middlewares = ["instance-unavailable-errors", ws_auth, strip_mw]
         if "selkies_password" in ws and ws["selkies_password"]:
             router_middlewares.insert(2, auth_header_mw)
