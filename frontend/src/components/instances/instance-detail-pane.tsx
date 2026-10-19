@@ -3,7 +3,9 @@ import { Gauge } from "@/components/common/stat-tile";
 import { OverlaySparkline } from "./sparkline";
 import { RegistryInfo } from "./registry-info";
 import { InstanceThumbnail } from "./instance-thumbnail";
-import { StatusBadge } from "./status-badge";
+import { PaneHeader } from "./pane-header";
+import { TemplateIcon } from "./workspace-row";
+import { statusMeta } from "@/lib/status";
 import { ActionBar } from "@/components/common/action-bar";
 import { TemplateBuilder } from "@/components/templates/builder/template-builder";
 import { Button } from "@/components/ui/button";
@@ -187,7 +189,7 @@ export function InstanceDetailPane({ instanceId }: InstanceDetailPaneProps) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
         <p>No instance selected.</p>
-        <p>Pick one from the list, or launch a new one from the template gallery.</p>
+        <p>Pick one from the list, or launch a new one from Templates.</p>
       </div>
     );
   }
@@ -199,16 +201,19 @@ export function InstanceDetailPane({ instanceId }: InstanceDetailPaneProps) {
     ? (Date.now() - new Date(instance.last_activity + "Z").getTime()) / 1000
     : null;
 
+  const meta = statusMeta(instance.status);
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header: name + status + action bar */}
-      <div className="flex-shrink-0 p-4 border-b border-border space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold truncate" title={instance.name}>{instance.name}</h2>
-          <StatusBadge status={instance.status} showIcon />
-        </div>
-        <ActionBar instance={instance} />
-      </div>
+      <PaneHeader
+        icon={<TemplateIcon icon={template?.icon ?? null} className="size-16 text-5xl" />}
+        title={instance.name}
+        status={meta.label}
+        dotClass={meta.dotClass}
+        muted={meta.group === "stopped" || meta.group === "error"}
+        actions={<ActionBar instance={instance} />}
+      />
 
       {/* Content scroll area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
