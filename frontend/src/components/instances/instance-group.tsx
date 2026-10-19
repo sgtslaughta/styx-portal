@@ -74,15 +74,15 @@ export function InstanceGroup({ query, selection, onSelect, onLaunch }: {
             ) : null;
           })}
         </span>
-        <Button size="sm" variant="ghost" title="Filter by status"
+        <Button size="sm" variant="ghost" title="Filter by status" className="max-sm:size-11 max-sm:px-0"
           onClick={() => setFilter((f) => FILTERS[(FILTERS.indexOf(f) + 1) % FILTERS.length]!)}>
-          <Filter aria-hidden />{FILTER_LABELS[filter]}
+          <Filter aria-hidden /><span className="max-sm:sr-only">{FILTER_LABELS[filter]}</span>
         </Button>
-        <Button size="sm" variant={selecting ? "secondary" : "ghost"}
+        <Button size="sm" variant={selecting ? "secondary" : "ghost"} className="max-sm:h-11 max-sm:min-w-11 max-sm:px-2"
           onClick={() => setPicked(selecting ? new Set() : new Set(rows.map((i) => i.id)))}>
-          <CheckSquare aria-hidden />{selecting ? `${picked.size} selected` : "Select"}
+          <CheckSquare aria-hidden /><span className={selecting ? undefined : "max-sm:sr-only"}>{selecting ? `${picked.size} selected` : "Select"}</span>
         </Button>
-        <Button size="sm" onClick={onLaunch}><Plus aria-hidden />Launch</Button>
+        <Button size="sm" onClick={onLaunch} className="max-sm:size-11 max-sm:px-0"><Plus aria-hidden /><span className="max-sm:sr-only">Launch</span></Button>
       </GroupHeader>
       {!collapsed && (
         <div id={LIST_ID} className="py-1">

@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { ADMIN, MEMBER, SHOTS, accountMenu, openHome, openSettings, uiLogin } from "./helpers";
-import { INSTANCES, mockApi } from "./shots-mocks";
+import { INSTANCES, mockApi, mockWorkstationIcons } from "./shots-mocks";
 
 // Home layout gates: no page-level vertical overflow; header, nav and panes at 1440 and 390.
 const SIZES = [{ w: 1440, h: 900 }, { w: 390, h: 844 }];
@@ -50,6 +50,7 @@ test("home with running, paused, stopped and errored instances", async ({ page }
 
 test("home workstation pane: online, offline, phone overlay", async ({ page }) => {
   await login(page, ADMIN);
+  await mockWorkstationIcons(page);
   await mockApi(page, "GET", "/api/workstations/mine",
     [STUDIO, { ...STUDIO, id: "ws-lab", name: "Lab", status: "offline", last_error: "Agent stopped" }]);
   await mockApi(page, "GET", "/api/instances", INSTANCES);

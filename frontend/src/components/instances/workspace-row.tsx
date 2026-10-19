@@ -21,7 +21,7 @@ export function GroupHeader({ title, count, collapsed, onToggle, controlsId, chi
   title: string; count: number; collapsed: boolean; onToggle: () => void; controlsId: string; children?: ReactNode;
 }) {
   return (
-    <div className="sticky top-0 z-10 flex min-h-11 flex-wrap items-center gap-2 border-b border-border bg-background/95 px-1 py-1 backdrop-blur">
+    <div className="sticky top-0 z-10 flex min-h-11 items-center gap-2 border-b border-border bg-background/95 px-1 py-1 backdrop-blur">
       <button type="button" onClick={onToggle} aria-expanded={!collapsed} aria-controls={controlsId}
         className="mr-auto inline-flex min-h-9 items-center gap-1.5 rounded-md px-1 text-sm font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-11">
         <ChevronDown className={cn("size-4 transition-transform", collapsed && "-rotate-90")} aria-hidden />
@@ -53,6 +53,7 @@ export function WorkspaceRow({ icon, name, line, dot, selected, dim, onSelect, q
         <span className={cn("size-2.5 shrink-0 rounded-full", dot.dotClass)} title={dot.label} aria-hidden />
         <span className="sr-only">{dot.label}</span>
       </button>
+      {!quick && <span data-slot="quick" aria-hidden className="size-9 shrink-0 max-sm:size-11 pointer-coarse:size-11" />}
       {quick && (
         <button type="button" onClick={quick.onClick} aria-label={quick.label} title={quick.label}
           className="inline-flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 outline-none hover:bg-secondary hover:text-foreground focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring group-hover:opacity-100 max-sm:size-11 pointer-coarse:size-11 pointer-coarse:opacity-100">

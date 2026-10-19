@@ -41,7 +41,7 @@ export function WorkstationDetailPane({ ws }: { ws: Workstation }) {
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      <PaneHeader icon={<WorkstationIcon ws={ws} className="size-20 rounded-xl" />} title={ws.name}
+      <PaneHeader icon={<WorkstationIcon ws={ws} className="size-16 rounded-xl" />} title={ws.name}
         status={dot.label} dotClass={dot.dotClass} muted={!online} actions={actions} />
       <div className="space-y-4 p-4">
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}

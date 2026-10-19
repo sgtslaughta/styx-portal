@@ -27,6 +27,17 @@ describe("WorkstationIcon", () => {
   });
 });
 
+describe("WorkstationIcon fallback", () => {
+  test("image error shows uppercase initial tile, no img; resets on etag change", () => {
+    const { container, rerender } = render(<WorkstationIcon ws={ws({ name: "game" })} className="size-8" />);
+    fireEvent.error(container.querySelector("img")!);
+    expect(container.querySelector("img")).toBeNull();
+    expect(screen.getByText("G")).toBeTruthy();
+    rerender(<WorkstationIcon ws={ws({ name: "game", icon_etag: "new" })} className="size-8" />);
+    expect(container.querySelector("img")).not.toBeNull();
+  });
+});
+
 describe("WorkstationIconSettings", () => {
   test("auto mode has no Save button; shows current icon", () => {
     const { container } = render(<WorkstationIconSettings ws={ws({ icon_kind: "emoji" })} onSaved={vi.fn()} />);

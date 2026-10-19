@@ -8,10 +8,10 @@ export function PaneHeader({ icon, title, status, dotClass, actions, muted }: {
   return (
     <div className="shrink-0 border-b border-border">
       <div data-testid="pane-hero"
-        className={cn("relative flex h-32 items-center justify-center bg-primary/10", muted && "opacity-60 grayscale")}>
+        className={cn("flex flex-col items-center gap-2 bg-primary/10 px-4 py-4", muted && "opacity-60 grayscale")}>
         {icon}
-        <span className="absolute bottom-2 left-3 flex items-center gap-1.5 text-xs font-medium">
-          <span className={cn("size-2 rounded-full", dotClass)} aria-hidden />{status}
+        <span aria-hidden className="flex items-center gap-1.5 text-xs font-medium">
+          <span className={cn("size-2 rounded-full", dotClass)} />{status}
         </span>
       </div>
       <div className="flex flex-wrap items-center gap-3 p-4">
