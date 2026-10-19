@@ -5,6 +5,8 @@ import logging
 import re
 from urllib.parse import urlparse
 
+import httpx
+
 logger = logging.getLogger("styx-portal")
 MANAGED_LABEL = {"app.kubernetes.io/managed-by": "styx-backend"}
 _TRAEFIK = "traefik.io/v1alpha1"
@@ -117,6 +119,11 @@ def sync_objects(client, desired: list[dict], namespace: str) -> None:
     for o in desired:
         try:
             client.apply(o)
+        except httpx.TransportError as e:  # API down: fail fast, hold lock short
+            logger.error("k8s API unreachable applying %s/%s: %r",
+                         o["kind"], o["metadata"]["name"], e)
+            raise K8sSyncError(f"k8s API unreachable ({e!r}); "
+                               "apply aborted, prune skipped") from e
         except Exception as e:
             ref = f"{o['kind']}/{o['metadata']['name']}"
             logger.error("k8s apply failed for %s: %s", ref, e)

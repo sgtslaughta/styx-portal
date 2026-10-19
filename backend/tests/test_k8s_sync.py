@@ -216,3 +216,15 @@ def test_sync_continues_after_one_apply_failure():
         sync_objects(_client(handler), desired, "styx")
     assert sum(r.method == "PATCH" for r in reqs) == 3
     assert not [r for r in reqs if r.method in ("DELETE", "GET")]
+
+
+def test_sync_aborts_on_transport_error():
+    reqs = []
+
+    def handler(r):
+        reqs.append(r)
+        raise httpx.ConnectError("down", request=r)
+
+    with pytest.raises(K8sSyncError, match="unreachable"):
+        sync_objects(_client(handler), _desired(), "styx")
+    assert len(reqs) == 1 and reqs[0].method == "PATCH"
