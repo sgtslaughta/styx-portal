@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlmodel import select
 
-from app.models import Invite, OAuthProvider, RefreshToken, User
+from app.models import AuditLog, Invite, OAuthProvider, RefreshToken, User
 from app.schemas import OAuthIdentity
 from app.security.crypto import encrypt_secret
 from app.security.passwords import hash_password
@@ -276,3 +276,54 @@ async def test_change_password_wrong_old_counts_toward_lockout(client, session):
     assert r.status_code == 401
     client.cookies.delete("styx_device")  # a trusted device is exempt by design
     assert (await _login(client, "plain")).status_code == 401
+
+
+async def _plain_session(client, session):
+    session.add(User(username="plain", password_hash=hash_password(PW), role="member",
+                     is_active=True))
+    await session.commit()
+    assert (await _login(client, "plain")).status_code == 200
+    client.headers.update({"X-CSRF-Token": client.cookies.get("csrf_token")})
+
+
+def _chpw(client, old, headers=None):
+    return client.post("/api/auth/change-password", headers=headers or {},
+                       json={"old_password": old, "new_password": PW + " new!"})
+
+
+async def test_change_password_honours_account_throttle(client, session):
+    await _plain_session(client, session)
+    for i in range(30):  # distributed guessing engages the per-account brake
+        await client.post("/api/auth/login", headers={"X-Forwarded-For": f"203.0.113.{i + 1}"},
+                          json={"username": "plain", "password": "nope"})
+    h = {"X-Forwarded-For": "198.51.100.7"}
+    assert (await _chpw(client, "wrong", h)).status_code == 401  # spends the 10 s slot
+    assert (await _chpw(client, PW, h)).status_code == 401
+
+
+async def test_change_password_while_locked_not_counted(client, session):
+    from app.services.abuse import fail_tracker, ip_key
+    await _plain_session(client, session)
+    for _ in range(10):
+        await _chpw(client, "wrong")
+    hits = len(fail_tracker._hits.get(ip_key("127.0.0.1"), []))
+    for _ in range(3):
+        assert (await _chpw(client, "wrong")).status_code == 401
+    assert len(fail_tracker._hits.get(ip_key("127.0.0.1"), [])) == hits
+    audits = (await session.exec(select(AuditLog).where(
+        AuditLog.action == "auth.password_change_locked"))).all()
+    assert len(audits) == 3
+
+
+async def test_change_password_keeps_card_session_start(client, session):
+    card = await _card_user(session)
+    ch = (await _login(client)).json()["challenge"]
+    await client.post("/api/auth/login/matrix", json={"answers": [card[c] for c in ch]})
+    await _age_family(session, 13)  # past the cap; the access token is still valid
+    client.headers.update({"X-CSRF-Token": client.cookies.get("csrf_token")})
+    r = await client.post("/api/auth/change-password",
+                          json={"old_password": PW, "new_password": PW + " v2 rotated!"})
+    assert r.status_code == 200, r.text
+    client.headers.update({"X-CSRF-Token": client.cookies.get("csrf_token")})
+    r = await client.post("/api/auth/refresh")
+    assert r.status_code == 401 and r.json()["detail"] == "Session expired"

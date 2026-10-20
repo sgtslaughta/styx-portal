@@ -347,8 +347,11 @@ async def change_password(body: ChangePasswordRequest, request: Request, respons
                           user: User = Depends(get_current_user)):
     # Same brute-force accounting as login: a stolen session must not guess the password.
     ip, resolved = client_ip_resolved(request)
-    if (login_flow.locked(user.username, ip, None)
-            or not verify_password(body.old_password, user.password_hash)):
+    if login_flow.blocked(user.username, ip, None):
+        await audit_request(session, request, "auth.password_change_locked", user_id=user.id)
+        await session.commit()
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Current password is incorrect")
+    if not verify_password(body.old_password, user.password_hash):
         await login_flow.record_failure(
             session, request, username=user.username, ip=ip, resolved=resolved, rnd=None,
             track_user=True, action="auth.password_change_failed", user_id=user.id)
@@ -371,7 +374,10 @@ async def change_password(body: ChangePasswordRequest, request: Request, respons
     await session.exec(update(RefreshToken)
                        .where(RefreshToken.user_id == user.id)
                        .values(revoked=True))
-    await _issue_session(response, session, user, request, session_only=session_only)
+    # A card session keeps its family so MATRIX_SESSION_MAX_HOURS counts from the card login.
+    family = (cur.family_id or cur.jti) if cur and session_only else None
+    await _issue_session(response, session, user, request, family_id=family,
+                         session_only=session_only)
     await audit_request(session, request, "auth.password_change", user_id=user.id)
     await session.commit()
     return {"ok": True}
