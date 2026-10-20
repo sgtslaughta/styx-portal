@@ -3,7 +3,7 @@ and GStreamer's pipewiresrc). Only ever run on the seat's private session bus.
 
 1. Portal backend `org.freedesktop.impl.portal.desktop.styx`: ScreenCast and
    RemoteDesktop implemented on Mutter's own D-Bus APIs, so there is no consent
-   dialog. The cursor is always embedded in the frames (metadata cursors flicker).
+   dialog. The cursor travels as metadata and the browser draws it (no lag).
 2. Holds the seat's virtual monitor at WxH (argv[1]) via Mutter RecordVirtual
    plus a fakesink consumer whose caps fix the size. A new size means a new
    process: renegotiating caps in place stalls frames.
@@ -38,7 +38,7 @@ SC_IFACE = "org.freedesktop.impl.portal.ScreenCast"
 RD_IFACE = "org.freedesktop.impl.portal.RemoteDesktop"
 SESS_IFACE = "org.freedesktop.impl.portal.Session"
 M = "org.gnome.Mutter."
-EMBEDDED = 1            # Mutter cursor-mode: 0 hidden, 1 embedded, 2 metadata
+CURSOR_MODE = 2         # Mutter cursor-mode: 0 hidden, 1 embedded, 2 metadata (client draws it: no round-trip lag)
 FRONTENDS = ("/usr/libexec/xdg-desktop-portal", "/usr/lib/xdg-desktop-portal")
 LIVE_TRIES = 50         # x 200 ms = 10 s for the monitor to come up
 
@@ -142,7 +142,7 @@ class Portal(dbus.service.Object):
                 sc = s.sc = _mutter("ScreenCast", scp, "ScreenCast.Session")
                 bus.add_signal_receiver(lambda: s.lost(), "Closed",
                                         M + "ScreenCast.Session", path=scp)
-                s.stream_path = sc.RecordMonitor("", {"cursor-mode": dbus.UInt32(EMBEDDED)})
+                s.stream_path = sc.RecordMonitor("", {"cursor-mode": dbus.UInt32(CURSOR_MODE)})
                 sobj = bus.get_object(M + "ScreenCast", s.stream_path)
 
                 def added(node):
@@ -207,7 +207,7 @@ def rd_start(self, handle, session_handle, app_id, parent_window, options, ok, e
 
 
 def sc_select(self, handle, session_handle, app_id, options):
-    sessions[str(session_handle)].want_screen = True   # cursor_mode ignored: always embedded
+    sessions[str(session_handle)].want_screen = True   # cursor_mode ignored: always metadata
     return dbus.UInt32(0), dbus.Dictionary({}, signature="sv")
 
 
@@ -300,7 +300,7 @@ class Monitor:
         bus.add_signal_receiver(lambda *a: on_closed(), "Closed",
                                 M + "ScreenCast.Session", path=path)
         stream = self.sess.RecordVirtual(dbus.Dictionary(
-            {"cursor-mode": dbus.UInt32(EMBEDDED), "is-platform": dbus.Boolean(True)},
+            {"cursor-mode": dbus.UInt32(CURSOR_MODE), "is-platform": dbus.Boolean(True)},
             signature="sv"))
         bus.add_signal_receiver(self._added, "PipeWireStreamAdded",
                                 M + "ScreenCast.Stream", path=stream)
