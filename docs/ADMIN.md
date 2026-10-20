@@ -229,7 +229,9 @@ kubectl -n styx exec deploy/backend -- python -c "import sqlite3;c=sqlite3.conne
 
 ### Session length
 
-A sign-in that used the card makes a session-only login: its cookies are cleared when the browser closes, and no trusted-device cookie is set. The server also ends it after a fixed time, even if the browser stays open: **Settings, Sessions & tokens, Card session max age (h)** (`MATRIX_SESSION_MAX_HOURS`, default 12, range 1-168).
+A sign-in that used the card makes a session-only login: its cookies are cleared when the browser closes, and no trusted-device cookie is set. The server also ends it after a fixed time, even if the browser stays open: **Settings, Sessions & tokens, Card session max age (h)** (`MATRIX_SESSION_MAX_HOURS`, default 12, range 1-168). The cap also applies to proxied apps and workstations, not only the portal.
+
+A wrong current password on **Change password** counts as a failed sign-in, so repeated guesses lock the account the same way.
 
 ## Operations Checklist
 
