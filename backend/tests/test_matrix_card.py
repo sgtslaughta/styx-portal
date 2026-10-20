@@ -32,3 +32,16 @@ def test_verify_wrong_length():
 def test_seal_roundtrip():
     obj = {"A1": "ACD", "x": [1, 2]}
     assert mc.unseal(mc.seal(obj)) == obj
+
+
+def test_verify_empty_challenge_fails():
+    assert mc.verify(mc.generate_card(), [], []) is False
+
+
+def test_verify_missing_cell_with_empty_answers_fails():
+    assert mc.verify({"A1": "AAA"}, ["B2", "C3", "D4"], ["", "", ""]) is False
+
+
+def test_verify_two_right_one_wrong():
+    card = mc.generate_card()
+    assert mc.verify(card, ["A1", "B2", "C3"], ["???", card["B2"], card["C3"]]) is False

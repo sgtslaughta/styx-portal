@@ -10,7 +10,7 @@ from app.models import User
 from app.middleware.rate_limit import client_ip_resolved
 from app.routers.auth import _issue_session
 from app.security import tokens
-from app.security.cookies import DEVICE_COOKIE, MFA_COOKIE, clear_mfa_cookie, set_device_cookie
+from app.security.cookies import DEVICE_COOKIE, MFA_COOKIE, clear_mfa_cookie
 from app.security.deps import get_current_user
 from app.security.passwords import verify_password
 from app.services import login_flow, matrix_card
@@ -44,14 +44,16 @@ def _check_password(user: User, password: str) -> None:
 
 
 @router.get("/matrix")
-async def matrix_status(user: User = Depends(get_current_user)):
+async def matrix_status(response: Response, user: User = Depends(get_current_user)):
+    response.headers["Cache-Control"] = "no-store"
     return {"enabled": bool(user.matrix_card)}
 
 
 @router.post("/matrix/generate")
-async def matrix_generate(body: PasswordBody, request: Request,
+async def matrix_generate(body: PasswordBody, request: Request, response: Response,
                           user: User = Depends(get_current_user),
                           session: AsyncSession = Depends(get_session)):
+    response.headers["Cache-Control"] = "no-store"
     _check_password(user, body.password)
     cells = matrix_card.generate_card()
     confirm = matrix_card.pick_challenge(1)[0]
@@ -111,10 +113,11 @@ async def _pending_user(request: Request, session: AsyncSession) -> User:
 @router.post("/login/matrix")
 async def login_matrix(body: MatrixLoginBody, request: Request, response: Response,
                        session: AsyncSession = Depends(get_session)):
+    response.headers["Cache-Control"] = "no-store"
     user = await _pending_user(request, session)
     ip, resolved = client_ip_resolved(request)
     rnd = tokens.device_rnd(request.cookies.get(DEVICE_COOKIE), user)
-    if login_flow.blocked(user.username, ip, rnd):
+    if login_flow.locked(user.username, ip, rnd):
         await audit_request(session, request, "auth.login_locked", user_id=user.id)
         await session.commit()
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid code")
@@ -127,7 +130,6 @@ async def login_matrix(body: MatrixLoginBody, request: Request, response: Respon
     user.matrix_challenge = None
     login_flow.clear_lockout(session, user, ip, rnd)
     await _issue_session(response, session, user, request, session_only=True)
-    set_device_cookie(response, tokens.create_device_token(user.id, user.token_version))
     clear_mfa_cookie(response)
     await audit_request(session, request, "auth.login", user_id=user.id,
                         detail={"method": "matrix"})

@@ -1,5 +1,6 @@
 """Lockout gate, failure path and success clears shared by password and matrix login."""
 import json
+from datetime import timedelta
 
 from fastapi import Request, Response
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -23,6 +24,19 @@ def blocked(username: str, ip: str, rnd: str | None) -> bool:
     return (login_lockout.is_locked(username, ip)
             or login_lockout.throttled(username, _settings.LOGIN_GLOBAL_THRESHOLD,
                                        sys_settings.get("LOCKOUT_DURATION")))
+
+
+def locked(username: str, ip: str, rnd: str | None) -> bool:
+    """Card step: the password step already passed the global throttle, so only the
+    per-(user, IP) lock applies (re-spending the 10 s slot would refuse correct codes)."""
+    if rnd is not None and not login_lockout.device_blocked(rnd):
+        return False
+    return login_lockout.is_locked(username, ip)
+
+
+def session_only_expired(session_only: bool, age: timedelta) -> bool:
+    """Absolute cap for session-only (card, public computer) refresh families."""
+    return session_only and age > timedelta(hours=sys_settings.get("MATRIX_SESSION_MAX_HOURS"))
 
 
 async def record_failure(session: AsyncSession, request: Request, *, username: str, ip: str,

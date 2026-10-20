@@ -21,11 +21,12 @@ def pick_challenge(n: int = 3) -> list[str]:
 
 
 def verify(card: dict[str, str], challenge: list[str], answers: list[str]) -> bool:
-    if len(answers) != len(challenge):
+    # Fail closed: empty challenge, count mismatch or an unknown cell never verifies.
+    if not challenge or len(answers) != len(challenge) or any(c not in card for c in challenge):
         return False
     ok = True
     for cell, ans in zip(challenge, answers):
-        ok &= hmac.compare_digest(card.get(cell, "").encode(), str(ans).strip().upper().encode())
+        ok &= hmac.compare_digest(card[cell].encode(), str(ans).strip().upper().encode())
     return ok
 
 

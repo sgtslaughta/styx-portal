@@ -84,3 +84,9 @@ async def test_member_cannot_admin_reset(member_client, session):
     u = await _user(session, "member")
     r = await member_client.request("DELETE", f"/api/users/{u.id}/matrix")
     assert r.status_code == 403
+
+
+async def test_matrix_responses_not_cached(admin_client):
+    r = await admin_client.post("/api/auth/matrix/generate", json={"password": PW})
+    assert r.status_code == 200 and r.headers["cache-control"] == "no-store"
+    assert (await admin_client.get("/api/auth/matrix")).headers["cache-control"] == "no-store"

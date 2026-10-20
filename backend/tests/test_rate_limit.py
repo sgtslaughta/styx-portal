@@ -286,3 +286,8 @@ def test_trusted_networks_blank_is_empty():
     from app.middleware.rate_limit import _trusted_networks
     assert _trusted_networks("") == ()
     assert _trusted_networks(" , ") == ()
+
+
+def test_matrix_remove_is_strict():
+    assert is_strict_auth("DELETE", "/api/auth/matrix") is True
+    assert is_strict_auth("GET", "/api/auth/matrix") is False

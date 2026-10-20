@@ -244,7 +244,9 @@ async def refresh(request: Request, response: Response,
     if not user or not user.is_active:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User inactive")
     root = await session.get(RefreshToken, stored.family_id) or stored
-    if _now() - _aware(root.created_at) > timedelta(seconds=_settings.SESSION_MAX_AGE):
+    age = _now() - _aware(root.created_at)
+    if (age > timedelta(seconds=_settings.SESSION_MAX_AGE)
+            or login_flow.session_only_expired(stored.session_only, age)):
         await session.exec(update(RefreshToken).where(
             RefreshToken.family_id == stored.family_id).values(revoked=True))
         await session.commit()

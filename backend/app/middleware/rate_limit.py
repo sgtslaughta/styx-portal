@@ -239,7 +239,9 @@ _STRICT_AUTH_PATHS = frozenset({
 
 
 def is_strict_auth(method: str, path: str) -> bool:
-    return method == "POST" and path in _STRICT_AUTH_PATHS
+    # DELETE /api/auth/matrix checks the password: a stolen session must not brute-force it.
+    return ((method == "POST" and path in _STRICT_AUTH_PATHS)
+            or (method, path) == ("DELETE", "/api/auth/matrix"))
 
 
 _EXEMPT_PATHS = frozenset({"/api/auth/ban-check"})

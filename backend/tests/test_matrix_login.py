@@ -2,6 +2,8 @@
 import json
 from unittest.mock import AsyncMock, patch
 
+from datetime import datetime, timedelta, timezone
+
 from sqlmodel import select
 
 from app.models import Invite, OAuthProvider, RefreshToken, User
@@ -78,7 +80,8 @@ async def test_matrix_success_issues_session_only_cookies(client, session):
     for name in ("access_token", "refresh_token", "styx_proxy", "csrf_token"):
         hdr = _set_cookie(r, name)[0]
         assert "Max-Age" not in hdr and "expires" not in hdr.lower(), hdr
-    assert _set_cookie(r, "styx_device")
+    assert not _set_cookie(r, "styx_device")  # public computer: no trusted-device cookie
+    assert r.headers["cache-control"] == "no-store"
     assert "Path=/api/auth" in _set_cookie(r, "styx_mfa", deleted=True)[0]
     assert (await client.get("/api/auth/me")).status_code == 200
     assert (await _user(session)).matrix_challenge is None
@@ -186,3 +189,44 @@ async def test_change_password_keeps_session_only(client, session):
     live = (await session.exec(select(RefreshToken).where(
         RefreshToken.revoked == False))).all()  # noqa: E712
     assert len(live) == 1 and live[0].session_only is True
+
+
+async def test_matrix_step_not_throttled_after_password(client, session):
+    card = await _card_user(session)
+    for i in range(30):  # LOGIN_GLOBAL_THRESHOLD: distributed guessing engages the brake
+        await client.post("/api/auth/login", headers={"X-Forwarded-For": f"203.0.113.{i + 1}"},
+                          json={"username": "carol", "password": "nope"})
+    h = {"X-Forwarded-For": "198.51.100.7"}
+    r = await client.post("/api/auth/login", headers=h, json={"username": "carol", "password": PW})
+    assert r.status_code == 200 and r.json()["mfa_required"] is True
+    ch = r.json()["challenge"]
+    r = await client.post("/api/auth/login/matrix", headers=h,
+                          json={"answers": [card[c] for c in ch]})
+    assert r.status_code == 200, r.text
+
+
+async def _age_family(session, hours):
+    for t in (await session.exec(select(RefreshToken))).all():
+        t.created_at = datetime.now(timezone.utc) - timedelta(hours=hours)
+        session.add(t)
+    await session.commit()
+
+
+async def test_session_only_family_capped(client, session):
+    card = await _card_user(session)
+    ch = (await _login(client)).json()["challenge"]
+    await client.post("/api/auth/login/matrix", json={"answers": [card[c] for c in ch]})
+    await _age_family(session, 13)  # MATRIX_SESSION_MAX_HOURS default 12
+    client.headers.update({"X-CSRF-Token": client.cookies.get("csrf_token")})
+    r = await client.post("/api/auth/refresh")
+    assert r.status_code == 401 and r.json()["detail"] == "Session expired"
+
+
+async def test_persistent_family_not_capped(client, session):
+    session.add(User(username="plain", password_hash=hash_password(PW), role="member",
+                     is_active=True))
+    await session.commit()
+    assert (await _login(client, "plain")).status_code == 200
+    await _age_family(session, 13)
+    client.headers.update({"X-CSRF-Token": client.cookies.get("csrf_token")})
+    assert (await client.post("/api/auth/refresh")).status_code == 200
