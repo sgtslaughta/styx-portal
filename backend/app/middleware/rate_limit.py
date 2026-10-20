@@ -233,6 +233,8 @@ _STRICT_AUTH_PATHS = frozenset({
     "/api/auth/login",
     "/api/auth/accept-invite",
     "/api/auth/setup",
+    "/api/auth/matrix/generate",
+    "/api/auth/login/matrix",
 })
 
 

@@ -196,6 +196,21 @@ async def delete_user(user_id: str, request: Request,
     return {"ok": True}
 
 
+@router.delete("/{user_id}/matrix")
+async def reset_matrix(user_id: str, request: Request,
+                       admin: User = Depends(require_admin),
+                       session: AsyncSession = Depends(get_session)):
+    from app.routers.matrix import clear_matrix
+    user = await session.get(User, user_id)
+    if not user:
+        raise HTTPException(status.HTTP_404_NOT_FOUND)
+    clear_matrix(user)
+    session.add(user)
+    await audit_request(session, request, "matrix.admin_reset", user_id=admin.id, resource=user.id)
+    await session.commit()
+    return {"ok": True}
+
+
 def _user_out(u: User) -> UserOut:
     left = login_lockout.locked_for(u.username)
     mem_until = (datetime.now(timezone.utc) + timedelta(seconds=left)).isoformat() if left > 0 else None
