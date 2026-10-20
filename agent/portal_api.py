@@ -5,6 +5,9 @@ import urllib.request
 from hashlib import sha256
 from pathlib import Path
 
+# Cloudflare 403s the default "Python-urllib" UA (browser integrity check).
+UA = "styx-agent"
+
 
 # --- TLS pinning -----------------------------------------------------------
 # Enrollment verified the server certificate's SHA256 fingerprint against the
@@ -38,7 +41,7 @@ def api(cfg: dict, path: str, payload: dict | None = None) -> dict:
     req = urllib.request.Request(
         url, data=data, method="POST" if data is not None else "GET",
         headers={"Authorization": f"Bearer {cfg['agent_token']}",
-                 "Content-Type": "application/json"})
+                 "Content-Type": "application/json", "User-Agent": UA})
     ctx = _ssl_context(cfg) if url.startswith("https") else None
     with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
         return json.loads(resp.read().decode() or "{}")
@@ -48,7 +51,7 @@ def api_bytes(cfg: dict, path: str) -> tuple[bytes, str, str]:
     """GET returning (body, content type, etag without quotes)."""
     url = cfg["server"].rstrip("/") + path
     req = urllib.request.Request(
-        url, headers={"Authorization": f"Bearer {cfg['agent_token']}"})
+        url, headers={"Authorization": f"Bearer {cfg['agent_token']}", "User-Agent": UA})
     ctx = _ssl_context(cfg) if url.startswith("https") else None
     with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
         ctype = resp.headers.get("Content-Type", "").split(";")[0].strip()

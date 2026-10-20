@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-AGENT_VERSION = "0.8.0"
+AGENT_VERSION = "0.8.1"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -276,7 +276,7 @@ def run(cfg: dict) -> int:
                 print(f"selkies exited rc={procs['selkies'].returncode}; "
                       f"restart in {backoff}s", flush=True)
                 time.sleep(min(backoff, 60))
-                backoff *= 2
+                backoff = min(backoff * 2, 60)
             procs["selkies"] = start_selkies()
             if procs["selkies"] is not None:
                 procs["selkies"].styx_port = internal_port
