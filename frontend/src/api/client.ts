@@ -387,6 +387,16 @@ export const api = {
     request("/auth/change-password", { method: "POST",
       body: JSON.stringify({ old_password, new_password }) }),
 
+  matrixStatus: () => request<{ enabled: boolean }>("/auth/matrix"),
+  matrixGenerate: (password: string) =>
+    request<{ cells: Record<string, string>; confirm_cell: string }>("/auth/matrix/generate",
+      { method: "POST", body: JSON.stringify({ password }) }),
+  matrixActivate: (answer: string) =>
+    request<{ enabled: boolean }>("/auth/matrix/activate",
+      { method: "POST", body: JSON.stringify({ answer }) }),
+  matrixRemove: (password: string) =>
+    request("/auth/matrix", { method: "DELETE", body: JSON.stringify({ password }) }),
+
   // Workstations
   listWorkstations: () => request<Workstation[]>("/workstations"),
   myWorkstations: () => request<Workstation[]>("/workstations/mine"),

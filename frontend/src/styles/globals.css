@@ -288,3 +288,10 @@ body[data-ferry-drag] iframe { pointer-events: none; }
 
 /* Native selects: inset chevron instead of the browser one flush against the border. */
 select:not([multiple]) { appearance: none; background-image: var(--select-chevron); background-repeat: no-repeat; background-position: right .75rem center; background-size: 1rem; padding-right: 2.25rem; }
+
+/* Sign-in card: print only the card */
+@media print {
+  body * { visibility: hidden; }
+  .matrix-print, .matrix-print * { visibility: visible; }
+  .matrix-print { position: absolute; left: 0; top: 0; }
+}

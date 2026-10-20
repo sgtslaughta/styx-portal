@@ -1,7 +1,7 @@
 import type { ComponentType } from "react";
 import {
   Activity, Terminal, Cpu, ScrollText, Users, KeyRound, HardDrive,
-  Link2, UsersRound, BarChart3, Shield, UserCircle, Heart, MonitorSmartphone, SlidersHorizontal, Globe,
+  Link2, UsersRound, BarChart3, Shield, UserCircle, Heart, MonitorSmartphone, SlidersHorizontal, Globe, Grid3x3,
 } from "lucide-react";
 import { MetricsOverview } from "@/components/system/metrics-overview";
 import { MetricsSessions } from "@/components/system/metrics-sessions";
@@ -15,6 +15,7 @@ import { WorkstationsPanel } from "@/components/system/workstations-panel";
 import { OAuthProvidersPanel } from "@/components/system/oauth-providers-panel";
 import { ImageManager } from "@/components/system/image-manager";
 import { ConnectedAccounts } from "@/components/system/connected-accounts";
+import { MatrixCard } from "@/components/settings/matrix-card";
 import { SystemSettingsPanel } from "@/components/system/system-settings-panel";
 
 export type SettingsSection = {
@@ -87,6 +88,9 @@ export const CATEGORIES: SettingsCategory[] = [
       { id: "connected", label: "Connected accounts", icon: Link2,
         description: "Link external sign-in providers to your account.",
         tooltip: "Link or unlink Google, GitHub, and other providers", Component: ConnectedAccounts },
+      { id: "signin-card", label: "Sign-in card", icon: Grid3x3,
+        description: "A printable code card required at password sign-in.",
+        tooltip: "Generate, replace, or remove your sign-in card", Component: MatrixCard },
     ],
   },
 ];
