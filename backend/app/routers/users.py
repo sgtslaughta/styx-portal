@@ -220,4 +220,5 @@ def _user_out(u: User) -> UserOut:
         last_login=u.last_login.isoformat() if u.last_login else None,
         locked_until=u.locked_until.isoformat() if u.locked_until else mem_until,
         failed_count=u.failed_count,
+        has_matrix_card=bool(u.matrix_card),
     )

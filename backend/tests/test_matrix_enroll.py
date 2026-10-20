@@ -72,10 +72,15 @@ async def test_admin_reset(admin_client, session):
                      is_active=True, matrix_card=matrix_card.seal({"A1": "AAA"}), matrix_serial=3))
     await session.commit()
     bob = await _user(session, "bob")
+    listed = {u["username"]: u for u in (await admin_client.get("/api/users")).json()}
+    assert listed["bob"]["has_matrix_card"] is True
+    assert listed["admin"]["has_matrix_card"] is False
     r = await admin_client.request("DELETE", f"/api/users/{bob.id}/matrix")
     assert r.status_code == 200
     bob = await _user(session, "bob")
     assert bob.matrix_card is None and bob.matrix_serial == 4
+    listed = {u["username"]: u for u in (await admin_client.get("/api/users")).json()}
+    assert listed["bob"]["has_matrix_card"] is False
     r = await admin_client.request("DELETE", "/api/users/nope/matrix")
     assert r.status_code == 404
 

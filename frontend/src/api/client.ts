@@ -370,7 +370,7 @@ export const api = {
   acceptInvite: (data: { token: string; username: string; password: string }) =>
     request<{ id: string; username: string; role: string }>("/auth/accept-invite", {
       method: "POST", body: JSON.stringify(data) }),
-  listUsers: () => request<{ id: string; username: string; email: string | null; role: string; is_active: boolean; last_login: string | null; locked_until: string | null; failed_count: number }[]>("/users"),
+  listUsers: () => request<{ id: string; username: string; email: string | null; role: string; is_active: boolean; last_login: string | null; locked_until: string | null; failed_count: number; has_matrix_card?: boolean }[]>("/users"),
   createInvite: (data: { email?: string; role: string }) =>
     request<{ token: string; expires_at: string | null }>("/users/invites", {
       method: "POST", body: JSON.stringify(data) }),
@@ -383,6 +383,7 @@ export const api = {
   forcePasswordChange: (id: string) =>
     request(`/users/${id}/force-password-change`, { method: "POST" }),
   deleteUser: (id: string) => request(`/users/${id}`, { method: "DELETE" }),
+  adminResetMatrix: (id: string) => request<{ ok: boolean }>(`/users/${id}/matrix`, { method: "DELETE" }),
   changePassword: (old_password: string, new_password: string) =>
     request("/auth/change-password", { method: "POST",
       body: JSON.stringify({ old_password, new_password }) }),
