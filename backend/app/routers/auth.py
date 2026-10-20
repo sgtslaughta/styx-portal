@@ -20,10 +20,10 @@ from app.security.cookies import (DEVICE_COOKIE, TX_PATH, clear_auth_cookies, se
 from app.security.csrf import new_csrf_token, CSRF_COOKIE
 from app.security.deps import get_current_user
 from app.security.setup_gate import users_exist
-from app.services import federation, single_use
+from app.services import federation, login_flow, single_use
 from app.services.audit import audit_request
 from app.middleware.rate_limit import client_ip_from_headers, client_ip_resolved
-from app.services.abuse import fail_tracker, ban_cache, ban_ip, login_lockout
+from app.services.abuse import ban_cache
 from app.services.settings_store import settings as sys_settings
 
 router = APIRouter()
@@ -56,7 +56,7 @@ def _hash_token(raw: str) -> str:
 
 
 async def _issue_session(resp: Response, session: AsyncSession, user: User, request: Request,
-                         family_id: str | None = None) -> None:
+                         family_id: str | None = None, session_only: bool = False) -> None:
     access = tokens.create_access_token(user.id, user.role, tv=user.token_version)
     refresh, jti = tokens.create_refresh_token(user.id)
     family_id = family_id or jti
@@ -65,12 +65,13 @@ async def _issue_session(resp: Response, session: AsyncSession, user: User, requ
         family_id=family_id,
         expires_at=_now() + timedelta(seconds=sys_settings.get("REFRESH_TTL")),
         user_agent=request.headers.get("user-agent"),
+        session_only=session_only,
     ))
     user.last_login = _now()
     session.add(user)
     await session.commit()
     set_auth_cookies(resp, access, refresh, tokens.create_proxy_token(user.id, family_id, tv=user.token_version),
-                     new_csrf_token())
+                     new_csrf_token(), persistent=not session_only)
 
 
 @router.get("/csrf")
@@ -165,11 +166,7 @@ async def login(body: LoginRequest, request: Request, response: Response,
     # distributed throttle (not Argon2, not the per-IP ban): the owner is never shut out.
     # Each device token has its own failure budget; once spent it bypasses nothing.
     rnd = tokens.device_rnd(request.cookies.get(DEVICE_COOKIE), user)
-    device_ok = rnd is not None and not login_lockout.device_blocked(rnd)
-    if not device_ok and (
-            login_lockout.is_locked(body.username, ip)
-            or login_lockout.throttled(body.username, _settings.LOGIN_GLOBAL_THRESHOLD,
-                                       sys_settings.get("LOCKOUT_DURATION"))):
+    if login_flow.blocked(body.username, ip, rnd):
         verify_password(body.password, _dummy_hash())
         await audit_request(session, request, "auth.login_locked",
                             user_id=user.id if user else None)
@@ -179,35 +176,16 @@ async def login(body: LoginRequest, request: Request, response: Response,
     ok = bool(user and user.is_active)
     pw_ok = verify_password(body.password, user.password_hash if ok else _dummy_hash())
     if not (ok and pw_ok):
-        # Only real accounts are tracked (keeps the maps bounded by the user count and
-        # un-floodable); the response path is identical either way.
-        if rnd:
-            login_lockout.device_fail(rnd, sys_settings.get("LOCKOUT_THRESHOLD"),
-                                      sys_settings.get("LOCKOUT_DURATION"))
-        if user:
-            login_lockout.record_fail(body.username, ip, sys_settings.get("LOCKOUT_THRESHOLD"),
-                                      sys_settings.get("LOCKOUT_DURATION"))
-        # Per-IP abuse detector -> proxy ban (L3). Thresholds are live-tunable.
-        fail_tracker.threshold = sys_settings.get("BAN_FAIL_THRESHOLD")
-        fail_tracker.window = sys_settings.get("BAN_FAIL_WINDOW")
-        # Unresolved: still tracked under the peer address, but a misconfiguration must never
-        # persist a ban on the proxy itself (it would lock out the whole portal).
-        if fail_tracker.record(ip) and resolved:
-            await ban_ip(session, ip, "brute-force: failed logins",
-                         sys_settings.get("BAN_DURATION"))
-            ban_cache.invalidate()
-        await audit_request(session, request, "auth.login_failed",
-                            detail={"username": body.username})
-        await session.commit()
+        # The response path is identical whether or not the account exists.
+        await login_flow.record_failure(
+            session, request, username=body.username, ip=ip, resolved=resolved, rnd=rnd,
+            track_user=bool(user), action="auth.login_failed",
+            detail={"username": body.username})
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
 
-    # Success: clear lockout state.
-    user.failed_count = 0
-    user.locked_until = None
-    login_lockout.clear(body.username, ip)
-    if rnd:
-        login_lockout.device_clear(rnd)    # the fresh cookie below carries a new rnd
-    session.add(user)
+    if user.matrix_card:   # second step pending: no session, no lockout clears yet
+        return await login_flow.start_matrix(session, request, response, user)
+    login_flow.clear_lockout(session, user, ip, rnd)
     await _issue_session(response, session, user, request)
     set_device_cookie(response, tokens.create_device_token(user.id, user.token_version))
     await audit_request(session, request, "auth.login", user_id=user.id)
@@ -271,7 +249,8 @@ async def refresh(request: Request, response: Response,
             RefreshToken.family_id == stored.family_id).values(revoked=True))
         await session.commit()
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session expired")
-    await _issue_session(response, session, user, request, family_id=stored.family_id)
+    await _issue_session(response, session, user, request, family_id=stored.family_id,
+                         session_only=stored.session_only)
     return {"ok": True}
 
 

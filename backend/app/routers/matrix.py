@@ -1,13 +1,19 @@
-"""Matrix card enrollment: generate, activate, remove."""
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+"""Matrix card: enrollment (generate, activate, remove) and the login second step."""
+import json
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.database import get_session
 from app.models import User
+from app.middleware.rate_limit import client_ip_resolved
+from app.routers.auth import _issue_session
+from app.security import tokens
+from app.security.cookies import DEVICE_COOKIE, MFA_COOKIE, clear_mfa_cookie, set_device_cookie
 from app.security.deps import get_current_user
 from app.security.passwords import verify_password
-from app.services import matrix_card
+from app.services import login_flow, matrix_card
 from app.services.audit import audit_request
 
 router = APIRouter()
@@ -19,6 +25,10 @@ class PasswordBody(BaseModel):
 
 class ActivateBody(BaseModel):
     answer: str
+
+
+class MatrixLoginBody(BaseModel):
+    answers: list[str]
 
 
 def clear_matrix(user: User) -> None:
@@ -81,3 +91,46 @@ async def matrix_remove(body: PasswordBody, request: Request,
     await audit_request(session, request, "matrix.removed", user_id=user.id)
     await session.commit()
     return {"enabled": False}
+
+
+async def _pending_user(request: Request, session: AsyncSession) -> User:
+    """The user whose password step this styx_mfa cookie proves, still awaiting the card."""
+    expired = HTTPException(status.HTTP_401_UNAUTHORIZED, "Sign-in expired")
+    try:
+        claims = tokens.decode_token(request.cookies.get(MFA_COOKIE) or "")
+    except tokens.TokenError:
+        raise expired
+    user = await session.get(User, claims.get("sub")) if claims.get("type") == "mfa" else None
+    if (not user or not user.is_active or not user.matrix_card or not user.matrix_challenge
+            or claims.get("tv") != user.token_version
+            or claims.get("serial") != user.matrix_serial):
+        raise expired
+    return user
+
+
+@router.post("/login/matrix")
+async def login_matrix(body: MatrixLoginBody, request: Request, response: Response,
+                       session: AsyncSession = Depends(get_session)):
+    user = await _pending_user(request, session)
+    ip, resolved = client_ip_resolved(request)
+    rnd = tokens.device_rnd(request.cookies.get(DEVICE_COOKIE), user)
+    if login_flow.blocked(user.username, ip, rnd):
+        await audit_request(session, request, "auth.login_locked", user_id=user.id)
+        await session.commit()
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid code")
+    challenge = json.loads(user.matrix_challenge)
+    if not matrix_card.verify(matrix_card.unseal(user.matrix_card), challenge, body.answers):
+        await login_flow.record_failure(
+            session, request, username=user.username, ip=ip, resolved=resolved, rnd=rnd,
+            track_user=True, action="auth.matrix_failed", user_id=user.id)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid code")
+    user.matrix_challenge = None
+    login_flow.clear_lockout(session, user, ip, rnd)
+    await _issue_session(response, session, user, request, session_only=True)
+    set_device_cookie(response, tokens.create_device_token(user.id, user.token_version))
+    clear_mfa_cookie(response)
+    await audit_request(session, request, "auth.login", user_id=user.id,
+                        detail={"method": "matrix"})
+    await session.commit()
+    return {"id": user.id, "username": user.username, "role": user.role,
+            "must_change_pw": user.must_change_pw}

@@ -73,6 +73,17 @@ def device_rnd(raw: str | None, user) -> str | None:
     return None
 
 
+MFA_TTL = 300
+
+
+def create_mfa_token(user_id: str, tv: int, serial: int) -> str:
+    """styx_mfa cookie: password step passed, matrix step pending."""
+    now = datetime.now(timezone.utc)
+    return jwt.encode({"sub": user_id, "type": "mfa", "tv": tv, "serial": serial,
+                       "iat": now, "exp": now + timedelta(seconds=MFA_TTL)},
+                      _secret(), algorithm=_ALGO)
+
+
 def decode_token(token: str) -> dict:
     try:
         return jwt.decode(token, _secret(), algorithms=[_ALGO])

@@ -260,10 +260,11 @@ async def test_unresolved_login_tracked_but_never_banned(client, session, monkey
     from app.middleware import rate_limit
     from app.routers import auth as auth_router
     from app.services.abuse import fail_tracker
+    from app.services import login_flow
     monkeypatch.setattr(rate_limit._settings, "TRUSTED_PROXY_CIDRS", "127.0.0.1/32")
     monkeypatch.setattr(auth_router, "client_ip_resolved", lambda r: ("192.168.50.2", False))
     ban = AsyncMock()
-    monkeypatch.setattr(auth_router, "ban_ip", ban)
+    monkeypatch.setattr(login_flow, "ban_ip", ban)
     seen = []
     monkeypatch.setattr(fail_tracker, "record", lambda ip: seen.append(ip) or True)
     with caplog.at_level("ERROR"):

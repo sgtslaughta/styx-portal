@@ -43,7 +43,7 @@ from app.security.csrf import csrf_valid, CSRF_COOKIE, CSRF_HEADER, UNSAFE_METHO
 logger = logging.getLogger("styx-portal")
 _settings = Settings()
 
-_CSRF_EXEMPT = {"/api/auth/login", "/api/auth/setup"}
+_CSRF_EXEMPT = {"/api/auth/login", "/api/auth/login/matrix", "/api/auth/setup"}
 _CSRF_EXEMPT_PREFIXES = ("/api/enroll/", "/api/agent/")
 
 
