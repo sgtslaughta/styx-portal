@@ -204,6 +204,26 @@ On instance launch, admins can override template defaults:
 - Environment variables
 - Capabilities (if the template allows overrides)
 
+## Sign-in card (2FA)
+
+Users can add a printed card of codes as a second sign-in step.
+
+### Enrolling
+
+1. Settings, Account, **Sign-in card**, then **Generate card** (asks for the account password).
+2. The 10x5 card (columns A-E, rows 1-10) is shown **once**. Download the PNG or print it.
+3. Enter the requested cell (e.g. C7) to activate. Password sign-in then asks for three random cells.
+
+### Lost card
+
+- The user can **Regenerate** (needs password and a working sign-in) or **Remove** the card.
+- If the user cannot sign in, an admin resets it from the Users panel (audit: `matrix.admin_reset`).
+- Last resort, direct database recovery:
+
+```bash
+kubectl -n styx exec deploy/backend -- python -c "import sqlite3;c=sqlite3.connect('/app/data/styx-portal.db');c.execute(\"update users set matrix_card=NULL,matrix_pending=NULL,matrix_challenge=NULL,matrix_serial=matrix_serial+1 where username='<name>'\");c.commit()"
+```
+
 ## Operations Checklist
 
 - [ ] Invited all expected users and confirmed account creation
