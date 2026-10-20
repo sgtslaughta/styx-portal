@@ -120,6 +120,11 @@ async def _run_migrations(conn):
         ("users", "open_workspaces", "TEXT"),
         ("users", "open_apps", "TEXT"),
         ("proxied_services", "upstream_is_proxy", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("users", "matrix_card", "TEXT"),
+        ("users", "matrix_pending", "TEXT"),
+        ("users", "matrix_challenge", "TEXT"),
+        ("users", "matrix_serial", "INTEGER NOT NULL DEFAULT 0"),
+        ("refresh_tokens", "session_only", "INTEGER NOT NULL DEFAULT 0"),
     ]
     for table, column, col_type in migrations:
         try:
