@@ -15,10 +15,11 @@ def test_launch_script_scrubs_display_and_sets_activation_env_before_exec():
     act = next(i for i, ln in enumerate(lines) if ln.startswith("dbus-update-activation-environment"))
     exe = next(i for i, ln in enumerate(lines) if ln.startswith("exec gnome-shell"))
     assert unset < act < exe
-    assert "DISPLAY=" in lines[act] and "WAYLAND_DISPLAY=styx-seat-0" in lines[act]
+    assert "DISPLAY=" in lines[act] and "WAYLAND_DISPLAY=wayland-70" in lines[act]
     assert "PULSE_SINK=styx-seat" in lines[act]
     assert "export PULSE_SINK=styx-seat" in s
-    assert "--wayland-display=styx-seat-0" in lines[exe]
+    assert "--no-x11" in lines[exe]   # Xwayland-on-demand deadlocks the shell (libgvc/libpulse)
+    assert "--wayland-display=wayland-70" in lines[exe]
     assert "--unsafe-mode" not in s
     assert '> /tmp/bus' in s
     assert "--virtual-monitor" not in s
@@ -48,7 +49,7 @@ def test_ready_needs_socket_and_bus(tmp_path, monkeypatch):
     monkeypatch.setattr(seat, "_start_helper", lambda w, h: True)
     seat.size = (2560, 1440)
     assert seat.ready(timeout=0.2) is True
-    assert seat.info() == {"socket": "styx-seat-0", "bus": "unix:path=/x"}
+    assert seat.info() == {"socket": "wayland-70", "bus": "unix:path=/x"}
 
 
 class _Dead:

@@ -60,10 +60,10 @@ def test_gnome_seat_cmd_targets_host_display(tmp_path, monkeypatch):
     cfg = _cfg(tmp_path, mode="seat", display="")
     monkeypatch.setattr(engine, "pick_dri_node", lambda: "/dev/dri/renderD128")
     monkeypatch.setattr(engine, "resolve_monitor_source", lambda: "x.monitor")
-    seat = {"socket": "styx-seat-0", "bus": "unix:path=/tmp/bus"}
+    seat = {"socket": "wayland-70", "bus": "unix:path=/tmp/bus"}
     cmd, env = engine.build_selkies_cmd(cfg, 18444, seat)
     assert "--wayland=true" in cmd
-    assert "--wayland-host-display=styx-seat-0" in cmd
+    assert "--wayland-host-display=wayland-70" in cmd
     assert cmd[1].endswith("engine.py")    # clipboard shim launcher
     assert env["DBUS_SESSION_BUS_ADDRESS"] == "unix:path=/tmp/bus"
     assert env["XDG_CURRENT_DESKTOP"] == "ubuntu:GNOME"

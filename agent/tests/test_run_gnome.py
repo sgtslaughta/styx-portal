@@ -65,7 +65,7 @@ class FakeSeat:
         self._alive = False
 
     def info(self):
-        return {"socket": "styx-seat-0", "bus": "unix:path=/x"}
+        return {"socket": "wayland-70", "bus": "unix:path=/x"}
 
 
 class Harness:
