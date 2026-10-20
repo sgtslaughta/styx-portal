@@ -217,12 +217,19 @@ Users can add a printed card of codes as a second sign-in step.
 ### Lost card
 
 - The user can **Regenerate** (needs password and a working sign-in) or **Remove** the card.
-- If the user cannot sign in, an admin resets it from the Users panel (audit: `matrix.admin_reset`).
+- If the user cannot sign in, an admin opens the user's **More actions** menu in the Users panel and picks **Reset sign-in card**. The action only shows for users who have a card (audit: `matrix.admin_reset`).
 - Last resort, direct database recovery:
 
 ```bash
 kubectl -n styx exec deploy/backend -- python -c "import sqlite3;c=sqlite3.connect('/app/data/styx-portal.db');c.execute(\"update users set matrix_card=NULL,matrix_pending=NULL,matrix_challenge=NULL,matrix_serial=matrix_serial+1 where username='<name>'\");c.commit()"
 ```
+
+- Lockouts are kept in memory. After a reset, a user who was locked out is still locked until one of these happens: 15 minutes pass, an admin picks **Unlock** in the Users panel, or the backend restarts (`kubectl -n styx rollout restart deploy/backend`).
+- Cards are encrypted with a key derived from `JWT_SECRET`. If `JWT_SECRET` (or `/app/data/secrets.json`) is lost or changed, no stored card can be read and card sign-in returns a 500 error. The fix is the same reset as above, then enroll a new card.
+
+### Session length
+
+A sign-in that used the card makes a session-only login: its cookies are cleared when the browser closes, and no trusted-device cookie is set. The server also ends it after a fixed time, even if the browser stays open: **Settings, Sessions & tokens, Card session max age (h)** (`MATRIX_SESSION_MAX_HOURS`, default 12, range 1-168).
 
 ## Operations Checklist
 
