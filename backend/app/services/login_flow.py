@@ -39,6 +39,12 @@ def session_only_expired(session_only: bool, age: timedelta) -> bool:
     return session_only and age > timedelta(hours=sys_settings.get("MATRIX_SESSION_MAX_HOURS"))
 
 
+def session_ttl(session_only: bool) -> int:
+    """Refresh/proxy token TTL (s); session-only families never outlive their cap."""
+    ttl = sys_settings.get("REFRESH_TTL")
+    return min(ttl, sys_settings.get("MATRIX_SESSION_MAX_HOURS") * 3600) if session_only else ttl
+
+
 async def record_failure(session: AsyncSession, request: Request, *, username: str, ip: str,
                          resolved: bool, rnd: str | None, track_user: bool,
                          action: str, **audit) -> None:

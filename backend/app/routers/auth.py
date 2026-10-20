@@ -24,7 +24,6 @@ from app.services import federation, login_flow, single_use
 from app.services.audit import audit_request
 from app.middleware.rate_limit import client_ip_from_headers, client_ip_resolved
 from app.services.abuse import ban_cache
-from app.services.settings_store import settings as sys_settings
 
 router = APIRouter()
 logger = logging.getLogger("styx-portal")
@@ -63,14 +62,15 @@ async def _issue_session(resp: Response, session: AsyncSession, user: User, requ
     session.add(RefreshToken(
         jti=jti, user_id=user.id,
         family_id=family_id,
-        expires_at=_now() + timedelta(seconds=sys_settings.get("REFRESH_TTL")),
+        expires_at=_now() + timedelta(seconds=login_flow.session_ttl(session_only)),
         user_agent=request.headers.get("user-agent"),
         session_only=session_only,
     ))
     user.last_login = _now()
     session.add(user)
     await session.commit()
-    set_auth_cookies(resp, access, refresh, tokens.create_proxy_token(user.id, family_id, tv=user.token_version),
+    set_auth_cookies(resp, access, refresh, tokens.create_proxy_token(
+        user.id, family_id, ttl=login_flow.session_ttl(session_only), tv=user.token_version),
                      new_csrf_token(), persistent=not session_only)
 
 
@@ -345,7 +345,13 @@ async def set_preferences(body: OpenPreferences, session: AsyncSession = Depends
 async def change_password(body: ChangePasswordRequest, request: Request, response: Response,
                           session: AsyncSession = Depends(get_session),
                           user: User = Depends(get_current_user)):
-    if not verify_password(body.old_password, user.password_hash):
+    # Same brute-force accounting as login: a stolen session must not guess the password.
+    ip, resolved = client_ip_resolved(request)
+    if (login_flow.locked(user.username, ip, None)
+            or not verify_password(body.old_password, user.password_hash)):
+        await login_flow.record_failure(
+            session, request, username=user.username, ip=ip, resolved=resolved, rnd=None,
+            track_user=True, action="auth.password_change_failed", user_id=user.id)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Current password is incorrect")
     try:
         validate_password(body.new_password, current_policy())

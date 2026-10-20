@@ -230,3 +230,49 @@ async def test_persistent_family_not_capped(client, session):
     await _age_family(session, 13)
     client.headers.update({"X-CSRF-Token": client.cookies.get("csrf_token")})
     assert (await client.post("/api/auth/refresh")).status_code == 200
+
+
+def _proxy_request(client):
+    from starlette.requests import Request
+    cookie = f"styx_proxy={client.cookies.get('styx_proxy')}"
+    return Request({"type": "http", "headers": [(b"cookie", cookie.encode())]})
+
+
+async def test_proxy_token_rejects_over_cap_session_only(client, session):
+    from app.security.deps import proxy_user_or_none
+    card = await _card_user(session)
+    ch = (await _login(client)).json()["challenge"]
+    await client.post("/api/auth/login/matrix", json={"answers": [card[c] for c in ch]})
+    assert (await proxy_user_or_none(_proxy_request(client), session)) is not None
+    await _age_family(session, 13)
+    assert (await proxy_user_or_none(_proxy_request(client), session)) is None
+
+
+async def test_session_only_tokens_ttl_capped(client, session):
+    from app.security import tokens
+    card = await _card_user(session)
+    ch = (await _login(client)).json()["challenge"]
+    await client.post("/api/auth/login/matrix", json={"answers": [card[c] for c in ch]})
+    tok = (await session.exec(select(RefreshToken))).one()
+    exp = tok.expires_at.replace(tzinfo=timezone.utc) if tok.expires_at.tzinfo is None \
+        else tok.expires_at
+    assert exp <= datetime.now(timezone.utc) + timedelta(hours=12, seconds=5)
+    claims = tokens.decode_token(client.cookies.get("styx_proxy"))
+    assert claims["exp"] - claims["iat"] <= 12 * 3600
+
+
+async def test_change_password_wrong_old_counts_toward_lockout(client, session):
+    session.add(User(username="plain", password_hash=hash_password(PW), role="member",
+                     is_active=True))
+    await session.commit()
+    assert (await _login(client, "plain")).status_code == 200
+    client.headers.update({"X-CSRF-Token": client.cookies.get("csrf_token")})
+    for _ in range(10):  # LOCKOUT_THRESHOLD default
+        r = await client.post("/api/auth/change-password",
+                              json={"old_password": "wrong", "new_password": PW + " new!"})
+        assert r.status_code == 401
+    r = await client.post("/api/auth/change-password",
+                          json={"old_password": PW, "new_password": PW + " new!"})
+    assert r.status_code == 401
+    client.cookies.delete("styx_device")  # a trusted device is exempt by design
+    assert (await _login(client, "plain")).status_code == 401

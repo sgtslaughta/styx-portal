@@ -291,3 +291,7 @@ def test_trusted_networks_blank_is_empty():
 def test_matrix_remove_is_strict():
     assert is_strict_auth("DELETE", "/api/auth/matrix") is True
     assert is_strict_auth("GET", "/api/auth/matrix") is False
+
+
+def test_change_password_is_strict():
+    assert is_strict_auth("POST", "/api/auth/change-password") is True
