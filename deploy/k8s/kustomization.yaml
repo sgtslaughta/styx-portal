@@ -16,6 +16,6 @@ resources:
 # healthy but publish no IngressRoutes (404). Check: kubectl -n styx get ingressroutes
 images:
   - name: ghcr.io/sgtslaughta/styx-backend
-    newTag: 0.0.0-set-at-release
+    newTag: "2.3.0"
   - name: ghcr.io/sgtslaughta/styx-frontend
-    newTag: 0.0.0-set-at-release
+    newTag: "2.3.0"
