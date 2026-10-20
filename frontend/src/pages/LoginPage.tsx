@@ -16,6 +16,8 @@ export function LoginPage() {
   const [password, setP] = useState("");
   const [err, setErr] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [challenge, setChallenge] = useState<string[] | null>(null);
+  const [answers, setAnswers] = useState<string[]>([]);
   const [providers, setProviders] = useState<{ name: string; display_label: string; icon_url: string | null }[]>([]);
   const nav = useNavigate();
   const { refresh, setupRequired, loading, user } = useAuth();
@@ -64,27 +66,58 @@ export function LoginPage() {
     }
   }, []);
 
+  async function finish(result: { must_change_pw?: boolean }) {
+    await refresh();
+    if (result.must_change_pw) {
+      nav("/change-password");
+      return;
+    }
+    // Forward-auth redirects land here with ?next=/w/{sub}/ or /{slug}/ —
+    // return the user there. safeNext allows same-site paths only.
+    const target = safeNext(new URLSearchParams(window.location.search).get("next"));
+    if (target) {
+      window.location.href = target; // Traefik routes, not SPA
+    } else {
+      nav("/");
+    }
+  }
+
+  function backToPassword(msg = "") {
+    setChallenge(null);
+    setAnswers([]);
+    setErr(msg);
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr("");
     setSubmitting(true);
     loggingIn.current = true;
     try {
-      const result = await api.login({ username, password });
-      if (result.must_change_pw) {
-        await refresh();
-        nav("/change-password");
+      if (challenge) {
+        try {
+          await finish(await api.loginMatrix(answers.map((a) => a.trim().toUpperCase())));
+        } catch (e) {
+          const m = (e as Error).message;
+          if (m.includes("Sign-in expired")) {
+            loggingIn.current = false;
+            backToPassword("Sign-in expired — enter your password again.");
+          } else if (m === "Invalid code") {
+            loggingIn.current = false;
+            setAnswers(challenge.map(() => ""));
+            setErr("Wrong code — check the cells and try again.");
+          } else throw e;
+        }
         return;
       }
-      await refresh();
-      // Forward-auth redirects land here with ?next=/w/{sub}/ or /{slug}/ —
-      // return the user there. safeNext allows same-site paths only.
-      const target = safeNext(new URLSearchParams(window.location.search).get("next"));
-      if (target) {
-        window.location.href = target; // Traefik routes, not SPA
-      } else {
-        nav("/");
+      const result = await api.login({ username, password });
+      if (result.mfa_required && result.challenge) {
+        loggingIn.current = false;
+        setChallenge(result.challenge);
+        setAnswers(result.challenge.map(() => ""));
+        return;
       }
+      await finish(result);
     } catch (e) {
       loggingIn.current = false;
       setErr(friendlyLoginError((e as Error).message));
@@ -136,6 +169,31 @@ export function LoginPage() {
           )}
 
           <form onSubmit={submit} className="space-y-4">
+            {challenge ? (
+              <>
+                <p className="text-sm text-muted-foreground">Enter the codes from your matrix card.</p>
+                {challenge.map((cell, i) => (
+                  <div key={cell} className="space-y-2">
+                    <label htmlFor={`cell-${cell}`} className="block text-sm font-medium">{cell}</label>
+                    <Input
+                      id={`cell-${cell}`}
+                      autoComplete="off"
+                      maxLength={3}
+                      autoFocus={i === 0}
+                      className="uppercase"
+                      value={answers[i] ?? ""}
+                      onChange={(e) => setAnswers((a) => a.map((v, j) => (j === i ? e.target.value : v)))}
+                      required
+                    />
+                  </div>
+                ))}
+                <button type="button" onClick={() => backToPassword()}
+                        className="text-xs underline underline-offset-2 hover:no-underline">
+                  Back
+                </button>
+              </>
+            ) : (
+              <>
             <div className="space-y-2">
               <label htmlFor="username" className="block text-sm font-medium">
                 Email or username
@@ -163,6 +221,8 @@ export function LoginPage() {
                 required
               />
             </div>
+              </>
+            )}
             {err && (
               <div id="login-error" role="alert" className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
                 <div>{err}</div>
@@ -173,7 +233,7 @@ export function LoginPage() {
               </div>
             )}
             <Button type="submit" className="w-full" size="default" disabled={submitting}>
-              {submitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Signing in…</> : "Sign in"}
+              {submitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Signing in…</> : challenge ? "Verify" : "Sign in"}
             </Button>
           </form>
         </div>

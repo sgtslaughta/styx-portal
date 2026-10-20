@@ -134,6 +134,11 @@ import { singleFlight } from "./single-flight";
 
 const BASE = "/api";
 
+export type LoginResult = {
+  id: string; username: string; role: string; must_change_pw?: boolean;
+  mfa_required?: boolean; challenge?: string[];
+};
+
 export class ApiError extends Error {
   status: number;
   /** Raw `detail` from the response (string, or FastAPI's 422 list). */
@@ -348,8 +353,11 @@ export const api = {
     request<{ id: string; username: string; role: string }>("/auth/setup", {
       method: "POST", body: JSON.stringify(data) }),
   login: (data: { username: string; password: string }) =>
-    request<{ id: string; username: string; role: string; must_change_pw?: boolean }>("/auth/login", {
+    request<LoginResult>("/auth/login", {
       method: "POST", body: JSON.stringify(data) }),
+  loginMatrix: (answers: string[]) =>
+    request<LoginResult>("/auth/login/matrix", {
+      method: "POST", body: JSON.stringify({ answers }) }),
   logout: (endSession = false) =>
     request<{ ok: boolean }>(
       `/auth/logout${endSession ? "?end_session=true" : ""}`,
