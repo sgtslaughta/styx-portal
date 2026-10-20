@@ -16,7 +16,7 @@ from pathlib import Path
 
 import refit
 
-SOCKET = "styx-seat-0"
+SOCKET = "wayland-70"   # snap AppArmor only allows wayland-[0-9]* sockets
 MIN_GNOME = 46
 SYS_PYTHON = "/usr/bin/python3"
 HELPER_READY_S = 10
