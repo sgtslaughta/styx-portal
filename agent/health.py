@@ -64,6 +64,9 @@ def stream_starving_seconds(cfg: dict, gateway_alive: bool) -> float | None:
 
 
 GOVERNOR_PATH = Path("/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor")
+TTM_POOL_PATH = Path("/sys/module/ttm/parameters/page_pool_size")
+MODULE_DIR = Path("/sys/module")
+TTM_POOL_MAX = 524288   # pages = 2 GiB; kernel default is half of RAM
 
 
 def seat_advisories(gnome: tuple[bool, str]) -> list[tuple[str, bool, str]]:
@@ -81,6 +84,16 @@ def host_tuning_checks() -> list[tuple[str, bool, str]]:
         rows.append((f"cpu governor: {gov}", gov == "performance",
                      "" if gov == "performance" else
                      "for gaming: sudo cpupower frequency-set -g performance"))
+    # amdgpu/xe cache freed GPU pages in the TTM pool (default ½ RAM); stream
+    # buffer churn fills it and pushes the host into swap.
+    if TTM_POOL_PATH.is_file() and any(
+            (MODULE_DIR / d).is_dir() for d in ("amdgpu", "xe")):
+        pool = int(TTM_POOL_PATH.read_text().strip() or 0)
+        ok = 0 < pool <= TTM_POOL_MAX
+        rows.append((f"ttm page pool: {pool * 4 // 1024} MiB", ok, "" if ok else
+                     f"cap at 2 GiB: echo {TTM_POOL_MAX} | sudo tee {TTM_POOL_PATH}; "
+                     f"echo 'options ttm page_pool_size={TTM_POOL_MAX}' | sudo tee "
+                     "/etc/modprobe.d/ttm.conf && sudo update-initramfs -u"))
     if shutil.which("nvidia-smi"):
         r = subprocess.run(["nvidia-smi", "--query-gpu=persistence_mode",
                             "--format=csv,noheader"],

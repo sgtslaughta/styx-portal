@@ -78,3 +78,30 @@ def test_host_tuning_checks_all_good(monkeypatch, tmp_path):
     monkeypatch.setattr(health.subprocess, "run", lambda *a, **k: type(
         "R", (), {"stdout": "Enabled\n", "returncode": 0})())
     assert all(ok for _, ok, _ in health.host_tuning_checks())
+
+
+def _ttm(monkeypatch, tmp_path, pool, drivers):
+    p = tmp_path / "page_pool_size"
+    p.write_text(f"{pool}\n")
+    mods = tmp_path / "module"
+    for d in drivers:
+        (mods / d).mkdir(parents=True)
+    monkeypatch.setattr(health, "TTM_POOL_PATH", p)
+    monkeypatch.setattr(health, "MODULE_DIR", mods)
+    monkeypatch.setattr(health, "GOVERNOR_PATH", tmp_path / "missing")
+    monkeypatch.setattr(health.shutil, "which", lambda _: None)
+    return [r for r in health.host_tuning_checks() if "ttm" in r[0]]
+
+
+def test_host_tuning_flags_default_ttm_pool_on_amdgpu(monkeypatch, tmp_path):
+    [(label, ok, detail)] = _ttm(monkeypatch, tmp_path, 7813990, ["amdgpu"])
+    assert not ok and "page_pool_size=524288" in detail
+
+
+def test_host_tuning_ttm_pool_capped_ok(monkeypatch, tmp_path):
+    [(_, ok, detail)] = _ttm(monkeypatch, tmp_path, 524288, ["xe"])
+    assert ok and detail == ""
+
+
+def test_host_tuning_ttm_pool_skipped_without_ttm_gpu(monkeypatch, tmp_path):
+    assert _ttm(monkeypatch, tmp_path, 7813990, ["nvidia"]) == []
