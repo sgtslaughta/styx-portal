@@ -1,5 +1,5 @@
 import { createContext, useEffect, useState, useRef, type ReactNode } from "react";
-import { api, ApiError } from "@/api/client";
+import { api, ApiError, withRetry } from "@/api/client";
 import { SessionExpiryDialog } from "@/components/auth/SessionExpiryDialog";
 import { ActiveSessionDialog } from "@/components/auth/ActiveSessionDialog";
 
@@ -31,10 +31,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function refresh() {
     setLoading(true);
     try {
-      const s = await api.setupRequired();
+      const s = await withRetry(api.setupRequired);
       setSetupRequired(s.setup_required);
       if (!s.setup_required) {
-        setUser(await api.me().catch(() => null));
+        setUser(await withRetry(api.me).catch(() => null));
       } else {
         setUser(null);
       }

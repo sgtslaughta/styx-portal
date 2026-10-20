@@ -263,8 +263,9 @@ def test_gnome_seat_always_disables_client_cursor(tmp_path, monkeypatch):
     """The seat portal embeds the cursor in the frames; a client-drawn cursor on
     top doubles/flickers. labwc forwards real cursor metadata, so it keeps it."""
     seat = {"socket": "s", "bus": "b"}
-    assert "--enable-cursors=false" in _seat_cmd(tmp_path, monkeypatch, {}, seat)
-    assert "--enable-cursors=false" not in _seat_cmd(tmp_path, monkeypatch, {})
+    assert "--enable-cursors=true" in _seat_cmd(tmp_path, monkeypatch, {}, seat)
+    assert "--use-browser-cursors=true" in _seat_cmd(tmp_path, monkeypatch, {}, seat)
+    assert "--use-browser-cursors=true" not in _seat_cmd(tmp_path, monkeypatch, {})
 
 
 def test_quality_defaults(tmp_path, monkeypatch):

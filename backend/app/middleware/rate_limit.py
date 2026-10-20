@@ -243,9 +243,16 @@ def is_strict_auth(method: str, path: str) -> bool:
 _EXEMPT_PATHS = frozenset({"/api/auth/ban-check"})
 
 
-def is_rate_limit_exempt(path: str) -> bool:
+# Agent calls carry their own bearer token and fixed cadence; enroll files are
+# static downloads. Behind a tunnel every home device shares one public IP, so
+# counting them starves the owner's browser (logout, missing SSO button).
+_EXEMPT_PREFIXES = ("/internal/", "/api/agent/")
+
+
+def is_rate_limit_exempt(path: str, method: str = "GET") -> bool:
     # /internal/: forwardAuth targets, already rate-limited by Traefik upstream.
-    return path in _EXEMPT_PATHS or path.startswith("/internal/")
+    return (path in _EXEMPT_PATHS or path.startswith(_EXEMPT_PREFIXES)
+            or (method == "GET" and path.startswith("/api/enroll/")))
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -261,7 +268,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return w
 
     async def dispatch(self, request: Request, call_next):
-        if is_rate_limit_exempt(request.url.path):
+        if is_rate_limit_exempt(request.url.path, request.method):
             return await call_next(request)
         from app.services.settings_store import settings
         # Unresolved (unrecognised proxy) is limited by the peer IP: fail closed, never open.

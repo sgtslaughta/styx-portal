@@ -7,7 +7,7 @@ const { a, auth } = vi.hoisted(() => ({
   auth: { user: null as null | { id: string }, loading: false, setupRequired: false,
     refresh: vi.fn(), logout: vi.fn() },
 }));
-vi.mock("@/api/client", () => ({ api: a }));
+vi.mock("@/api/client", () => ({ api: a, withRetry: (fn: () => unknown) => fn() }));
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => auth }));
 vi.mock("@/components/auth/LoginBrandPanel", () => ({ LoginBrandPanel: () => null }));
 vi.mock("sonner", () => ({ toast: vi.fn() }));

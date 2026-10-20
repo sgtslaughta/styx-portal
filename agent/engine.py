@@ -298,9 +298,9 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
     if seat is not None:                     # headless GNOME seat
         cmd[0:1] = [str(install / "venv/bin/python"), str(install / "engine.py")]
         cmd += ["--wayland=true", f"--wayland-host-display={seat['socket']}"]
-        # The seat portal embeds the cursor in the frames (metadata cursors
-        # flicker); a client-drawn cursor on top would double it.
-        cmd.append("--enable-cursors=false")
+        # The seat portal sends the cursor as metadata; the browser draws it
+        # locally so pointer motion never waits on a video round trip.
+        cmd += ["--enable-cursors=true", "--use-browser-cursors=true"]
         env.update({"DBUS_SESSION_BUS_ADDRESS": seat["bus"],
                     "XDG_CURRENT_DESKTOP": "ubuntu:GNOME",
                     "XDG_SESSION_TYPE": "wayland"})
