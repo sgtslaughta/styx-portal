@@ -272,7 +272,8 @@ def test_quality_defaults(tmp_path, monkeypatch):
     cfg = _cfg(tmp_path, stream_settings={})
     _stub(monkeypatch)
     cmd, env = engine.build_selkies_cmd(cfg, 1)
-    assert "--video-max-qp=28" in cmd and "--encoder=h264enc" in cmd
+    assert env["SELKIES_RATE_CONTROL_MODE"] == "cbr" and "--encoder=h264enc" in cmd
+    assert not any(a.startswith("--video-max-qp") for a in cmd)
     assert env["SELKIES_USE_PAINT_OVER_QUALITY"] == "true"
     assert env["SELKIES_VIDEO_PAINTOVER_CRF"] == "12"
     _, env = engine.build_selkies_cmd(

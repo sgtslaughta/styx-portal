@@ -330,8 +330,10 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
     kbps = _int_in(s.get("video_bitrate_kbps", s.get("bitrate_kbps")), 500, 200000) or 16000
     lo = min(1000, kbps)
     cmd.append(f"--video-bitrate={kbps},{lo}-{kbps}")
-    # Caps compression under motion so screen text stays legible.
-    cmd.append("--video-max-qp=28")
+    # CBR at the admin bitrate: CRF + a QP cap made scrolls burst far past the
+    # bitrate and stutter through the tunnel. Paint-over (CRF below) re-sharpens
+    # text once the screen settles.
+    env["SELKIES_RATE_CONTROL_MODE"] = "cbr"
     env["SELKIES_USE_PAINT_OVER_QUALITY"] = (
         "false" if s.get("use_paint_over_quality") is False else "true")
     # 4:4:4 chroma is opt-in: crisp text, but no AMD/Intel VA-API driver
