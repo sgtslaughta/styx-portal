@@ -145,6 +145,20 @@ export class ApiError extends Error {
   }
 }
 
+/** Retry transient failures (429 / 5xx / network) so a rate-limit burst never
+ *  looks like a logout. Auth errors (401/403) and other 4xx fail at once. */
+export async function withRetry<T>(fn: () => Promise<T>, delays = [1000, 2000, 4000, 8000, 16000]): Promise<T> {
+  for (let i = 0; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const transient = !(e instanceof ApiError) || e.status === 429 || e.status >= 500;
+      if (!transient || i >= delays.length) throw e;
+      await new Promise((r) => setTimeout(r, delays[i]));
+    }
+  }
+}
+
 function getCookie(name: string): string | null {
   const m = document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
   return m && m[1] ? decodeURIComponent(m[1]) : null;

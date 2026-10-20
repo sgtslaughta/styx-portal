@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, Navigate } from "react-router";
 import { toast } from "sonner";
-import { api } from "@/api/client";
+import { api, withRetry } from "@/api/client";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,7 +35,7 @@ export function LoginPage() {
   }, [loading, user]);
 
   useEffect(() => {
-    api.oauthProviders().then(setProviders).catch(() => {});
+    withRetry(api.oauthProviders).then(setProviders).catch(() => {});
   }, []);
 
   useEffect(() => {

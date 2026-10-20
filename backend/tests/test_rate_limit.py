@@ -129,6 +129,9 @@ def test_ban_check_is_exempt():
     from app.middleware.rate_limit import is_rate_limit_exempt
     assert is_rate_limit_exempt("/api/auth/ban-check") is True
     assert is_rate_limit_exempt("/api/auth/login") is False
+    assert is_rate_limit_exempt("/api/agent/heartbeat", "POST") is True
+    assert is_rate_limit_exempt("/api/enroll/agent.py") is True
+    assert is_rate_limit_exempt("/api/enroll/register", "POST") is False
 
 
 def test_middleware_reads_live_spec():
