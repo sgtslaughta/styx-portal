@@ -353,10 +353,17 @@ async def change_password(body: ChangePasswordRequest, request: Request, respons
     user.must_change_pw = False
     user.token_version += 1     # kills every access token minted before this change
     session.add(user)
+    # Keep the current session's lifetime class (matrix logins stay browser-session only).
+    try:
+        cur = await session.get(RefreshToken, tokens.decode_token(
+            request.cookies.get("refresh_token") or "").get("jti"))
+    except tokens.TokenError:
+        cur = None
+    session_only = cur.session_only if cur else bool(user.matrix_card)
     await session.exec(update(RefreshToken)
                        .where(RefreshToken.user_id == user.id)
                        .values(revoked=True))
-    await _issue_session(response, session, user, request)
+    await _issue_session(response, session, user, request, session_only=session_only)
     await audit_request(session, request, "auth.password_change", user_id=user.id)
     await session.commit()
     return {"ok": True}

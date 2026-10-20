@@ -172,3 +172,17 @@ async def test_oauth_login_ignores_card(client, session):
     assert "Max-Age" in _set_cookie(r, "access_token")[0]
     assert not _set_cookie(r, "styx_mfa")
     assert (await session.exec(select(RefreshToken))).one().session_only is False
+
+
+async def test_change_password_keeps_session_only(client, session):
+    card = await _card_user(session)
+    ch = (await _login(client)).json()["challenge"]
+    await client.post("/api/auth/login/matrix", json={"answers": [card[c] for c in ch]})
+    client.headers.update({"X-CSRF-Token": client.cookies.get("csrf_token")})
+    r = await client.post("/api/auth/change-password",
+                          json={"old_password": PW, "new_password": PW + " v2 rotated!"})
+    assert r.status_code == 200, r.text
+    assert "Max-Age" not in _set_cookie(r, "access_token")[0]
+    live = (await session.exec(select(RefreshToken).where(
+        RefreshToken.revoked == False))).all()  # noqa: E712
+    assert len(live) == 1 and live[0].session_only is True
