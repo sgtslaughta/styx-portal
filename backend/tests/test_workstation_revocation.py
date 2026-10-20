@@ -95,3 +95,31 @@ async def test_takeover_grant_survives_parallel_websocket(client, session):
     session.add(ws)
     await session.commit()
     assert (await client.get(path, headers=hdr)).status_code == 200
+
+
+async def test_auth_check_injects_basic_auth(client, session):
+    import base64
+    from app.security.crypto import encrypt_secret
+    u, ws = await _setup(session)
+    ws.selkies_password_enc = encrypt_secret("s3cret")
+    session.add(ws)
+    await session.commit()
+    await client.get("/api/auth/csrf")
+    await client.post("/api/auth/login", json={"username": "dave", "password": "x"})
+    r = await client.get(f"/internal/workstations/{ws.id}/auth-check")
+    assert r.status_code == 200
+    assert r.headers["authorization"] == "Basic " + base64.b64encode(b"styx:s3cret").decode()
+
+
+async def test_auth_check_denied_has_no_authorization(client, session):
+    from app.security.crypto import encrypt_secret
+    u, ws = await _setup(session, grant=False)
+    ws.selkies_password_enc = encrypt_secret("s3cret")
+    session.add(ws)
+    await session.commit()
+    r = await client.get(f"/internal/workstations/{ws.id}/auth-check")
+    assert r.status_code != 200 and "authorization" not in r.headers
+    await client.get("/api/auth/csrf")
+    await client.post("/api/auth/login", json={"username": "dave", "password": "x"})
+    r = await client.get(f"/internal/workstations/{ws.id}/auth-check")
+    assert r.status_code == 403 and "authorization" not in r.headers

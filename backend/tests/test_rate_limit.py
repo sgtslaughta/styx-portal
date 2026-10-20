@@ -276,3 +276,9 @@ def test_empty_snapshot_logs_error(tmp_path, caplog):
     with caplog.at_level("ERROR"):
         rate_limit.snapshot_own_networks(str(tmp_path / "missing"))
     assert any("no network interfaces" in r.message for r in caplog.records)
+
+
+def test_trusted_networks_blank_is_empty():
+    from app.middleware.rate_limit import _trusted_networks
+    assert _trusted_networks("") == ()
+    assert _trusted_networks(" , ") == ()

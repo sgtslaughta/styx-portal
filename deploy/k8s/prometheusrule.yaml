@@ -1,0 +1,30 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: styx
+  namespace: styx
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: styx
+      rules:
+        - alert: StyxBackendDown
+          expr: kube_deployment_status_replicas_available{namespace="styx",deployment="backend"} < 1
+          for: 2m
+          labels: {severity: critical}
+          annotations:
+            summary: Styx backend has no available replicas
+        - alert: StyxBackupFailed
+          expr: kube_job_failed{namespace="styx",job_name=~"styx-db-backup.*",condition="true"} > 0
+          for: 5m
+          labels: {severity: warning}
+          annotations:
+            summary: Styx DB backup job failed
+        - alert: StyxBackupStale
+          # absent() fires until the first success (expected right after install)
+          expr: (time() - kube_cronjob_status_last_successful_time{namespace="styx",cronjob="styx-db-backup"}) > 129600 or absent(kube_cronjob_status_last_successful_time{namespace="styx",cronjob="styx-db-backup"})
+          for: 30m
+          labels: {severity: warning}
+          annotations:
+            summary: No successful Styx DB backup in over 36h

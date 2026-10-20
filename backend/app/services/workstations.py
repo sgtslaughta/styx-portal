@@ -69,6 +69,8 @@ def lan_enroll_url() -> tuple[str | None, str]:
     """
     if _settings.SERVER_LAN_URL:
         return _settings.SERVER_LAN_URL.rstrip("/"), "env"
+    if _settings.ROUTE_BACKEND == "k8s":
+        return None, "none"   # pod-side detection finds a pod/node IP, never a usable LAN URL
     ip = detect_lan_ip()
     if ip:
         # https in both modes: direct = Let's Encrypt on :443, tunnel = the

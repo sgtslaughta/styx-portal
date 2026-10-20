@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     MOUNT_BACKUP_DIR: str = "./data/mount-backups"
     MOUNT_PROBE_IMAGE: str = "busybox:1.36"
     TRAEFIK_DYNAMIC_DIR: str = "/app/traefik-dynamic"
+    ROUTE_BACKEND: str = "file"   # file | k8s
+    K8S_NAMESPACE: str = "styx"
+    # Base for every forwardAuth/errors address Traefik calls back to
+    BACKEND_INTERNAL_URL: str = "http://backend:8000"
+    # "<namespace>:<labelSelector>", e.g. cloudflared:pod=cloudflared; empty = disabled
+    TUNNEL_PEER_K8S: str = ""
     DEPLOY_MODE: str = "tunnel"   # tunnel | direct
     # Direct peers whose CF-Connecting-IP / X-Forwarded-For are believed
     # (Traefik). Default: loopback only; peers on the subnets of the backend's own interfaces
@@ -43,6 +49,9 @@ class Settings(BaseSettings):
     # Only peers in this subnet (compose network `styx-tunnel`, shared solely by cloudflared and
     # Traefik) may vouch for CF-Connecting-IP. Traefik also sits in it, but is never its own peer.
     TUNNEL_PEER_CIDRS: str = "172.31.254.0/28"
+    # Workstation lan_ip must be inside one of these (comma-separated CIDRs); empty = any
+    # routable address. k8s: keeps an enrolled agent from aiming Traefik at in-cluster IPs.
+    WORKSTATION_ALLOW_CIDRS: str = ""
     JWT_SECRET: str = ""
     ACCESS_TTL: int = 900          # 15 minutes
     REFRESH_TTL: int = 604800      # 7 days

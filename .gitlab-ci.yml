@@ -125,13 +125,13 @@ semantic-release:
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
   script:
     - V="${VERSION#v}"
-    - docker build -t "$CI_REGISTRY_IMAGE/$IMAGE:$V" -t "$CI_REGISTRY_IMAGE/$IMAGE:latest" -f "$CONTEXT/Dockerfile" "$CONTEXT"
+    - docker build -t "$CI_REGISTRY_IMAGE/$IMAGE:$V" -t "$CI_REGISTRY_IMAGE/$IMAGE:latest" -f "${DOCKERFILE:-$CONTEXT/Dockerfile}" "$CONTEXT"
     - docker push "$CI_REGISTRY_IMAGE/$IMAGE:$V"
     - docker push "$CI_REGISTRY_IMAGE/$IMAGE:latest"
 
 build-backend:
   <<: *build_template
-  variables: { IMAGE: backend, CONTEXT: backend }
+  variables: { IMAGE: backend, CONTEXT: ., DOCKERFILE: backend/Dockerfile }
   before_script:
     - 'V="${VERSION#v}"; echo "Building $IMAGE:$V"'
     - sh scripts/stamp-version.sh "$V"   # bake released version into pyproject before build

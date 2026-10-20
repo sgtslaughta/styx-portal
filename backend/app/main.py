@@ -80,21 +80,31 @@ async def _run_monitor_pass(session, monitor, docker) -> bool:
     return changed
 
 
-async def _session_monitor_loop():
+async def _monitor_tick(session, monitor, docker) -> None:
+    """One monitor tick. The Docker pass may fail (no Docker on k8s); that must
+    not stop workstation offline-marking or route refresh."""
     from app.services.route_writer import refresh_routes_from_db
+    from app.services.workstations import mark_stale_offline
 
+    try:
+        changed = await _run_monitor_pass(session, monitor, docker)
+    except Exception:  # noqa: BLE001 - docker may be absent (k8s); keep ticking
+        logger.debug("docker monitor pass skipped", exc_info=True)
+        changed = False
+    ws_changed = await mark_stale_offline(session)
+    await session.commit()
+    if changed or ws_changed:
+        await refresh_routes_from_db(session)
+
+
+async def _session_monitor_loop():
     docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
     monitor = SessionMonitor(docker)
     while True:
         await asyncio.sleep(60)
         try:
             async with async_session() as session:
-                changed = await _run_monitor_pass(session, monitor, docker)
-                from app.services.workstations import mark_stale_offline
-                ws_changed = await mark_stale_offline(session)
-                await session.commit()
-                if changed or ws_changed:
-                    await refresh_routes_from_db(session)
+                await _monitor_tick(session, monitor, docker)
         except Exception:
             pass
 
@@ -122,8 +132,9 @@ async def lifespan(app: FastAPI):
         raise
 
     # Before anything that can join another docker network (screenshots): see rate_limit.
-    from app.middleware.rate_limit import snapshot_own_networks
+    from app.middleware.rate_limit import _tunnel_pod_ips, snapshot_own_networks
     snapshot_own_networks()
+    _tunnel_pod_ips()   # k8s: start the first cloudflared pod lookup (no-op in compose)
 
     await init_db()
 
@@ -151,25 +162,7 @@ async def lifespan(app: FastAPI):
     # Sync instance states — mark stale instances as stopped
     docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
     async with async_session() as session:
-        result = await session.exec(
-            select(Instance).where(
-                Instance.status.in_(["running", "idle", "paused", "pulling", "starting"])
-            )
-        )
-        active = result.all()
-        for inst in active:
-            if inst.container_id:
-                status = await asyncio.to_thread(docker.get_container_status, inst.container_id)
-                if status["status"] == "paused" and inst.status == "paused":
-                    pass
-                elif status["status"] in ("not_found", "exited"):
-                    logger.info(f"Instance {inst.name} container gone, marking stopped")
-                    inst.status = "stopped"
-                    session.add(inst)
-            else:
-                inst.status = "stopped"
-                session.add(inst)
-        await session.commit()
+        await _reconcile_instances_at_boot(session, docker)
         await _log_portal_instances(docker)
 
     # Write initial Traefik routes on startup
@@ -189,6 +182,38 @@ async def lifespan(app: FastAPI):
     health_task.cancel()
     svc_health_task.cancel()
     await asyncio.gather(svc_health_task, return_exceptions=True)
+
+
+async def _reconcile_instances_at_boot(session, docker) -> None:
+    """Mark instances whose container is gone as stopped. If Docker is
+    unreachable (k8s), nothing can be running: stop them all, warn once."""
+    result = await session.exec(
+        select(Instance).where(
+            Instance.status.in_(["running", "idle", "paused", "pulling", "starting"])
+        )
+    )
+    docker_down = False
+    for inst in result.all():
+        if inst.container_id:
+            try:
+                status = await asyncio.to_thread(docker.get_container_status, inst.container_id)
+            except Exception:  # noqa: BLE001 - no docker socket
+                if not docker_down:
+                    docker_down = True
+                    logger.warning("Docker unreachable at boot; marking active instances stopped", exc_info=True)
+                inst.status = "stopped"
+                session.add(inst)
+                continue
+            if status["status"] == "paused" and inst.status == "paused":
+                pass
+            elif status["status"] in ("not_found", "exited"):
+                logger.info(f"Instance {inst.name} container gone, marking stopped")
+                inst.status = "stopped"
+                session.add(inst)
+        else:
+            inst.status = "stopped"
+            session.add(inst)
+    await session.commit()
 
 
 async def _service_health_loop():

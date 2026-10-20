@@ -275,3 +275,11 @@ async def test_unknown_enroll_file_404(client):
     for p in ("nope.py", "../etc/passwd", "..%2Fetc%2Fpasswd", "enroll.sh"):
         r = await client.get(f"/api/enroll/{p}")
         assert r.status_code == 404, p
+
+
+def test_lan_enroll_url_none_in_k8s(monkeypatch):
+    from app.services import workstations as ws_svc
+    monkeypatch.setattr(ws_svc._settings, "SERVER_LAN_URL", "")
+    monkeypatch.setattr(ws_svc._settings, "ROUTE_BACKEND", "k8s")
+    monkeypatch.setattr(ws_svc, "detect_lan_ip", lambda: "10.42.1.5")
+    assert ws_svc.lan_enroll_url() == (None, "none")

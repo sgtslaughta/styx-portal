@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: styx
+  labels: {app: styx-frontend}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: styx-frontend}
+  template:
+    metadata:
+      labels: {app: styx-frontend}
+    spec:
+      priorityClassName: styx-critical
+      # nginx:alpine runs as root by default; uid 101 (nginx) works with the
+      # emptyDirs below (verified: starts with all caps dropped, no image change).
+      securityContext:
+        runAsUser: 101
+        runAsGroup: 101
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels: {app: styx-frontend}
+      tolerations:
+        - {key: node.kubernetes.io/not-ready, operator: Exists, effect: NoExecute, tolerationSeconds: 30}
+        - {key: node.kubernetes.io/unreachable, operator: Exists, effect: NoExecute, tolerationSeconds: 30}
+      containers:
+        - name: frontend
+          image: ghcr.io/sgtslaughta/styx-frontend
+          ports: [{name: http, containerPort: 3000}]
+          env:
+            - name: NGINX_RESOLVER
+              valueFrom: {configMapKeyRef: {name: styx-config, key: NGINX_RESOLVER}}
+            - name: BACKEND_HOST
+              valueFrom: {configMapKeyRef: {name: styx-config, key: BACKEND_HOST}}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
+          readinessProbe:
+            httpGet: {path: /, port: 3000}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /, port: 3000}
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests: {cpu: 20m, memory: 32Mi}
+            limits: {memory: 128Mi}
+          volumeMounts:
+            - {name: cache, mountPath: /var/cache/nginx}
+            - {name: run, mountPath: /run}
+            # entrypoint envsubst renders /etc/nginx/templates here at start
+            - {name: conf, mountPath: /etc/nginx/conf.d}
+      volumes:
+        - {name: conf, emptyDir: {}}
+        - {name: cache, emptyDir: {}}
+        - {name: run, emptyDir: {}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: styx
+spec:
+  selector: {app: styx-frontend}
+  ports: [{name: http, port: 3000, targetPort: 3000}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend
+  namespace: styx
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app: styx-frontend}

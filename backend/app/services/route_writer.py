@@ -1,5 +1,6 @@
-import base64
+import asyncio
 import logging
+import threading
 import yaml
 from pathlib import Path
 
@@ -9,11 +10,13 @@ from app.services.settings_store import settings as _sys_settings
 
 logger = logging.getLogger("styx-portal")
 _settings = Settings()
+_write_lock = threading.Lock()  # serialize file writes / k8s apply+prune
 
 
-def _forward_auth(address: str) -> dict:
+def _forward_auth(address: str, extra_headers: tuple[str, ...] = ()) -> dict:
     """forwardAuth that also swaps in the Cookie header minus Styx cookies."""
-    return {"forwardAuth": {"address": address, "authResponseHeaders": ["Cookie"]}}
+    return {"forwardAuth": {"address": address,
+                            "authResponseHeaders": ["Cookie", *extra_headers]}}
 
 
 def _seg(prefix: str) -> str:
@@ -39,7 +42,8 @@ def _router_transport(deploy_mode: str, domain: str) -> dict:
 def build_routes_config(instances: list[dict], domain: str,
                         deploy_mode: str = "tunnel",
                         workstations: list[dict] | None = None,
-                        services: list[dict] | None = None) -> dict:
+                        services: list[dict] | None = None,
+                        k8s: bool = False) -> dict:
     """Build the Traefik dynamic config dict for all services + running instances.
 
     Always emits the static `unavailable-rewrite` / `instance-unavailable-errors`
@@ -65,7 +69,7 @@ def build_routes_config(instances: list[dict], domain: str,
         },
         "ip-ban-gate": {
             "forwardAuth": {
-                "address": "http://backend:8000/api/auth/ban-check"
+                "address": f"{_settings.BACKEND_INTERNAL_URL}/api/auth/ban-check"
             }
         },
     }
@@ -113,7 +117,7 @@ def build_routes_config(instances: list[dict], domain: str,
     # the higher-priority Host() routers win for the real domain.
     lan_cert = Path(_settings.LAN_CERT_DIR) / "lan.crt"
     lan_key = Path(_settings.LAN_CERT_DIR) / "lan.key"
-    lan_serving = lan_cert.is_file() and lan_key.is_file()
+    lan_serving = lan_cert.is_file() and lan_key.is_file() and not k8s
 
     def _lan_router(rule: str, service: str, priority: int,
                     mw: list[str] | None = None) -> dict:
@@ -140,7 +144,7 @@ def build_routes_config(instances: list[dict], domain: str,
         # (never parsed from the request); also strips Styx cookies.
         auth_mw = f"inst-auth-{inst_id}"
         middlewares[auth_mw] = _forward_auth(
-            f"http://backend:8000/internal/instances/{inst_id}/auth-check")
+            f"{_settings.BACKEND_INTERNAL_URL}/internal/instances/{inst_id}/auth-check")
 
         # Capture primary router transport config for reuse by extra ports
         primary_transport = _router_transport(deploy_mode, domain)
@@ -213,23 +217,15 @@ def build_routes_config(instances: list[dict], domain: str,
     for ws in workstations or []:
         sub = ws["subdomain"]
         strip_mw = f"strip-w-{sub}"
-        auth_header_mw = f"auth-ws-{sub}"
         middlewares[strip_mw] = {"stripPrefix": {"prefixes": [f"/w/{sub}"]}}
-
-        # Credential injection middleware (if selkies_password is available)
-        if "selkies_password" in ws and ws["selkies_password"]:
-            creds = base64.b64encode(
-                f"styx:{ws['selkies_password']}".encode()).decode()
-            middlewares[auth_header_mw] = {"headers": {"customRequestHeaders": {
-                "Authorization": f"Basic {creds}"}}}
 
         rid = f"ws-{ws['id']}"
         ws_auth = f"ws-auth-{ws['id']}"
         middlewares[ws_auth] = _forward_auth(
-            f"http://backend:8000/internal/workstations/{ws['id']}/auth-check")
+            f"{_settings.BACKEND_INTERNAL_URL}/internal/workstations/{ws['id']}/auth-check",
+            # auth-check injects the stream Basic credential; never in route config
+            extra_headers=("Authorization",))
         router_middlewares = ["instance-unavailable-errors", ws_auth, strip_mw]
-        if "selkies_password" in ws and ws["selkies_password"]:
-            router_middlewares.insert(2, auth_header_mw)
         config["http"]["routers"][rid] = {
             "rule": f"Host(`{domain}`) && ({_seg(f'/w/{sub}')})",
             "middlewares": router_middlewares,
@@ -263,7 +259,7 @@ def build_routes_config(instances: list[dict], domain: str,
         config["http"]["serversTransports"] = {
             "selkies-transport": {"insecureSkipVerify": True}
         }
-    if services:
+    if services and not k8s:
         from app.services.service_routes import add_service_routes
         add_service_routes(config, middlewares, services, domain,
                            _router_transport(deploy_mode, domain))
@@ -275,7 +271,7 @@ def build_routes_config(instances: list[dict], domain: str,
     # domain certs in direct mode still win for the public domain.
     cert_file = Path(_settings.LAN_CERT_DIR) / "lan.crt"
     key_file = Path(_settings.LAN_CERT_DIR) / "lan.key"
-    if cert_file.is_file() and key_file.is_file():
+    if cert_file.is_file() and key_file.is_file() and not k8s:
         t_cert = f"{_settings.TRAEFIK_LAN_CERT_DIR}/lan.crt"
         t_key = f"{_settings.TRAEFIK_LAN_CERT_DIR}/lan.key"
         config["tls"] = {
@@ -286,7 +282,24 @@ def build_routes_config(instances: list[dict], domain: str,
     return config
 
 
-def write_routes(instances: list[dict], domain: str | None = None,
+def _write_routes_k8s(instances, domain, workstations, strict):
+    from app.services.k8s_api import incluster_client
+    from app.services.k8s_routes import (
+        K8sSyncError, sync_objects, to_k8s_objects)
+    ns = _settings.K8S_NAMESPACE
+    try:
+        client = incluster_client()
+        config = build_routes_config(instances, domain, _settings.DEPLOY_MODE,
+                                     workstations, None, k8s=True)
+        sync_objects(client, to_k8s_objects(config, ns), ns)
+    except Exception as e:
+        if not isinstance(e, K8sSyncError):  # apply failures already logged
+            logger.error("k8s route sync failed", exc_info=True)
+        if strict:
+            raise
+
+
+def _write_routes_locked(instances: list[dict], domain: str | None = None,
                  workstations: list[dict] | None = None,
                  services: list[dict] | None = None, strict: bool = False):
     """Render the Traefik dynamic config to the file provider directory.
@@ -297,6 +310,8 @@ def write_routes(instances: list[dict], domain: str | None = None,
     strict=True re-raises so an admin action can report the failure.
     """
     domain = domain or _settings.DOMAIN
+    if _settings.ROUTE_BACKEND == "k8s":
+        return _write_routes_k8s(instances, domain, workstations, strict)
     out_dir = Path(_settings.TRAEFIK_DYNAMIC_DIR)
     try:
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -313,6 +328,15 @@ def write_routes(instances: list[dict], domain: str | None = None,
             raise
 
 
+def write_routes(instances: list[dict], domain: str | None = None,
+                 workstations: list[dict] | None = None,
+                 services: list[dict] | None = None, strict: bool = False):
+    """Serialized entry point; see _write_routes_locked."""
+    with _write_lock:
+        return _write_routes_locked(instances, domain, workstations,
+                                    services, strict)
+
+
 def _service_dict(s) -> dict:
     from app.models import proxy_hostname, upstream_base
     return {
@@ -327,7 +351,6 @@ async def refresh_routes_from_db(session, strict: bool = False):
     from sqlmodel import select
     from app.models import (
         Instance, ProxiedService, ServiceTemplate, Workstation)
-    from app.security.crypto import decrypt_secret
 
     result = await session.exec(
         select(Instance).where(Instance.status.in_(["running", "idle"]))
@@ -352,11 +375,9 @@ async def refresh_routes_from_db(session, strict: bool = False):
             "id": w.id, "subdomain": w.subdomain, "lan_ip": w.lan_ip,
             "port": w.port, "protocol": w.protocol,
         }
-        # Include decrypted password if available
-        if w.selkies_password_enc:
-            ws_dict["selkies_password"] = decrypt_secret(w.selkies_password_enc)
         ws_data.append(ws_dict)
     svc_result = await session.exec(
         select(ProxiedService).where(ProxiedService.enabled == True))  # noqa: E712
     svc_data = [_service_dict(s) for s in svc_result.all()]
-    write_routes(data, workstations=ws_data, services=svc_data, strict=strict)
+    await asyncio.to_thread(write_routes, data, workstations=ws_data,
+                            services=svc_data, strict=strict)

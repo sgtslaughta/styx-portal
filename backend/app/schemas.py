@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.config import Settings
 from app.services import template_validation as _tv
 
 SUBDOMAIN_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
@@ -351,6 +352,23 @@ class EnrollTokenOut(BaseModel):
     lan_url_source: str            # env | detected | none
 
 
+_settings = Settings()
+
+
+def allow_list_missing() -> bool:
+    """k8s requires WORKSTATION_ALLOW_CIDRS (pod/service IPs are reachable); compose does not."""
+    return _settings.ROUTE_BACKEND == "k8s" and not _settings.WORKSTATION_ALLOW_CIDRS.strip()
+
+
+def workstation_ip_allowed(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """True when ip is inside WORKSTATION_ALLOW_CIDRS. Empty list: any (compose), none (k8s)."""
+    if allow_list_missing():
+        return False
+    nets = [ipaddress.ip_network(c.strip(), strict=False)
+            for c in _settings.WORKSTATION_ALLOW_CIDRS.split(",") if c.strip()]
+    return not nets or any(ip in n for n in nets)
+
+
 def _check_lan_ip(v: str) -> str:
     """A workstation address Traefik will route to: never loopback/link-local/special
     (that would aim the injected workstation credentials at the host or a metadata service)."""
@@ -361,6 +379,8 @@ def _check_lan_ip(v: str) -> str:
     if (ip.is_loopback or ip.is_link_local or ip.is_unspecified or ip.is_multicast
             or ip.is_reserved):
         raise ValueError("lan_ip must be a routable LAN address")
+    if not workstation_ip_allowed(ip):
+        raise ValueError("lan_ip must be inside an allowed workstation network")
     return v
 
 

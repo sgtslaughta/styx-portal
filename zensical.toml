@@ -16,6 +16,7 @@ nav = [
   { "GPU" = "GPU.md" },
   { "Admin" = "ADMIN.md" },
   { "Production" = "PRODUCTION.md" },
+  { "Kubernetes" = "KUBERNETES.md" },
   { "Agent Build" = "AGENT_BUILD.md" },
   { "CI/CD" = "CICD.md" },
   { "Decisions" = "decisions/index.md" },

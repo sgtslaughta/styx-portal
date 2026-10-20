@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY pyproject.toml .
+COPY backend/pyproject.toml .
 RUN pip install --no-cache-dir .
 
 # System deps for chromium need root
@@ -15,7 +15,9 @@ RUN useradd -m -u 1000 appuser \
     && mkdir -p /app/data /app/data/screenshots /app/traefik-dynamic \
     && chown -R appuser:appuser /app
 
-COPY --chown=appuser:appuser app/ app/
+COPY --chown=appuser:appuser backend/app/ app/
+COPY --chown=appuser:appuser agent/ /app/agent/
+COPY --chown=appuser:appuser templates/ /app/templates/
 
 USER appuser
 
