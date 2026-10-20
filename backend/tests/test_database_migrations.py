@@ -240,3 +240,16 @@ async def test_migrations_add_open_preference_columns_to_users():
         await _run_migrations(conn)
         rows = (await conn.execute(sqlalchemy.text("PRAGMA table_info(users)"))).fetchall()
         assert {"open_workspaces", "open_apps"} <= {r[1] for r in rows}
+
+
+@pytest.mark.asyncio
+async def test_migrations_add_matrix_columns():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.execute(sqlalchemy.text("CREATE TABLE users (id TEXT PRIMARY KEY)"))
+        await conn.execute(sqlalchemy.text("CREATE TABLE refresh_tokens (jti TEXT PRIMARY KEY)"))
+        await _run_migrations(conn)
+        users = {r[1] for r in (await conn.execute(sqlalchemy.text("PRAGMA table_info(users)"))).fetchall()}
+        rt = {r[1] for r in (await conn.execute(sqlalchemy.text("PRAGMA table_info(refresh_tokens)"))).fetchall()}
+    assert {"matrix_card", "matrix_pending", "matrix_challenge", "matrix_serial"} <= users
+    assert "session_only" in rt

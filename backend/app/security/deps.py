@@ -85,6 +85,13 @@ async def proxy_user_or_none(request: Request, session: AsyncSession) -> User | 
     if not any((r.expires_at if r.expires_at.tzinfo else
                 r.expires_at.replace(tzinfo=timezone.utc)) > now for r in rows):
         return None
+    # Session-only (card) families have an absolute cap; refresh enforces it too.
+    from app.services.login_flow import session_only_expired
+    root = await session.get(RefreshToken, claims["fam"])
+    if root and session_only_expired(root.session_only, now - (
+            root.created_at if root.created_at.tzinfo
+            else root.created_at.replace(tzinfo=timezone.utc))):
+        return None
     user = await session.get(User, claims["sub"])
     if not user or not user.is_active:
         return None

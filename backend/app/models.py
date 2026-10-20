@@ -32,6 +32,10 @@ class User(SQLModel, table=True):
     locked_until: datetime | None = None
     open_workspaces: str | None = None  # None = ask | new_tab | same_tab
     open_apps: str | None = None
+    matrix_card: str | None = None       # Fernet-sealed JSON card (active)
+    matrix_pending: str | None = None    # sealed card awaiting activation
+    matrix_challenge: str | None = None  # JSON list of pending challenge cells
+    matrix_serial: int = 0
 
 
 class BannedIP(SQLModel, table=True):
@@ -74,6 +78,7 @@ class RefreshToken(SQLModel, table=True):
     expires_at: datetime
     revoked: bool = False
     user_agent: str | None = None
+    session_only: bool = False
     created_at: datetime = Field(default_factory=_now)
 
 

@@ -134,6 +134,11 @@ import { singleFlight } from "./single-flight";
 
 const BASE = "/api";
 
+export type LoginResult = {
+  id: string; username: string; role: string; must_change_pw?: boolean;
+  mfa_required?: boolean; challenge?: string[];
+};
+
 export class ApiError extends Error {
   status: number;
   /** Raw `detail` from the response (string, or FastAPI's 422 list). */
@@ -348,8 +353,11 @@ export const api = {
     request<{ id: string; username: string; role: string }>("/auth/setup", {
       method: "POST", body: JSON.stringify(data) }),
   login: (data: { username: string; password: string }) =>
-    request<{ id: string; username: string; role: string; must_change_pw?: boolean }>("/auth/login", {
+    request<LoginResult>("/auth/login", {
       method: "POST", body: JSON.stringify(data) }),
+  loginMatrix: (answers: string[]) =>
+    request<LoginResult>("/auth/login/matrix", {
+      method: "POST", body: JSON.stringify({ answers }) }),
   logout: (endSession = false) =>
     request<{ ok: boolean }>(
       `/auth/logout${endSession ? "?end_session=true" : ""}`,
@@ -362,7 +370,7 @@ export const api = {
   acceptInvite: (data: { token: string; username: string; password: string }) =>
     request<{ id: string; username: string; role: string }>("/auth/accept-invite", {
       method: "POST", body: JSON.stringify(data) }),
-  listUsers: () => request<{ id: string; username: string; email: string | null; role: string; is_active: boolean; last_login: string | null; locked_until: string | null; failed_count: number }[]>("/users"),
+  listUsers: () => request<{ id: string; username: string; email: string | null; role: string; is_active: boolean; last_login: string | null; locked_until: string | null; failed_count: number; has_matrix_card?: boolean }[]>("/users"),
   createInvite: (data: { email?: string; role: string }) =>
     request<{ token: string; expires_at: string | null }>("/users/invites", {
       method: "POST", body: JSON.stringify(data) }),
@@ -375,9 +383,20 @@ export const api = {
   forcePasswordChange: (id: string) =>
     request(`/users/${id}/force-password-change`, { method: "POST" }),
   deleteUser: (id: string) => request(`/users/${id}`, { method: "DELETE" }),
+  adminResetMatrix: (id: string) => request<{ ok: boolean }>(`/users/${id}/matrix`, { method: "DELETE" }),
   changePassword: (old_password: string, new_password: string) =>
     request("/auth/change-password", { method: "POST",
       body: JSON.stringify({ old_password, new_password }) }),
+
+  matrixStatus: () => request<{ enabled: boolean }>("/auth/matrix"),
+  matrixGenerate: (password: string) =>
+    request<{ cells: Record<string, string>; confirm_cell: string }>("/auth/matrix/generate",
+      { method: "POST", body: JSON.stringify({ password }) }),
+  matrixActivate: (answer: string) =>
+    request<{ enabled: boolean }>("/auth/matrix/activate",
+      { method: "POST", body: JSON.stringify({ answer }) }),
+  matrixRemove: (password: string) =>
+    request("/auth/matrix", { method: "DELETE", body: JSON.stringify({ password }) }),
 
   // Workstations
   listWorkstations: () => request<Workstation[]>("/workstations"),

@@ -3,8 +3,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const listUsers = vi.fn();
+const adminResetMatrix = vi.fn();
 vi.mock("@/api/client", () => ({
-  api: { listUsers: (...a: unknown[]) => listUsers(...a) },
+  api: {
+    listUsers: (...a: unknown[]) => listUsers(...a),
+    adminResetMatrix: (...a: unknown[]) => adminResetMatrix(...a),
+  },
   ApiError: class extends Error {},
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
@@ -50,5 +54,27 @@ describe("UsersPanel row actions at small widths", () => {
     listUsers.mockResolvedValue([user({ role: "admin" })]);
     renderPanel();
     await waitFor(() => expect(screen.getAllByText("admin").some((e) => e.className.includes("sm:hidden"))).toBe(true));
+  });
+});
+
+describe("UsersPanel sign-in card reset", () => {
+  test("hidden when the user has no card", async () => {
+    listUsers.mockResolvedValue([user({ has_matrix_card: false })]);
+    renderPanel();
+    await openMenu("More actions for pat");
+    await screen.findByRole("menuitem", { name: /Groups/ });
+    expect(screen.queryByRole("menuitem", { name: /Reset sign-in card/ })).toBeNull();
+  });
+
+  test("confirms, then calls adminResetMatrix", async () => {
+    listUsers.mockResolvedValue([user({ has_matrix_card: true })]);
+    adminResetMatrix.mockResolvedValue({ ok: true });
+    renderPanel();
+    await openMenu("More actions for pat");
+    fireEvent.click(await screen.findByRole("menuitem", { name: /Reset sign-in card/ }));
+    expect(await screen.findByText(/Reset sign-in card\?/)).toBeTruthy();
+    expect(adminResetMatrix).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Reset card" }));
+    await waitFor(() => expect(adminResetMatrix).toHaveBeenCalledWith("u1"));
   });
 });

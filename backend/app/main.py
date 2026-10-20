@@ -20,6 +20,7 @@ from app.models import Instance, SessionEvent, User
 from app.routers import templates, instances, registry, images
 from app.routers import auth as auth_router
 from app.routers import users as users_router
+from app.routers import matrix as matrix_router
 from app.routers import oauth as oauth_router
 from app.routers import oauth_admin as oauth_admin_router
 from app.routers import audit as audit_router
@@ -42,7 +43,7 @@ from app.security.csrf import csrf_valid, CSRF_COOKIE, CSRF_HEADER, UNSAFE_METHO
 logger = logging.getLogger("styx-portal")
 _settings = Settings()
 
-_CSRF_EXEMPT = {"/api/auth/login", "/api/auth/setup"}
+_CSRF_EXEMPT = {"/api/auth/login", "/api/auth/login/matrix", "/api/auth/setup"}
 _CSRF_EXEMPT_PREFIXES = ("/api/enroll/", "/api/agent/")
 
 
@@ -361,6 +362,7 @@ app.include_router(instances.router, prefix="/api/instances", tags=["instances"]
 app.include_router(registry.router, prefix="/api/registry/images", tags=["registry"])
 app.include_router(images.router, prefix="/api/images", tags=["images"])
 app.include_router(auth_router.router, prefix="/api/auth", tags=["auth"])
+app.include_router(matrix_router.router, prefix="/api/auth", tags=["auth"])
 app.include_router(users_router.router, prefix="/api/users", tags=["users"])
 app.include_router(oauth_router.router, prefix="/api/auth/oauth", tags=["oauth"])
 app.include_router(oauth_admin_router.router, prefix="/api/oauth-providers", tags=["oauth-admin"])
