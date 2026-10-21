@@ -15,6 +15,11 @@ from .test_gateway_owner import _vid_ws  # noqa: E402
 HDR = {"Authorization": _basic("styx", "pw")}
 
 
+@pytest.fixture(autouse=True)
+def _no_connect_quiet(monkeypatch):
+    monkeypatch.setattr(gateway, "CONNECT_QUIET_S", 0)
+
+
 async def _pair(**kw):
     from aiohttp import web
     from aiohttp.test_utils import TestClient, TestServer
@@ -109,6 +114,29 @@ async def test_idle_is_per_tab_not_shared(monkeypatch):
         await _closed_with(idle_tab, t=2.5)         # shared clock would keep it open
         task.cancel()
         assert not busy_tab.closed
+    finally:
+        await client.close()
+        await up.close()
+
+
+@pytest.mark.asyncio
+async def test_reconnect_burst_does_not_renew_hold(monkeypatch):
+    """A tab left open elsewhere reconnects on a loop; the resize it sends on
+    every connect is not user input and must not hold the seat forever."""
+    monkeypatch.setattr(gateway, "BUSY_HOLD_S", 0.3)
+    monkeypatch.setattr(gateway, "CONNECT_QUIET_S", 0.5)
+    up, client = await _pair()
+    try:
+        a = await _vid_ws(client, "A", HDR)
+        await asyncio.sleep(0.4)                    # A quiet past the hold
+        await a.close()
+        a = await _vid_ws(client, "A", HDR)        # stale tab reconnects...
+        await a.send_str("r,1920x1080")            # ...and re-sends its size
+        await asyncio.sleep(0.05)
+        b = await _vid_ws(client, "B", HDR)
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(b.receive(), 0.3)
+        assert not b.closed
     finally:
         await client.close()
         await up.close()

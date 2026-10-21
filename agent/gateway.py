@@ -60,6 +60,10 @@ REFIT_HOLD_S = 30.0     # no handoff this soon after a refit (clients are reconn
 # within the idle timeout (BUSY_HOLD_S when idle enforcement is off).
 BUSY_CODE = refit.BUSY_CODE
 BUSY_HOLD_S = 300.0
+# A socket's first seconds are the client's connect burst (size, settings), not
+# a person: a tab left open elsewhere reconnects on a loop and would otherwise
+# renew its busy hold forever. The per-tab clock ignores input that early.
+CONNECT_QUIET_S = 5.0
 
 
 def log(msg: str) -> None:
@@ -321,7 +325,8 @@ def create_app(user: str, password: str,
                     swallowed: selkies cannot resize a GNOME host (it would only
                     restart capture / log "resize refused"); the agent refits
                     instead, and only for the size owner."""
-                    mark_input(data, rec)
+                    quiet = time.time() - opened < CONNECT_QUIET_S
+                    mark_input(data, None if quiet else rec)
                     if not seat_dir or not isinstance(data, str):
                         return False
                     if data.startswith("SETTINGS,"):
