@@ -245,7 +245,8 @@ def create_app(user: str, password: str,
             # 2.0 client probes api/websockets over plain HTTP (409 = mode flip)
             return await forward(request, "/api/websockets" + (f"?{qs}" if qs else ""))
         shared = "role=viewer" in qs.split("&")
-        peer = (request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+        peer = (request.headers.get("CF-Connecting-IP")      # real client via the tunnel
+                or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
                 or request.remote)
         hold = idle_timeout_s if idle_enabled and idle_timeout_s > 0 else BUSY_HOLD_S
         if not shared and viewers.busy(vid, time.time(), hold):

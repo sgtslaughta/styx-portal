@@ -49,11 +49,11 @@ async def test_second_controller_rejected_while_first_active(capsys):
         a = await _vid_ws(client, "A", HDR)
         await a.send_str("m2,10,10,0,0")          # real input: A is active
         await asyncio.sleep(0.05)
-        b = await _vid_ws(client, "B", HDR)
+        b = await _vid_ws(client, "B", {**HDR, "CF-Connecting-IP": "203.0.113.7"})
         await _closed_with(b, gateway.BUSY_CODE)
         assert not a.closed                         # active session untouched
         out = capsys.readouterr().out
-        assert "ws reject vid=B" in out and "ws open vid=A" in out
+        assert "ws reject vid=B from=203.0.113.7" in out and "ws open vid=A" in out
     finally:
         await client.close()
         await up.close()
