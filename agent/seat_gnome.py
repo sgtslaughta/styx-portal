@@ -194,6 +194,10 @@ class GnomeSeat:
             time.sleep(0.1)
         return False
 
+    def healthy(self) -> bool:
+        """Alive and the shell's main loop still answers D-Bus."""
+        return self.alive() and self._shell_answers()
+
     def alive(self) -> bool:
         """GNOME up and, once started, the seat helper too (it owns the monitor
         and the portal backend; without it capture and input are dead)."""

@@ -40,6 +40,8 @@ class FakeProc:
 
 
 class FakeSeat:
+    answers = False                 # shell D-Bus ping (watchdog escalation gate)
+
     def __init__(self, h):
         self.h, self.restarts, self._alive, self.started = h, 0, False, False
         self.size_file = h.tmp / "seat-size"
@@ -56,6 +58,9 @@ class FakeSeat:
 
     def ready(self, timeout=20):
         return True
+
+    def healthy(self):
+        return self._alive and self.answers
 
     def stop(self):
         self._alive = False
@@ -157,6 +162,16 @@ def test_watchdog_restarts_selkies_then_escalates(tmp_path, monkeypatch):
     assert h.count("seat_start") == 2                # boot + post-escalation
     assert h.payloads[-1]["health"]["degraded"] is True
     assert h.payloads[-1]["health"]["seat_restarts"] == 1
+
+
+def test_watchdog_keeps_seat_that_still_answers(tmp_path, monkeypatch):
+    """Starvation from a client handoff must not restart GNOME and its apps."""
+    monkeypatch.setattr(FakeSeat, "answers", True)
+    h = Harness(tmp_path, monkeypatch, _revoke_at(4), starving_since=0)
+    assert h.run() == 0
+    assert h.count("term", "selkies") == 3
+    assert h.count("seat_stop") == 0                 # seat never restarted
+    assert h.count("seat_start") == 1                # boot only
 
 
 def test_dead_gnome_shell_restarts_seat_then_selkies(tmp_path, monkeypatch):

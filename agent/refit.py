@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 CLOSE_CODE = 4002
+BUSY_CODE = 4003     # gateway refused: another tab holds the seat
 MIN_W, MIN_H, MAX_W, MAX_H = 640, 480, 4096, 2304   # HiDPI browsers send device px
 TOLERANCE_PX = 16
 MIN_INTERVAL_S = 3.0
@@ -32,13 +33,13 @@ MARKER = "styx-refit"   # text frame sent just before the refit close
 # START_* commands, and resumes delivering messages. The app never observes a
 # close: the last frame stays on the canvas under a small "Resizing…" pill
 # until the first frame at the new size arrives.
-_PROXY_JS = r"""var W=__WS__,M='styx-refit',SAFETY=30000,PILL=__PILL__,RELOAD=__RELOAD__,LOG=__LOG__,VID=__VID__;
+_PROXY_JS = r"""var W=__WS__,M='styx-refit',SAFETY=30000,PILL=__PILL__,RELOAD=__RELOAD__,LOG=__LOG__,VID=__VID__,BUSY=__BUSY__;
 function S(url,proto){this._url=url;this._proto=proto;this._ls={};this._settings=null;this._starts=[];this._refit=false;this._resuming=false;this._bt='blob';this.readyState=0;this.onopen=this.onmessage=this.onerror=this.onclose=null;this._open()}
 S.prototype._open=function(){var self=this,u=self._url+(self._url.indexOf('?')<0?'?':'&')+'styx_vid='+encodeURIComponent(VID),ws=self._proto===undefined?new W(u):new W(u,self._proto);self._ws=ws;ws.binaryType=self._bt;
 ws.onopen=function(e){self.readyState=1;if(self._resuming)self._resume();else self._emit('open',e)};
 ws.onmessage=function(e){var d=e.data;if(d===M){self._refit=true;PILL(true);self._t0=Date.now();LOG('[styx] refit: holding socket');return}
 if(self._waitFrame&&typeof d!=='string'&&(d.byteLength||d.size||0)>2000){self._waitFrame=false;PILL(false);LOG('[styx] refit: first frame after '+(Date.now()-self._t0)+' ms')}self._emit('message',e)};
-ws.onclose=function(e){if(self._refit||e.code===4002){self._refit=false;self._wait();return}self.readyState=3;self._emit('close',e)};
+ws.onclose=function(e){if(e.code===4003){self.readyState=3;BUSY();return}if(self._refit||e.code===4002){self._refit=false;self._wait();return}self.readyState=3;self._emit('close',e)};
 ws.onerror=function(e){if(!self._resuming)self._emit('error',e)}};
 S.prototype._wait=function(){var self=this;self._resuming=true;if(Date.now()-(self._t0||0)>SAFETY){RELOAD();return}
 fetch(__PAGE__,{cache:'no-store'}).then(function(r){if(r.ok&&!r.headers.get('X-Styx-Hold'))self._open();else throw 0}).catch(function(){setTimeout(function(){self._wait()},100)})};
@@ -69,24 +70,28 @@ _WORKER_SHIM = "(function(){" + _proxy(
     WS="self.WebSocket", PILL="function(on){self.postMessage({type:'styx-pill',on:on})}",
     RELOAD="function(){self.postMessage({type:'styx-reload'})}",
     LOG="function(m){self.postMessage({type:'styx-log',m:m})}",
-    VID="__VID__",
+    VID="__VID__", BUSY="function(){self.postMessage({type:'styx-busy'})}",
     PAGE="__PAGE__", INSTALL="self.WebSocket=S") + "})();\n"
 
 _PAGE_SHIM = _proxy(
     WS="window.WebSocket", PILL="pill", RELOAD="function(){location.reload()}",
-    LOG="function(m){console.log(m)}", VID="vid", PAGE="location.href", INSTALL="window.WebSocket=S")
+    LOG="function(m){console.log(m)}", VID="vid", BUSY="busy", PAGE="location.href", INSTALL="window.WebSocket=S")
 
 RELOAD_JS = ('<script id="styx-refit">(function(){var P="styx-resizing",WSRC=' + json.dumps(_WORKER_SHIM) + r""";
 try{var q=new URLSearchParams(location.search);if(q.get('socket_worker')==='false'){q.delete('socket_worker');history.replaceState(null,'',location.pathname+(q.toString()?'?'+q:'')+location.hash)}}catch(e){}
 function pill(on){var el=document.getElementById(P);if(!on){el&&el.remove();return}if(el)return;el=document.createElement('div');el.id=P;el.textContent='Resizing…';
 el.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;padding:8px 16px;border-radius:999px;background:rgba(12,23,48,.85);color:rgba(255,255,255,.9);font:500 14px system-ui,sans-serif;letter-spacing:.02em;backdrop-filter:blur(6px);pointer-events:none';
 (document.body||document.documentElement).appendChild(el)}
+function busy(){if(document.getElementById('styx-busy'))return;var d=document.createElement('div');d.id='styx-busy';
+d.style.cssText='position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;flex-direction:column;font:600 20px system-ui,sans-serif;color:#e6e9ef;background:rgba(17,20,28,.92);text-align:center';
+d.innerHTML='<div>This desktop is in use on another device</div><div style="font:400 14px system-ui;margin-top:8px;opacity:.75">It frees up once that session goes idle or an admin ends it.</div><button style="margin-top:16px;padding:8px 20px;font:inherit;cursor:pointer;border-radius:8px;border:0;background:#2b3650;color:#fff">Try again</button>';
+d.querySelector('button').onclick=function(){location.reload()};(document.body||document.documentElement).appendChild(d)}
 var vid,nav;try{nav=(performance.getEntriesByType('navigation')[0]||{}).type}catch(e){}
 if(nav==='reload'||nav==='back_forward'){try{vid=sessionStorage.getItem('styx_vid')}catch(e){}}
 if(!vid){try{vid=crypto.randomUUID()}catch(e){vid=Math.random().toString(36).slice(2)+Date.now().toString(36)}try{sessionStorage.setItem('styx_vid',vid)}catch(e){}}
 var B=window.Blob;function SB(parts,opts){var m=parts&&typeof parts[0]==='string'&&parts[0].indexOf('new WebSocket(m.url)')>=0;if(m)parts=[WSRC.replace('__VID__',function(){return JSON.stringify(vid)}).replace('__PAGE__',function(){return JSON.stringify(location.href)})].concat(parts);return new B(parts,opts)}
 SB.prototype=B.prototype;window.Blob=SB;
-var K=window.Worker;function SW(u,o){var w=o===undefined?new K(u):new K(u,o);w.addEventListener('message',function(e){var d=e.data;if(!d||typeof d.type!=='string')return;if(d.type==='styx-pill')pill(d.on);else if(d.type==='styx-reload')location.reload();else if(d.type==='styx-log')console.log(d.m)});return w}
+var K=window.Worker;function SW(u,o){var w=o===undefined?new K(u):new K(u,o);w.addEventListener('message',function(e){var d=e.data;if(!d||typeof d.type!=='string')return;if(d.type==='styx-pill')pill(d.on);else if(d.type==='styx-reload')location.reload();else if(d.type==='styx-busy')busy();else if(d.type==='styx-log')console.log(d.m)});return w}
 SW.prototype=K.prototype;window.Worker=SW;
 """ + _PAGE_SHIM + "window.__styxRefit={pill:pill};})();</script>")
 # Served with 200 while the seat is rebuilt (only reached by a full reload):

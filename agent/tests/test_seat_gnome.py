@@ -233,3 +233,17 @@ def test_dead_helper_heals_without_restarting_gnome(tmp_path, monkeypatch):
     seat.start(2434, 1262)
     assert seat.ready() is True and started == [(2434, 1262)]
     assert seat.restarts == 0
+
+
+def test_healthy_needs_live_proc_and_answering_shell(tmp_path, monkeypatch):
+    """Watchdog escalation gate: a frameless viewer on a healthy seat is a
+    client/stream problem, not a reason to restart GNOME (and its apps)."""
+    seat = seat_gnome.GnomeSeat(tmp_path, str(tmp_path), log=subprocess.DEVNULL)
+    monkeypatch.setattr(seat, "alive", lambda: True)
+    monkeypatch.setattr(seat, "_shell_answers", lambda: True)
+    assert seat.healthy()
+    monkeypatch.setattr(seat, "_shell_answers", lambda: False)   # main loop wedged
+    assert not seat.healthy()
+    monkeypatch.setattr(seat, "alive", lambda: False)
+    monkeypatch.setattr(seat, "_shell_answers", lambda: True)
+    assert not seat.healthy()
