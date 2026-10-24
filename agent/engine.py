@@ -264,24 +264,34 @@ def seat_selkies_main() -> None:
 
 def cap_still_raise(steer_cls) -> None:
     """selkies 2.1 raises the CBR target x1.15/s on every clean tick, a still
-    screen's trickle included, so it climbs back to the ceiling without testing
-    the path and the next motion bursts into a queue: the "poor connection"
-    sawtooth on a slow path. On a still (app-limited) tick, cap raises at the
-    capacity the path last showed; motion still probes past it, and a path that
-    delivers more makes selkies forget the old capacity.
-    ponytail: drop once upstream gates raises on app-limited ticks."""
+    screen's trickle included, and forgets the path capacity it measured as
+    soon as motion delivers a little past it. After a backoff the target so
+    climbs back to the ceiling without testing the path, and the next motion
+    bursts into a queue: the "poor connection" sawtooth on a slow path.
+
+    Keep our own `styx_known_kbps`: the last capacity selkies measured, raised
+    by what motion actually delivers, never forgotten. A still or unmeasured
+    tick never raises past it; a motion tick raises at most STEP past it, so
+    a faster path still unlocks within seconds of real motion.
+    ponytail: drop once upstream fixes selkies-project/selkies#489."""
     orig = steer_cls.target
 
     def target(self, current, ceiling, floor, goodput_bps, loss, now,
                queue_s=None, offered_bps=None):
+        before = self.capacity_kbps
         out = orig(self, current, ceiling, floor, goodput_bps, loss, now,
                    queue_s, offered_bps)
-        cap = self.capacity_kbps
-        still = (offered_bps is not None
-                 and offered_bps < current * 1_000 * self.APP_LIMITED)
-        if out > current and still and cap is not None and not queue_s:
-            return max(current, min(out, cap))
-        return out
+        known = getattr(self, "styx_known_kbps", None)
+        if self.capacity_kbps is not None and self.capacity_kbps != before:
+            known = self.capacity_kbps           # fresh measurement wins
+        moving = (offered_bps is not None
+                  and offered_bps >= current * 1_000 * self.APP_LIMITED)
+        if known is not None and not queue_s and moving:
+            known = max(known, goodput_bps / 1_000)
+        self.styx_known_kbps = known
+        if known is None or queue_s or out <= current:
+            return out
+        return max(current, min(out, known * (self.STEP if moving else 1.0)))
 
     steer_cls.target = target
 
