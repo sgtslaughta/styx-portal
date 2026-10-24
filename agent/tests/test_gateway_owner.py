@@ -6,7 +6,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 gateway = pytest.importorskip("gateway")
 aiohttp = pytest.importorskip("aiohttp")
-from .test_gateway import _basic, _refit_pair  # noqa: E402
+from .test_gateway import _aborted, _basic, _refit_pair  # noqa: E402
 
 
 async def _until(cond, timeout=3.0):
@@ -98,8 +98,7 @@ async def test_owner_reconnect_within_grace_keeps_ownership_then_hands_to_older_
         await asyncio.sleep(0.8)
         assert not (tmp_path / "refit-request").exists()    # A never became owner
         await b2.close()                                    # for good
-        msg = await asyncio.wait_for(a.receive(), timeout=3)
-        assert msg.data == "styx-refit"
+        await _aborted(a)
         assert (tmp_path / "refit-request").read_text() == "1280x720"
     finally:
         gateway.OWNER_GRACE_S = saved

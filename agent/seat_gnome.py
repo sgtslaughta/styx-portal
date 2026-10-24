@@ -1,6 +1,6 @@
 # agent/seat_gnome.py
 """Headless GNOME seat: a real gnome-shell on its own session bus, captured by
-selkies 2.0 through xdg-desktop-portal (spec §5.1).
+selkies 2.x through xdg-desktop-portal (spec §5.1).
 
 The activation env MUST be set before anything can activate a portal; the seat
 routes ScreenCast/RemoteDesktop to our own consent-free backend (seat_portal.py),
