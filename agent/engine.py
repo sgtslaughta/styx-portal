@@ -262,7 +262,7 @@ def seat_selkies_main() -> None:
 
 def build_selkies_cmd(cfg: dict, internal_port: int,
                       seat: dict | None = None) -> tuple[list[str], dict]:
-    """argv + env for selkies 2.0. Secrets travel via env, never argv.
+    """argv + env for selkies 2.x. Secrets travel via env, never argv.
 
     seat: {"socket", "bus"} of a headless GNOME seat (host capture via the
     portal), or None for the labwc seat (pixelflux's own compositor) / mirror.

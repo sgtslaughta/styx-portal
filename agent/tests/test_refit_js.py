@@ -1,7 +1,6 @@
-"""Run the injected socket proxy in node with a fake WebSocket."""
+"""Run the injected tab-id tagger in node with fake Worker/WebSocket."""
 import shutil
 import subprocess
-
 import sys
 from pathlib import Path
 
@@ -14,100 +13,53 @@ pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node missi
 
 HARNESS = r"""
 const assert = require('assert'), vm = require('vm');
-const socks = [], got = [];
-class FakeWS { constructor(u){this.url=u;this.readyState=0;socks.push(this);
-  setTimeout(()=>{this.readyState=1;this.onopen&&this.onopen({})},0)}
-  send(){} close(){} push(d){this.onmessage({data:d})} }
-const ctx = {FakeWS, setTimeout, Date, encodeURIComponent, console, busy: 0,
-  fetch: () => Promise.resolve({ok:true, headers:{get:()=>null}})};
-vm.createContext(ctx);
-vm.runInContext(process.argv[2], ctx);
-const wait = ms => new Promise(r => setTimeout(r, ms));
-(async () => {
-  const s = new ctx.S('ws://h/websocket?x=1'); s.onmessage = e => got.push(e.data);
-  await wait(10);
-  const vid = /styx_vid=(\w+)/.exec(socks[0].url);
-  assert(vid && socks[0].url.includes('x=1&styx_vid='), socks[0].url);
-  socks[0].push('hello'); socks[0].push(new Uint8Array(3));
-  assert.strictEqual(got.length, 2);
-  socks[0].push('styx-refit'); socks[0].onclose({code: 4002});
-  await wait(300);
-  assert.strictEqual(socks.length, 2);
-  assert(socks[1].url.includes('styx_vid=' + vid[1]), socks[1].url);
-  assert.strictEqual(got.length, 2);
-  let closed = 0; s.onclose = () => closed++;
-  socks[1].onclose({code: 4003});                 // gateway: seat busy
-  await wait(300);
-  assert.strictEqual(ctx.busy, 1);
-  assert.strictEqual(socks.length, 2);            // no reconnect loop
-  assert.strictEqual(closed, 0);                  // app never sees a close (no reload)
-  process.exit(0);
-})().catch(e => { console.error(e); process.exit(1); });
-"""
-
-
-def test_proxy_vid_and_reconnect(tmp_path):
-    src = refit._proxy(WS="FakeWS", PILL="function(){}", RELOAD="function(){}", LOG="function(){}",
-                       VID='"abc123"', BUSY="function(){busy++}", PAGE='"http://h/"',
-                       INSTALL="this.S=S")
-    js = tmp_path / "h.js"
-    js.write_text(HARNESS)
-    r = subprocess.run(["node", str(js), src], capture_output=True, text=True, timeout=30)
-    assert r.returncode == 0, r.stderr
-
-
-def test_worker_shim_is_valid_js(tmp_path):
-    src = refit._WORKER_SHIM.replace("__PAGE__", '"http://h/"').replace("__VID__", '"abc"')
-    js = tmp_path / "worker.js"
-    js.write_text(src)
-    r = subprocess.run(["node", "--check", str(js)], capture_output=True, text=True, timeout=30)
-    assert r.returncode == 0, r.stderr
-
-
-PAGE_HARNESS = r"""
-const assert = require('assert'), vm = require('vm');
 const [html, navType] = process.argv.slice(2);
 const body = html.slice(html.indexOf('>') + 1, html.lastIndexOf('</script>'));
-const registry = {}, store = {}, posted = [], workers = [];
-function el() {
-  const e = {children: [], style: {}, attrs: {}, textContent: '', id: '',
-    setAttribute(k, v) { this.attrs[k] = v },
-    appendChild(c) { this.children.push(c); if (c.id) registry[c.id] = c; return c },
-    remove() { delete registry[this.id] }};
-  return e;
-}
-class FakeBlob { constructor(parts, opts) { this.parts = parts; this.opts = opts } }
-class FakeWorker { constructor(u) { this.u = u; this.ls = {}; workers.push(this) }
-  addEventListener(t, f) { this.ls[t] = f } postMessage(m) { posted.push([this.u, m]) } }
-class FakeWS {}
+const store = {}, posted = [], socks = [];
+class FakeWorker { postMessage(m) { posted.push(m) } }
+class FakeWS { constructor(u, p) { this.url = u; this.p = p; socks.push(this) } }
+FakeWS.CONNECTING = 0; FakeWS.OPEN = 1; FakeWS.CLOSING = 2; FakeWS.CLOSED = 3;
 let n = 0;
 const win = {
-  document: {getElementById: id => registry[id] || null, createElement: el, body: el(), documentElement: el()},
   sessionStorage: {getItem: k => store[k] ?? null, setItem: (k, v) => { store[k] = v }},
   performance: {getEntriesByType: () => [{type: navType}]},
-  location: {search: '?socket_worker=false', href: 'http://h/p', pathname: '/p', hash: '', reload() {}},
-  history: {replaceState() {}}, URLSearchParams, Blob: FakeBlob, Worker: FakeWorker, WebSocket: FakeWS,
-  crypto: {randomUUID: () => 'uuid' + (++n)}, console, setTimeout, Date, encodeURIComponent, fetch() {},
-  URL: {createObjectURL: b => 'blob:' + (b.parts[0].length)},
+  location: {search: '?socket_worker=false', pathname: '/p', hash: ''},
+  history: {replaceState() {}}, URLSearchParams, Worker: FakeWorker, WebSocket: FakeWS,
+  crypto: {randomUUID: () => 'uuid' + (++n)}, console, encodeURIComponent,
 };
-win.window = win; win.document.body.appendChild = win.document.body.appendChild;
+win.window = win;
 vm.createContext(win);
 store.styx_vid = 'old';
 vm.runInContext(body, win);
-const api = win.window.__styxRefit;
-assert(api, 'no __styxRefit');
-assert.strictEqual(store.styx_vid, navType === 'reload' ? 'old' : 'uuid1');
-const marked = new win.Blob(['new WebSocket(m.url)']);
-assert(win.Blob === win.window.Blob && marked.parts[0].includes('self.WebSocket=S'));
-assert(marked.parts[0].includes(JSON.stringify(store.styx_vid)), 'vid not injected');
-assert(!('owner' in api) && !registry['styx-takeover']);
+const vid = store.styx_vid;
+assert.strictEqual(vid, navType === 'reload' ? 'old' : 'uuid1');
+const w = new win.Worker();
+w.postMessage({type: 'open', url: 'wss://h/api/websockets?x=1', primary: true});
+w.postMessage({type: 'open', url: 'wss://h/api/websockets'});
+w.postMessage({type: 'open', url: 'wss://h/other'});
+w.postMessage({type: 'data', url: 'wss://h/api/websockets'});
+w.postMessage('open');
+assert.strictEqual(posted[0].url, 'wss://h/api/websockets?x=1&styx_vid=' + vid);
+assert.strictEqual(posted[0].primary, true);
+assert.strictEqual(posted[1].url, 'wss://h/api/websockets?styx_vid=' + vid);
+assert.strictEqual(posted[2].url, 'wss://h/other');
+assert.strictEqual(posted[3].url, 'wss://h/api/websockets');
+assert.strictEqual(posted[4], 'open');
+new win.WebSocket('wss://h/api/websockets', ['p']);
+assert.strictEqual(socks[0].url, 'wss://h/api/websockets?styx_vid=' + vid);
+assert.deepStrictEqual(socks[0].p, ['p']);
+new win.WebSocket('wss://h/x');
+assert.strictEqual(socks[1].url, 'wss://h/x');
+assert(win.WebSocket.prototype === FakeWS.prototype);
+assert.strictEqual(win.WebSocket.OPEN, 1);
+assert.strictEqual(win.WebSocket.CLOSED, 3);
 process.exit(0);
 """
 
 
 @pytest.mark.parametrize("nav", ["reload", "navigate"])
-def test_page_shim_runs_in_vm(tmp_path, nav):
+def test_tagger_runs_in_vm(tmp_path, nav):
     js = tmp_path / "page.js"
-    js.write_text(PAGE_HARNESS)
+    js.write_text(HARNESS)
     r = subprocess.run(["node", str(js), refit.RELOAD_JS, nav], capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, r.stderr

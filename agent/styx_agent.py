@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-AGENT_VERSION = "0.8.3"
+AGENT_VERSION = "0.9.0"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -409,7 +409,7 @@ def doctor(cfg: dict) -> int:
     ok &= _check("config readable", True, str(CONFIG_PATH))
     install = Path(cfg["install_dir"])
     ok &= _check("venv present", (install / "venv/bin/python").exists())
-    ok &= _check("selkies 2.0 installed", (install / "venv/bin/selkies").exists())
+    ok &= _check("selkies 2.x installed", (install / "venv/bin/selkies").exists())
     ok &= _check(f"mode: {cfg.get('mode', 'mirror')}", True)
     if cfg.get("mode") == "mirror":
         xa = engine._find_xauthority(cfg)

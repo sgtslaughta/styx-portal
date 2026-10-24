@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """LAN-facing gateway: authenticated reverse proxy to loopback selkies.
 
-Fronts selkies 2.0 (which serves its own client and /api/*) with auth, idle enforcement and injected shims.
+Fronts selkies 2.x (which serves its own client and /api/*) with auth, idle enforcement and injected shims.
 Basic auth on everything: Traefik injects the Authorization header for portal
 users; direct LAN visits get a browser prompt.
 
@@ -64,6 +64,29 @@ BUSY_HOLD_S = 300.0
 # a person: a tab left open elsewhere reconnects on a loop and would otherwise
 # renew its busy hold forever. The per-tab clock ignores input that early.
 CONNECT_QUIET_S = 5.0
+# a refit reconnect beats the standby promotion; land it on the new selkies
+REFIT_WAIT_S = 5.0
+REFIT_POLL_S = 0.02
+# pings keep a hidden tab's quiet socket alive through proxies that drop idle connections (~139 s)
+WS_HEARTBEAT_S = 30.0
+STALL_LOG_S = 1.0       # client silent this long while video is on -> log it
+
+
+class StallClock:
+    """Per client socket: gap since its previous message while video is active."""
+    def __init__(self, now: float):
+        self.last = now
+        self.video = False
+
+    def tick(self, data, now: float):
+        gap = now - self.last
+        hit = gap if self.video and gap > STALL_LOG_S else None
+        self.last = now
+        if data == "START_VIDEO":
+            self.video = True
+        elif data == "STOP_VIDEO":
+            self.video = False
+        return hit
 
 
 def log(msg: str) -> None:
@@ -134,11 +157,12 @@ def create_app(user: str, password: str,
             if want != seat_scale.read_scale(scale_file):
                 seat_scale.write_scale(scale_file, want)
 
-    async def announce_and_close(w):
-        if w.closed:
-            return
-        await w.send_str(refit.MARKER)   # shim shows the pill
-        await w.close(code=refit.CLOSE_CODE, message=b"refit")
+    transports = {}     # client ws -> its TCP transport (abort = 1006, selkies 2.1 reconnects)
+
+    def abort_for_refit(w):
+        t = transports.get(w)
+        if not w.closed and t is not None and not t.is_closing():
+            t.abort()
 
     def fire_refit(rec):
         if rec.size is None or size_owner.owner != rec.vid:
@@ -152,12 +176,11 @@ def create_app(user: str, password: str,
             return
         last_refit["ts"] = time.time()
         refit.request(refit_file, *target)
-        # Every viewer's upstream socket dies with the old selkies: announce to
-        # all so each shim holds and reconnects instead of surfacing a plain
-        # close (selkies' client reloads on it).
+        # Every viewer's upstream socket dies with the old selkies: cut each
+        # client socket so selkies 2.1 reconnects in place (it reloads on a clean close).
         for r in viewers.live():
             for w in list(r.socks):
-                asyncio.ensure_future(announce_and_close(w))
+                abort_for_refit(w)
 
     def set_owner(vid):
         """Ownership moves to `vid`: publish its scale, refit to its size."""
@@ -248,6 +271,9 @@ def create_app(user: str, password: str,
         if request.headers.get("Upgrade", "").lower() != "websocket":
             # 2.0 client probes api/websockets over plain HTTP (409 = mode flip)
             return await forward(request, "/api/websockets" + (f"?{qs}" if qs else ""))
+        t0 = time.monotonic()
+        while refit_file and refit.pending(refit_file) and time.monotonic() - t0 < REFIT_WAIT_S:
+            await asyncio.sleep(REFIT_POLL_S)
         shared = "role=viewer" in qs.split("&")
         peer = (request.headers.get("CF-Connecting-IP")      # real client via the tunnel
                 or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
@@ -258,7 +284,7 @@ def create_app(user: str, password: str,
             ws_server = web.WebSocketResponse()
             await ws_server.prepare(request)
             log(f"ws reject vid={vid[:8]} from={peer}: seat in use by another tab")
-            await ws_server.close(code=BUSY_CODE, message=b"in use on another device")
+            await ws_server.close(code=BUSY_CODE, message=b"superseded: in use on another device")
             return ws_server
         async with aiohttp.ClientSession() as session:
             try:
@@ -280,8 +306,11 @@ def create_app(user: str, password: str,
             try:
                 # compress=False: frames are H264 — permessage-deflate would
                 # re-DEFLATE every frame in Python for no gain.
-                ws_server = web.WebSocketResponse(max_msg_size=0, compress=False)
+                ws_server = web.WebSocketResponse(max_msg_size=0, compress=False,
+                                               heartbeat=WS_HEARTBEAT_S)
                 await ws_server.prepare(request)
+                transports[ws_server] = request.transport
+                stall = StallClock(time.time())
 
                 async def pump(src, dst, on_activity=None, on_binary=None):
                     async for msg in src:
@@ -311,7 +340,7 @@ def create_app(user: str, password: str,
                         if idle >= idle_timeout_s:
                             log(f"ws idle-close vid={vid[:8]} after {int(idle)}s")
                             await ws_server.close(
-                                code=4001, message=b"idle timeout")
+                                code=4001, message=b"idle timeout")   # 2.1: 4001 is final, no reconnect
                             return
                         await asyncio.sleep(min(1.0, idle_timeout_s))
 
@@ -325,6 +354,9 @@ def create_app(user: str, password: str,
                     swallowed: selkies cannot resize a GNOME host (it would only
                     restart capture / log "resize refused"); the agent refits
                     instead, and only for the size owner."""
+                    gap = stall.tick(data, time.time())
+                    if gap is not None:
+                        log(f"ws stall vid={vid[:8]} from={peer}: client silent {gap:.1f}s")
                     quiet = time.time() - opened < CONNECT_QUIET_S
                     mark_input(data, None if quiet else rec)
                     if not seat_dir or not isinstance(data, str):
@@ -367,6 +399,7 @@ def create_app(user: str, password: str,
                 if rec:
                     log(f"ws close vid={vid[:8]} code={ws_server.close_code} "
                         f"after {int(time.time() - opened)}s (n={conns['n']})")
+                transports.pop(ws_server, None)
                 if rec and viewers.disconnect(vid, ws_server):
                     rec.timer and rec.timer.cancel()
                     # Not released at once: a refit reconnect brings the same vid back.

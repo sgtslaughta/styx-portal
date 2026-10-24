@@ -679,6 +679,14 @@ async def _recording_upstream(received):
     return app
 
 
+async def _aborted(ws):
+    """A refit cuts the TCP socket: the client sees an abnormal end, not a close frame."""
+    import asyncio
+    msg = await asyncio.wait_for(ws.receive(), timeout=3)
+    assert msg.type in (aiohttp.WSMsgType.ERROR, aiohttp.WSMsgType.CLOSED), msg
+    assert ws.close_code in (None, 1006)
+
+
 async def _refit_pair(tmp_path, received, seat_dir):
     from aiohttp.test_utils import TestClient, TestServer
     up = TestClient(TestServer(await _recording_upstream(received)))
@@ -690,7 +698,7 @@ async def _refit_pair(tmp_path, received, seat_dir):
 
 
 @pytest.mark.asyncio
-async def test_first_resize_mismatch_requests_refit_and_closes_4002(tmp_path):
+async def test_first_resize_mismatch_requests_refit_and_aborts_socket(tmp_path):
     import asyncio
     (tmp_path / "seat-size").write_text("1920x1080")
     received = []
@@ -699,10 +707,7 @@ async def test_first_resize_mismatch_requests_refit_and_closes_4002(tmp_path):
         ws = await client.ws_connect("/websocket", headers={"Authorization": _basic("styx", "pw")})
         await ws.send_str("SETTINGS,{}")
         await ws.send_str("r,2552x1294,primary")
-        msg = await asyncio.wait_for(ws.receive(), timeout=3)
-        assert msg.type == aiohttp.WSMsgType.TEXT and msg.data == "styx-refit"
-        msg = await asyncio.wait_for(ws.receive(), timeout=3)
-        assert msg.type == aiohttp.WSMsgType.CLOSE and msg.data == 4002
+        await _aborted(ws)
         await asyncio.sleep(0.1)
     finally:
         await client.close()
@@ -745,10 +750,7 @@ async def test_refit_uses_last_size_after_settle(tmp_path):
         await asyncio.sleep(0.1)
         await ws.send_str("r,2552x1294,primary")
         assert not (tmp_path / "refit-request").exists()     # still settling
-        msg = await asyncio.wait_for(ws.receive(), timeout=3)
-        assert msg.type == aiohttp.WSMsgType.TEXT and msg.data == "styx-refit"
-        msg = await asyncio.wait_for(ws.receive(), timeout=3)
-        assert msg.type == aiohttp.WSMsgType.CLOSE and msg.data == 4002
+        await _aborted(ws)
     finally:
         await client.close()
         await up.close()
@@ -820,8 +822,8 @@ async def test_index_holds_when_seat_selkies_down(tmp_path):
 
 @pytest.mark.asyncio
 async def test_refit_announces_to_every_viewer_and_hands_owner_over(tmp_path):
-    """Two controllers: the newest owns at once; its resize closes BOTH with the
-    marker + 4002; the demoted one's size never refits while the owner is
+    """Two controllers: the newest owns at once; its resize aborts BOTH
+    sockets (1006); the demoted one's size never refits while the owner is
     connected, but is applied once the owner leaves. A shared viewer is closed
     too but never owns."""
     import asyncio
@@ -842,10 +844,7 @@ async def test_refit_announces_to_every_viewer_and_hands_owner_over(tmp_path):
         assert not (tmp_path / "refit-request").exists()
         await owner.send_str("r,2552x1294,primary")
         for ws in (owner, other, shared):
-            msg = await asyncio.wait_for(ws.receive(), timeout=3)
-            assert msg.type == aiohttp.WSMsgType.TEXT and msg.data == "styx-refit"
-            msg = await asyncio.wait_for(ws.receive(), timeout=3)
-            assert msg.type == aiohttp.WSMsgType.CLOSE and msg.data == 4002
+            await _aborted(ws)
         assert (tmp_path / "refit-request").read_text() == "2552x1294"
         # Seat rebuilt at the owner's size; the owner leaves, the other takes over.
         (tmp_path / "refit-request").unlink()
@@ -858,8 +857,7 @@ async def test_refit_announces_to_every_viewer_and_hands_owner_over(tmp_path):
         await asyncio.sleep(0.6)
         assert not (tmp_path / "refit-request").exists()
         await owner2.close()
-        msg = await asyncio.wait_for(other2.receive(), timeout=3)
-        assert msg.type == aiohttp.WSMsgType.TEXT and msg.data == "styx-refit"
+        await _aborted(other2)
         assert (tmp_path / "refit-request").read_text() == "1280x720"
     finally:
         gateway.refit.MIN_INTERVAL_S, gateway.REFIT_HOLD_S, gateway.OWNER_GRACE_S = saved

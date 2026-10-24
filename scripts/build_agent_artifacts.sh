@@ -24,7 +24,7 @@ docker run --rm -v "$WORK:/out" "$MANYLINUX_IMG" bash -ec '
   for PY in cp310-cp310 cp311-cp311 cp312-cp312 cp313-cp313 cp314-cp314; do
     PIP="/opt/python/$PY/bin/pip"
     "$PIP" -q wheel --wheel-dir /out/wheelhouse \
-      selkies==2.0.0 pixelflux==2.1.0 pcmflux==2.1.0 \
+      selkies==2.1.0 pixelflux==2.2.1 pcmflux==2.2.0 \
       setuptools=='"$SETUPTOOLS_VER"' aiohttp=='"$AIOHTTP_VER"' pulsectl=='"$PULSECTL_VER"'
   done
 '
