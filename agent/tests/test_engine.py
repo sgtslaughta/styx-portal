@@ -281,3 +281,44 @@ def test_quality_defaults(tmp_path, monkeypatch):
         {**cfg, "stream_settings": {"use_paint_over_quality": False}}, 1)
     assert env["SELKIES_USE_PAINT_OVER_QUALITY"] == "false"
 
+
+
+class _Steer:
+    """Upstream CongestionSteer's raise rule, cut down to what the cap reads."""
+    APP_LIMITED = 0.5
+
+    def __init__(self, capacity=None):
+        self.capacity_kbps = capacity
+
+    def target(self, current, ceiling, floor, goodput_bps, loss, now,
+               queue_s=None, offered_bps=None):
+        return min(ceiling, current * 1.15)
+
+
+def _patched():
+    cls = type("S", (_Steer,), {})
+    engine.cap_still_raise(cls)
+    return cls
+
+
+def test_still_screen_raise_stops_at_capacity():
+    s = _patched()(capacity=5000)
+    cur = 2000.0
+    for t in range(30):                      # 30 s of still screen
+        cur = s.target(cur, 16000, 1000, 200_000, 0.0, t, 0.0, 200_000)
+    assert cur == 5000
+
+
+def test_motion_still_probes_past_capacity():
+    s = _patched()(capacity=5000)
+    assert s.target(5000, 16000, 1000, 4_800_000, 0.0, 0, 0.0, 4_900_000) == 5750
+
+
+def test_no_capacity_or_unmeasured_offer_is_untouched():
+    assert _patched()().target(2000, 16000, 1000, 0, 0.0, 0, 0.0, 100_000) == 2300
+    assert _patched()(5000).target(5000, 16000, 1000, 0, 0.0, 0, 0.0, None) == 5750
+
+
+def test_still_tick_above_capacity_holds_not_drops():
+    s = _patched()(capacity=5000)
+    assert s.target(6000, 16000, 1000, 100_000, 0.0, 0, 0.0, 100_000) == 6000

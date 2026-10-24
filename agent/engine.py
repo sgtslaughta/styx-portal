@@ -257,7 +257,33 @@ def seat_selkies_main() -> None:
             return SEAT_CLIPBOARD.get(name) or getattr(self._real, name)
 
     input_handler.ScreenCapture = SeatCapture
+    from selkies.stream_server import CongestionSteer
+    cap_still_raise(CongestionSteer)
     sys.exit(main())
+
+
+def cap_still_raise(steer_cls) -> None:
+    """selkies 2.1 raises the CBR target x1.15/s on every clean tick, a still
+    screen's trickle included, so it climbs back to the ceiling without testing
+    the path and the next motion bursts into a queue: the "poor connection"
+    sawtooth on a slow path. On a still (app-limited) tick, cap raises at the
+    capacity the path last showed; motion still probes past it, and a path that
+    delivers more makes selkies forget the old capacity.
+    ponytail: drop once upstream gates raises on app-limited ticks."""
+    orig = steer_cls.target
+
+    def target(self, current, ceiling, floor, goodput_bps, loss, now,
+               queue_s=None, offered_bps=None):
+        out = orig(self, current, ceiling, floor, goodput_bps, loss, now,
+                   queue_s, offered_bps)
+        cap = self.capacity_kbps
+        still = (offered_bps is not None
+                 and offered_bps < current * 1_000 * self.APP_LIMITED)
+        if out > current and still and cap is not None and not queue_s:
+            return max(current, min(out, cap))
+        return out
+
+    steer_cls.target = target
 
 
 def build_selkies_cmd(cfg: dict, internal_port: int,
