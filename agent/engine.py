@@ -288,6 +288,8 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
         # Off until their phase ships (spec §6): devices, printing.
         "--printing-enabled=false|locked", "--microphone-enabled=false|locked",
         "--webcam-enabled=false|locked", "--gamepad-enabled=false|locked",
+        # 10-bit H.264 exists only on x264: on our GPUs it would mean CPU encode.
+        "--video-10bit=false|locked",
     ]
     dri = pick_dri_node()
     if dri:

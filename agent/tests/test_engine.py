@@ -95,7 +95,8 @@ def test_features_off_until_their_phase(tmp_path, monkeypatch):
     _stub(monkeypatch)
     cmd, _ = engine.build_selkies_cmd(cfg, 1)
     for f in ("--printing-enabled=false|locked", "--microphone-enabled=false|locked",
-              "--webcam-enabled=false|locked", "--gamepad-enabled=false|locked"):
+              "--webcam-enabled=false|locked", "--gamepad-enabled=false|locked",
+              "--video-10bit=false|locked"):
         assert f in cmd
 
 
