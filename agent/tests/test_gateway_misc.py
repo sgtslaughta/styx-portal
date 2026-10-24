@@ -131,3 +131,12 @@ def test_stall_clock_reports_gap_only_while_video_on():
     assert c.tick("m2,1,1", 20.0) is None          # video stopped: silence is fine
     assert c.tick("START_VIDEO", 20.5) is None
     assert c.tick("m2,1,1", 22.0) == pytest.approx(1.5)
+
+
+def test_is_bare_motion():
+    from gateway_html import is_bare_motion
+    assert is_bare_motion("m,10,20,0,0") and is_bare_motion("m2,1,-1,0,0,42")
+    assert not is_bare_motion("m,10,20,1,0")      # button held
+    assert not is_bare_motion("m,10,20,0,120")    # wheel
+    assert not is_bare_motion("kd,65") and not is_bare_motion(b"\x00")
+    assert not is_bare_motion("m2,100,100")       # malformed: treat as input

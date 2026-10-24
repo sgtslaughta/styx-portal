@@ -346,8 +346,15 @@ async def test_ws_proxy_rearms_starving_when_input_gets_no_frames(tmp_path,
         await asyncio.sleep(0.1)
         assert json.loads(state.read_text())["stream_starving"] is False
 
-        # Real input, no frames behind it -> wedged.
-        await ws.send_str("m2,100,100")
+        # Bare pointer motion over a still screen: browser-drawn cursor, no
+        # frames expected -> must not re-arm (GAME-01 2026-10-24 false restarts).
+        await ws.send_str("m,100,100,0,0,7")
+        await ws.send_str("m2,3,-2,0,0,8")
+        await asyncio.sleep(0.1)
+        assert json.loads(state.read_text())["stream_starving"] is False
+
+        # Real input (a key), no frames behind it -> wedged.
+        await ws.send_str("kd,65")
         await asyncio.sleep(0.1)
         st = json.loads(state.read_text())
         assert st["stream_starving"] is True

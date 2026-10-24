@@ -36,6 +36,7 @@ from gateway_html import (  # noqa: F401  (re-exported for tests)
     inject_title,
     inject_favicon,
     is_activity,
+    is_bare_motion,
 )
 
 
@@ -249,7 +250,8 @@ def create_app(user: str, password: str,
         # is wedged, not idle. Re-arm the starvation flag so the supervisor
         # restarts the engine. Input is the discriminator: a healthy static
         # screen sends no frames either, but nobody is asking it to.
-        if stream["got_frame"] and now - stream["last_frame"] > STALL_REARM_S:
+        if (stream["got_frame"] and now - stream["last_frame"] > STALL_REARM_S
+                and not is_bare_motion(data)):
             stream["got_frame"] = False
             stream["starve_start"] = now
             last_input["flushed"] = now
