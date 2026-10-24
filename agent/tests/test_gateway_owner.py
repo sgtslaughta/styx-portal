@@ -81,7 +81,8 @@ async def test_shared_viewer_never_owns_size_or_scale(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_owner_reconnect_within_grace_keeps_ownership_then_hands_to_older_controller(tmp_path):
+async def test_owner_reconnect_within_grace_keeps_ownership_then_hands_to_older_controller(tmp_path, monkeypatch):
+    monkeypatch.setattr(gateway, "BUSY_HOLD_S", 0)   # ownership, not the busy hold
     import asyncio
     (tmp_path / "seat-size").write_text("1920x1080")
     up, client = await _refit_pair(tmp_path, [], str(tmp_path))
@@ -169,7 +170,8 @@ async def test_new_controller_takes_ownership_at_once(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_previous_owners_pending_refit_timer_dies_when_replaced(tmp_path):
+async def test_previous_owners_pending_refit_timer_dies_when_replaced(tmp_path, monkeypatch):
+    monkeypatch.setattr(gateway, "BUSY_HOLD_S", 0)   # ownership, not the busy hold
     import asyncio
     (tmp_path / "seat-size").write_text("1920x1080")
     up, client = await _refit_pair(tmp_path, [], str(tmp_path))

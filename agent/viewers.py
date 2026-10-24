@@ -27,6 +27,7 @@ class Viewer:
     timer: object = None          # settle-then-refit timer
     gone: object = None           # grace timer once the last socket closed
     shared: bool = False          # selkies `role=viewer`: read-only, never owns the size
+    last_input: float = 0.0       # last real input from this tab (0 = none yet)
 
 
 class Viewers:
@@ -58,6 +59,11 @@ class Viewers:
         if rec:
             for h in (rec.timer, rec.gone):
                 h and h.cancel()
+
+    def busy(self, vid, now: float, hold_s: float) -> bool:
+        """Another controller tab is connected and had input within hold_s."""
+        return any(not r.shared and r.vid != vid and now - r.last_input < hold_s
+                   for r in self.live())
 
     def live(self):
         return [r for r in self.by_vid.values() if r.socks]

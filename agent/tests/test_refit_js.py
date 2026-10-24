@@ -18,7 +18,7 @@ const socks = [], got = [];
 class FakeWS { constructor(u){this.url=u;this.readyState=0;socks.push(this);
   setTimeout(()=>{this.readyState=1;this.onopen&&this.onopen({})},0)}
   send(){} close(){} push(d){this.onmessage({data:d})} }
-const ctx = {FakeWS, setTimeout, Date, encodeURIComponent, console,
+const ctx = {FakeWS, setTimeout, Date, encodeURIComponent, console, busy: 0,
   fetch: () => Promise.resolve({ok:true, headers:{get:()=>null}})};
 vm.createContext(ctx);
 vm.runInContext(process.argv[2], ctx);
@@ -35,6 +35,12 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
   assert.strictEqual(socks.length, 2);
   assert(socks[1].url.includes('styx_vid=' + vid[1]), socks[1].url);
   assert.strictEqual(got.length, 2);
+  let closed = 0; s.onclose = () => closed++;
+  socks[1].onclose({code: 4003});                 // gateway: seat busy
+  await wait(300);
+  assert.strictEqual(ctx.busy, 1);
+  assert.strictEqual(socks.length, 2);            // no reconnect loop
+  assert.strictEqual(closed, 0);                  // app never sees a close (no reload)
   process.exit(0);
 })().catch(e => { console.error(e); process.exit(1); });
 """
@@ -42,7 +48,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 
 def test_proxy_vid_and_reconnect(tmp_path):
     src = refit._proxy(WS="FakeWS", PILL="function(){}", RELOAD="function(){}", LOG="function(){}",
-                       VID='"abc123"', PAGE='"http://h/"',
+                       VID='"abc123"', BUSY="function(){busy++}", PAGE='"http://h/"',
                        INSTALL="this.S=S")
     js = tmp_path / "h.js"
     js.write_text(HARNESS)

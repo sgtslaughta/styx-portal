@@ -321,7 +321,15 @@ def run(cfg: dict) -> int:
             if gseat:
                 _terminate(procs["selkies"])
                 procs["selkies"] = None
-                if escalation.record(time.time()):
+                # Repeated starvation on a seat that still answers is a client or
+                # stream fault (e.g. a controller handoff): restarting GNOME
+                # would only kill the user's apps.
+                if not escalation.record(time.time()):
+                    pass
+                elif gseat.healthy():
+                    print("watchdog: 3 restarts in 10 min but GNOME seat answers "
+                          "— keeping seat", flush=True)
+                else:
                     print("watchdog: 3 restarts in 10 min — restarting GNOME "
                           "seat", flush=True)
                     _terminate(procs["standby"], timeout=0)   # bound to the old seat

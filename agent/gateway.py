@@ -53,6 +53,22 @@ STALL_REARM_S = 2.0
 OWNER_GRACE_S = 5.0
 REFIT_HOLD_S = 30.0     # no handoff this soon after a refit (clients are reconnecting)
 
+# selkies keeps one controller and kills the previous one when another
+# connects, so a stale tab on another machine that reconnects would kick the
+# active session (and the kicked tab reconnecting kicks back). The gateway
+# refuses a new controller tab with BUSY_CODE while another tab had input
+# within the idle timeout (BUSY_HOLD_S when idle enforcement is off).
+BUSY_CODE = refit.BUSY_CODE
+BUSY_HOLD_S = 300.0
+# A socket's first seconds are the client's connect burst (size, settings), not
+# a person: a tab left open elsewhere reconnects on a loop and would otherwise
+# renew its busy hold forever. The per-tab clock ignores input that early.
+CONNECT_QUIET_S = 5.0
+
+
+def log(msg: str) -> None:
+    print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} gateway: {msg}", flush=True)
+
 # Proxied downloads may run arbitrarily long: no total cap, only connect/idle.
 PROXY_TIMEOUT = aiohttp.ClientTimeout(total=None, sock_connect=10)
 
@@ -195,13 +211,17 @@ def create_app(user: str, password: str,
             stream["got_frame"] = True
             _write_state()   # publish promptly; disarms the supervisor watchdog
 
-    def mark_input(data):
+    def mark_input(data, rec=None):
         """Mark real client input activity; throttle state-file writes. Keepalive
-        chatter (pong) is ignored so the idle clock actually advances."""
+        chatter (pong) is ignored so the idle clock actually advances. `rec`
+        carries the per-tab clock (idle close, busy hold); the global one only
+        feeds the occupancy state file."""
         if not is_activity(data):
             return
         now = time.time()
         last_input["ts"] = now
+        if rec is not None:
+            rec.last_input = now
         # Frames stopped while the user is still driving the seat -> the stream
         # is wedged, not idle. Re-arm the starvation flag so the supervisor
         # restarts the engine. Input is the discriminator: a healthy static
@@ -228,6 +248,18 @@ def create_app(user: str, password: str,
         if request.headers.get("Upgrade", "").lower() != "websocket":
             # 2.0 client probes api/websockets over plain HTTP (409 = mode flip)
             return await forward(request, "/api/websockets" + (f"?{qs}" if qs else ""))
+        shared = "role=viewer" in qs.split("&")
+        peer = (request.headers.get("CF-Connecting-IP")      # real client via the tunnel
+                or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                or request.remote)
+        hold = idle_timeout_s if idle_enabled and idle_timeout_s > 0 else BUSY_HOLD_S
+        if not shared and viewers.busy(vid, time.time(), hold):
+            # Refuse before upstream connects: selkies would kill the active one.
+            ws_server = web.WebSocketResponse()
+            await ws_server.prepare(request)
+            log(f"ws reject vid={vid[:8]} from={peer}: seat in use by another tab")
+            await ws_server.close(code=BUSY_CODE, message=b"in use on another device")
+            return ws_server
         async with aiohttp.ClientSession() as session:
             try:
                 ws_client = await session.ws_connect(
@@ -237,7 +269,7 @@ def create_app(user: str, password: str,
             except aiohttp.ClientError:
                 return web.Response(status=502, text="stream backend unavailable")
             conns["n"] += 1
-            now = time.time()
+            now = opened = time.time()
             last_input["ts"] = now  # fresh session: reset idle counter
             if conns["n"] == 1:     # first viewer: arm the stream-start watchdog
                 stream["got_frame"] = False
@@ -271,12 +303,13 @@ def create_app(user: str, password: str,
 
                 async def idle_closer():
                     """Authoritative idle timeout: close the client socket once
-                    no input has arrived for idle_timeout_s. Ends the pumps."""
+                    this tab sent no input for idle_timeout_s. Ends the pumps."""
                     if not (idle_enabled and idle_timeout_s > 0):
                         return
                     while not ws_server.closed:
-                        idle = time.time() - last_input["ts"]
+                        idle = time.time() - max(opened, rec.last_input)
                         if idle >= idle_timeout_s:
+                            log(f"ws idle-close vid={vid[:8]} after {int(idle)}s")
                             await ws_server.close(
                                 code=4001, message=b"idle timeout")
                             return
@@ -292,7 +325,8 @@ def create_app(user: str, password: str,
                     swallowed: selkies cannot resize a GNOME host (it would only
                     restart capture / log "resize refused"); the agent refits
                     instead, and only for the size owner."""
-                    mark_input(data)
+                    quiet = time.time() - opened < CONNECT_QUIET_S
+                    mark_input(data, None if quiet else rec)
                     if not seat_dir or not isinstance(data, str):
                         return False
                     if data.startswith("SETTINGS,"):
@@ -315,7 +349,9 @@ def create_app(user: str, password: str,
                 # selkies keeps one controller and kills the previous one, so a
                 # controller owns the size at once. Shared (`role=viewer`) sockets
                 # never send `r,` and never own.
-                rec.shared = "role=viewer" in qs.split("&")
+                rec.shared = shared
+                log(f"ws open vid={vid[:8]} role={'viewer' if shared else 'controller'} "
+                    f"from={peer} (n={conns['n']})")
                 if seat_dir and not rec.shared:
                     if size_owner.owner and size_owner.owner != vid:
                         set_owner(vid)
@@ -328,6 +364,9 @@ def create_app(user: str, password: str,
                                      return_exceptions=True)
             finally:
                 conns["n"] -= 1
+                if rec:
+                    log(f"ws close vid={vid[:8]} code={ws_server.close_code} "
+                        f"after {int(time.time() - opened)}s (n={conns['n']})")
                 if rec and viewers.disconnect(vid, ws_server):
                     rec.timer and rec.timer.cancel()
                     # Not released at once: a refit reconnect brings the same vid back.
