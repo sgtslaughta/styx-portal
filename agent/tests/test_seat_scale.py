@@ -7,8 +7,10 @@ import seat_scale  # noqa: E402
 
 
 def test_scale_for_dpi():
-    for dpi, want in [(None, 1.0), (96, 1.0), (120, 1.25), (144, 1.5), (192, 2.0), (0, 1.0), (72, 1.0)]:
+    for dpi, want in [(None, 1.0), (96, 1.0), (120, 1.5), (144, 1.5), (168, 2.0), (192, 2.0),
+                      (240, 3.0), (288, 3.0), (0, 1.0), (72, 1.0), ("x", 1.0)]:
         assert seat_scale.scale_for_dpi(dpi) == want
+    assert [seat_scale.dpi_for_scale(v) for v in seat_scale.SCALES] == [96, 144, 192, 288]
 
 
 def test_read_scale(tmp_path):

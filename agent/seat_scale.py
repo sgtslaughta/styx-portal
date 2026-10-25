@@ -3,12 +3,23 @@ import os
 from pathlib import Path
 
 
+# Scales GNOME (scale-monitor-framebuffer) and selkies both take: selkies snaps
+# its DPI to 24-dpi stops, Mutter offers 1, 1.33, 1.5, 2, 2.67, 3 at most modes.
+# They must agree: pixelflux maps libei pointer input with selkies' scale.
+SCALES = (1.0, 1.5, 2.0, 3.0)
+
+
 def scale_for_dpi(dpi) -> float:
-    """Wanted logical scale (96 dpi = 1.0); monitors_config snaps it to what the mode offers."""
+    """Shared seat scale nearest dpi/96 (ties round up: 125% -> 1.5)."""
     try:
-        return max(1.0, float(dpi) / 96.0) if dpi else 1.0
+        want = float(dpi) / 96.0 if dpi else 1.0
     except (TypeError, ValueError):
-        return 1.0
+        want = 1.0
+    return min(SCALES, key=lambda v: (abs(v - want), -v))
+
+
+def dpi_for_scale(scale) -> int:
+    return round(float(scale) * 96)
 
 
 def read_scale(path) -> float:

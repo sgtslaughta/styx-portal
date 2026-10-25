@@ -169,6 +169,10 @@ def create_app(user: str, password: str,
             for w in list(r.socks):
                 abort_for_refit(w)
 
+    def seat_dpi() -> int:
+        """The live seat scale as the DPI selkies must run at."""
+        return seat_scale.dpi_for_scale(seat_scale.read_scale(scale_file))
+
     def publish_scale(rec):
         """Owner's HiDPI choice -> <install>/seat-scale (the seat helper applies it)."""
         if scale_file and rec.dpi is not None:
@@ -380,9 +384,9 @@ def create_app(user: str, password: str,
                     swallowed: selkies cannot resize a GNOME host (it would only
                     restart capture / log "resize refused"); the agent refits
                     instead, and only for the size owner. Seat DPI likewise:
-                    the agent scales GNOME, selkies is kept at 96 (2.1 would
-                    also scale + restart its capture: double scale, frozen
-                    stream). Returns True (swallow), a rewritten str, or False."""
+                    selkies gets the seat's (snapped) scale as DPI, so GNOME
+                    and pixelflux's pointer mapping agree. Returns True
+                    (swallow), a rewritten str, or False."""
                     gap = stall.tick(data, time.time())
                     if gap is not None:
                         log(f"ws stall vid={vid[:8]} from={peer}: client silent {gap:.1f}s")
@@ -397,7 +401,7 @@ def create_app(user: str, password: str,
                             return True
                         if size_owner.owner == vid:
                             publish_scale(rec)
-                        return True
+                        return ",".join(["s", str(seat_dpi())] + data.split(",")[2:])
                     if data.startswith("SETTINGS,"):
                         try:
                             settings = json.loads(data[9:])
@@ -412,7 +416,7 @@ def create_app(user: str, password: str,
                             return False
                         if size_owner.owner == vid:
                             publish_scale(rec)
-                        return "SETTINGS," + json.dumps({**settings, "scaling_dpi": 96})
+                        return "SETTINGS," + json.dumps({**settings, "scaling_dpi": seat_dpi()})
                     req = refit.parse_resize(data)
                     if not req:
                         return False
