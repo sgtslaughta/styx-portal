@@ -68,6 +68,7 @@ class Session(dbus.service.Object):
         self.rd = self.rd_path = self.stream_path = self.clip = self.sc = None
         self.devices = 3
         self.want_screen = True
+        self.scale = _seat_scale()      # fixed per session: a scale change restarts selkies
 
     @dbus.service.method(SESS_IFACE)
     def Close(self):
@@ -216,12 +217,17 @@ def rd_select(self, handle, session_handle, app_id, options):
     return dbus.UInt32(0), dbus.Dictionary({}, signature="sv")
 
 
+def _seat_scale() -> float:
+    path = os.environ.get("STYX_SEAT_SCALE_FILE", "")
+    return read_scale(path) if path else 1.0
+
+
 def rd_eis(self, session_handle, app_id, options):
     # pixelflux sends libei absolute motion in stream (physical) px, but libei
     # regions are logical: at scale 2 the pointer ran 2x ahead. Refused, it
     # falls back to Notify*, which Mutter divides by the stream's scale.
     # The scale is fixed per session: a scale change restarts selkies.
-    scale = read_scale(os.environ.get("STYX_SEAT_SCALE_FILE", "")) if os.environ.get("STYX_SEAT_SCALE_FILE") else 1.0
+    scale = sessions[str(session_handle)].scale
     if scale != 1.0:
         log("ConnectToEIS refused at scale", scale, "-> portal notify input")
         raise dbus.exceptions.DBusException("libei disabled on a scaled seat",
@@ -246,7 +252,9 @@ def _motion(s, o, dx, dy):
 
 
 def _abs(s, o, stream, x, y):
-    return s.stream_path, x, y
+    # pixelflux divides by its (= the seat's) scale and Mutter divides again:
+    # undo pixelflux's, so the pointer lands where the browser's is.
+    return s.stream_path, x * s.scale, y * s.scale
 
 
 def _button(s, o, b, st):
