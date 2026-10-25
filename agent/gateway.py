@@ -317,9 +317,10 @@ def create_app(user: str, password: str,
                 async def pump(src, dst, on_activity=None, on_binary=None):
                     async for msg in src:
                         if msg.type == aiohttp.WSMsgType.TEXT:
-                            if on_activity and on_activity(msg.data):
-                                continue        # swallowed (refit-bound resize)
-                            await dst.send_str(msg.data)
+                            out = on_activity(msg.data) if on_activity else None
+                            if out is True:
+                                continue        # swallowed (refit-bound resize, seat DPI)
+                            await dst.send_str(out if isinstance(out, str) else msg.data)
                         elif msg.type == aiohttp.WSMsgType.BINARY:
                             if on_activity:
                                 on_activity(msg.data)
@@ -351,11 +352,14 @@ def create_app(user: str, password: str,
                 rec = viewers.connect(vid, ws_server)
                 rec.vid = vid
 
-                def on_client(data) -> bool:
+                def on_client(data):
                     """Input tracking + settle-then-refit. Every seat `r,` is
                     swallowed: selkies cannot resize a GNOME host (it would only
                     restart capture / log "resize refused"); the agent refits
-                    instead, and only for the size owner."""
+                    instead, and only for the size owner. Seat DPI likewise:
+                    the agent scales GNOME, selkies is kept at 96 (2.1 would
+                    also scale + restart its capture: double scale, frozen
+                    stream). Returns True (swallow), a rewritten str, or False."""
                     gap = stall.tick(data, time.time())
                     if gap is not None:
                         log(f"ws stall vid={vid[:8]} from={peer}: client silent {gap:.1f}s")
@@ -363,14 +367,29 @@ def create_app(user: str, password: str,
                     mark_input(data, None if quiet else rec)
                     if not seat_dir or not isinstance(data, str):
                         return False
+                    if data.startswith("s,"):           # side-panel scaling: s,<dpi>[,display]
+                        try:
+                            rec.dpi = float(data.split(",")[1])
+                        except (ValueError, IndexError):
+                            return True
+                        if size_owner.owner == vid:
+                            publish_scale(rec)
+                        return True
                     if data.startswith("SETTINGS,"):
                         try:
-                            rec.dpi = float(json.loads(data[9:]).get("scaling_dpi"))
-                        except (ValueError, TypeError, AttributeError):
+                            settings = json.loads(data[9:])
+                            dpi = settings.get("scaling_dpi")
+                        except (ValueError, AttributeError):
+                            return False
+                        if dpi is None:
+                            return False
+                        try:
+                            rec.dpi = float(dpi)
+                        except (ValueError, TypeError):
                             return False
                         if size_owner.owner == vid:
                             publish_scale(rec)
-                        return False
+                        return "SETTINGS," + json.dumps({**settings, "scaling_dpi": 96})
                     req = refit.parse_resize(data)
                     if not req:
                         return False

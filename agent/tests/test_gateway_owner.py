@@ -184,3 +184,29 @@ async def test_previous_owners_pending_refit_timer_dies_when_replaced(tmp_path, 
     finally:
         await client.close()
         await up.close()
+
+
+@pytest.mark.asyncio
+async def test_seat_dpi_reaches_gnome_scale_but_not_selkies(tmp_path):
+    """Selkies 2.1 scales its own capture on a DPI change (and restarts it):
+    on top of the GNOME scale that is a double scale, a pointer off by the
+    factor and a frozen stream. The seat takes the DPI; selkies stays at 96."""
+    import json
+    received = []
+    up, client = await _refit_pair(tmp_path, received, str(tmp_path))
+    hdr = {"Authorization": _basic("styx", "pw")}
+    try:
+        a = await _vid_ws(client, "A", hdr)
+        await a.send_str('SETTINGS,{"scaling_dpi": 192, "h264_crf": 25}')
+        await _until(lambda: (tmp_path / "seat-scale").exists()
+                     and (tmp_path / "seat-scale").read_text() == "2")
+        await a.send_str("s,96")                              # side-panel scaling change
+        await _until(lambda: (tmp_path / "seat-scale").read_text() == "1")
+        await a.send_str("kd,65")                             # flush marker
+        await _until(lambda: "kd,65" in received)
+    finally:
+        await client.close()
+        await up.close()
+    settings = [m for m in received if m.startswith("SETTINGS,")]
+    assert [json.loads(m[9:]) for m in settings] == [{"scaling_dpi": 96, "h264_crf": 25}]
+    assert not any(m.startswith("s,") for m in received)
