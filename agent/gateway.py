@@ -65,6 +65,7 @@ BUSY_HOLD_S = 300.0
 # a person: a tab left open elsewhere reconnects on a loop and would otherwise
 # renew its busy hold forever. The per-tab clock ignores input that early.
 CONNECT_QUIET_S = 5.0
+SCALE_SETTLE_S = 0.5      # seat scale change -> selkies restart, once panel clicks settle
 # a refit reconnect beats the standby promotion; land it on the new selkies
 REFIT_WAIT_S = 5.0
 REFIT_POLL_S = 0.02
@@ -151,12 +152,34 @@ def create_app(user: str, password: str,
     size_owner = refit.SizeOwner()
     viewers = Viewers()     # per styx_vid: sockets, last size/dpi, timers
 
+    scale_restart = {"timer": None, "ts": 0.0}
+
+    def restart_for_scale():
+        """Mutter maps a monitor stream's pointer input with the scale the
+        stream was made at, and a scale change stalls it: refit at the live
+        size so selkies restarts on a fresh stream. A refit since the change
+        already did that (the seat re-applies the scale before ready)."""
+        scale_restart["timer"] = None
+        cur = refit.read_size(size_file)
+        if cur is None or last_refit["ts"] >= scale_restart["ts"]:
+            return
+        last_refit["ts"] = time.time()
+        refit.request(refit_file, *cur)
+        for r in viewers.live():
+            for w in list(r.socks):
+                abort_for_refit(w)
+
     def publish_scale(rec):
         """Owner's HiDPI choice -> <install>/seat-scale (the seat helper applies it)."""
         if scale_file and rec.dpi is not None:
             want = seat_scale.scale_for_dpi(rec.dpi)
             if want != seat_scale.read_scale(scale_file):
                 seat_scale.write_scale(scale_file, want)
+                scale_restart["ts"] = time.time()
+                if scale_restart["timer"]:
+                    scale_restart["timer"].cancel()      # panel clicks: restart once they settle
+                scale_restart["timer"] = asyncio.get_running_loop().call_later(
+                    SCALE_SETTLE_S, restart_for_scale)
 
     transports = {}     # client ws -> its TCP transport (abort = 1006, selkies 2.1 reconnects)
 

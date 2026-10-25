@@ -447,9 +447,13 @@ def main(argv) -> int:
             return True
         rq["tries"] += 1
         if mon.is_current():
+            # A resize can reset the scale: re-apply BEFORE ready, so the
+            # selkies started on ready opens its stream at the final scale
+            # (Mutter maps pointer input with the scale the stream was made at).
+            sc["mtime"] = None
+            watch_scale()
             _write_ready(ready, f"{mon.w}x{mon.h}")
             log("resized live", f"{mon.w}x{mon.h}", f"after {rq['tries']*25} ms")
-            sc["mtime"] = None      # a resize can reset the scale: re-apply
             rq["pending"] = None
         elif rq["tries"] >= LIVE_TRIES * 8:        # 10 s at 25 ms
             log("resize never became current", f"{mon.w}x{mon.h}")

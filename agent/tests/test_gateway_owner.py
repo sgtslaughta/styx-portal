@@ -210,3 +210,30 @@ async def test_seat_dpi_reaches_gnome_scale_but_not_selkies(tmp_path):
     settings = [m for m in received if m.startswith("SETTINGS,")]
     assert [json.loads(m[9:]) for m in settings] == [{"scaling_dpi": 96, "h264_crf": 25}]
     assert not any(m.startswith("s,") for m in received)
+
+
+@pytest.mark.asyncio
+async def test_seat_scale_change_restarts_selkies_at_same_size(tmp_path):
+    """pixelflux's monitor stream keeps the scale it was made at (frozen
+    stream, pointer off): a scale change refits at the live size, which
+    restarts selkies on a fresh stream. An unchanged scale does not."""
+    (tmp_path / "seat-size").write_text("2560x1440")
+    up, client = await _refit_pair(tmp_path, [], str(tmp_path))
+    hdr = {"Authorization": _basic("styx", "pw")}
+    try:
+        a = await _vid_ws(client, "A", hdr)
+        await a.send_str("s,96")                              # scale 1 = file default: no restart
+        await asyncio_sleep(0.8)
+        assert not (tmp_path / "refit-request").exists()
+        await a.send_str("s,144")
+        await _aborted(a)
+        assert (tmp_path / "refit-request").read_text() == "2560x1440"
+        assert (tmp_path / "seat-scale").read_text() == "1.5"
+    finally:
+        await client.close()
+        await up.close()
+
+
+async def asyncio_sleep(t):
+    import asyncio
+    await asyncio.sleep(t)
