@@ -106,7 +106,7 @@ def build_objects(name, image, env, volumes, port, ns, owner, *, gpu_enabled=Fal
     if shm_size:
         vols.append({"name": "shm", "emptyDir": {"medium": "Memory",
                                                   "sizeLimit": _qty(shm_size)}})
-        mounts.append({"name": "shm", "mountPath": "/dev/shm"})
+        mounts.append({"name": "shm", "mountPath": "/dev/shm"})  # nosec B108 - path inside the pod
     for i, path in enumerate(tmpfs or []):
         vols.append({"name": f"tmp{i}", "emptyDir": {"medium": "Memory"}})
         mounts.append({"name": f"tmp{i}", "mountPath": path})
