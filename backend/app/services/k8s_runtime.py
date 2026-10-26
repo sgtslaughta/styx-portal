@@ -4,6 +4,7 @@ import re
 
 from app.config import Settings
 from app.services.k8s_api import incluster_client
+from app.services.k8s_routes import denied_namespaces
 
 SKIP_NS = {"kube-system", "kube-public", "kube-node-lease"}
 _NAME = re.compile(r"^([a-z0-9-]+)\.([a-z0-9-]+)\.svc$")
@@ -14,7 +15,7 @@ class K8sRuntime:
         self._c = client or incluster_client()
 
     def list_containers(self) -> list[dict]:
-        skip = SKIP_NS | {Settings().K8S_NAMESPACE}
+        skip = SKIP_NS | denied_namespaces()
         out = []
         for s in (self._c.get_json("/api/v1/services") or {}).get("items", []):
             md, spec = s["metadata"], s.get("spec", {})

@@ -133,3 +133,19 @@ def test_cluster_service_upstream_becomes_namespaced_ref():
     assert all(r == {"name": "sonarr", "namespace": "media", "port": 8989}
                for r in refs)
     assert not [o for o in objs if o["kind"] in ("Service", "EndpointSlice")]
+
+
+def test_denied_namespaces_emit_no_ingressroute():
+    def svc(slug, host):
+        return {"id": slug, "slug": slug, "upstream": f"http://{host}:80",
+                "mount_mode": "path", "auth_mode": "styx", "verify_tls": True,
+                "enabled": True, "upstream_host": None}
+    hosts = {"kube": "kubernetes.default.svc", "sys": "x.kube-system.svc",
+             "self": "backend.styx.svc", "ok": "sonarr.media.svc"}
+    cfg = build_routes_config([], "s.example", "tunnel",
+                              services=[svc(k, h) for k, h in hosts.items()])
+    names = [o["metadata"]["name"] for o in to_k8s_objects(cfg, "styx")
+             if o["kind"] == "IngressRoute"]
+    assert any("ok" in n for n in names)
+    for k in ("kube", "sys", "self"):
+        assert not [n for n in names if n.endswith(k) or f"-{k}-" in n or n.startswith(k)]

@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     TRAEFIK_DYNAMIC_DIR: str = "/app/traefik-dynamic"
     ROUTE_BACKEND: str = "file"   # file | k8s
     K8S_NAMESPACE: str = "styx"
+    K8S_UPSTREAM_DENY_NAMESPACES: str = (
+        "kube-system,kube-public,kube-node-lease,default,longhorn-system,"
+        "cert-manager,metallb-system,argocd")
     # Base for every forwardAuth/errors address Traefik calls back to
     BACKEND_INTERNAL_URL: str = "http://backend:8000"
     # "<namespace>:<labelSelector>", e.g. cloudflared:pod=cloudflared; empty = disabled

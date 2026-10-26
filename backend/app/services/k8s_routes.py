@@ -7,12 +7,19 @@ from urllib.parse import urlparse
 
 import httpx
 
+from app.config import Settings
 from app.schemas import allow_list_missing, workstation_ip_allowed
 
 logger = logging.getLogger("styx-portal")
 MANAGED_LABEL = {"app.kubernetes.io/managed-by": "styx-backend"}
 _TRAEFIK = "traefik.io/v1alpha1"
 _CLUSTER_SVC = re.compile(r"^([a-z0-9-]+)\.([a-z0-9-]+)\.svc(\.cluster\.local)?$")
+
+
+def denied_namespaces() -> set[str]:
+    cfg = Settings()
+    return {n.strip() for n in cfg.K8S_UPSTREAM_DENY_NAMESPACES.split(",")
+            if n.strip()} | {cfg.K8S_NAMESPACE}
 
 
 def k8s_name(s: str) -> str:
@@ -85,6 +92,12 @@ def to_k8s_objects(config: dict, namespace: str) -> list[dict]:
             # Defense in depth for rows stored before the allow-list existed.
             logger.warning("k8s: skipping service %s and its routers: upstream %s is "
                            "outside WORKSTATION_ALLOW_CIDRS", name, ip)
+            skipped.add(name)
+            continue
+        m = _CLUSTER_SVC.match(urlparse(svc["loadBalancer"]["servers"][0]["url"]).hostname or "")
+        if m and m[2] in denied_namespaces():
+            logger.warning("k8s: skipping service %s and its routers: upstream "
+                           "namespace %s is denied", name, m[2])
             skipped.add(name)
             continue
         refs[name], extra = _service_objects(name, svc, ns)
