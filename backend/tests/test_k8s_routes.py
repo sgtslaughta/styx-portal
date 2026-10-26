@@ -149,3 +149,56 @@ def test_denied_namespaces_emit_no_ingressroute():
     assert any("ok" in n for n in names)
     for k in ("kube", "sys", "self"):
         assert not [n for n in names if n.endswith(k) or f"-{k}-" in n or n.startswith(k)]
+
+
+def _hsvc(slug, upstream):
+    return {"id": slug, "slug": slug, "upstream": upstream,
+            "mount_mode": "path", "auth_mode": "styx", "verify_tls": True,
+            "enabled": True, "upstream_host": None}
+
+
+def _svc_objs(slug, upstream):
+    cfg = build_routes_config([], "s.example", "tunnel",
+                              services=[_hsvc(slug, upstream)])
+    return to_k8s_objects(cfg, "styx")
+
+
+def _irs(objs, slug):
+    return [o for o in objs if o["kind"] == "IngressRoute"
+            and f"svc-{slug}" in o["metadata"]["name"]]
+
+
+def test_hostname_upstream_becomes_externalname_service():
+    objs = _svc_objs("nas", "http://nas.lan:8080")
+    svc = _get(objs, "Service", "svc-nas")
+    assert svc["spec"]["type"] == "ExternalName"
+    assert svc["spec"]["externalName"] == "nas.lan"
+    assert svc["spec"]["ports"] == [{"name": "http", "port": 8080, "targetPort": 8080}]
+    (ir,) = _irs(objs, "nas")
+    assert ir["spec"]["routes"][0]["services"] == [{"name": "svc-nas", "port": 8080}]
+
+
+def test_hostname_https_upstream_keeps_scheme():
+    objs = _svc_objs("x", "https://x.example.com")
+    (ir,) = _irs(objs, "x")
+    ref = ir["spec"]["routes"][0]["services"][0]
+    assert ref["scheme"] == "https" and ref["port"] == 443
+
+
+def test_externalname_never_points_into_cluster():
+    for slug, up in (("a", "http://kubernetes.default.svc.cluster.local"),
+                     ("b", "http://foo.cluster.local"),
+                     ("c", "http://localhost:80"),
+                     ("d", "http://app.localhost:80")):
+        objs = _svc_objs(slug, up)
+        assert not _irs(objs, slug), up
+        assert not [o for o in objs if o["kind"] == "Service"
+                    and o["metadata"]["name"] == f"svc-{slug}"]
+
+
+def test_single_label_host_unchanged():
+    objs = _svc_objs("fe", "http://frontend:80")
+    (ir,) = _irs(objs, "fe")
+    assert ir["spec"]["routes"][0]["services"] == [{"name": "frontend", "port": 80}]
+    assert not [o for o in objs if o["kind"] == "Service"
+                and o["metadata"]["name"] == "svc-fe"]

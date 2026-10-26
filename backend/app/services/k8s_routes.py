@@ -22,6 +22,16 @@ def denied_namespaces() -> set[str]:
             if n.strip()} | {cfg.K8S_NAMESPACE}
 
 
+_INTERNAL_SUFFIXES = (".svc", ".cluster.local", ".localhost")
+
+
+def _bad_external(host: str) -> bool:
+    """A hostname upstream (ExternalName) must never point back into the cluster."""
+    if _CLUSTER_SVC.match(host):
+        return False  # handled as a cross-namespace ref + denylist
+    return host == "localhost" or host.endswith(_INTERNAL_SUFFIXES)
+
+
 def k8s_name(s: str) -> str:
     """DNS-1123 label: lowercase, invalid chars -> '-', hashed when >63."""
     n = re.sub(r"[^a-z0-9-]", "-", s.lower()).strip("-")
@@ -68,8 +78,14 @@ def _service_objects(name: str, svc: dict, ns: str) -> tuple[dict, list[dict]]:
         ref = {"name": "backend", "port": 8000}
     elif m := _CLUSTER_SVC.match(host):
         ref = {"name": m[1], "namespace": m[2], "port": port}
-    else:
+    elif "." not in host:
         ref = {"name": host, "port": port}
+    else:
+        n = k8s_name(name)
+        ref = {"name": n, "port": port}
+        extra.append(_obj("v1", "Service", n, ns, spec={
+            "type": "ExternalName", "externalName": host,
+            "ports": [{"name": "http", "port": port, "targetPort": port}]}))
     if u.scheme == "https":
         ref["scheme"] = "https"
     if lb.get("serversTransport"):
@@ -94,7 +110,13 @@ def to_k8s_objects(config: dict, namespace: str) -> list[dict]:
                            "outside WORKSTATION_ALLOW_CIDRS", name, ip)
             skipped.add(name)
             continue
-        m = _CLUSTER_SVC.match(urlparse(svc["loadBalancer"]["servers"][0]["url"]).hostname or "")
+        host = urlparse(svc["loadBalancer"]["servers"][0]["url"]).hostname or ""
+        if name != "api" and ip is None and _bad_external(host):
+            logger.warning("k8s: skipping service %s and its routers: upstream "
+                           "%s points into the cluster", name, host)
+            skipped.add(name)
+            continue
+        m = _CLUSTER_SVC.match(host)
         if m and m[2] in denied_namespaces():
             logger.warning("k8s: skipping service %s and its routers: upstream "
                            "namespace %s is denied", name, m[2])
