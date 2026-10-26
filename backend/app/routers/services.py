@@ -25,7 +25,8 @@ log = logging.getLogger(__name__)
 
 
 def get_docker_manager() -> DockerManager:
-    return DockerManager(network_name=_settings.DOCKER_NETWORK)
+    from app.services.k8s_runtime import container_runtime
+    return container_runtime()
 
 
 def _iso(d: datetime | None) -> str | None:

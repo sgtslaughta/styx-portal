@@ -83,3 +83,15 @@ def test_noop_network_methods():
     rt.ensure_traefik_network("n")
     assert rt.connect_to_network("c", "n") is True
     rt.disconnect_from_network("c", "n")
+
+
+def test_factory_picks_runtime(monkeypatch):
+    from app.services import k8s_runtime
+    monkeypatch.setenv("ROUTE_BACKEND", "k8s")
+    monkeypatch.setattr(k8s_runtime, "incluster_client", lambda: Fake())
+    assert isinstance(k8s_runtime.container_runtime(), K8sRuntime)
+    monkeypatch.setenv("ROUTE_BACKEND", "file")
+    from app.services import docker_manager
+    monkeypatch.setattr(docker_manager, "DockerManager",
+                        lambda network_name: ("docker", network_name))
+    assert k8s_runtime.container_runtime()[0] == "docker"

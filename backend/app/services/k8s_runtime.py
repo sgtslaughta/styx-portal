@@ -57,3 +57,10 @@ class K8sRuntime:
 
     def disconnect_from_network(self, container: str, network: str) -> None:
         pass
+
+
+def container_runtime():
+    if Settings().ROUTE_BACKEND == "k8s":
+        return K8sRuntime()
+    from app.services.docker_manager import DockerManager
+    return DockerManager(network_name=Settings().DOCKER_NETWORK)
