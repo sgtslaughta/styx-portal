@@ -92,6 +92,14 @@ class K8sClient:
                      "Content-Type": "application/apply-patch+yaml"})
         _check(r)
 
+    def get_json(self, path: str, params: dict | None = None) -> dict | None:
+        """GET an API path; None on 404."""
+        r = self._http.get(path, params=params or {}, headers=self._auth())
+        if r.status_code == 404:
+            return None
+        _check(r)
+        return r.json()
+
     def list_names(self, api_version: str, kind: str, namespace: str,
                    label_selector: str) -> list[str]:
         r = self._http.get(_path(api_version, kind, namespace),

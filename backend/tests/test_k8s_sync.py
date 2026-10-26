@@ -283,3 +283,14 @@ def test_list_pod_ips_skips_host_network():
         ]})
 
     assert _client(handler).list_pod_ips("cloudflared", "pod=cloudflared") == {"10.42.3.70"}
+
+
+def test_get_json_ok_404_and_error():
+    def h(r):
+        code = {"/ok": 200, "/missing": 404}.get(r.url.path, 500)
+        return httpx.Response(code, json={"a": 1} if code == 200 else {})
+    c = _client(h)
+    assert c.get_json("/ok", {"x": "1"}) == {"a": 1}
+    assert c.get_json("/missing") is None
+    with pytest.raises(httpx.HTTPStatusError):
+        c.get_json("/boom")
