@@ -156,7 +156,7 @@ def test_denied_namespaces_emit_no_ingressroute():
 
 @pytest.fixture(autouse=True)
 def _dns(monkeypatch):
-    table = {"nas.lan": "192.168.1.10", "kubernetes.default": "10.43.0.1",
+    table = {"nas.lan": "192.168.1.10", "kubernetes.default": "10.43.0.1", "backend.styx": "10.43.7.7",
              "loop.example": "127.0.0.1"}
 
     def fake(host, port):
@@ -211,12 +211,16 @@ def test_externalname_never_points_into_cluster():
                     and o["metadata"]["name"] == f"svc-{slug}"]
 
 
-def test_single_label_host_unchanged():
-    objs = _svc_objs("fe", "http://frontend:80")
-    (ir,) = _irs(objs, "fe")
-    assert ir["spec"]["routes"][0]["services"] == [{"name": "frontend", "port": 80}]
-    assert not [o for o in objs if o["kind"] == "Service"
-                and o["metadata"]["name"] == "svc-fe"]
+def test_single_label_host_unchanged_for_internal_routers():
+    cfg = build_routes_config([], "s.example", "tunnel")
+    objs = to_k8s_objects(cfg, "styx")
+    ir = _get(objs, "IngressRoute", "frontend")
+    assert ir["spec"]["routes"][0]["services"] == [{"name": "frontend", "port": 3000}]
+
+
+def test_proxied_service_never_targets_styx_namespace_service():
+    assert not _irs(_svc_objs("fe", "http://frontend:80"), "fe")
+    assert not _irs(_svc_objs("be", "http://backend.styx:8000"), "be")
 
 
 def test_styxlocation_plugin_middleware_is_valid_crd():

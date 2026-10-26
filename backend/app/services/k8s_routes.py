@@ -150,6 +150,7 @@ def to_k8s_objects(config: dict, namespace: str) -> list[dict]:
         m = _CLUSTER_SVC.match(host)
         if name != "api" and ip is None and (
                 _bad_external(host)
+                or (name.startswith("svc-") and "." not in host)
                 or (not m and "." in host and not _resolves_safely(host))):
             logger.warning("k8s: skipping service %s and its routers: upstream "
                            "%s points into the cluster", name, host)
