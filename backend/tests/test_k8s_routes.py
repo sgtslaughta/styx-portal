@@ -160,6 +160,8 @@ def _dns(monkeypatch):
              "loop.example": "127.0.0.1"}
 
     def fake(host, port):
+        assert host.endswith("."), host
+        host = host[:-1]
         if host == "nope.example":
             raise OSError("nxdomain")
         return [(2, 1, 6, "", (table.get(host, "93.184.216.34"), 0))]
@@ -187,7 +189,7 @@ def test_hostname_upstream_becomes_externalname_service():
     objs = _svc_objs("nas", "http://nas.lan:8080")
     svc = _get(objs, "Service", "svc-nas")
     assert svc["spec"]["type"] == "ExternalName"
-    assert svc["spec"]["externalName"] == "nas.lan"
+    assert svc["spec"]["externalName"] == "nas.lan."
     assert svc["spec"]["ports"] == [{"name": "http", "port": 8080, "targetPort": 8080}]
     (ir,) = _irs(objs, "nas")
     assert ir["spec"]["routes"][0]["services"] == [{"name": "svc-nas", "port": 8080}]

@@ -45,7 +45,7 @@ def _resolves_safely(host: str) -> bool:
     # ponytail: DNS rebinding ceiling - checked at sync time only; a Traefik
     # egress NetworkPolicy is the full fix.
     try:
-        infos = _resolve(host, None)
+        infos = _resolve(host + ".", None)
     except OSError:
         return False
     nets = [ipaddress.ip_network(c.strip(), strict=False)
@@ -120,7 +120,7 @@ def _service_objects(name: str, svc: dict, ns: str) -> tuple[dict, list[dict]]:
         n = k8s_name(name)
         ref = {"name": n, "port": port}
         extra.append(_obj("v1", "Service", n, ns, spec={
-            "type": "ExternalName", "externalName": host,
+            "type": "ExternalName", "externalName": f"{host}.",
             "ports": [{"name": "http", "port": port, "targetPort": port}]}))
     if u.scheme == "https":
         ref["scheme"] = "https"
