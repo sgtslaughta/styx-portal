@@ -4,7 +4,7 @@ import { SessionExpiryDialog } from "@/components/auth/SessionExpiryDialog";
 import { ActiveSessionDialog } from "@/components/auth/ActiveSessionDialog";
 
 export type AuthUser = { id: string; username: string; email: string | null; role: string;
-  must_change_pw?: boolean };
+  must_change_pw?: boolean; can_use_gpu?: boolean };
 
 type AuthState = {
   user: AuthUser | null;

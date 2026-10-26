@@ -95,6 +95,8 @@ export interface LaunchConfig {
   setExtraDockerArgs: (v: Record<string, unknown>) => void;
   shared: boolean;
   setShared: (v: boolean) => void;
+  profileMount: string;
+  setProfileMount: (v: string) => void;
   buildTemplateData: () => {
     name: string;
     display_name: string;
@@ -127,6 +129,7 @@ export interface LaunchConfig {
     privileged: boolean;
     extra_docker_args: Record<string, unknown>;
     shared: boolean;
+    profile_mount: string | null;
   };
 }
 
@@ -300,6 +303,7 @@ export function useLaunchConfig(opts: {
     Record<string, unknown>
   >(template?.extra_docker_args ?? {});
   const [shared, setShared] = useState(template?.shared ?? false);
+  const [profileMount, setProfileMount] = useState(template?.profile_mount ?? "");
 
   function buildTemplateData() {
     const secOpts = securityOpts.filter((s) => s.enabled).map((s) => s.value);
@@ -347,6 +351,7 @@ export function useLaunchConfig(opts: {
       privileged,
       extra_docker_args: extraDockerArgs,
       shared,
+      profile_mount: profileMount.trim() || null,
     };
   }
 
@@ -412,6 +417,8 @@ export function useLaunchConfig(opts: {
     setExtraDockerArgs,
     shared,
     setShared,
+    profileMount,
+    setProfileMount,
     buildTemplateData,
   };
 }

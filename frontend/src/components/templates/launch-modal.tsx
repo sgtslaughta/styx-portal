@@ -7,6 +7,7 @@ import { useCreateInstance } from "@/hooks/use-instances";
 import { useLaunchConfig } from "@/hooks/use-launch-config";
 import { useAuth } from "@/hooks/use-auth";
 import { useWaveTransition } from "@/components/effects/transition-provider";
+import { LaunchOptions } from "./launch-options";
 import { EasyLaunch } from "./easy-launch";
 import { TemplateBuilder } from "./builder/template-builder";
 import { api } from "@/api/client";
@@ -23,6 +24,8 @@ interface LaunchModalProps {
 
 export function LaunchModal({ open, onClose, registryImage, template }: LaunchModalProps) {
   const [mode, setMode] = useState<"easy" | "advanced">("easy");
+  const [useProfile, setUseProfile] = useState(false);
+  const [useGpu, setUseGpu] = useState(true);
   const createTemplate = useCreateTemplate();
   const updateTemplate = useUpdateTemplate();
   const createInstance = useCreateInstance();
@@ -61,7 +64,9 @@ export function LaunchModal({ open, onClose, registryImage, template }: LaunchMo
     if (!cfg.name.trim() || !cfg.image.trim()) { toast.error("Name and image required"); return; }
     try {
       const tmpl = await upsertTemplate();
-      await createInstance.mutateAsync({ template_id: tmpl.id, name: cfg.name, subdomain: cfg.subdomain });
+      await createInstance.mutateAsync({ template_id: tmpl.id, name: cfg.name, subdomain: cfg.subdomain,
+        use_profile: !!cfg.profileMount.trim() && useProfile,
+        use_gpu: useGpu });
       onClose();
       wave.play(`Launching ${cfg.name}…`);
       toast.success(`Instance "${cfg.name}" launched!`);
@@ -120,6 +125,13 @@ export function LaunchModal({ open, onClose, registryImage, template }: LaunchMo
         ) : (
           <TemplateBuilder cfg={cfg} isAdmin={isAdmin} />
         )}
+
+        <LaunchOptions
+          showProfile={!!cfg.profileMount.trim()}
+          showGpu={cfg.gpuEnabled && !!user?.can_use_gpu}
+          useProfile={useProfile} onProfile={setUseProfile}
+          useGpu={useGpu} onGpu={setUseGpu}
+        />
 
         {mode === "advanced" && (
           <>

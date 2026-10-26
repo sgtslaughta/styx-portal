@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 
@@ -44,6 +45,15 @@ export function GroupsPanel() {
       toast.error(errMsg(e, "Failed to create group"));
     } finally {
       setAdding(false);
+    }
+  };
+
+  const toggleGpu = async (g: Group, allow: boolean) => {
+    try {
+      await api.updateGroup(g.id, { allow_gpu: allow });
+      await load();
+    } catch (e) {
+      toast.error(errMsg(e, "Failed to update group"));
     }
   };
 
@@ -124,6 +134,11 @@ export function GroupsPanel() {
                       <p className="truncate text-xs text-muted-foreground" title={g.description}>{g.description}</p>
                     )}
                   </div>
+                  <label className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+                    <Switch checked={g.allow_gpu} aria-label={`Allow GPU for ${g.name}`}
+                            onCheckedChange={(v) => void toggleGpu(g, v)} />
+                    Allow GPU
+                  </label>
                   <Button variant="ghost" size="icon-sm" title="Delete group"
                           className="shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                           aria-label={`Delete ${g.name}`} onClick={() => setTarget(g)}>
