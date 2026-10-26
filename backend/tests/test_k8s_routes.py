@@ -202,3 +202,15 @@ def test_single_label_host_unchanged():
     assert ir["spec"]["routes"][0]["services"] == [{"name": "frontend", "port": 80}]
     assert not [o for o in objs if o["kind"] == "Service"
                 and o["metadata"]["name"] == "svc-fe"]
+
+
+def test_styxlocation_plugin_middleware_is_valid_crd():
+    s = _hsvc("npm", "https://npm.lan:443")
+    s["upstream_host"] = "app.example.com"
+    cfg = build_routes_config([], "s.example", "tunnel", services=[s])
+    objs = to_k8s_objects(cfg, "styx")
+    mw = _get(objs, "Middleware", "svc-loc-npm")
+    assert mw["apiVersion"] == "traefik.io/v1alpha1"
+    assert mw["spec"] == {"plugin": {"styxlocation": {"host": "app.example.com"}}}
+    (ir,) = _irs(objs, "npm")
+    assert {"name": "svc-loc-npm"} in ir["spec"]["routes"][0]["middlewares"]
