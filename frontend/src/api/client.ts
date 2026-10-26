@@ -125,6 +125,7 @@ export type DiagHistory = {
 
 export type SetupPreflight = {
   docker: { ok: boolean; detail: string };
+  runtime?: "docker" | "kubernetes";
   deploy_mode: string;
   domain_set: boolean;
   data_writable: boolean;

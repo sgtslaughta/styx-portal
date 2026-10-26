@@ -1,5 +1,6 @@
 """Component health checks. Every check is timed and never raises — a failure
 becomes {ok: False, detail: <reason>}, not an exception."""
+import asyncio
 import shutil
 import time
 from datetime import datetime, timezone
@@ -9,6 +10,7 @@ from sqlalchemy import text
 
 from app.config import Settings
 from app.services.docker_manager import detect_gpu
+from app.services.k8s_api import incluster_client
 
 _settings = Settings()
 _DISK_FREE_WARN_PCT = 10.0
@@ -30,6 +32,11 @@ async def _check_docker(docker) -> tuple[bool, str]:
         return False, "Docker not reachable (socket-proxy down?)"
     v = docker.version()
     return True, f"Engine {v or 'unknown'} via socket-proxy"
+
+
+async def _check_kubernetes() -> tuple[bool, str]:
+    v = await asyncio.to_thread(incluster_client().get_json, "/version")
+    return True, (v or {}).get("gitVersion") or "unknown"
 
 
 async def _check_database(session) -> tuple[bool, str]:
@@ -56,6 +63,12 @@ def _check_traefik_routes() -> tuple[bool, str]:
     return True, "writable, no routes yet"
 
 
+def _check_k8s_routes() -> tuple[bool, str]:
+    names = incluster_client().list_names(
+        "traefik.io/v1alpha1", "IngressRoute", Settings().K8S_NAMESPACE, "app.kubernetes.io/managed-by=styx-backend")
+    return len(names) >= 1, f"{len(names)} IngressRoutes"
+
+
 def _check_disk() -> tuple[bool, str]:
     du = shutil.disk_usage("/")
     free_pct = du.free / du.total * 100
@@ -71,17 +84,22 @@ def _check_gpu() -> tuple[bool, str]:
 
 
 async def run_diagnostics(session, docker=None) -> dict:
-    from app.services.docker_manager import DockerManager
-    docker = docker or DockerManager(network_name=_settings.DOCKER_NETWORK)
+    k8s = Settings().ROUTE_BACKEND == "k8s"
     checks = []
 
-    ok, detail, ms = await _timed(lambda: _check_docker(docker))
-    checks.append({"key": "docker", "ok": ok, "latency_ms": ms, "detail": detail})
+    if k8s:
+        ok, detail, ms = await _timed(_check_kubernetes)
+        checks.append({"key": "kubernetes", "ok": ok, "latency_ms": ms, "detail": detail})
+    else:
+        from app.services.docker_manager import DockerManager
+        docker = docker or DockerManager(network_name=_settings.DOCKER_NETWORK)
+        ok, detail, ms = await _timed(lambda: _check_docker(docker))
+        checks.append({"key": "docker", "ok": ok, "latency_ms": ms, "detail": detail})
 
     ok, detail, ms = await _timed(lambda: _check_database(session))
     checks.append({"key": "database", "ok": ok, "latency_ms": ms, "detail": detail})
 
-    async def _tr(): return _check_traefik_routes()
+    async def _tr(): return _check_k8s_routes() if k8s else _check_traefik_routes()
     ok, detail, ms = await _timed(_tr)
     checks.append({"key": "traefik_routes", "ok": ok, "latency_ms": ms, "detail": detail})
 
@@ -89,7 +107,7 @@ async def run_diagnostics(session, docker=None) -> dict:
     ok, detail, ms = await _timed(_dk)
     checks.append({"key": "disk", "ok": ok, "latency_ms": ms, "detail": detail})
 
-    async def _gp(): return _check_gpu()
+    async def _gp(): return (True, "amd.com/gpu via device plugin") if k8s else _check_gpu()
     ok, detail, ms = await _timed(_gp)
     checks.append({"key": "gpu", "ok": ok, "latency_ms": ms, "detail": detail})
 

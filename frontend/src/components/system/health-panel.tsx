@@ -10,6 +10,7 @@ import {
 
 const LABELS: Record<string, string> = {
   docker: "Docker engine",
+  kubernetes: "Kubernetes API",
   database: "Database",
   traefik_routes: "Traefik routing",
   disk: "Disk space",
@@ -20,6 +21,7 @@ const HINTS: Record<string, string> = {
   traefik_routes:
     "Routes volume must be writable by the backend user — see the Production guide.",
   docker: "Is the docker-socket-proxy container healthy?",
+  kubernetes: "Can the backend ServiceAccount reach the API server?",
   disk: "Free space is low — prune images or expand storage.",
 };
 
