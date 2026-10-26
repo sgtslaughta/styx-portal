@@ -57,3 +57,9 @@ def test_egress_deny_nodes_and_api():
     (cnp,) = _kind("CiliumNetworkPolicy")
     assert cnp["spec"]["egressDeny"] == [
         {"toEntities": ["host", "remote-node", "kube-apiserver"]}]
+
+
+def test_role_can_read_pod_metrics():
+    (role,) = _kind("Role")
+    rule = next(r for r in role["rules"] if r["apiGroups"] == ["metrics.k8s.io"])
+    assert rule["resources"] == ["pods"] and rule["verbs"] == ["get", "list"]

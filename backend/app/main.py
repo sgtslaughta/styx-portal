@@ -243,19 +243,9 @@ async def _metrics_collection_loop():
                 if not inst.container_id:
                     continue
                 try:
-                    raw = await asyncio.to_thread(docker.get_container_stats, inst.container_id)
-                    cpu_d = raw.get("cpu_stats", {}).get("cpu_usage", {}).get("total_usage", 0) - \
-                            raw.get("precpu_stats", {}).get("cpu_usage", {}).get("total_usage", 0)
-                    sys_d = raw.get("cpu_stats", {}).get("system_cpu_usage", 0) - \
-                            raw.get("precpu_stats", {}).get("system_cpu_usage", 0)
-                    ncpu = raw.get("cpu_stats", {}).get("online_cpus", 1)
-                    if sys_d > 0:
-                        total_cpu += cpu_d / sys_d * ncpu * 100
-                    mem = raw.get("memory_stats", {})
-                    limit = mem.get("limit", 1)
-                    usage = mem.get("usage", 0)
-                    if limit > 0:
-                        total_ram_pct += usage / limit * 100
+                    u = await asyncio.to_thread(docker.instance_usage, inst.container_id)
+                    total_cpu += u["cpu_percent"]
+                    total_ram_pct += u["memory_percent"]
                 except Exception:
                     pass
 
@@ -443,15 +433,9 @@ async def system_metrics(
         if not inst.container_id:
             continue
         try:
-            raw = await asyncio.to_thread(docker.get_container_stats, inst.container_id)
-            cpu_delta = raw.get("cpu_stats", {}).get("cpu_usage", {}).get("total_usage", 0) - \
-                        raw.get("precpu_stats", {}).get("cpu_usage", {}).get("total_usage", 0)
-            system_delta = raw.get("cpu_stats", {}).get("system_cpu_usage", 0) - \
-                           raw.get("precpu_stats", {}).get("system_cpu_usage", 0)
-            num_cpus = raw.get("cpu_stats", {}).get("online_cpus", 1)
-            if system_delta > 0:
-                aggregate_cpu += cpu_delta / system_delta * num_cpus * 100
-            aggregate_ram_mb += raw.get("memory_stats", {}).get("usage", 0) / 1024 / 1024
+            u = await asyncio.to_thread(docker.instance_usage, inst.container_id)
+            aggregate_cpu += u["cpu_percent"]
+            aggregate_ram_mb += u["memory_mb"]
         except Exception:
             pass
 

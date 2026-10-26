@@ -13,6 +13,16 @@ _UNITS = {"k": "Ki", "m": "Mi", "g": "Gi", "t": "Ti"}
 _warned_net_raw = False
 
 
+_SUFFIX = {"n": 1e-9, "u": 1e-6, "m": 1e-3, "k": 1e3, "M": 1e6, "G": 1e9, "T": 1e12,
+           "Ki": 1024, "Mi": 1024 ** 2, "Gi": 1024 ** 3, "Ti": 1024 ** 4}
+
+
+def parse_qty(q: str | None) -> float:
+    """k8s quantity ("250m", "123456n", "512Mi") -> cores / bytes."""
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)([a-zA-Z]*)", (q or "").strip())
+    return float(m[1]) * _SUFFIX.get(m[2], 1) if m else 0.0
+
+
 def _qty(v: str) -> str:
     """Docker size ("8g", "512m") -> k8s quantity."""
     m = re.fullmatch(r"(\d+(?:\.\d+)?)([kmgt])b?", v.strip().lower())

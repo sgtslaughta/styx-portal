@@ -131,3 +131,31 @@ def test_container_logs():
     (g,) = rec.find("GET", f"/api/v1/namespaces/{NS}/pods/selkies-a-xyz/log")
     assert g.url.params["tailLines"] == "50" and g.url.params["timestamps"] == "true"
     assert Rec().runtime().instance_logs("selkies-a", 50) == []
+
+
+MET = "/apis/metrics.k8s.io/v1beta1/namespaces/styx-instances/pods"
+
+
+def _usage(metrics, dep=None):
+    r = {("GET", MET): httpx.Response(200, json={"items": metrics})}
+    r[("GET", DEP)] = httpx.Response(404, json={}) if dep is None else httpx.Response(200, json=dep)
+    rec = Rec(r)
+    return rec, rec.runtime().instance_usage("selkies-a")
+
+
+def test_instance_usage_percentages():
+    dep = {"spec": {"template": {"spec": {"containers": [
+        {"resources": {"limits": {"cpu": "2", "memory": "4Gi"}}}]}}}}
+    rec, u = _usage([{"containers": [{"usage": {"cpu": "500m", "memory": "1Gi"}},
+                                     {"usage": {"cpu": "500000000n", "memory": "1Gi"}}]}], dep)
+    assert u == {"cpu_percent": 50.0, "memory_mb": 2048, "memory_limit_mb": 4096,
+                 "memory_percent": 50.0}
+    (g,) = rec.find("GET", MET)
+    assert g.url.params["labelSelector"] == "app=selkies-a"
+
+
+def test_instance_usage_missing_is_zeros():
+    zero = {"cpu_percent": 0, "memory_mb": 0, "memory_limit_mb": 0, "memory_percent": 0}
+    assert _usage([])[1] == zero
+    assert Rec({("GET", MET): httpx.Response(404, json={})}).runtime() \
+        .instance_usage("selkies-a") == zero

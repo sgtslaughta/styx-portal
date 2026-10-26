@@ -113,3 +113,14 @@ def test_refuse_reason():
     assert "privileged" in refuse_reason(_t(privileged=True)).lower()
     assert "SYS_ADMIN" in refuse_reason(_t(cap_add=["SYS_ADMIN"]))
     assert refuse_reason(_t(cap_add=["NET_RAW", *sorted(BASELINE_CAPS)])) is None
+
+
+def test_parse_quantity():
+    from app.services.k8s_instance_objects import parse_qty
+    assert parse_qty("250m") == 0.25
+    assert parse_qty("1") == 1
+    assert parse_qty("123456n") == pytest.approx(0.000123456)
+    assert parse_qty("512Mi") == 512 * 1024 ** 2
+    assert parse_qty("1Gi") == 1024 ** 3
+    assert parse_qty("1048576Ki") == 1024 ** 3
+    assert parse_qty("") == 0 and parse_qty(None) == 0

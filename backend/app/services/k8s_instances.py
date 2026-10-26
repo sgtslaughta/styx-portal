@@ -6,7 +6,7 @@ from fastapi import HTTPException
 
 from app.config import Settings
 from app.services.k8s_api import incluster_client
-from app.services.k8s_instance_objects import build_objects, pvc
+from app.services.k8s_instance_objects import build_objects, parse_qty, pvc
 
 logger = logging.getLogger("styx-portal")
 _APPS = "apps/v1"
@@ -120,6 +120,26 @@ class K8sInstanceRuntime:
 
     def get_container_stats(self, name: str) -> dict:
         return {}
+
+    def instance_usage(self, name: str) -> dict:
+        """cpu/memory use from metrics-server, as % of the Deployment's limits."""
+        zero = {"cpu_percent": 0, "memory_mb": 0, "memory_limit_mb": 0, "memory_percent": 0}
+        pods = (self._c.get_json(
+            f"/apis/metrics.k8s.io/v1beta1/namespaces/{self._ns}/pods",
+            {"labelSelector": f"app={name}"}) or {}).get("items", [])
+        if not pods:
+            return zero
+        use = [c.get("usage", {}) for p in pods for c in p.get("containers", [])]
+        cpu = sum(parse_qty(u.get("cpu")) for u in use)
+        mem = sum(parse_qty(u.get("memory")) for u in use)
+        dep = self._c.get_json(f"/apis/apps/v1/namespaces/{self._ns}/deployments/{name}") or {}
+        ctrs = ((dep.get("spec") or {}).get("template", {}).get("spec", {})).get("containers", [])
+        limits = (ctrs[0].get("resources", {}).get("limits", {}) if ctrs else {})
+        cpu_lim, mem_lim = parse_qty(limits.get("cpu")), parse_qty(limits.get("memory"))
+        return {"cpu_percent": round(cpu / cpu_lim * 100, 1) if cpu_lim else 0,
+                "memory_mb": round(mem / 1024 ** 2),
+                "memory_limit_mb": round(mem_lim / 1024 ** 2),
+                "memory_percent": round(mem / mem_lim * 100, 1) if mem_lim else 0}
 
     def instance_logs(self, name: str, tail: int = 200) -> list[str]:
         pods = self._pods(name)

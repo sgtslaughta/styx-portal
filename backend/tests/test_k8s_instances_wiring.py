@@ -122,3 +122,27 @@ async def test_create_refused_template_is_422_on_k8s(admin_client, session, rt, 
     r = await admin_client.post("/api/instances", json={
         "template_id": t.id, "name": "n", "subdomain": "dd"})
     assert r.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_stats_endpoint_uses_instance_usage(admin_client, session, rt):
+    inst = await _owned(session)
+    rt.instance_usage.return_value = {"cpu_percent": 1.5, "memory_mb": 2,
+                                      "memory_limit_mb": 4, "memory_percent": 50.0}
+    r = await admin_client.get(f"/api/instances/{inst.id}/stats")
+    assert r.json()["cpu_percent"] == 1.5
+    rt.instance_usage.assert_called_once_with("selkies-o")
+
+
+def test_docker_instance_usage_math():
+    from app.services.docker_manager import DockerManager
+    dm = DockerManager.__new__(DockerManager)
+    dm.get_container_stats = lambda cid: {
+        "cpu_stats": {"cpu_usage": {"total_usage": 200}, "system_cpu_usage": 2000,
+                      "online_cpus": 2},
+        "precpu_stats": {"cpu_usage": {"total_usage": 100}, "system_cpu_usage": 1000},
+        "memory_stats": {"usage": 1024 ** 2 * 100, "limit": 1024 ** 2 * 400}}
+    assert dm.instance_usage("c") == {"cpu_percent": 20.0, "memory_mb": 100,
+                                      "memory_limit_mb": 400, "memory_percent": 25.0}
+    dm.get_container_stats = lambda cid: {}
+    assert dm.instance_usage("c")["memory_mb"] == 0
