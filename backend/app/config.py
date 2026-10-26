@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     TRAEFIK_DYNAMIC_DIR: str = "/app/traefik-dynamic"
     ROUTE_BACKEND: str = "file"   # file | k8s
     K8S_NAMESPACE: str = "styx"
+    K8S_INSTANCE_NAMESPACE: str = "styx-instances"
+    K8S_DESKTOP_IMAGE: str = "ghcr.io/sgtslaughta/styx-desktop:latest"
+    INSTANCE_STORAGE_CLASS: str = "longhorn"
+    INSTANCE_VOLUME_SIZE: str = "20Gi"
     K8S_CLUSTER_CIDRS: str = "10.42.0.0/16,10.43.0.0/16"   # pod,service ranges
     K8S_UPSTREAM_DENY_NAMESPACES: str = (
         "kube-system,kube-public,kube-node-lease,default,longhorn-system,"
