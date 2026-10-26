@@ -223,6 +223,7 @@ class GroupOut(BaseModel):
     id: str
     name: str
     description: str | None
+    allow_gpu: bool = False
     member_count: int = 0
 
 

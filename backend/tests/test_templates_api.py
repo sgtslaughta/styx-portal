@@ -108,3 +108,23 @@ async def test_member_cannot_update_template_to_dind(member_client):
     tid = create.json()["id"]
     resp = await member_client.put(f"/api/templates/{tid}", json={"dind": True})
     assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_profile_mount_roundtrip(admin_client):
+    resp = await admin_client.post(
+        "/api/templates", json={**TEMPLATE_PAYLOAD, "profile_mount": "/config"})
+    assert resp.status_code == 201
+    assert resp.json()["profile_mount"] == "/config"
+    tid = resp.json()["id"]
+    resp = await admin_client.put(f"/api/templates/{tid}", json={"profile_mount": "/home/u"})
+    assert resp.status_code == 200
+    assert resp.json()["profile_mount"] == "/home/u"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad", ["config", "/", "/a/../b", "/a:b"])
+async def test_profile_mount_invalid_422(admin_client, bad):
+    resp = await admin_client.post(
+        "/api/templates", json={**TEMPLATE_PAYLOAD, "profile_mount": bad})
+    assert resp.status_code == 422

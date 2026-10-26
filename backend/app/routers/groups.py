@@ -27,7 +27,7 @@ async def list_groups(admin: User = Depends(require_admin),
     counts = dict((await session.exec(
         select(UserGroup.group_id, func.count()).group_by(UserGroup.group_id))).all())
     groups = (await session.exec(select(Group).order_by(Group.name))).all()
-    return [GroupOut(id=g.id, name=g.name, description=g.description,
+    return [GroupOut(id=g.id, name=g.name, description=g.description, allow_gpu=g.allow_gpu,
                      member_count=counts.get(g.id, 0)) for g in groups]
 
 
