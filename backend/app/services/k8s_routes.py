@@ -12,6 +12,7 @@ from app.schemas import allow_list_missing, workstation_ip_allowed
 logger = logging.getLogger("styx-portal")
 MANAGED_LABEL = {"app.kubernetes.io/managed-by": "styx-backend"}
 _TRAEFIK = "traefik.io/v1alpha1"
+_CLUSTER_SVC = re.compile(r"^([a-z0-9-]+)\.([a-z0-9-]+)\.svc(\.cluster\.local)?$")
 
 
 def k8s_name(s: str) -> str:
@@ -58,6 +59,8 @@ def _service_objects(name: str, svc: dict, ns: str) -> tuple[dict, list[dict]]:
         extra.append(ep)
     elif name == "api":
         ref = {"name": "backend", "port": 8000}
+    elif m := _CLUSTER_SVC.match(host):
+        ref = {"name": m[1], "namespace": m[2], "port": port}
     else:
         ref = {"name": host, "port": port}
     if u.scheme == "https":

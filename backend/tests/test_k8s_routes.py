@@ -119,3 +119,17 @@ def test_k8s_keeps_upstream_inside_allow_cidrs(monkeypatch):
     _, objs = _objs()
     assert _get(objs, "EndpointSlice", "ws-ws1-ep")
     assert _get(objs, "IngressRoute", "ws-ws1")
+
+
+def test_cluster_service_upstream_becomes_namespaced_ref():
+    svc = {"id": "s1", "slug": "sonarr", "upstream": "http://sonarr.media.svc:8989",
+           "mount_mode": "path", "auth_mode": "styx", "verify_tls": True,
+           "enabled": True, "upstream_host": None}
+    cfg = build_routes_config([], "s.example", "tunnel", services=[svc])
+    objs = to_k8s_objects(cfg, "styx")
+    refs = [r["services"][0] for o in objs if o["kind"] == "IngressRoute"
+            for r in o["spec"]["routes"] if "sonarr" in o["metadata"]["name"]]
+    assert refs
+    assert all(r == {"name": "sonarr", "namespace": "media", "port": 8989}
+               for r in refs)
+    assert not [o for o in objs if o["kind"] in ("Service", "EndpointSlice")]
