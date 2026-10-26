@@ -19,10 +19,15 @@ def _tmpl(**kw):
 
 
 def test_name_deterministic_lowercase_short():
-    a = profiles.profile_volume_name("U1", "Xfce_Desktop")
-    assert a == profiles.profile_volume_name("U1", "Xfce_Desktop")
+    a = profiles.profile_volume_name("U1", "T1")
+    assert a == profiles.profile_volume_name("U1", "T1")
     assert a == a.lower() and len(a) <= 63 and a.startswith("profile-")
     assert len(profiles.profile_volume_name("u" * 40, "t" * 60)) <= 63
+
+
+def test_name_differs_per_id():
+    f = profiles.profile_volume_name
+    assert f("u1", "t1") != f("u1", "t2") != f("u2", "t2")
 
 
 def test_mounts_for_swaps_profile_mount():
@@ -50,7 +55,7 @@ async def test_ensure_profile_upserts(session):
     u, t = await _seed(session)
     v1 = await profiles.ensure_profile(session, u.id, t)
     v2 = await profiles.ensure_profile(session, u.id, t)
-    assert v1 == v2 == profiles.profile_volume_name(u.id, t.name)
+    assert v1 == v2 == profiles.profile_volume_name(u.id, t.id)
     rows = (await session.exec(select(UserProfile))).all()
     assert len(rows) == 1 and rows[0].volume_name == v1
 
