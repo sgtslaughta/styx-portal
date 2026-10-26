@@ -137,3 +137,12 @@ async def test_plan_exposes_manual_on_k8s(admin_client, session, dk, monkeypatch
     assert r.status_code == 200
     assert r.json()["manual"] is True and "/sonarr" in r.json()["reason"]
     dk[0].read_file.assert_not_called()
+
+
+async def test_apply_is_422_on_k8s(admin_client, session, dk, monkeypatch):
+    monkeypatch.setenv("ROUTE_BACKEND", "k8s")
+    s = await _svc(session)
+    r = await admin_client.post(f"/api/services/{s.id}/mount/apply", json={"consent": True})
+    assert r.status_code == 422
+    assert "manual on Kubernetes" in r.json()["detail"]
+    assert not dk[1]
