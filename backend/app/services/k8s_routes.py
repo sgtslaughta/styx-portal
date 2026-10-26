@@ -126,7 +126,10 @@ def _service_objects(name: str, svc: dict, ns: str) -> tuple[dict, list[dict]]:
     if u.scheme == "https":
         ref["scheme"] = "https"
     if lb.get("serversTransport"):
-        ref["serversTransport"] = k8s_name(lb["serversTransport"])
+        st = k8s_name(lb["serversTransport"])
+        # Traefik looks a bare name up in the Service's namespace; the transport lives in ours.
+        ref["serversTransport"] = (f"{ns}-{st}@kubernetescrd"
+                                   if ref.get("namespace", ns) != ns else st)
     return ref, extra
 
 

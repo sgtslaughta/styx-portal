@@ -93,12 +93,13 @@ async def lifespan(app: FastAPI):
     async with async_session() as _s:
         await _settings_store.reload(_s)
 
-    try:
-        _p = await asyncio.to_thread(DockerManager(network_name=_settings.DOCKER_NETWORK).remove_probe_containers)
-        if _p:
-            logger.warning("Removed %d leftover probe container(s)", _p)
-    except Exception:  # noqa: BLE001 - docker may be unavailable at boot
-        logger.warning("Probe container cleanup skipped", exc_info=True)
+    if _settings.ROUTE_BACKEND != "k8s":  # no Docker on k8s, so no probe containers either
+        try:
+            _p = await asyncio.to_thread(DockerManager(network_name=_settings.DOCKER_NETWORK).remove_probe_containers)
+            if _p:
+                logger.warning("Removed %d leftover probe container(s)", _p)
+        except Exception:  # noqa: BLE001 - docker may be unavailable at boot
+            logger.warning("Probe container cleanup skipped", exc_info=True)
 
     # Sync instance states — mark stale instances as stopped
     docker = instance_runtime()
