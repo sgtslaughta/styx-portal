@@ -247,3 +247,22 @@ def test_externalname_resolve_and_normalize_checks():
         assert not _irs(_svc_objs(slug, up), slug), up
     assert _irs(_svc_objs("nas", "http://nas.lan:80"), "nas")
     assert _irs(_svc_objs("x", "http://x.example.com:80"), "x")
+
+
+def test_cross_namespace_ref_qualifies_servers_transport():
+    # Traefik resolves a bare serversTransport in the *Service's* namespace;
+    # the transport lives in the styx namespace, so qualify it.
+    from app.services.k8s_routes import _service_objects
+    svc = {"loadBalancer": {"servers": [{"url": "https://selkies-c.styx-instances.svc:3001"}],
+                            "serversTransport": "selkies-transport"}}
+    ref, _ = _service_objects("inst-c", svc, "styx")
+    assert ref["namespace"] == "styx-instances"
+    assert ref["serversTransport"] == "styx-selkies-transport@kubernetescrd"
+
+
+def test_same_namespace_ref_keeps_bare_servers_transport():
+    from app.services.k8s_routes import _service_objects
+    svc = {"loadBalancer": {"servers": [{"url": "https://192.168.1.50:8443"}],
+                            "serversTransport": "selkies-transport"}}
+    ref, _ = _service_objects("ws-x", svc, "styx")
+    assert ref["serversTransport"] == "selkies-transport"
