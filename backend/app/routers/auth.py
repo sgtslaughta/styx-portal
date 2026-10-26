@@ -97,9 +97,18 @@ async def setup_preflight(session: AsyncSession = Depends(get_session)):
     # status is never exposed post-setup without auth.
     if await users_exist(session):
         raise HTTPException(status.HTTP_404_NOT_FOUND)
-    from app.services.docker_manager import DockerManager
-    docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
-    reachable = await asyncio.to_thread(docker.ping)
+    k8s = Settings().ROUTE_BACKEND == "k8s"
+    if k8s:
+        from app.services.diagnostics import _check_kubernetes
+        try:
+            reachable, detail = await _check_kubernetes()
+            detail = f"Kubernetes {detail}"
+        except Exception:  # noqa: BLE001
+            reachable, detail = False, "Kubernetes API not reachable"
+    else:
+        from app.services.docker_manager import DockerManager
+        reachable = await asyncio.to_thread(DockerManager(network_name=_settings.DOCKER_NETWORK).ping)
+        detail = "reachable" if reachable else "not reachable — is docker-proxy running?"
     data_dir = Path(_settings.SCREENSHOT_CACHE_DIR).parent  # /app/data
     try:
         probe = data_dir / ".preflight"
@@ -109,10 +118,8 @@ async def setup_preflight(session: AsyncSession = Depends(get_session)):
     except Exception:  # noqa: BLE001
         writable = False
     return {
-        "docker": {
-            "ok": reachable,
-            "detail": "reachable" if reachable else "not reachable — is docker-proxy running?",
-        },
+        "docker": {"ok": reachable, "detail": detail},
+        "runtime": "kubernetes" if k8s else "docker",
         "deploy_mode": _settings.DEPLOY_MODE,
         "domain_set": bool(_settings.DOMAIN) and _settings.DOMAIN != "localhost",
         "data_writable": writable,

@@ -45,3 +45,11 @@ async def test_member_list_excludes_needs_setup(member_client, session):
     await session.commit()
     slugs = {r["slug"] for r in (await member_client.get("/api/services")).json()}
     assert "pending" not in slugs and "ready" in slugs
+
+
+async def test_k8s_service_is_never_needs_setup(admin_client, session, monkeypatch):
+    monkeypatch.setenv("ROUTE_BACKEND", "k8s")
+    session.add(_svc("yes"))
+    await session.commit()
+    rows = {r["slug"]: r for r in (await admin_client.get("/api/services")).json()}
+    assert rows["yes"]["needs_setup"] is False

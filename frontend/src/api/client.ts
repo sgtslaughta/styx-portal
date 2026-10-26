@@ -68,7 +68,7 @@ export type Group = { id: string; name: string; description: string | null; memb
 
 export type MountChange = { target: string; key: string; old: string | null; new: string; created?: boolean };
 export type MountPlan = {
-  method: "config_file" | null; changes: MountChange[]; needs_consent: boolean; reason: string | null; retry?: boolean;
+  method: "config_file" | null; changes: MountChange[]; needs_consent: boolean; reason: string | null; retry?: boolean; manual?: boolean;
 };
 export type JobStep = {
   id: string; label: string;
@@ -125,6 +125,7 @@ export type DiagHistory = {
 
 export type SetupPreflight = {
   docker: { ok: boolean; detail: string };
+  runtime?: "docker" | "kubernetes";
   deploy_mode: string;
   domain_set: boolean;
   data_writable: boolean;

@@ -1,7 +1,6 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
 from fastapi import Depends, FastAPI
@@ -36,7 +35,12 @@ from app.routers import service_icons as service_icons_router
 from app.routers import services_auth as services_auth_router
 from app.security.deps import get_current_user, require_admin
 from app.services.docker_manager import DockerManager
-from app.services.session_monitor import SessionMonitor
+from app.services.k8s_runtime import instance_runtime
+from app.services.background_loops import (  # noqa: F401 - re-exported for tests
+    _capture_running_instances, _health_sample_loop, _log_portal_instances,
+    _metrics_collection_loop, _monitor_tick, _reconcile_instances_at_boot,
+    _run_monitor_pass, _screenshot_capture_loop, _service_health_loop,
+    _session_monitor_loop)
 from app.services.mount_jobs import sweep_interrupted
 from app.security.csrf import csrf_valid, CSRF_COOKIE, CSRF_HEADER, UNSAFE_METHODS
 
@@ -56,70 +60,6 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                               request.headers.get(CSRF_HEADER)):
                 return JSONResponse({"detail": "CSRF check failed"}, status_code=403)
         return await call_next(request)
-
-
-async def _run_monitor_pass(session, monitor, docker) -> bool:
-    """One reconcile pass over running/idle instances. Marks crashed containers
-    stopped and applies idle auto-stop. Returns True if any instance stopped."""
-    result = await session.exec(
-        select(Instance).where(Instance.status.in_(["running", "idle"]))
-    )
-    instances = result.all()
-    changed = False
-    for inst in instances:
-        if inst.container_id:
-            status = await asyncio.to_thread(docker.get_container_status, inst.container_id)
-            if status["status"] in ("not_found", "exited"):
-                inst.status = "stopped"
-                inst.stopped_at = datetime.now(timezone.utc)
-                session.add(inst)
-                changed = True
-                continue
-        actions = monitor.check_instance(inst, session)
-        if "auto_stopped" in actions:
-            changed = True
-    return changed
-
-
-async def _monitor_tick(session, monitor, docker) -> None:
-    """One monitor tick. The Docker pass may fail (no Docker on k8s); that must
-    not stop workstation offline-marking or route refresh."""
-    from app.services.route_writer import refresh_routes_from_db
-    from app.services.workstations import mark_stale_offline
-
-    try:
-        changed = await _run_monitor_pass(session, monitor, docker)
-    except Exception:  # noqa: BLE001 - docker may be absent (k8s); keep ticking
-        logger.debug("docker monitor pass skipped", exc_info=True)
-        changed = False
-    ws_changed = await mark_stale_offline(session)
-    await session.commit()
-    if changed or ws_changed:
-        await refresh_routes_from_db(session)
-
-
-async def _session_monitor_loop():
-    docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
-    monitor = SessionMonitor(docker)
-    while True:
-        await asyncio.sleep(60)
-        try:
-            async with async_session() as session:
-                await _monitor_tick(session, monitor, docker)
-        except Exception:
-            pass
-
-
-async def _log_portal_instances(docker) -> None:
-    """Read-only: legacy instance containers may still sit on styx-portal next to the backend."""
-    try:
-        names = await asyncio.to_thread(docker.on_portal_network)
-    except Exception:  # noqa: BLE001 - docker may be unavailable at boot
-        logger.warning("portal network inspection skipped", exc_info=True)
-        return
-    for name in names:
-        logger.error("instance container %s is on the portal network; "
-                     "starting it again will isolate it", name)
 
 
 @asynccontextmanager
@@ -161,7 +101,7 @@ async def lifespan(app: FastAPI):
         logger.warning("Probe container cleanup skipped", exc_info=True)
 
     # Sync instance states — mark stale instances as stopped
-    docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
+    docker = instance_runtime()
     async with async_session() as session:
         await _reconcile_instances_at_boot(session, docker)
         await _log_portal_instances(docker)
@@ -185,148 +125,13 @@ async def lifespan(app: FastAPI):
     await asyncio.gather(svc_health_task, return_exceptions=True)
 
 
-async def _reconcile_instances_at_boot(session, docker) -> None:
-    """Mark instances whose container is gone as stopped. If Docker is
-    unreachable (k8s), nothing can be running: stop them all, warn once."""
-    result = await session.exec(
-        select(Instance).where(
-            Instance.status.in_(["running", "idle", "paused", "pulling", "starting"])
-        )
-    )
-    docker_down = False
-    for inst in result.all():
-        if inst.container_id:
-            try:
-                status = await asyncio.to_thread(docker.get_container_status, inst.container_id)
-            except Exception:  # noqa: BLE001 - no docker socket
-                if not docker_down:
-                    docker_down = True
-                    logger.warning("Docker unreachable at boot; marking active instances stopped", exc_info=True)
-                inst.status = "stopped"
-                session.add(inst)
-                continue
-            if status["status"] == "paused" and inst.status == "paused":
-                pass
-            elif status["status"] in ("not_found", "exited"):
-                logger.info(f"Instance {inst.name} container gone, marking stopped")
-                inst.status = "stopped"
-                session.add(inst)
-        else:
-            inst.status = "stopped"
-            session.add(inst)
-    await session.commit()
-
-
-async def _service_health_loop():
-    from app.services.service_health import health_loop
-    await health_loop(async_session)
-
-
-async def _metrics_collection_loop():
-    """Collect aggregate CPU/RAM every 30s for time-series."""
-    from app.services.metrics_store import record_sample
-
-    docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
-    while True:
-        await asyncio.sleep(30)
-        try:
-            async with async_session() as session:
-                result = await session.exec(
-                    select(Instance).where(Instance.status.in_(["running", "idle"]))
-                )
-                running = result.all()
-
-            total_cpu = 0.0
-            total_ram_pct = 0.0
-            for inst in running:
-                if not inst.container_id:
-                    continue
-                try:
-                    raw = await asyncio.to_thread(docker.get_container_stats, inst.container_id)
-                    cpu_d = raw.get("cpu_stats", {}).get("cpu_usage", {}).get("total_usage", 0) - \
-                            raw.get("precpu_stats", {}).get("cpu_usage", {}).get("total_usage", 0)
-                    sys_d = raw.get("cpu_stats", {}).get("system_cpu_usage", 0) - \
-                            raw.get("precpu_stats", {}).get("system_cpu_usage", 0)
-                    ncpu = raw.get("cpu_stats", {}).get("online_cpus", 1)
-                    if sys_d > 0:
-                        total_cpu += cpu_d / sys_d * ncpu * 100
-                    mem = raw.get("memory_stats", {})
-                    limit = mem.get("limit", 1)
-                    usage = mem.get("usage", 0)
-                    if limit > 0:
-                        total_ram_pct += usage / limit * 100
-                except Exception:
-                    pass
-
-            record_sample(round(total_cpu, 1), round(total_ram_pct, 1))
-        except Exception:
-            pass
-
-
-async def _capture_running_instances(screenshots, targets):
-    for inst, port, protocol in targets:
-        if inst.status not in ("running", "idle") or not inst.container_id:
-            continue
-        try:
-            await screenshots.capture(inst.id, inst.container_id, port, protocol)
-        except Exception:
-            pass
-
-
-async def _screenshot_capture_loop():
-    from app.services.screenshot import ScreenshotService
-    from app.models import ServiceTemplate
-
-    docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
-    screenshots = ScreenshotService(
-        cache_dir=_settings.SCREENSHOT_CACHE_DIR, docker_manager=docker,
-    )
-    try:
-        while True:
-            await asyncio.sleep(_settings.SCREENSHOT_INTERVAL_SECONDS)
-            try:
-                async with async_session() as session:
-                    result = await session.exec(
-                        select(Instance).where(Instance.status.in_(["running", "idle"]))
-                    )
-                    rows = result.all()
-                    targets = []
-                    for inst in rows:
-                        tmpl = await session.get(ServiceTemplate, inst.template_id)
-                        port = tmpl.internal_port if tmpl else 3001
-                        protocol = tmpl.internal_protocol if tmpl else "https"
-                        targets.append((inst, port, protocol))
-                await _capture_running_instances(screenshots, targets)
-            except Exception:
-                pass
-    finally:
-        await screenshots.close()
-
-
-async def _health_sample_loop():
-    """Sample diagnostics every 60s and record status + latency."""
-    from app.services.diagnostics import run_diagnostics
-    from app.services.health_store import record
-    import time as _t
-
-    while True:
-        await asyncio.sleep(60)
-        try:
-            async with async_session() as session:
-                result = await run_diagnostics(session)
-            status = {c["key"]: c["ok"] for c in result["checks"]}
-            latency = {c["key"]: c["latency_ms"] for c in result["checks"]}
-            record(_t.time(), status, latency)
-        except Exception:
-            pass
-
-
 try:
     # Version is stamped into pyproject.toml by scripts/stamp-version.sh at release
     # build time (semantic-release is the source of truth). Falls back in dev/editable.
     _APP_VERSION = _pkg_version("styx-portal-backend")
 except PackageNotFoundError:  # pragma: no cover
     _APP_VERSION = "0.0.0"
+
 
 def docs_kwargs(s: Settings) -> dict:
     """API docs are an unauthenticated map of every route: off unless explicitly enabled."""
@@ -424,9 +229,10 @@ async def system_metrics(
     admin: User = Depends(require_admin),
 ):
     import shutil
-    from app.services.docker_manager import DockerManager, detect_gpu
+    from app.services.docker_manager import detect_gpu
+    from app.services.k8s_runtime import instance_runtime
 
-    docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
+    docker = instance_runtime()
 
     result = await session.exec(
         select(Instance).where(Instance.status.in_(["running", "idle"]))
@@ -439,15 +245,9 @@ async def system_metrics(
         if not inst.container_id:
             continue
         try:
-            raw = await asyncio.to_thread(docker.get_container_stats, inst.container_id)
-            cpu_delta = raw.get("cpu_stats", {}).get("cpu_usage", {}).get("total_usage", 0) - \
-                        raw.get("precpu_stats", {}).get("cpu_usage", {}).get("total_usage", 0)
-            system_delta = raw.get("cpu_stats", {}).get("system_cpu_usage", 0) - \
-                           raw.get("precpu_stats", {}).get("system_cpu_usage", 0)
-            num_cpus = raw.get("cpu_stats", {}).get("online_cpus", 1)
-            if system_delta > 0:
-                aggregate_cpu += cpu_delta / system_delta * num_cpus * 100
-            aggregate_ram_mb += raw.get("memory_stats", {}).get("usage", 0) / 1024 / 1024
+            u = await asyncio.to_thread(docker.instance_usage, inst.container_id)
+            aggregate_cpu += u["cpu_percent"]
+            aggregate_ram_mb += u["memory_mb"]
         except Exception:
             pass
 

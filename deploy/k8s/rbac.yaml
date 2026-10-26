@@ -58,3 +58,29 @@ subjects:
   - kind: ServiceAccount
     name: styx-backend
     namespace: styx
+---
+# read-only: service discovery + health for docker-local services
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: styx-backend-discovery
+rules:
+  - apiGroups: [""]
+    resources: [services]
+    verbs: [get, list]
+  - apiGroups: [discovery.k8s.io]
+    resources: [endpointslices]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: styx-backend-discovery
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: styx-backend-discovery
+subjects:
+  - kind: ServiceAccount
+    name: styx-backend
+    namespace: styx

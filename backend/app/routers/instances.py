@@ -13,6 +13,7 @@ from app.models import Instance, ServiceTemplate, SessionEvent, PulledImage, Use
 from app.schemas import InstanceCreate, InstanceUpdate, SessionConfigUpdate, InstanceStatus
 from app.security.deps import get_current_user, require_owner_or_admin
 from app.services.docker_manager import DockerManager
+from app.services.k8s_runtime import ensure_instance_supported, instance_runtime
 from app.services.screenshot import ScreenshotService
 from app.services.template_validation import resolve_volume_name, validate_volumes
 from app.services.traefik_labels import generate_traefik_labels
@@ -37,14 +38,14 @@ def _dind_store_volume(instance_id: str) -> str:
     return f"selkies-{instance_id}-dockerstore"
 
 
-def get_docker_manager() -> DockerManager:
-    return DockerManager(network_name=_settings.DOCKER_NETWORK)
+def get_docker_manager():
+    return instance_runtime()
 
 
 def get_screenshot_service() -> ScreenshotService:
     return ScreenshotService(
         cache_dir=_settings.SCREENSHOT_CACHE_DIR,
-        docker_manager=get_docker_manager(),
+        docker_manager=DockerManager(network_name=_settings.DOCKER_NETWORK),
     )
 
 
@@ -67,6 +68,7 @@ async def _build_and_start_container(instance, template, docker):
     """(Re)create the Docker container for an instance from its template,
     mounting the instance's existing named volumes (data preserved), then start it.
     Sets instance.container_id. Caller commits."""
+    ensure_instance_supported(template)
     validate_volumes(template.volumes)
     volumes = {}
     for vol in template.volumes:
@@ -145,7 +147,7 @@ async def list_instances(
 
 async def _launch_instance_background(instance_id: str, template_id: str):
     """Background task: pull image, create container, start it."""
-    docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
+    docker = instance_runtime()
     async with async_session() as session:
         instance = await session.get(Instance, instance_id)
         template = await session.get(ServiceTemplate, template_id)
@@ -285,6 +287,7 @@ async def create_instance(
     template = await session.get(ServiceTemplate, body.template_id)
     if not template:
         raise HTTPException(404, "Template not found")
+    ensure_instance_supported(template)
 
     # Rate limit check for non-admin users
     if user.role != "admin":
@@ -720,29 +723,7 @@ async def get_instance_stats(
     if not instance.container_id or instance.status not in ("running", "idle"):
         return {"cpu_percent": 0, "memory_mb": 0, "memory_limit_mb": 0, "memory_percent": 0}
 
-    raw = await asyncio.to_thread(docker.get_container_stats, instance.container_id)
-    if not raw:
-        return {"cpu_percent": 0, "memory_mb": 0, "memory_limit_mb": 0, "memory_percent": 0}
-
-    cpu_delta = raw.get("cpu_stats", {}).get("cpu_usage", {}).get("total_usage", 0) - \
-                raw.get("precpu_stats", {}).get("cpu_usage", {}).get("total_usage", 0)
-    system_delta = raw.get("cpu_stats", {}).get("system_cpu_usage", 0) - \
-                   raw.get("precpu_stats", {}).get("system_cpu_usage", 0)
-    num_cpus = raw.get("cpu_stats", {}).get("online_cpus", 1)
-    cpu_percent = (cpu_delta / system_delta * num_cpus * 100) if system_delta > 0 else 0
-
-    mem_usage = raw.get("memory_stats", {}).get("usage", 0)
-    mem_limit = raw.get("memory_stats", {}).get("limit", 1)
-    memory_mb = mem_usage / (1024 * 1024)
-    memory_limit_mb = mem_limit / (1024 * 1024)
-    memory_percent = (mem_usage / mem_limit * 100) if mem_limit > 0 else 0
-
-    return {
-        "cpu_percent": round(cpu_percent, 1),
-        "memory_mb": round(memory_mb),
-        "memory_limit_mb": round(memory_limit_mb),
-        "memory_percent": round(memory_percent, 1),
-    }
+    return await asyncio.to_thread(docker.instance_usage, instance.container_id)
 
 
 @router.post("/{instance_id}/keepalive", response_model=Instance)
@@ -841,6 +822,8 @@ async def refresh_screenshot(
     if not instance:
         raise HTTPException(404, "Instance not found")
     require_owner_or_admin(instance.owner_id, user)
+    if Settings().ROUTE_BACKEND == "k8s":
+        return {"ok": False, "reason": "screenshots are not available on Kubernetes"}
     if instance.status not in ("running", "idle") or not instance.container_id:
         return {"ok": False, "reason": "not running"}
 
@@ -899,11 +882,6 @@ async def get_instance_logs(
         return []
 
     try:
-        container = docker._client.containers.get(instance.container_id)
-        raw_logs = await asyncio.to_thread(
-            container.logs, tail=lines, timestamps=True
-        )
-        text = raw_logs.decode("utf-8", errors="replace")
-        return text.strip().split("\n") if text.strip() else []
+        return await asyncio.to_thread(docker.instance_logs, instance.container_id, lines)
     except Exception:
         return []

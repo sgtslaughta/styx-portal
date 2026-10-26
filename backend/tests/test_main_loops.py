@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 import docker.errors
 import pytest
 
-import app.main as main
+import app.services.background_loops as main
 import app.services.route_writer as route_writer
 import app.services.workstations as workstations
 

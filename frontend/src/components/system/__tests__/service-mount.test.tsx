@@ -253,3 +253,13 @@ describe("plan retry while the app starts", () => {
     expect(screen.queryByText(/Waiting for Sonarr/)).toBeNull();
   });
 });
+
+it("manual plan (k8s) shows the instructions and no apply button", async () => {
+  vi.mocked(api.mountPlan).mockResolvedValue({ method: "config_file", changes: [], needs_consent: false, manual: true,
+    reason: "On Kubernetes, Styx can't edit Sonarr's files. Set `/Config/UrlBase` to `/sonarr` in `/config/config.xml` and restart the app." });
+  vi.mocked(api.mountLatest).mockRejectedValue(notFound);
+  wrap(<ServiceMount service={svc} />);
+  expect(await screen.findByText(/On Kubernetes, Styx can't edit Sonarr's files/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /Set base path/ })).toBeNull();
+  expect(screen.queryByText(/Base path is set to/)).toBeNull();
+});

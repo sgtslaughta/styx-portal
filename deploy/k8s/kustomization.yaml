@@ -7,6 +7,7 @@ resources:
   - pvc.yaml
   - configmap.yaml
   - rbac.yaml
+  - instances.yaml
   - backend.yaml
   - frontend.yaml
   - networkpolicy.yaml
@@ -16,6 +17,6 @@ resources:
 # healthy but publish no IngressRoutes (404). Check: kubectl -n styx get ingressroutes
 images:
   - name: ghcr.io/sgtslaughta/styx-backend
-    newTag: "2.4.0"
+    newTag: "2.5.0"
   - name: ghcr.io/sgtslaughta/styx-frontend
-    newTag: "2.4.0"
+    newTag: "2.5.0"
