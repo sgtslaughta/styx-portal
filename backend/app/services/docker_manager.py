@@ -281,7 +281,7 @@ class DockerManager(ContainerFilesMixin):
         except docker.errors.NotFound:
             return {}
 
-    def create_volume(self, name: str) -> str:
+    def create_volume(self, name: str, size: str | None = None) -> str:  # size: k8s only
         volume = self._client.volumes.create(name=name)
         return volume.name
 

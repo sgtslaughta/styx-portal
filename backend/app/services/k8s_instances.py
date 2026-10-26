@@ -35,8 +35,8 @@ class K8sInstanceRuntime:
         return {"size_mb": 0, "id": image}
 
     # volumes
-    def create_volume(self, name: str) -> str:
-        self._c.apply(pvc(name, self._ns))
+    def create_volume(self, name: str, size: str | None = None) -> str:
+        self._c.apply(pvc(name, self._ns, size))
         return name
 
     def remove_volume(self, name: str) -> None:

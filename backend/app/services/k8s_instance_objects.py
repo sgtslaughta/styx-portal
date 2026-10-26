@@ -73,13 +73,13 @@ def refuse_reason(template) -> str | None:
     return None
 
 
-def pvc(name: str, ns: str) -> dict:
+def pvc(name: str, ns: str, size: str | None = None) -> dict:
     cfg = Settings()
     return {"apiVersion": "v1", "kind": "PersistentVolumeClaim",
             "metadata": {"name": name, "namespace": ns, "labels": dict(MANAGED)},
             "spec": {"accessModes": ["ReadWriteOnce"],
                      "storageClassName": cfg.INSTANCE_STORAGE_CLASS,
-                     "resources": {"requests": {"storage": cfg.INSTANCE_VOLUME_SIZE}}}}
+                     "resources": {"requests": {"storage": size or cfg.INSTANCE_VOLUME_SIZE}}}}
 
 
 def build_objects(name, image, env, volumes, port, ns, owner, *, gpu_enabled=False,
