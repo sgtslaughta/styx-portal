@@ -216,6 +216,7 @@ class UserOut(BaseModel):
     open_apps: str | None = None
     must_change_pw: bool = False
     has_matrix_card: bool = False
+    can_use_gpu: bool = False
 
 
 OpenMode = Literal["new_tab", "same_tab"]
@@ -487,7 +488,7 @@ class ChangePasswordRequest(BaseModel):
 
 from app.schemas_services import (  # noqa: E402,F401  (re-export)
     AUTH_MODES, CONTAINER_NAME_RE, MOUNT_MODES, RESERVED_SERVICE_SLUGS, SERVICE_KINDS,
-    SERVICE_SLUG_RE, BypassRule, DiscoveredContainer, GroupCreate, GroupOut,
+    SERVICE_SLUG_RE, BypassRule, DiscoveredContainer, GroupCreate, GroupOut, GroupUpdate,
     ProxiedServiceCreate, ProxiedServiceOut, ProxiedServiceUpdate, ServicePresetOut, ServiceTileOut,
     UserGroupsUpdate, _ServiceFields,
 )

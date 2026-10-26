@@ -285,6 +285,9 @@ class DockerManager(ContainerFilesMixin):
         volume = self._client.volumes.create(name=name)
         return volume.name
 
+    def gpu_free(self, n: int) -> bool:
+        return True  # GPU is shared /dev/dri
+
     def remove_volume(self, name: str) -> None:
         volume = self._client.volumes.get(name)
         volume.remove()

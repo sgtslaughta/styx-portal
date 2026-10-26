@@ -39,6 +39,15 @@ class K8sInstanceRuntime:
         self._c.apply(pvc(name, self._ns, size))
         return name
 
+    def gpu_free(self, n: int) -> bool:
+        # ponytail: counts Styx quota only; non-Styx GPU pods unseen
+        q = self._c.get_json(f"/api/v1/namespaces/{self._ns}/resourcequotas/instances")
+        st = (q or {}).get("status", {})
+        key = "requests.amd.com/gpu"
+        if key not in st.get("hard", {}):
+            return True
+        return parse_qty(st["hard"][key]) - parse_qty(st.get("used", {}).get(key)) >= n
+
     def remove_volume(self, name: str) -> None:
         self._c.delete("v1", "PersistentVolumeClaim", self._ns, name)
 

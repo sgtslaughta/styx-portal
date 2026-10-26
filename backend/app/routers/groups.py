@@ -6,7 +6,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.database import get_session
 from app.models import Group, ProxiedService, User, UserGroup
-from app.schemas import GroupCreate, GroupOut, UserGroupsUpdate
+from app.schemas import GroupCreate, GroupOut, GroupUpdate, UserGroupsUpdate
 from app.security.deps import require_admin
 from app.services.audit import audit_request
 
@@ -43,6 +43,23 @@ async def create_group(body: GroupCreate, request: Request,
                         resource=g.id, detail={"name": g.name})
     await session.commit()
     return GroupOut(id=g.id, name=g.name, description=g.description)
+
+
+@router.patch("/{group_id}", response_model=GroupOut)
+async def update_group(group_id: str, body: GroupUpdate, request: Request,
+                       admin: User = Depends(require_admin),
+                       session: AsyncSession = Depends(get_session)):
+    g = await session.get(Group, group_id)
+    if g is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Group not found")
+    changes = body.model_dump(exclude_unset=True)
+    for k, v in changes.items():
+        setattr(g, k, v)
+    session.add(g)
+    await audit_request(session, request, "group.update", user_id=admin.id,
+                        resource=g.id, detail={"name": g.name, **changes})
+    await session.commit()
+    return GroupOut(id=g.id, name=g.name, description=g.description, allow_gpu=g.allow_gpu)
 
 
 @router.delete("/{group_id}", status_code=204)

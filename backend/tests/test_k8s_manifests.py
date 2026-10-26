@@ -28,7 +28,7 @@ def test_no_cluster_scoped_kinds_and_role_is_namespaced():
     assert role["metadata"]["namespace"] == "styx-instances"
     resources = {r for rule in role["rules"] for r in rule["resources"]}
     assert resources == {"deployments", "services", "persistentvolumeclaims",
-                         "pods", "pods/log"}
+                         "pods", "pods/log", "resourcequotas"}
     (rb,) = _kind("RoleBinding")
     assert rb["subjects"][0] == {"kind": "ServiceAccount", "name": "styx-backend",
                                  "namespace": "styx"}

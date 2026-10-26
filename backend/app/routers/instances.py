@@ -15,7 +15,7 @@ from app.security.deps import get_current_user, require_owner_or_admin
 from app.services.docker_manager import DockerManager
 from app.services.k8s_runtime import ensure_instance_supported, instance_runtime
 from app.services.screenshot import ScreenshotService
-from app.services import profiles
+from app.services import gpu_access, profiles
 from app.services.traefik_labels import generate_traefik_labels
 from app.services.audit import audit
 from app.services.settings_store import settings as sys_settings
@@ -98,7 +98,7 @@ async def _build_and_start_container(instance, template, docker):
         environment=env,
         volumes=volumes,
         port=template.internal_port,
-        gpu_enabled=template.gpu_enabled,
+        gpu_enabled=await gpu_access.resolve_gpu(docker, template, instance),
         gpu_count=template.gpu_count,
         memory_limit=template.memory_limit,
         cpu_limit=template.cpu_limit,
@@ -197,7 +197,7 @@ async def _launch_instance_background(instance_id: str, template_id: str):
                 environment=env,
                 volumes=volumes,
                 port=template.internal_port,
-                gpu_enabled=template.gpu_enabled,
+                gpu_enabled=await gpu_access.resolve_gpu(docker, template, instance),
                 gpu_count=template.gpu_count,
                 memory_limit=template.memory_limit,
                 cpu_limit=template.cpu_limit,
@@ -304,6 +304,7 @@ async def create_instance(
         template_id=template.id,
         owner_id=user.id,
         profile_volume=profile_volume,
+        gpu=template.gpu_enabled and body.use_gpu and await gpu_access.user_may_use_gpu(session, user),
         name=body.name,
         subdomain=body.subdomain,
         status="starting",
