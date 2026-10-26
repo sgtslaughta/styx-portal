@@ -32,6 +32,7 @@ class MountPlan:
     create: bool = False          # the settings file doesn't exist yet: Styx writes it from `template`
     template: str | None = None
     owner_from: str | None = None  # existing file whose uid/gid the new file copies
+    manual: bool = False          # k8s: Styx can't edit the app's files; `reason` holds the instructions
 
 
 def plan_mount(svc: ProxiedService, preset: ServicePreset | None, docker) -> MountPlan:
@@ -41,6 +42,13 @@ def plan_mount(svc: ProxiedService, preset: ServicePreset | None, docker) -> Mou
                if m.get("type") == "config_file"]   # ponytail: env method not implemented (spec §3.1)
     if not methods:
         return MountPlan(reason="This app can't be configured by Styx. Set its base path by hand.")
+    if Settings().ROUTE_BACKEND == "k8s":
+        m = methods[0]
+        path = m["paths"][0]
+        return MountPlan("config_file", path, m["format"], m["key"], needs_consent=False, manual=True,
+                         reason=f"On Kubernetes, Styx can't edit {preset.name}'s files. Set `{m['key']}` to "
+                                f"`/{svc.slug}` in `{path}` and restart the app — or switch this service "
+                                "to cookie-root mode, which needs no base path.")
     needs_consent = docker.container_labels(svc.container).get("styx.managed") != "true"
     new = f"/{svc.slug}"
     for m in methods:

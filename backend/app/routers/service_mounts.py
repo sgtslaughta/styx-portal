@@ -63,7 +63,7 @@ async def mount_plan(sid: str, admin: User = Depends(require_admin),
         session.add(svc)
         await session.commit()
     return {"method": p.method, "changes": p.changes, "needs_consent": p.needs_consent,
-            "reason": p.reason, "retry": p.retry}
+            "reason": p.reason, "retry": p.retry, "manual": p.manual}
 
 
 @router.post("/{sid}/mount/apply", status_code=202)

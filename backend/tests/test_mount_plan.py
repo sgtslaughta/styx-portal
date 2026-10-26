@@ -149,3 +149,24 @@ def test_retry_only_when_settings_file_is_missing():
     assert plan_mount(_svc(), ServicePreset(id="x", name="X"), MagicMock()).retry is False
     bad = _docker({"/config/network.xml": b"\xff\xfe"})
     assert plan_mount(_svc(), _preset(), bad).retry is False
+
+
+def test_k8s_plan_is_manual_and_never_reads_files(monkeypatch):
+    monkeypatch.setenv("ROUTE_BACKEND", "k8s")
+    d = _docker({})
+    p = plan_mount(_svc(), _preset(), d)
+    assert p.manual is True and p.needs_consent is False
+    assert p.method == "config_file" and p.path == "/config/config/network.xml"
+    assert p.key == "/NetworkConfiguration/BaseUrl" and p.fmt == "xml"
+    assert "/jellyfin" in p.reason and "/config/config/network.xml" in p.reason
+    assert "cookie-root" in p.reason
+    d.read_file.assert_not_called()
+    d.container_labels.assert_not_called()
+
+
+def test_k8s_plan_without_preset_method_keeps_cant_configure(monkeypatch):
+    monkeypatch.setenv("ROUTE_BACKEND", "k8s")
+    d = _docker({})
+    p = plan_mount(_svc(), None, d)
+    assert p.manual is False and "can't be configured" in p.reason
+    d.read_file.assert_not_called()
