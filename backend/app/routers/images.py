@@ -7,13 +7,14 @@ from app.database import get_session
 from app.models import PulledImage, Instance, ServiceTemplate, User
 from app.security.deps import get_current_user, require_admin
 from app.services.docker_manager import DockerManager
+from app.services.k8s_runtime import instance_runtime
 
 router = APIRouter()
 _settings = Settings()
 
 
-def get_docker_manager() -> DockerManager:
-    return DockerManager(network_name=_settings.DOCKER_NETWORK)
+def get_docker_manager():
+    return instance_runtime()
 
 
 @router.get("", response_model=list[PulledImage])

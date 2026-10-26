@@ -822,6 +822,8 @@ async def refresh_screenshot(
     if not instance:
         raise HTTPException(404, "Instance not found")
     require_owner_or_admin(instance.owner_id, user)
+    if Settings().ROUTE_BACKEND == "k8s":
+        return {"ok": False, "reason": "screenshots are not available on Kubernetes"}
     if instance.status not in ("running", "idle") or not instance.container_id:
         return {"ok": False, "reason": "not running"}
 
