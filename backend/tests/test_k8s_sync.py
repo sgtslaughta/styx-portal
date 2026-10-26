@@ -119,7 +119,7 @@ def test_write_routes_k8s_applies_objects(monkeypatch):
                for r in seen)
 
 
-def test_build_routes_config_k8s_skips_lan_and_services(tmp_path, monkeypatch):
+def test_build_routes_config_k8s_skips_lan(tmp_path, monkeypatch):
     (tmp_path / "lan.crt").write_text("c")
     (tmp_path / "lan.key").write_text("k")
     monkeypatch.setattr(route_writer._settings, "LAN_CERT_DIR", str(tmp_path))
@@ -132,10 +132,6 @@ def test_build_routes_config_k8s_skips_lan_and_services(tmp_path, monkeypatch):
     assert not [n for n in routers if n.endswith("-lan")]
     assert "tls" not in cfg
     assert "ws-ws1" in routers
-    plain = build_routes_config([], "s.example", "tunnel",
-                                workstations=[_ws()], services=[svc])
-    assert [n for n in plain["http"]["routers"] if "sonarr" in n]
-    assert not [n for n in routers if "sonarr" in n]
 
 
 @pytest.mark.asyncio
@@ -294,3 +290,28 @@ def test_get_json_ok_404_and_error():
     assert c.get_json("/missing") is None
     with pytest.raises(httpx.HTTPStatusError):
         c.get_json("/boom")
+
+
+def _url_svc(upstream="http://sonarr.media.svc:8989", **kw):
+    return {"id": "s1", "slug": "sonarr", "upstream": upstream,
+            "mount_mode": "path", "auth_mode": "styx", "verify_tls": True,
+            "enabled": True, "upstream_host": None, **kw}
+
+
+def test_build_routes_config_k8s_includes_services():
+    cfg = build_routes_config([], "s.example", "tunnel",
+                              services=[_url_svc()], k8s=True)
+    assert "svc-sonarr" in cfg["http"]["routers"]
+
+
+def test_write_routes_k8s_applies_service_ingressroute(monkeypatch):
+    seen = []
+
+    def handler(r):
+        seen.append(r)
+        return httpx.Response(200, json={"items": []})
+
+    _k8s_mode(monkeypatch, handler)
+    route_writer.write_routes([], services=[_url_svc()], strict=True)
+    assert any(r.method == "PATCH" and r.url.path == f"{IR}/svc-sonarr"
+               for r in seen)
