@@ -109,10 +109,10 @@ async def test_group_patch_admin(admin_client, session):
     assert (await admin_client.get("/api/auth/me")).json()["can_use_gpu"] is True
 
 
-async def _launch(session, tid, gpu, free):
-    admin = (await session.exec(select(User).where(User.username == "admin"))).first()
+async def _launch(session, tid, gpu, free, owner="admin"):
+    u = (await session.exec(select(User).where(User.username == owner))).first()
     sub = f"l{len((await session.exec(select(Instance))).all())}"
-    inst = Instance(template_id=tid, owner_id=admin.id, name=sub, subdomain=sub,
+    inst = Instance(template_id=tid, owner_id=u.id if u else None, name=sub, subdomain=sub,
                     status="starting", gpu=gpu)
     session.add(inst)
     await session.commit()
@@ -155,4 +155,21 @@ async def test_launch_uses_gpu_when_free_and_legacy_none(admin_client, session):
     mgr, inst = await _launch(session, tid, None, True)   # legacy -> template.gpu_enabled
     assert mgr.create_container.call_args.kwargs["gpu_enabled"] is True
     mgr, inst = await _launch(session, tid, False, True)
+    assert mgr.create_container.call_args.kwargs["gpu_enabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_gpu_rechecked_at_start(admin_client, member_client, session):
+    """A stored gpu=True never outlives the owner's permission or template support."""
+    tid = await _mk(admin_client)
+    mgr, _ = await _launch(session, tid, True, True, owner="member")   # no allow_gpu group
+    assert mgr.create_container.call_args.kwargs["gpu_enabled"] is False
+    mgr, _ = await _launch(session, tid, True, True, owner="nobody")   # ownerless
+    assert mgr.create_container.call_args.kwargs["gpu_enabled"] is False
+    from app.models import ServiceTemplate
+    t = await session.get(ServiceTemplate, tid)
+    t.gpu_enabled = False
+    session.add(t)
+    await session.commit()
+    mgr, _ = await _launch(session, tid, True, True)                   # template no longer GPU
     assert mgr.create_container.call_args.kwargs["gpu_enabled"] is False

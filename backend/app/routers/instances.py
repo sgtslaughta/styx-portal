@@ -64,7 +64,7 @@ async def _isolate_or_409(docker, instance, container_id):
         raise HTTPException(409, "Instance network could not be isolated")
 
 
-async def _build_and_start_container(instance, template, docker):
+async def _build_and_start_container(instance, template, docker, session):
     """(Re)create the Docker container for an instance from its template,
     mounting the instance's existing named volumes (data preserved), then start it.
     Sets instance.container_id. Caller commits."""
@@ -98,7 +98,7 @@ async def _build_and_start_container(instance, template, docker):
         environment=env,
         volumes=volumes,
         port=template.internal_port,
-        gpu_enabled=await gpu_access.resolve_gpu(docker, template, instance),
+        gpu_enabled=await gpu_access.resolve_gpu(session, docker, template, instance),
         gpu_count=template.gpu_count,
         memory_limit=template.memory_limit,
         cpu_limit=template.cpu_limit,
@@ -197,7 +197,7 @@ async def _launch_instance_background(instance_id: str, template_id: str):
                 environment=env,
                 volumes=volumes,
                 port=template.internal_port,
-                gpu_enabled=await gpu_access.resolve_gpu(docker, template, instance),
+                gpu_enabled=await gpu_access.resolve_gpu(session, docker, template, instance),
                 gpu_count=template.gpu_count,
                 memory_limit=template.memory_limit,
                 cpu_limit=template.cpu_limit,
@@ -374,7 +374,7 @@ async def start_instance(
             raise HTTPException(400, "Template no longer exists, cannot recreate")
 
         try:
-            await _build_and_start_container(instance, template, docker)
+            await _build_and_start_container(instance, template, docker, session)
         except ValueError as e:
             raise HTTPException(422, f"Template volumes invalid: {e}")
 
@@ -487,7 +487,7 @@ async def recreate_instance(
     # Volume names are recomputed from the (possibly updated) template; instance.id is stable,
     # so unchanged defs reuse the existing volume (data preserved).
     try:
-        await _build_and_start_container(instance, template, docker)
+        await _build_and_start_container(instance, template, docker, session)
     except ValueError as e:
         raise HTTPException(422, f"Template volumes invalid: {e}")
 
