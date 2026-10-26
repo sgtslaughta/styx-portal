@@ -127,7 +127,7 @@ def test_container_logs():
             200, json={"items": [{"metadata": {"name": "selkies-a-xyz"}}]}),
         ("GET", f"/api/v1/namespaces/{NS}/pods/selkies-a-xyz/log"): httpx.Response(
             200, text="l1\nl2\n")})
-    assert rec.runtime().container_logs("selkies-a", 50) == ["l1", "l2"]
+    assert rec.runtime().instance_logs("selkies-a", 50) == ["l1", "l2"]
     (g,) = rec.find("GET", f"/api/v1/namespaces/{NS}/pods/selkies-a-xyz/log")
     assert g.url.params["tailLines"] == "50" and g.url.params["timestamps"] == "true"
-    assert Rec().runtime().container_logs("selkies-a", 50) == []
+    assert Rec().runtime().instance_logs("selkies-a", 50) == []

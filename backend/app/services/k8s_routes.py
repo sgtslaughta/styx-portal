@@ -19,8 +19,9 @@ _CLUSTER_SVC = re.compile(r"^([a-z0-9-]+)\.([a-z0-9-]+)\.svc(\.cluster\.local)?$
 
 def denied_namespaces() -> set[str]:
     cfg = Settings()
-    return {n.strip() for n in cfg.K8S_UPSTREAM_DENY_NAMESPACES.split(",")
-            if n.strip()} | {cfg.K8S_NAMESPACE}
+    denied = {n.strip() for n in cfg.K8S_UPSTREAM_DENY_NAMESPACES.split(",")
+              if n.strip()} | {cfg.K8S_NAMESPACE}
+    return denied - {cfg.K8S_INSTANCE_NAMESPACE}  # instance routes must resolve
 
 
 _INTERNAL_SUFFIXES = (".svc", ".cluster.local", ".localhost")
@@ -156,7 +157,8 @@ def to_k8s_objects(config: dict, namespace: str) -> list[dict]:
                            "%s points into the cluster", name, host)
             skipped.add(name)
             continue
-        if m and m[2] in denied_namespaces():
+        if m and (m[2] in denied_namespaces() or (
+                name.startswith("svc-") and m[2] == Settings().K8S_INSTANCE_NAMESPACE)):
             logger.warning("k8s: skipping service %s and its routers: upstream "
                            "namespace %s is denied", name, m[2])
             skipped.add(name)

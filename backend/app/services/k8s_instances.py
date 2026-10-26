@@ -2,12 +2,21 @@
 import logging
 from datetime import datetime, timezone
 
+from fastapi import HTTPException
+
 from app.config import Settings
 from app.services.k8s_api import incluster_client
 from app.services.k8s_instance_objects import build_objects, pvc
 
 logger = logging.getLogger("styx-portal")
 _APPS = "apps/v1"
+
+
+class K8sUnsupported(HTTPException, NotImplementedError):
+    """Operation with no k8s equivalent; surfaces as HTTP 422."""
+
+    def __init__(self, msg: str):
+        super().__init__(422, msg)
 
 
 class K8sInstanceRuntime:
@@ -32,6 +41,9 @@ class K8sInstanceRuntime:
 
     def remove_volume(self, name: str) -> None:
         self._c.delete("v1", "PersistentVolumeClaim", self._ns, name)
+
+    def remove_image(self, image: str) -> None:
+        return None
 
     # networks: policy is namespace-wide
     def ensure_user_network(self, user_id: str) -> str:
@@ -80,7 +92,7 @@ class K8sInstanceRuntime:
             "annotations": {"styx/restartedAt": now}}}}})
 
     def pause_container(self, name: str) -> None:
-        raise NotImplementedError("pause is not supported on Kubernetes")
+        raise K8sUnsupported("pause is not supported on Kubernetes")
 
     unpause_container = pause_container
 
@@ -109,7 +121,7 @@ class K8sInstanceRuntime:
     def get_container_stats(self, name: str) -> dict:
         return {}
 
-    def container_logs(self, name: str, tail: int = 200) -> list[str]:
+    def instance_logs(self, name: str, tail: int = 200) -> list[str]:
         pods = self._pods(name)
         if not pods:
             return []

@@ -15,7 +15,7 @@ class K8sRuntime:
         self._c = client or incluster_client()
 
     def list_containers(self) -> list[dict]:
-        skip = SKIP_NS | denied_namespaces()
+        skip = SKIP_NS | denied_namespaces() | {Settings().K8S_INSTANCE_NAMESPACE}
         out = []
         for s in (self._c.get_json("/api/v1/services") or {}).get("items", []):
             md, spec = s["metadata"], s.get("spec", {})
@@ -65,3 +65,21 @@ def container_runtime():
         return K8sRuntime()
     from app.services.docker_manager import DockerManager
     return DockerManager(network_name=Settings().DOCKER_NETWORK)
+
+
+def instance_runtime():
+    if Settings().ROUTE_BACKEND == "k8s":
+        from app.services.k8s_instances import K8sInstanceRuntime
+        return K8sInstanceRuntime()
+    from app.services.docker_manager import DockerManager
+    return DockerManager(network_name=Settings().DOCKER_NETWORK)
+
+
+def ensure_instance_supported(template) -> None:
+    """422 when the template cannot run on k8s (dind, privileged, unsafe caps)."""
+    if Settings().ROUTE_BACKEND != "k8s":
+        return
+    from fastapi import HTTPException
+    from app.services.k8s_instance_objects import refuse_reason
+    if msg := refuse_reason(template):
+        raise HTTPException(422, msg)

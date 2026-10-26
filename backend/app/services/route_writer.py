@@ -137,6 +137,8 @@ def build_routes_config(instances: list[dict], domain: str,
                 or isinstance(port, bool) or not 1 <= port <= 65535:
             continue  # defense in depth for legacy DB rows
         container_name = f"selkies-{subdomain}"
+        if k8s:
+            container_name += f".{_settings.K8S_INSTANCE_NAMESPACE}.svc"
 
         strip_mw = f"strip-{subdomain}"
         middlewares[strip_mw] = {"stripPrefix": {"prefixes": [f"/i/{subdomain}"]}}

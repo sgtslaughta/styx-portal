@@ -254,6 +254,11 @@ class DockerManager(ContainerFilesMixin):
             return "healthy"
         return {"healthy": "healthy", "unhealthy": "unhealthy"}.get(hc.get("Status"), "unknown")
 
+    def instance_logs(self, container_id: str, tail: int = 500) -> list[str]:
+        raw = self._client.containers.get(container_id).logs(tail=tail, timestamps=True)
+        text = raw.decode("utf-8", errors="replace").strip()
+        return text.split("\n") if text else []
+
     def get_container_stats(self, container_id: str) -> dict:
         try:
             container = self._client.containers.get(container_id)

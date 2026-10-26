@@ -36,6 +36,7 @@ from app.routers import service_icons as service_icons_router
 from app.routers import services_auth as services_auth_router
 from app.security.deps import get_current_user, require_admin
 from app.services.docker_manager import DockerManager
+from app.services.k8s_runtime import instance_runtime
 from app.services.session_monitor import SessionMonitor
 from app.services.mount_jobs import sweep_interrupted
 from app.security.csrf import csrf_valid, CSRF_COOKIE, CSRF_HEADER, UNSAFE_METHODS
@@ -99,7 +100,7 @@ async def _monitor_tick(session, monitor, docker) -> None:
 
 
 async def _session_monitor_loop():
-    docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
+    docker = instance_runtime()
     monitor = SessionMonitor(docker)
     while True:
         await asyncio.sleep(60)
@@ -161,7 +162,7 @@ async def lifespan(app: FastAPI):
         logger.warning("Probe container cleanup skipped", exc_info=True)
 
     # Sync instance states — mark stale instances as stopped
-    docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
+    docker = instance_runtime()
     async with async_session() as session:
         await _reconcile_instances_at_boot(session, docker)
         await _log_portal_instances(docker)
@@ -226,7 +227,7 @@ async def _metrics_collection_loop():
     """Collect aggregate CPU/RAM every 30s for time-series."""
     from app.services.metrics_store import record_sample
 
-    docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
+    docker = instance_runtime()
     while True:
         await asyncio.sleep(30)
         try:
@@ -277,6 +278,8 @@ async def _screenshot_capture_loop():
     from app.services.screenshot import ScreenshotService
     from app.models import ServiceTemplate
 
+    if _settings.ROUTE_BACKEND == "k8s":
+        return  # screenshots need the Docker socket (phase 4)
     docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
     screenshots = ScreenshotService(
         cache_dir=_settings.SCREENSHOT_CACHE_DIR, docker_manager=docker,
@@ -424,9 +427,10 @@ async def system_metrics(
     admin: User = Depends(require_admin),
 ):
     import shutil
-    from app.services.docker_manager import DockerManager, detect_gpu
+    from app.services.docker_manager import detect_gpu
+    from app.services.k8s_runtime import instance_runtime
 
-    docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
+    docker = instance_runtime()
 
     result = await session.exec(
         select(Instance).where(Instance.status.in_(["running", "idle"]))

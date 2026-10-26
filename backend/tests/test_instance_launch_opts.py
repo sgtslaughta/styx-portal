@@ -85,7 +85,7 @@ async def test_launch_forwards_new_template_opts(session, opts_template_id):
     manager.get_image_info.return_value = {"size_mb": 100}
 
     # Patch get_docker_manager for the background task
-    with patch("app.routers.instances.DockerManager") as mock_dm_class:
+    with patch("app.routers.instances.instance_runtime") as mock_dm_class:
         mock_dm_class.return_value = manager
         # Also patch async_session to use our test session
         class AsyncSessionContextManager:

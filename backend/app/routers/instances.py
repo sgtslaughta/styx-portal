@@ -13,6 +13,7 @@ from app.models import Instance, ServiceTemplate, SessionEvent, PulledImage, Use
 from app.schemas import InstanceCreate, InstanceUpdate, SessionConfigUpdate, InstanceStatus
 from app.security.deps import get_current_user, require_owner_or_admin
 from app.services.docker_manager import DockerManager
+from app.services.k8s_runtime import ensure_instance_supported, instance_runtime
 from app.services.screenshot import ScreenshotService
 from app.services.template_validation import resolve_volume_name, validate_volumes
 from app.services.traefik_labels import generate_traefik_labels
@@ -37,14 +38,14 @@ def _dind_store_volume(instance_id: str) -> str:
     return f"selkies-{instance_id}-dockerstore"
 
 
-def get_docker_manager() -> DockerManager:
-    return DockerManager(network_name=_settings.DOCKER_NETWORK)
+def get_docker_manager():
+    return instance_runtime()
 
 
 def get_screenshot_service() -> ScreenshotService:
     return ScreenshotService(
         cache_dir=_settings.SCREENSHOT_CACHE_DIR,
-        docker_manager=get_docker_manager(),
+        docker_manager=DockerManager(network_name=_settings.DOCKER_NETWORK),
     )
 
 
@@ -67,6 +68,7 @@ async def _build_and_start_container(instance, template, docker):
     """(Re)create the Docker container for an instance from its template,
     mounting the instance's existing named volumes (data preserved), then start it.
     Sets instance.container_id. Caller commits."""
+    ensure_instance_supported(template)
     validate_volumes(template.volumes)
     volumes = {}
     for vol in template.volumes:
@@ -145,7 +147,7 @@ async def list_instances(
 
 async def _launch_instance_background(instance_id: str, template_id: str):
     """Background task: pull image, create container, start it."""
-    docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
+    docker = instance_runtime()
     async with async_session() as session:
         instance = await session.get(Instance, instance_id)
         template = await session.get(ServiceTemplate, template_id)
@@ -285,6 +287,7 @@ async def create_instance(
     template = await session.get(ServiceTemplate, body.template_id)
     if not template:
         raise HTTPException(404, "Template not found")
+    ensure_instance_supported(template)
 
     # Rate limit check for non-admin users
     if user.role != "admin":
@@ -899,11 +902,6 @@ async def get_instance_logs(
         return []
 
     try:
-        container = docker._client.containers.get(instance.container_id)
-        raw_logs = await asyncio.to_thread(
-            container.logs, tail=lines, timestamps=True
-        )
-        text = raw_logs.decode("utf-8", errors="replace")
-        return text.strip().split("\n") if text.strip() else []
+        return await asyncio.to_thread(docker.instance_logs, instance.container_id, lines)
     except Exception:
         return []
