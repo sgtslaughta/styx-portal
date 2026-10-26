@@ -1,5 +1,8 @@
 import re
 
+import pytest
+
+from app.services import k8s_routes
 from app.services.k8s_routes import MANAGED_LABEL, k8s_name, to_k8s_objects
 from app.services.route_writer import build_routes_config
 
@@ -151,6 +154,18 @@ def test_denied_namespaces_emit_no_ingressroute():
         assert not [n for n in names if n.endswith(k) or f"-{k}-" in n or n.startswith(k)]
 
 
+@pytest.fixture(autouse=True)
+def _dns(monkeypatch):
+    table = {"nas.lan": "192.168.1.10", "kubernetes.default": "10.43.0.1",
+             "loop.example": "127.0.0.1"}
+
+    def fake(host, port):
+        if host == "nope.example":
+            raise OSError("nxdomain")
+        return [(2, 1, 6, "", (table.get(host, "93.184.216.34"), 0))]
+    monkeypatch.setattr(k8s_routes, "_resolve", fake)
+
+
 def _hsvc(slug, upstream):
     return {"id": slug, "slug": slug, "upstream": upstream,
             "mount_mode": "path", "auth_mode": "styx", "verify_tls": True,
@@ -214,3 +229,15 @@ def test_styxlocation_plugin_middleware_is_valid_crd():
     assert mw["spec"] == {"plugin": {"styxlocation": {"host": "app.example.com"}}}
     (ir,) = _irs(objs, "npm")
     assert {"name": "svc-loc-npm"} in ir["spec"]["routes"][0]["middlewares"]
+
+
+def test_externalname_resolve_and_normalize_checks():
+    for slug, up in (("a", "http://kubernetes.default.svc.cluster.local.:80"),
+                     ("b", "http://kubernetes.default:80"),
+                     ("c", "http://a..b:80"),
+                     ("d", "http://nope.example:80"),
+                     ("e", "http://loop.example:80"),
+                     ("f", "http://x.svc.evil.com:80")):
+        assert not _irs(_svc_objs(slug, up), slug), up
+    assert _irs(_svc_objs("nas", "http://nas.lan:80"), "nas")
+    assert _irs(_svc_objs("x", "http://x.example.com:80"), "x")

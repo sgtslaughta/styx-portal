@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     TRAEFIK_DYNAMIC_DIR: str = "/app/traefik-dynamic"
     ROUTE_BACKEND: str = "file"   # file | k8s
     K8S_NAMESPACE: str = "styx"
+    K8S_CLUSTER_CIDRS: str = "10.42.0.0/16,10.43.0.0/16"   # pod,service ranges
     K8S_UPSTREAM_DENY_NAMESPACES: str = (
         "kube-system,kube-public,kube-node-lease,default,longhorn-system,"
         "cert-manager,metallb-system,argocd")
