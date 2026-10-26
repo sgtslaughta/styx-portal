@@ -150,6 +150,7 @@ export function ServiceMount({ service, onChanged, onDone, autoOpenConsent }: {
       </>
     );
   }
+  else if (p.manual) body = <p className="text-sm text-muted-foreground">{p.reason}</p>;
   else if (p.method === null) body = (
     <>
       <p className="text-sm text-muted-foreground">{p.reason} You can set the base path to /{slug} in the app yourself, or use a preset.</p>
