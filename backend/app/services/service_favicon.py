@@ -126,7 +126,7 @@ async def _get_httpx(url: str, cap: int, verify: bool, origin_of: str,
 
 
 def _getter(svc: ProxiedService, docker, transport):
-    if svc.kind == "docker-local":
+    if svc.kind == "docker-local" and Settings().ROUTE_BACKEND != "k8s":
         hosts = {"host.docker.internal": "host-gateway"} if svc.upstream_fallback else None
         origin = page_url(svc)
 
