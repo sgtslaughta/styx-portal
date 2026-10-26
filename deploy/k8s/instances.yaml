@@ -90,3 +90,6 @@ spec:
         - cidr: 0.0.0.0/0
           except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16]
         - cidr: 192.168.1.0/24
+  # deny wins over the LAN allow above regardless of policy-cidr-match-mode
+  egressDeny:
+    - toEntities: [host, remote-node, kube-apiserver]

@@ -51,3 +51,9 @@ def test_quota_and_limitrange_present():
 def test_listed_in_kustomization():
     k = yaml.safe_load((ROOT / "kustomization.yaml").read_text())
     assert "instances.yaml" in k["resources"]
+
+
+def test_egress_deny_nodes_and_api():
+    (cnp,) = _kind("CiliumNetworkPolicy")
+    assert cnp["spec"]["egressDeny"] == [
+        {"toEntities": ["host", "remote-node", "kube-apiserver"]}]
