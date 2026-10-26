@@ -14,6 +14,7 @@ _PLURALS = {
     "IngressRoute": "ingressroutes", "Middleware": "middlewares",
     "ServersTransport": "serverstransports", "Service": "services",
     "EndpointSlice": "endpointslices", "Pod": "pods",
+    "Deployment": "deployments", "PersistentVolumeClaim": "persistentvolumeclaims",
 }
 
 
@@ -99,6 +100,22 @@ class K8sClient:
             return None
         _check(r)
         return r.json()
+
+    def patch_merge(self, api_version: str, kind: str, namespace: str,
+                    name: str, body: dict) -> None:
+        r = self._http.patch(
+            f"{_path(api_version, kind, namespace)}/{name}",
+            content=json.dumps(body),
+            headers={**self._auth(), "Content-Type": "application/merge-patch+json"})
+        _check(r)
+
+    def get_text(self, path: str, params: dict | None = None) -> str | None:
+        """GET a text endpoint (pod logs); None on 404."""
+        r = self._http.get(path, params=params or {}, headers=self._auth())
+        if r.status_code == 404:
+            return None
+        _check(r)
+        return r.text
 
     def list_names(self, api_version: str, kind: str, namespace: str,
                    label_selector: str) -> list[str]:

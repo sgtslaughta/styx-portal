@@ -315,3 +315,28 @@ def test_write_routes_k8s_applies_service_ingressroute(monkeypatch):
     route_writer.write_routes([], services=[_url_svc()], strict=True)
     assert any(r.method == "PATCH" and r.url.path == f"{IR}/svc-sonarr"
                for r in seen)
+
+
+def test_patch_merge_and_get_text_and_new_plurals():
+    seen = []
+
+    def h(r):
+        seen.append(r)
+        if r.url.path.endswith("/log"):
+            return httpx.Response(404) if "gone" in r.url.path else httpx.Response(200, text="a\nb")
+        return httpx.Response(200, json={})
+    c = _client(h)
+    c.patch_merge("apps/v1", "Deployment", "inst", "d1", {"spec": {"replicas": 1}})
+    r = seen[0]
+    assert r.method == "PATCH"
+    assert r.url.path == "/apis/apps/v1/namespaces/inst/deployments/d1"
+    assert r.headers["content-type"] == "application/merge-patch+json"
+    assert json.loads(r.content) == {"spec": {"replicas": 1}}
+    c.apply({"apiVersion": "v1", "kind": "PersistentVolumeClaim",
+             "metadata": {"name": "v", "namespace": "inst"}})
+    assert seen[1].url.path == "/api/v1/namespaces/inst/persistentvolumeclaims/v"
+    assert c.get_text("/api/v1/namespaces/i/pods/p/log", {"tailLines": 5}) == "a\nb"
+    assert c.get_text("/api/v1/namespaces/i/pods/gone/log") is None
+    with pytest.raises(httpx.HTTPStatusError):
+        _client(lambda r: httpx.Response(500, json={})).patch_merge(
+            "v1", "Service", "i", "s", {})
