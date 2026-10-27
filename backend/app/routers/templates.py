@@ -40,7 +40,7 @@ _TEMPLATE_UPDATE_FIELDS = {
     "cap_add", "security_opt", "tls_skip_verify",
     "shared", "restart_policy", "read_only_rootfs", "tmpfs", "extra_hosts",
     "ulimits", "extra_ports", "entrypoint", "command", "devices",
-    "privileged", "extra_docker_args",
+    "privileged", "extra_docker_args", "profile_mount",
 }
 
 

@@ -135,7 +135,7 @@ export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: 
     clearSelection();
   }
   function runBulkDestroy() {
-    selectedInstances.forEach((i) => destroyMut.mutate({ id: i.id, removeVolumes: false }, { onError: (e) => { console.error(i.name, e); toast.error(shortError(`${i.name}: ${e.message}`)); } }));
+    selectedInstances.forEach((i) => destroyMut.mutate({ id: i.id }, { onError: (e) => { console.error(i.name, e); toast.error(shortError(`${i.name}: ${e.message}`)); } }));
     toast.success(`Destroying ${selected.size} instance(s)`);
     clearSelection();
   }
@@ -315,7 +315,7 @@ export function InstanceGrid({ onSelect, onLaunch, selectedId, dense = false }: 
         open={bulkConfirm}
         onOpenChange={setBulkConfirm}
         title={`Destroy ${selected.size} instance(s)?`}
-        description="Containers will be removed. Named volumes are kept."
+        description="Containers will be removed. Instance data is deleted. Your persistent profile (if used) is kept."
         confirmLabel="Destroy"
         variant="destructive"
         confirmPhrase="destroy"

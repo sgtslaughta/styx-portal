@@ -53,7 +53,7 @@ async def client_fixture(session):
 
     def get_docker_manager_override():
         manager = MagicMock()
-        manager.create_volume.side_effect = lambda name: name
+        manager.create_volume.side_effect = lambda name, size=None: name
         manager.create_container.return_value = "container-abc123"
         manager.get_container_status.return_value = {"status": "running"}
         return manager
@@ -116,7 +116,7 @@ async def second_member_client(session):
 
     def get_docker_manager_override():
         manager = MagicMock()
-        manager.create_volume.side_effect = lambda name: name
+        manager.create_volume.side_effect = lambda name, size=None: name
         manager.create_container.return_value = "container-abc123"
         manager.get_container_status.return_value = {"status": "running"}
         return manager

@@ -28,6 +28,7 @@ export interface ServiceTemplate {
   cpu_limit: string | null;
   shm_size: string | null;
   volumes: { name: string; mount: string }[];
+  profile_mount?: string | null;
   internal_port: number;
   internal_protocol: string;
   category: string | null;
@@ -65,6 +66,9 @@ export interface Instance {
   stopped_at: string | null;
   last_activity: string | null;
   session_config: SessionConfig | null;
+  profile_volume?: string | null;
+  gpu?: boolean;
+  notice?: string | null;
 }
 
 export interface InstanceStatus {
@@ -108,6 +112,8 @@ export interface InstanceCreate {
   subdomain: string;
   env_overrides?: Record<string, string>;
   session_config?: Partial<SessionConfig>;
+  use_profile?: boolean;
+  use_gpu?: boolean;
 }
 
 export interface TemplateCreate {
@@ -124,6 +130,7 @@ export interface TemplateCreate {
   cpu_limit?: string;
   shm_size?: string;
   volumes?: { name: string; mount: string }[];
+  profile_mount?: string | null;
   internal_port?: number;
   internal_protocol?: string;
   category?: string;

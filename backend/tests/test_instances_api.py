@@ -98,7 +98,7 @@ def shared_docker():
     from app.routers.instances import get_docker_manager
 
     manager = MagicMock()
-    manager.create_volume.side_effect = lambda name: name
+    manager.create_volume.side_effect = lambda name, size=None: name
     manager.create_container.return_value = "container-abc123"
     manager.get_container_status.return_value = {"status": "running"}
     manager.ensure_user_network.return_value = "styx-u-test"

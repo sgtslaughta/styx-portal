@@ -79,6 +79,12 @@ export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
           </p>
         )}
 
+        {instance.notice && (
+          <p className="line-clamp-2 text-xs text-amber-600 dark:text-amber-400" title={instance.notice}>
+            {instance.notice}
+          </p>
+        )}
+
         {/* Overlaid sparkline — CPU + RAM */}
         <AnimatePresence>
           {isRunning && stats && (

@@ -77,7 +77,7 @@ async def test_launch_forwards_new_template_opts(session, opts_template_id):
 
     # Mock docker manager
     manager = MagicMock()
-    manager.create_volume.side_effect = lambda name: name
+    manager.create_volume.side_effect = lambda name, size=None: name
     manager.create_container.return_value = "container-abc123"
     manager.image_exists.return_value = True
     manager.pull_image_streaming = AsyncMock()

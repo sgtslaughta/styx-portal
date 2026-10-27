@@ -52,7 +52,7 @@ export function ActionBar({ instance, size = "default", showConnect = true, clas
 
   function doDestroy() {
     destroy.mutate(
-      { id: instance.id, removeVolumes: false, removeImage, removeTemplate },
+      { id: instance.id, removeImage, removeTemplate },
       {
         onError: (e: Error) => toast.error(`Destroy failed: ${e.message}`),
         onSuccess: () => toast.success(`Destroyed ${instance.name}`),
@@ -126,7 +126,7 @@ export function ActionBar({ instance, size = "default", showConnect = true, clas
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title={`Destroy "${instance.name}"?`}
-        description="This permanently removes the container. Named volumes are kept."
+        description="Instance data is deleted. Your persistent profile (if used) is kept."
         confirmLabel="Destroy"
         variant="destructive"
         confirmPhrase={instance.name}

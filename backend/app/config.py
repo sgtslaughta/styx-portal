@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     K8S_DESKTOP_IMAGE: str = "ghcr.io/sgtslaughta/styx-desktop:latest"
     INSTANCE_STORAGE_CLASS: str = "longhorn"
     INSTANCE_VOLUME_SIZE: str = "20Gi"
+    PROFILE_VOLUME_SIZE: str = "20Gi"
     K8S_CLUSTER_CIDRS: str = "10.42.0.0/16,10.43.0.0/16"   # pod,service ranges
     K8S_UPSTREAM_DENY_NAMESPACES: str = (
         "kube-system,kube-public,kube-node-lease,default,longhorn-system,"

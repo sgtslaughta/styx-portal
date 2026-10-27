@@ -28,6 +28,7 @@ class TemplateCreate(BaseModel):
     security_opt: list[str] = []
     tls_skip_verify: bool = False
     volumes: list[dict[str, str]] = []
+    profile_mount: str | None = None
     internal_port: int = 3001
     internal_protocol: str = "https"
     category: str | None = None
@@ -50,6 +51,11 @@ class TemplateCreate(BaseModel):
     @classmethod
     def _v_volumes(cls, v):
         return v if v is None else _tv.validate_volumes(v)
+
+    @field_validator("profile_mount")
+    @classmethod
+    def _v_profile_mount(cls, v):
+        return v if v is None else _tv.validate_mount(v)
 
     @field_validator("extra_ports")
     @classmethod
@@ -85,6 +91,7 @@ class TemplateUpdate(BaseModel):
     security_opt: list[str] | None = None
     tls_skip_verify: bool | None = None
     volumes: list[dict[str, str]] | None = None
+    profile_mount: str | None = None
     internal_port: int | None = None
     internal_protocol: str | None = None
     category: str | None = None
@@ -107,6 +114,11 @@ class TemplateUpdate(BaseModel):
     @classmethod
     def _v_volumes(cls, v):
         return v if v is None else _tv.validate_volumes(v)
+
+    @field_validator("profile_mount")
+    @classmethod
+    def _v_profile_mount(cls, v):
+        return v if v is None else _tv.validate_mount(v)
 
     @field_validator("extra_ports")
     @classmethod
@@ -132,6 +144,8 @@ class InstanceCreate(BaseModel):
     subdomain: str
     env_overrides: dict[str, str] = {}
     session_config: dict[str, Any] | None = None
+    use_profile: bool = False
+    use_gpu: bool = True
 
     @field_validator("subdomain")
     @classmethod
@@ -202,6 +216,7 @@ class UserOut(BaseModel):
     open_apps: str | None = None
     must_change_pw: bool = False
     has_matrix_card: bool = False
+    can_use_gpu: bool = False
 
 
 OpenMode = Literal["new_tab", "same_tab"]
@@ -473,7 +488,7 @@ class ChangePasswordRequest(BaseModel):
 
 from app.schemas_services import (  # noqa: E402,F401  (re-export)
     AUTH_MODES, CONTAINER_NAME_RE, MOUNT_MODES, RESERVED_SERVICE_SLUGS, SERVICE_KINDS,
-    SERVICE_SLUG_RE, BypassRule, DiscoveredContainer, GroupCreate, GroupOut,
+    SERVICE_SLUG_RE, BypassRule, DiscoveredContainer, GroupCreate, GroupOut, GroupUpdate,
     ProxiedServiceCreate, ProxiedServiceOut, ProxiedServiceUpdate, ServicePresetOut, ServiceTileOut,
     UserGroupsUpdate, _ServiceFields,
 )

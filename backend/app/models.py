@@ -161,6 +161,7 @@ class ServiceTemplate(SQLModel, table=True):
     privileged: bool = False
     extra_docker_args: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     volumes: list[dict[str, str]] = Field(default_factory=list, sa_column=Column(JSON))
+    profile_mount: str | None = None
     internal_port: int = 3001
     internal_protocol: str = "https"
     category: str | None = None
@@ -192,6 +193,9 @@ class Instance(SQLModel, table=True):
     error_message: str | None = None
     env_overrides: dict[str, str] = Field(default_factory=dict, sa_column=Column(JSON))
     volume_names: list[str] = Field(default_factory=list, sa_column=Column(JSON))
+    profile_volume: str | None = None
+    gpu: bool | None = None  # None = legacy: use template.gpu_enabled
+    notice: str | None = None
     created_at: datetime = Field(default_factory=_now)
     started_at: datetime | None = None
     stopped_at: datetime | None = None
@@ -301,6 +305,7 @@ class Group(SQLModel, table=True):
     id: str = Field(default_factory=_uuid, primary_key=True)
     name: str = Field(unique=True, index=True)
     description: str | None = None
+    allow_gpu: bool = False
     created_at: datetime = Field(default_factory=_now)
 
 
@@ -308,6 +313,14 @@ class UserGroup(SQLModel, table=True):
     __tablename__ = "user_groups"
     user_id: str = Field(foreign_key="users.id", primary_key=True)
     group_id: str = Field(foreign_key="groups.id", primary_key=True)
+
+
+class UserProfile(SQLModel, table=True):
+    __tablename__ = "user_profiles"
+    user_id: str = Field(foreign_key="users.id", primary_key=True)
+    template_id: str = Field(foreign_key="service_templates.id", primary_key=True)
+    volume_name: str
+    created_at: datetime = Field(default_factory=_now)
 
 
 class ServicePreset(SQLModel, table=True):

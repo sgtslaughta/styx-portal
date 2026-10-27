@@ -22,6 +22,7 @@ from app.security.deps import get_current_user
 from app.security.setup_gate import users_exist
 from app.services import federation, login_flow, single_use
 from app.services.audit import audit_request
+from app.services.gpu_access import user_may_use_gpu
 from app.middleware.rate_limit import client_ip_from_headers, client_ip_resolved
 from app.services.abuse import ban_cache
 
@@ -330,9 +331,15 @@ def _me_out(user: User) -> UserOut:
                    open_apps=user.open_apps, must_change_pw=user.must_change_pw)
 
 
+async def _me_full(session: AsyncSession, user: User) -> UserOut:
+    out = _me_out(user)
+    out.can_use_gpu = await user_may_use_gpu(session, user)
+    return out
+
+
 @router.get("/me", response_model=UserOut)
-async def me(user: User = Depends(get_current_user)):
-    return _me_out(user)
+async def me(session: AsyncSession = Depends(get_session), user: User = Depends(get_current_user)):
+    return await _me_full(session, user)
 
 
 @router.put("/me/preferences", response_model=UserOut)
@@ -345,7 +352,7 @@ async def set_preferences(body: OpenPreferences, session: AsyncSession = Depends
     session.add(row)
     await session.commit()
     await session.refresh(row)
-    return _me_out(row)
+    return await _me_full(session, row)
 
 
 @router.post("/change-password")

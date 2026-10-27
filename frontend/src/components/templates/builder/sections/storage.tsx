@@ -38,6 +38,18 @@ export function StorageSection({ cfg }: Props) {
         />
       </div>
 
+      <div className="space-y-2">
+        <Label htmlFor="profile-mount" className="text-xs uppercase tracking-wide text-muted-foreground">
+          Persistent profile path
+        </Label>
+        <Input
+          id="profile-mount"
+          placeholder="e.g., /config (leave empty for none)"
+          value={cfg.profileMount}
+          onChange={(e) => cfg.setProfileMount(e.target.value)}
+        />
+      </div>
+
       <ToggleField
         label="Read-Only Root Filesystem"
         checked={cfg.readOnlyRootfs}
