@@ -46,8 +46,9 @@ async def profile_referenced(session: AsyncSession, volume: str) -> Instance | N
 
 
 async def purge_profiles(session: AsyncSession, runtime, *, user_id: str | None = None,
-                         template_id: str | None = None) -> None:
-    """Remove all profile rows+volumes for a user or template. Caller commits."""
+                         template_id: str | None = None, actor=None) -> None:
+    """Remove all profile rows+volumes for a user or template. Caller commits.
+    A non-admin actor may only purge their own profiles: others' block the delete (409)."""
     stmt = select(UserProfile)
     if user_id is not None:
         stmt = stmt.where(UserProfile.user_id == user_id)
@@ -55,11 +56,13 @@ async def purge_profiles(session: AsyncSession, runtime, *, user_id: str | None 
         stmt = stmt.where(UserProfile.template_id == template_id)
     rows = (await session.exec(stmt)).all()
     what = "user" if user_id is not None else "template"
+    if actor is not None and actor.role != "admin" and any(r.user_id != actor.id for r in rows):
+        raise HTTPException(409, f"Other users have persistent profiles for this {what}; "
+                                 "ask an admin to delete it")
     for row in rows:
-        other = await profile_referenced(session, row.volume_name)
-        if other:
+        if await profile_referenced(session, row.volume_name):
             raise HTTPException(409, f"A persistent profile for this {what} is still used "
-                                     f"by instance {other.name}; delete it first")
+                                     "by an instance; delete that instance first")
     for row in rows:
         try:
             await asyncio.to_thread(runtime.remove_volume, row.volume_name)

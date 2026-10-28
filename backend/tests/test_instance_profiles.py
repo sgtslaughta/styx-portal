@@ -214,7 +214,7 @@ async def test_template_delete_409_when_profile_referenced(admin_client, session
     await session.commit()
     r = await admin_client.delete(f"/api/templates/{tid}")
     assert r.status_code == 409
-    assert "template is still used by instance ref" in r.json()["detail"]
+    assert "still used by an instance" in r.json()["detail"] and "ref" not in r.json()["detail"]
     shared_docker.remove_volume.assert_not_called()
 
 
@@ -231,3 +231,19 @@ async def test_user_delete_purges_profiles(admin_client, session, tid, shared_do
     shared_docker.remove_volume.assert_called_once_with(vol)
     assert (await session.exec(select(UserProfile))).all() == []
     assert uid
+
+
+@pytest.mark.asyncio
+async def test_member_template_delete_spares_other_users_profiles(member_client, session, shared_docker):
+    r = await member_client.post("/api/templates", json={**TMPL, "name": "mine-tmpl"})
+    assert r.status_code in (200, 201), r.text
+    mtid = r.json()["id"]
+    other = User(username="other", email="o@example.com", password_hash="x", role="member")
+    session.add(other)
+    await session.commit()
+    await session.refresh(other)
+    await _profile_row(session, other.id, mtid)          # someone else's profile
+    r = await member_client.delete(f"/api/templates/{mtid}")
+    assert r.status_code == 409 and "ask an admin" in r.json()["detail"]
+    shared_docker.remove_volume.assert_not_called()
+    assert len((await session.exec(select(UserProfile))).all()) == 1

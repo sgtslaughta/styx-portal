@@ -171,7 +171,7 @@ async def delete_template(
     else:
         require_owner_or_admin(template.owner_id, user)
 
-    await profiles.purge_profiles(session, docker, template_id=template.id)
+    await profiles.purge_profiles(session, docker, template_id=template.id, actor=user)
     await session.delete(template)
     await session.commit()
     return Response(status_code=204)
