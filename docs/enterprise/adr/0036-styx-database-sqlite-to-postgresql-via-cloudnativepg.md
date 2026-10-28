@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Migrate to PostgreSQL managed by CloudNativePG (3 instances) and run the backend multi-replica.
+Migrate to PostgreSQL managed by CloudNativePG (3 instances) and run the backend multi-replica. Details in ADR-0056 (Alembic, leader election, state in Postgres, CNPG-managed roles).
 
 ## Alternatives considered
 

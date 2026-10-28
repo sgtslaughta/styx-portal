@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Give each user a 10 GB home (warn at 80%) mounted in every desktop, and 2 GB persistent profiles per app.
+Give each user a 10 GB home (warn at 80%) mounted in every desktop, and 2 GB persistent profiles per app as CephFS subvolumes (ADR-0054). Homes are keyed by an immutable POSIX UID (ADR-0052).
 
 ## Alternatives considered
 

@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Maintain a single codebase with two deployment profiles (homelab k3s, enterprise RKE2) selected by configuration. A fork of Styx is an explicit anti-goal.
+Maintain a single codebase with two deployment profiles (homelab k3s, enterprise RKE2) selected by configuration. A fork of Styx is an explicit anti-goal. The enterprise profile hard-disables homelab-only features (ADR-0053). Selkies is not Styx: a maintained patch set is allowed there (ADR-0058).
 
 ## Alternatives considered
 
@@ -36,4 +36,4 @@ Negative:
 
 Follow-up work:
 
-- Define profile mechanism (values, feature flags) in phase 1.
+- Define profile mechanism (values, feature flags) in phase 1; enterprise build is sourced from federal GitLab (ADR-0048).

@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Link upstream federal GitLab, host Wiki.js and Matrix (Synapse plus Element), all via OIDC to Keycloak; non-OIDC apps sit behind Styx forwardAuth; Nextcloud dropped because OneDrive covers files.
+Link upstream federal GitLab (a link only, not under our SSO claim), host Wiki.js and Matrix (Synapse plus Element) via OIDC to Keycloak; non-OIDC apps sit behind Styx forwardAuth; Nextcloud dropped because OneDrive covers files.
 
 ## Alternatives considered
 

@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Provide a 'Remove access' flow that disables the account and kills sessions immediately; auto-disable at end date; disable after 35 days of inactivity; delete after a 90-day review.
+Provide a 'Remove access' flow that disables the account and kills sessions immediately; auto-disable at end date; disable after 35 days of inactivity; delete after a 90-day review counted from the disable date.
 
 ## Alternatives considered
 
@@ -31,8 +31,7 @@ Positive:
 Negative:
 
 - Inactivity disable may lock out legitimate infrequent users.
-- Meaning of the '90-day review' start point is not fully specified.
 
 Follow-up work:
 
-- Specify review trigger and data disposition in phase 2.
+- Specify data disposition at deletion in phase 2.

@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Show new accounts in an admin 'Recently provisioned' view, send a daily digest to the security officer, and offer one-click suspend.
+Show new accounts in an admin 'Recently provisioned' view, send a daily digest (portal and Matrix) to the security officer, and offer one-click suspend.
 
 ## Alternatives considered
 

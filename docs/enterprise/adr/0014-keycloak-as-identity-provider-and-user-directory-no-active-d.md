@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Run Keycloak (two replicas) as IdP and the sole user directory.
+Run Keycloak (two replicas) as IdP and the sole user directory. Keycloak is authoritative for users and groups; Styx mirrors groups from OIDC claims (ADR-0051).
 
 ## Alternatives considered
 

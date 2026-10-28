@@ -1,4 +1,4 @@
-# ADR-0040: Desktop egress only via on-prem Squid proxy
+# ADR-0040: Desktop egress via on-prem Squid with category blocking
 
 - Status: Proposed
 - Date: 2026-10-28
@@ -13,26 +13,28 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Permit desktop egress only through on-prem Squid with URL logs to Elastic; default-allow internet minus a blocklist; LAN only to approved services; allowlist mode per group.
+Internet is allowed by default with content/category blocking: Squid plus free category blocklists (for example UT1) with e2guardian-style filtering. File-sharing, webmail, paste sites and anonymizers are blocked. There is no SSL-bump (no TLS decryption), so filtering is by hostname/SNI and hostnames are logged to Elastic. LAN is reachable only for approved services. Cilium denies all non-proxy egress, including SSH and UDP/WebRTC. Allowlist mode per group remains. SC-7(5) is tailored (R01).
 
 ## Alternatives considered
 
 Entries beyond those recorded in design.md are the obvious options, not documented discussion.
 
-- Direct NAT egress - no URL logging.
+- Direct NAT egress - no logging.
 - Default-deny everywhere - heavy operational burden.
+- SSL-bump - decrypts CUI traffic and adds a high-value target.
 
 ## Consequences
 
 Positive:
 
-- Visibility into outbound traffic.
+- Visibility into outbound hostnames; common exfiltration categories blocked.
+- No TLS decryption keeps the proxy out of CUI content.
 
 Negative:
 
-- Default-allow weakens exfiltration posture (see design inconsistencies).
-- TLS interception question undecided.
+- Uncategorized sites remain reachable; residual exfiltration risk accepted (R01).
+- Hostname-only logs cannot show URLs or content.
 
 Follow-up work:
 
-- Blocklist source and TLS policy in phase 3.
+- Blocklist update job and review cadence in phase 3.

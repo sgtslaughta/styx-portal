@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Require mTLS (OpenBao-issued client cert, rotated yearly) plus bearer token (90-day), GCC High IP allowlist at the DMZ for /provisioning only, approval-ID and approver validation, strict schema, idempotency, non-admin groups only, and audit of every call.
+Require mTLS (OpenBao-issued client cert, rotated yearly) plus bearer token (90-day), GCC High IP allowlist at the DMZ for the provision host only, approval-ID check, approver validation, strict schema, idempotency, non-admin groups only, and audit of every call. Approver validation means Styx checks that the asserted approver is a known group manager; it cannot verify the M365 approval itself. The real control is the human review in D23 (R04).
 
 ## Alternatives considered
 
@@ -32,7 +32,8 @@ Negative:
 
 - Cert and token rotation operations.
 - Dependence on stable GCC High IP ranges.
+- A compromised flow could assert a valid manager; detected only by the D23 review.
 
 Follow-up work:
 
-- Where mTLS terminates (DMZ vs in-cluster) to be decided in phase 2.
+- mTLS terminates on provision.<domain> at the DMZ proxy (ADR-0049, 0050); confirm in phase 2.

@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Expose inbound TCP 443 to a pair of DMZ reverse proxies (HAProxy or Traefik, product choice open). No Cloudflare or overlay network.
+Expose inbound TCP 443 to a pair of DMZ HAProxy reverse proxies that terminate TLS (ADR-0050). No Cloudflare or overlay network.
 
 ## Alternatives considered
 
@@ -32,8 +32,7 @@ Positive:
 Negative:
 
 - Direct internet exposure demands strong DMZ hardening and DDoS handling.
-- Proxy product still to be chosen.
 
 Follow-up work:
 
-- Choose HAProxy vs Traefik and define DMZ rules in phase 1.
+- Define DMZ rules and the client-cert header format in phase 1/2.

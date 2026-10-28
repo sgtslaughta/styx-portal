@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Users request access with an M365 Form; Power Automate runs approval and calls an HTTPS webhook (SCIM-shaped) into Styx, which provisions Keycloak.
+Users request access with an M365 Form; Power Automate runs approval and calls an HTTPS webhook (SCIM-shaped) into Styx, which provisions Keycloak. The premium HTTP connector is licensed (accepted cost, ADR-0005); the flow has two licensed named co-owners; cost recorded.
 
 ## Alternatives considered
 
@@ -32,6 +32,7 @@ Negative:
 
 - Power Automate is an external dependency and trust anchor.
 - SCIM subset is not yet defined.
+- Flow ownership and licensing must survive staff turnover (two co-owners).
 
 Follow-up work:
 

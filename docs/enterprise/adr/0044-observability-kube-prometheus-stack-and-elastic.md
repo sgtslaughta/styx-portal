@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Use kube-prometheus-stack for metrics and ship logs/audit to Elastic (90 days hot, 1 year archive). Provide SLO dashboards (login, launch time, stream latency, headroom) and alerts to ops email/Matrix.
+Use kube-prometheus-stack for metrics and ship logs/audit to Elastic (90 days hot, 1 year archive). Provide SLO dashboards (login, launch time, stream latency, headroom). Stream latency is measured by a client-side RTT metric reported to Prometheus. Alerts and notifications go to the portal and Matrix; an SMTP relay is optional config if one is provided later (ADR-0059).
 
 ## Alternatives considered
 
@@ -30,8 +30,8 @@ Positive:
 
 Negative:
 
-- Log volume cost (Squid URLs, clipboard events).
-- Alert routing through Matrix depends on Matrix availability.
+- Log volume cost (Squid hostnames, clipboard/file metadata events).
+- Alert routing through Matrix depends on Matrix availability; the portal is the fallback.
 
 Follow-up work:
 

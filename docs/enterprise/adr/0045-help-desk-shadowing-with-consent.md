@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Require user consent to view, a second consent to control, a 'being viewed' banner, and log all shadowing.
+Distinguish shadowing (help-desk support, with consent) from sharing (peer collaboration, v2). Shadowing requires user consent to view, a second consent to control, a 'being viewed' banner, and is logged. Two-stage consent is implemented in the Styx gateway. (Builder call.)
 
 ## Alternatives considered
 
@@ -34,4 +34,4 @@ Negative:
 
 Follow-up work:
 
-- Technical mechanism in phase 5.
+- Gateway mechanism in phase 5.

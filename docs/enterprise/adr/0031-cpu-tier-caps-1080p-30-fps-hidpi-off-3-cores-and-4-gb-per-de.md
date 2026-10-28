@@ -31,8 +31,7 @@ Positive:
 Negative:
 
 - Degraded experience for demanding users until GPU tier.
-- Totals imply more cores than D06 may state (see design inconsistencies).
 
 Follow-up work:
 
-- Validate in load test (D47).
+- Validate in load test (D47); core arithmetic is in ADR-0009.

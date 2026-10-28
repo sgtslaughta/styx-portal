@@ -13,14 +13,15 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Check OCSP at every login and fall back to a cached CRL when OCSP is unavailable.
+Check OCSP (per issuer) first and fall back to a local CRL mirror maintained by a cronjob and read by path in Keycloak. Alert on CRL age. (Builder call.)
 
 ## Alternatives considered
 
 Entries beyond those recorded in design.md are the obvious options, not documented discussion.
 
 - CRL only - staleness window.
-- No revocation checking - unacceptable for CAC.
+- No revocation checking - unacceptable for smart cards.
+- Per-login CRL download - slow and fragile.
 
 ## Consequences
 
@@ -30,9 +31,9 @@ Positive:
 
 Negative:
 
-- Dependence on DoD OCSP reachability from the DMZ/Keycloak.
-- Cached CRL fallback has a bounded staleness risk.
+- Dependence on DoD and federal OCSP reachability from Keycloak.
+- CRL mirror has a bounded staleness risk, covered by the age alert.
 
 Follow-up work:
 
-- Set CRL cache max-age and failure policy in phase 2.
+- Set CRL max-age and failure policy in phase 2.

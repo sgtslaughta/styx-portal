@@ -1,4 +1,4 @@
-# ADR-0041: Smart-card passthrough via own open-source helper
+# ADR-0041: Smart-card passthrough via own open-source helper (phase 4)
 
 - Status: Proposed
 - Date: 2026-10-28
@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Build an own open-source helper (vpcd/virtualsmartcard-based), signed and MDM-pushed, Windows first then macOS. It relays PC/SC only to the user's own session over the authenticated connection and has its own threat model.
+Build an own open-source helper (vpcd/virtualsmartcard-based), signed (Windows code-signing certificate, Apple developer program) and MDM-pushed, Windows first then macOS. It relays PC/SC only to the user's own session, authenticates with its own CAC mTLS plus a per-session one-time token, enforces an APDU allowlist, allows signing only with user interaction, and has its own threat model. Delivered in phase 4 because pilots need the card inside the desktop.
 
 ## Alternatives considered
 
@@ -31,8 +31,9 @@ Positive:
 Negative:
 
 - Custom security-critical code to maintain and assess.
-- Delivered last (phase 6).
+- On the critical path for Pilot 25.
+- Signing certificates are a recurring cost (ADR-0005).
 
 Follow-up work:
 
-- Threat model and signing process in phase 6.
+- Threat model and signing process in phase 4.

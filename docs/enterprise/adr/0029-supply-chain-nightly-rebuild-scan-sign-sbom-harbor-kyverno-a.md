@@ -3,7 +3,7 @@
 - Status: Proposed
 - Date: 2026-10-28
 - Decision ID: D29
-- Related controls: SR-3, SR-4, SI-2, SI-7, RA-5, CM-7, CM-14
+- Related controls: SR-3, SR-4, SI-2, SI-7, RA-5, CM-7
 
 ## Context
 

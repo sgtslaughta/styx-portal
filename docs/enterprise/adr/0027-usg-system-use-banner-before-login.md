@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Display the USG banner before login.
+Display the USG banner on a banner host that does not request a client certificate, before the user is redirected to login.<domain> where the CAC mTLS happens (ADR-0049).
 
 ## Alternatives considered
 
@@ -33,4 +33,4 @@ Negative:
 
 Follow-up work:
 
-- Banner placement in Keycloak login flow in phase 2.
+- Banner host and login flow in phase 2.

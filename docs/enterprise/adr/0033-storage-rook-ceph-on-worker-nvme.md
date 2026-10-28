@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Run Rook-Ceph on worker NVMe providing CephFS (homes), RBD (volumes) and RGW (S3).
+Run Rook-Ceph on worker NVMe providing CephFS (homes and profiles), RBD (volumes) and RGW (S3, including cold archive). OSDs get per-node CPU/memory reservations (ADR-0055).
 
 ## Alternatives considered
 

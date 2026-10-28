@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Provision two local Keycloak admin accounts (username, password, TOTP), credentials escrowed in OpenBao. Any use alerts ops and the security officer.
+Provision two local Keycloak admin accounts (username, password, TOTP). Any use alerts ops and the security officer. The break-glass set is escrowed in OpenBao and also offline, sealed in the safe: offline RKE2 kubeconfig, OpenBao root/recovery, Ceph admin key, and the Styx emergency admin (D42).
 
 ## Alternatives considered
 
@@ -30,8 +30,9 @@ Positive:
 
 Negative:
 
-- Contradicts the CAC-only rule by design; exception must be documented.
-- Escrow in OpenBao creates a dependency on OpenBao unseal.
+- Contradicts the smart-card-only rule by design (R06).
+- OpenBao escrow alone would depend on unseal; the offline copy removes that dependency.
+- Offline safe needs custody procedure and periodic checks.
 
 Follow-up work:
 

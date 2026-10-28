@@ -13,20 +13,20 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Collect first name, last name, EDIPI, email, groups, approving manager and end date (required for contractors).
+Collect first name, last name, email, card type (CAC/PIV/PIV-I), EDIPI (CAC only), groups, approving manager and end date (required for contractors).
 
 ## Alternatives considered
 
 Entries beyond those recorded in design.md are the obvious options, not documented discussion.
 
-- Fewer fields without EDIPI - cannot link form to card.
+- Fewer fields without card type - cannot bind PIV/PIV-I.
 - Optional end date for contractors - misses auto-offboarding.
 
 ## Consequences
 
 Positive:
 
-- EDIPI links form to card; end date drives auto-disable.
+- Request links to the card at first login (ADR-0016); end date drives auto-disable.
 
 Negative:
 

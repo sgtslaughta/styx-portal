@@ -1,4 +1,4 @@
-# ADR-0047: Rollout gated by evidence: pilot 25, pilot 100, then all
+# ADR-0047: Rollout gated by evidence: pilot 25, pilot 100, then all users
 
 - Status: Proposed
 - Date: 2026-10-28
@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Pilot 25 after phase 4, 100 after phase 5, and all users after a load-test gate: 250-session synthetic soak, launch p95 under 10 s, stream p95 under 80 ms, zero drops over 4 hours.
+Pilot 25 after phase 4, 100 after phase 5, and all users after the load-test gate, which follows phase 5: 200-session synthetic soak, launch p95 under 10 s, stream p95 under 80 ms (client-side RTT metric), zero drops over 4 hours. All users no longer wait for phase 6 (GPU).
 
 ## Alternatives considered
 
@@ -30,7 +30,7 @@ Positive:
 
 Negative:
 
-- Phase 6 (passthrough) is also listed before all users; ordering vs the gate needs clarity.
+- The 8-10 s launch target (ADR-0046) leaves little margin under the p95 < 10 s gate.
 
 Follow-up work:
 

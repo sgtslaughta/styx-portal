@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Lock the stream after 15 minutes idle with re-authentication by CAC PIN; stop sessions disconnected 2 hours; enforce 12 hours maximum.
+Lock the stream after 15 minutes idle; stop sessions disconnected 2 hours; enforce 12 hours maximum. The lock lives in the Styx gateway: it stops forwarding the stream and shows an overlay. Unlock is a fresh TLS handshake on login.<domain> with session resumption disabled, which proves card presence, not PIN entry (R02). (Builder call on mechanism.)
 
 ## Alternatives considered
 
@@ -21,18 +21,20 @@ Entries beyond those recorded in design.md are the obvious options, not document
 
 - Longer idle - weaker AC-11.
 - No max duration - stale sessions.
+- In-desktop lock screen - inside the user's own session, bypassable.
 
 ## Consequences
 
 Positive:
 
 - Clear AC-11/AC-12 mapping.
+- Lock is enforced outside the desktop.
 
 Negative:
 
-- CAC PIN re-auth requires card access in the browser while smart-card passthrough is only phase 6.
-- Lock mechanism inside Selkies is open.
+- Unlock does not prove PIN entry (R02).
+- Needs the Selkies lock-overlay patch (ADR-0058) and a gateway change.
 
 Follow-up work:
 
-- Decide lock-screen mechanism in phase 4.
+- Implement gateway lock and overlay hook in phase 4.

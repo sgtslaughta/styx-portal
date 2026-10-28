@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Provide a home with My desktops, My services and announcements; desktops in their own tab with slim toolbar; warm pools (~10% of peak, time-of-day) for ~3 s launch; light/dark design system with branding; self-service for quota, files, profiles and sessions; status banner and notifications; role-gated admin console; Section 508/WCAG 2.1 AA.
+Provide a home with My desktops, My services and announcements; desktops in their own tab with slim toolbar. Launch target is 8-10 s (users can wait): images pre-pulled on all workers and home/profile mounted at pod start; per-image warm pools are dropped from v1 (optional later: per-user scheduled pre-warm). Also: light/dark design system with branding; self-service for quota, files, profiles and sessions; status banner and notifications; role-gated admin console; Section 508/WCAG 2.1 AA.
 
 ## Alternatives considered
 
@@ -30,8 +30,9 @@ Positive:
 
 Negative:
 
-- Large frontend scope; warm pools consume idle capacity.
+- Large frontend scope.
+- Launch is slower than a warm-pool design; accepted by the owner.
 
 Follow-up work:
 
-- Warm-pool sizing algorithm in phase 5.
+- Image pre-pull mechanism and launch-time instrumentation in phase 5.

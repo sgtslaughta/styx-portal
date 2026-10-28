@@ -3,7 +3,7 @@
 - Status: Proposed
 - Date: 2026-10-28
 - Decision ID: D13
-- Related controls: CA-2, PL-2, SA-5, SA-17
+- Related controls: CA-2, PL-2, SA-5
 
 ## Context
 
@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Maintain one ADR per decision (D01-D47) and a control matrix under docs/enterprise.
+Maintain one ADR per decision (D01-D59) and a control matrix under docs/enterprise.
 
 ## Alternatives considered
 

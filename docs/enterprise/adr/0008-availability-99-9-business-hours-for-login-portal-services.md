@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Target 99.9% availability during business hours for login, portal and services. Running desktops may drop and reconnect after node loss.
+Target 99.9% availability during business hours for login, portal and services. Running desktops may drop and reconnect after node loss. Planned maintenance (one announced evening window per month) is excluded from the 99.9%.
 
 ## Alternatives considered
 
@@ -33,6 +33,7 @@ Negative:
 
 - Users lose in-memory desktop state on node failure.
 - Needs SLO measurement to demonstrate.
+- Maintenance exclusion must be announced in the portal banner (ADR-0046).
 
 Follow-up work:
 

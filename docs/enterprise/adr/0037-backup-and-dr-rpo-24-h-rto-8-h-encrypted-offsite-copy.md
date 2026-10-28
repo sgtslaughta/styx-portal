@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Target RPO 24 h and RTO 8 h using CNPG backups, Velero and nightly home snapshots, with an encrypted offsite copy in a CUI-authorized cloud bucket. No second site.
+Target RPO 24 h and RTO 8 h using CNPG backups, Velero and nightly home snapshots. Offsite copy is an encrypted export to a CUI-authorized cloud bucket (~$20-50/month, accepted), using CephFS snapshot-based incremental export. A full-site restore test is part of phase 1. No second site: CP-7 is a recorded exception (R03).
 
 ## Alternatives considered
 
@@ -30,9 +30,10 @@ Positive:
 
 Negative:
 
-- No alternate processing site (CP-7) - needs exception or risk acceptance.
-- Recovery within 8 h is unproven.
+- No alternate processing site (CP-7); risk acceptance R03.
+- Recovery within 8 h is unproven until the phase 1 restore test.
+- Recurring cloud cost.
 
 Follow-up work:
 
-- Restore tests (phase 1 exit); record CP-6/CP-7 approach.
+- Full-site restore test (phase 1 exit); record CP-6/CP-7 in eMASS.

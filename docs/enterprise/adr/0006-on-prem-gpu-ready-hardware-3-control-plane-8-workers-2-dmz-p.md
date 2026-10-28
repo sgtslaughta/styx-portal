@@ -1,4 +1,4 @@
-# ADR-0006: On-prem GPU-ready hardware: 3 control plane, ~8 workers, 2 DMZ proxies
+# ADR-0006: On-prem GPU-ready hardware: 3 control plane, 8 workers, 2 DMZ proxies
 
 - Status: Proposed
 - Date: 2026-10-28
@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Procure 3 control-plane nodes, about 8 workers (96-128 cores, 512 GB, per design wording) and 2 DMZ proxy hosts, specified so GPU cards can be added later.
+Procure 3 control-plane nodes, 8 workers (each 128 cores and 512 GB RAM) and 2 DMZ proxy hosts, specified so GPU cards can be added later.
 
 ## Alternatives considered
 
@@ -37,4 +37,4 @@ Negative:
 
 Follow-up work:
 
-- Resolve whether the core/RAM figures are per worker or in total (see design inconsistencies); capacity check against D09/D31 in phase 1.
+- Capacity check against D09/D31 holds on paper (N-1 budget in ADR-0009); confirm in the phase 1 load tests.

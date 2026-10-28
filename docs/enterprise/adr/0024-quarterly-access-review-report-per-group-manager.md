@@ -13,7 +13,7 @@ Source: docs/enterprise/design.md section 5.
 
 ## Decision
 
-Generate a quarterly access-review report per group manager for recertification.
+Generate a quarterly access-review report per group manager in the admin console, with certify and revoke actions and a CSV export. Admin CSV import must reference an approval record. (Builder call on format.)
 
 ## Alternatives considered
 
@@ -26,7 +26,7 @@ Entries beyond those recorded in design.md are the obvious options, not document
 
 Positive:
 
-- Evidence of recertification.
+- Evidence of recertification with actions recorded.
 
 Negative:
 
@@ -34,4 +34,4 @@ Negative:
 
 Follow-up work:
 
-- Report content and sign-off workflow in phase 2/5.
+- Sign-off workflow and report content in phase 2/5.
