@@ -4,6 +4,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.database import get_session
 from app.models import ServiceTemplate, User
+from app.routers.instances import get_docker_manager
+from app.services import profiles
 from app.schemas import TemplateCreate, TemplateUpdate
 from app.security.deps import get_current_user, require_owner_or_admin
 from app.services.docker_args import validate_extra_args, DockerArgError
@@ -117,6 +119,7 @@ async def update_template(
     body: TemplateUpdate,
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
+    docker=Depends(get_docker_manager),
 ):
     template = await session.get(ServiceTemplate, template_id)
     if not template:
@@ -155,6 +158,7 @@ async def delete_template(
     template_id: str,
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
+    docker=Depends(get_docker_manager),
 ):
     template = await session.get(ServiceTemplate, template_id)
     if not template:
@@ -167,6 +171,7 @@ async def delete_template(
     else:
         require_owner_or_admin(template.owner_id, user)
 
+    await profiles.purge_profiles(session, docker, template_id=template.id)
     await session.delete(template)
     await session.commit()
     return Response(status_code=204)

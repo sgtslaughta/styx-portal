@@ -39,13 +39,42 @@ async def profile_in_use(session: AsyncSession, volume: str,
     return (await session.exec(stmt)).first()
 
 
+async def profile_referenced(session: AsyncSession, volume: str) -> Instance | None:
+    """Any instance (any status) pointing at this profile volume."""
+    return (await session.exec(
+        select(Instance).where(Instance.profile_volume == volume))).first()
+
+
+async def purge_profiles(session: AsyncSession, runtime, *, user_id: str | None = None,
+                         template_id: str | None = None) -> None:
+    """Remove all profile rows+volumes for a user or template. Caller commits."""
+    stmt = select(UserProfile)
+    if user_id is not None:
+        stmt = stmt.where(UserProfile.user_id == user_id)
+    if template_id is not None:
+        stmt = stmt.where(UserProfile.template_id == template_id)
+    rows = (await session.exec(stmt)).all()
+    what = "user" if user_id is not None else "template"
+    for row in rows:
+        other = await profile_referenced(session, row.volume_name)
+        if other:
+            raise HTTPException(409, f"A persistent profile for this {what} is still used "
+                                     f"by instance {other.name}; delete it first")
+    for row in rows:
+        try:
+            await asyncio.to_thread(runtime.remove_volume, row.volume_name)
+        except Exception:  # noqa: BLE001  volume may already be gone
+            logger.warning("profile volume %s not removed", row.volume_name, exc_info=True)
+        await session.delete(row)
+
+
 async def delete_profile(session: AsyncSession, runtime, user_id: str, template_id: str) -> None:
     row = await session.get(UserProfile, (user_id, template_id))
     if row is None:
         raise HTTPException(404, "Profile not found")
-    other = await profile_in_use(session, row.volume_name)
+    other = await profile_referenced(session, row.volume_name)
     if other:
-        raise HTTPException(409, f"Profile is in use by {other.name}")
+        raise HTTPException(409, f"Profile is used by instance {other.name}; delete that instance first")
     try:
         await asyncio.to_thread(runtime.remove_volume, row.volume_name)
     except Exception:  # noqa: BLE001  volume may already be gone
