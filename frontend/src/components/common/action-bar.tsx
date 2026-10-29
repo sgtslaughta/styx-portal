@@ -12,6 +12,7 @@ import {
   useDeleteInstance, usePauseInstance, useRestartInstance,
   useStartInstance, useStopInstance, useUnpauseInstance,
 } from "@/hooks/use-instances";
+import { useTemplates } from "@/hooks/use-templates";
 import type { Instance } from "@/lib/types";
 
 interface ActionBarProps {
@@ -34,12 +35,16 @@ export function ActionBar({ instance, size = "default", showConnect = true, clas
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [removeImage, setRemoveImage] = React.useState(false);
   const [removeTemplate, setRemoveTemplate] = React.useState(false);
+  const [deleteProfile, setDeleteProfile] = React.useState(false);
+  const { data: templates } = useTemplates();
+  const tmplName = templates?.find((t) => t.id === instance.template_id)?.display_name ?? instance.name;
 
   // Reset the opt-in checkboxes whenever the dialog closes.
   React.useEffect(() => {
     if (!confirmOpen) {
       setRemoveImage(false);
       setRemoveTemplate(false);
+      setDeleteProfile(false);
     }
   }, [confirmOpen]);
 
@@ -52,7 +57,7 @@ export function ActionBar({ instance, size = "default", showConnect = true, clas
 
   function doDestroy() {
     destroy.mutate(
-      { id: instance.id, removeImage, removeTemplate },
+      { id: instance.id, removeImage, removeTemplate, deleteProfile },
       {
         onError: (e: Error) => toast.error(`Destroy failed: ${e.message}`),
         onSuccess: () => toast.success(`Destroyed ${instance.name}`),
@@ -126,7 +131,7 @@ export function ActionBar({ instance, size = "default", showConnect = true, clas
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title={`Destroy "${instance.name}"?`}
-        description="Instance data is deleted. Your persistent profile (if used) is kept."
+        description="Instance data is deleted. Your persistent profile is kept unless you tick the box."
         confirmLabel="Destroy"
         variant="destructive"
         confirmPhrase={instance.name}
@@ -150,6 +155,20 @@ export function ActionBar({ instance, size = "default", showConnect = true, clas
               />
               Also delete the template (only if no other instance uses it)
             </label>
+            {instance.profile_volume && (
+              <label className="flex items-start gap-2 text-xs text-destructive">
+                <input
+                  type="checkbox"
+                  checked={deleteProfile}
+                  onChange={(e) => setDeleteProfile(e.target.checked)}
+                  className="mt-0.5 accent-destructive"
+                />
+                <span>
+                  Also delete my persistent profile for {tmplName} (settings, logins)
+                  <span className="block text-muted-foreground">This cannot be undone.</span>
+                </span>
+              </label>
+            )}
           </div>
         }
         onConfirm={doDestroy}

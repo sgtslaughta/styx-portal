@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { profileMountOf } from "@/lib/profiles";
 import { slugify } from "@/lib/utils";
 import { useCreateTemplate, useUpdateTemplate, useTemplates } from "@/hooks/use-templates";
 import { useCreateInstance } from "@/hooks/use-instances";
@@ -108,7 +109,7 @@ function LaunchModalBody({ open, onClose, registryImage: regProp, template: tmpl
     try {
       const tmpl = await upsertTemplate(false);
       await createInstance.mutateAsync({ template_id: tmpl.id, name: cfg.name, subdomain: cfg.subdomain,
-        use_profile: !!cfg.profileMount.trim() && useProfile,
+        use_profile: !!profileMountOf(cfg.profileMount, cfg.volumes) && useProfile,
         use_gpu: useGpu });
       onClose();
       wave.play(`Launching ${cfg.name}…`);
@@ -179,7 +180,7 @@ function LaunchModalBody({ open, onClose, registryImage: regProp, template: tmpl
         )}
 
         <LaunchOptions
-          showProfile={!!cfg.profileMount.trim()}
+          showProfile={!!profileMountOf(cfg.profileMount, cfg.volumes)}
           showGpu={cfg.gpuEnabled && !!user?.can_use_gpu}
           useProfile={useProfile} onProfile={setUseProfile}
           useGpu={useGpu} onGpu={setUseGpu}
