@@ -303,7 +303,10 @@ export function useLaunchConfig(opts: {
     Record<string, unknown>
   >(template?.extra_docker_args ?? {});
   const [shared, setShared] = useState(template?.shared ?? false);
-  const [profileMount, setProfileMount] = useState(template?.profile_mount ?? "");
+  const [profileMount, setProfileMount] = useState(
+    template?.profile_mount ??
+      (registryImage && /^(lscr\.io\/)?linuxserver\//.test(prefillImage) ? "/config" : "")
+  );
 
   function buildTemplateData() {
     const secOpts = securityOpts.filter((s) => s.enabled).map((s) => s.value);
