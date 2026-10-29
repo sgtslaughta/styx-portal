@@ -200,19 +200,12 @@ async def health():
     return {"status": "ok"}
 
 
-_INSTANCE_UNAVAILABLE_HTML = r"""<!doctype html>
+_INSTANCE_UNAVAILABLE_HTML = """<!doctype html>
 <meta charset="utf-8">
-<title>Instance unavailable</title>
-<meta http-equiv="refresh" content="3;url=/">
-<script>
-  (function () {
-    var m = location.pathname.match(/^\/i\/([^\/]+)/);
-    var q = m ? "?stopped=" + encodeURIComponent(m[1]) : "";
-    location.replace("/" + q);
-  })();
-  /* This page handles /i/subdomain routes that are no longer running */
-</script>
-<p>Instance unavailable. Redirecting&hellip; <a href="/">My Instances</a></p>
+<title>Starting your desktop</title>
+<meta http-equiv="refresh" content="3">
+<p>Your desktop is starting&hellip; this page reloads automatically.
+<a href="/">My desktops</a></p>
 """
 
 

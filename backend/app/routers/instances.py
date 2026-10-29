@@ -15,7 +15,7 @@ from app.security.deps import get_current_user, require_owner_or_admin
 from app.services.docker_manager import DockerManager
 from app.services.k8s_runtime import ensure_instance_supported, instance_runtime
 from app.services.screenshot import ScreenshotService
-from app.services import gpu_access, profiles
+from app.services import gpu_access, instance_readiness, profiles
 from app.services.traefik_labels import generate_traefik_labels
 from app.services.audit import audit
 from app.services.settings_store import settings as sys_settings
@@ -242,11 +242,13 @@ async def _launch_instance_background(instance_id: str, template_id: str):
             instance.status = "running"
             instance.started_at = now
             instance.last_activity = now
+            instance_readiness.defer_on_k8s(instance)
             session.add(instance)
 
             event = SessionEvent(instance_id=instance.id, event_type="started")
             session.add(event)
             await session.commit()
+            instance_readiness.kick(instance)
             await _refresh_routes(session)
 
         except Exception as e:
@@ -382,6 +384,7 @@ async def start_instance(
     instance.status = "running"
     instance.started_at = now
     instance.last_activity = now
+    instance_readiness.defer_on_k8s(instance)
     session.add(instance)
 
     event = SessionEvent(
@@ -392,6 +395,7 @@ async def start_instance(
     session.add(event)
     await session.commit()
     await session.refresh(instance)
+    instance_readiness.kick(instance)
     await _refresh_routes(session)
     return instance
 
@@ -449,12 +453,14 @@ async def restart_instance(
     instance.started_at = now
     instance.last_activity = now
     instance.error_message = None
+    instance_readiness.defer_on_k8s(instance)
     session.add(instance)
 
     event = SessionEvent(instance_id=instance.id, event_type="restarted")
     session.add(event)
     await session.commit()
     await session.refresh(instance)
+    instance_readiness.kick(instance)
     return instance
 
 
@@ -496,12 +502,14 @@ async def recreate_instance(
     instance.started_at = now
     instance.last_activity = now
     instance.error_message = None
+    instance_readiness.defer_on_k8s(instance)
     session.add(instance)
 
     event = SessionEvent(instance_id=instance.id, event_type="recreated")
     session.add(event)
     await session.commit()
     await session.refresh(instance)
+    instance_readiness.kick(instance)
     await _refresh_routes(session)
     return instance
 

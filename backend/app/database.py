@@ -79,6 +79,7 @@ async def _run_migrations(conn):
 
     migrations = [
         ("instances", "error_message", "TEXT"),
+        ("instances", "status_detail", "TEXT"),
         ("instances", "owner_id", "TEXT"),
         ("service_templates", "owner_id", "TEXT"),
         ("service_templates", "dind", "BOOLEAN"),

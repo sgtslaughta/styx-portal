@@ -14,11 +14,8 @@ async def test_instance_unavailable_page(client):
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/html")
     body = resp.text
-    # JS derives subdomain from the path and redirects to /?stopped=...
-    assert "location.replace" in body
-    assert "/i/" in body
-    assert "stopped=" in body
-    # no-JS fallback to My Instances
+    assert "http-equiv=\"refresh\" content=\"3\"" in body
+    assert "starting" in body.lower()
     assert 'href="/"' in body
 
 
