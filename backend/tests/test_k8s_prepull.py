@@ -8,23 +8,28 @@ from app.services import k8s_prepull as pp
 
 
 def test_daemonset_shape():
-    ds = pp.build_prepull_daemonset(["a/x:latest", "b/y:latest"], "ns", stamp="T")
-    assert ds["metadata"] == {"name": "styx-image-prepull", "namespace": "ns",
-                              "labels": {"app.kubernetes.io/managed-by": "styx-backend"}}
+    ds = pp.build_prepull_daemonset("a/x:latest", "ns", stamp="T")
+    name = pp.prepull_name("a/x:latest")
+    assert name.startswith("styx-prepull-") and len(name) == len("styx-prepull-") + 10
+    assert name != pp.prepull_name("b/y:latest")
+    assert ds["metadata"]["name"] == name
+    assert ds["metadata"]["labels"] == {"styx/prepull": "true",
+                                        "app.kubernetes.io/managed-by": "styx-backend"}
     tpl = ds["spec"]["template"]
     assert tpl["metadata"]["annotations"] == {"styx/prepull-at": "T"}
     pod = tpl["spec"]
-    assert pod["tolerations"] == [{"operator": "Exists"}]
+    assert "tolerations" not in pod
     assert pod["automountServiceAccountToken"] is False and pod["enableServiceLinks"] is False
     assert pod["securityContext"] == {"seccompProfile": {"type": "RuntimeDefault"}}
-    inits = pod["initContainers"]
-    assert [c["name"] for c in inits] == ["img-0", "img-1"]
-    assert [c["image"] for c in inits] == ["a/x:latest", "b/y:latest"]
-    for c in inits:
-        assert c["imagePullPolicy"] == "Always" and c["command"] == ["sh", "-c", "exit 0"]
-        assert c["securityContext"]["allowPrivilegeEscalation"] is False
-        assert c["securityContext"]["capabilities"] == {"drop": ["ALL"]}
-        assert c["resources"]["requests"] == {"cpu": "1m", "memory": "8Mi"}
+    (init,) = pod["initContainers"]
+    assert init["image"] == "a/x:latest" and init["imagePullPolicy"] == "Always"
+    assert init["command"] == ["sh", "-c", "exit 0"]
+    for c in (init, pod["containers"][0]):
+        sc = c["securityContext"]
+        assert sc["runAsNonRoot"] is True and sc["runAsUser"] == 65534 == sc["runAsGroup"]
+        assert sc["allowPrivilegeEscalation"] is False and sc["readOnlyRootFilesystem"] is True
+        assert sc["capabilities"] == {"drop": ["ALL"]}
+        assert c["resources"]["requests"] == c["resources"]["limits"] == {"cpu": "10m", "memory": "16Mi"}
     assert pod["containers"][0]["image"] == "registry.k8s.io/pause:3.10"
 
 
@@ -45,15 +50,25 @@ async def test_sync_skipped_on_docker(session, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_sync_applies_on_k8s(session, monkeypatch):
+async def test_sync_trusted_only_one_ds_per_image_and_prunes(session, monkeypatch):
+    from app.models import User
     monkeypatch.setenv("ROUTE_BACKEND", "k8s")
-    session.add(ServiceTemplate(name="t", display_name="T", image="a/x:1", internal_port=3000))
+    admin = User(username="adm", password_hash="x", role="admin")
+    member = User(username="mem", password_hash="x", role="user")
+    session.add_all([admin, member])
+    await session.commit()
+    for n, img, owner in [("s", "shared/x:1", None), ("a", "admin/y:1", admin.id),
+                          ("m", "member/z:1", member.id)]:
+        session.add(ServiceTemplate(name=n, display_name=n, image=img, internal_port=3000,
+                                    owner_id=owner))
     await session.commit()
     with patch("app.services.k8s_api.incluster_client") as c:
+        cl = c.return_value
+        cl.list_names.return_value = [pp.prepull_name("shared/x:1"), "styx-prepull-stale"]
         await pp.sync_prepull(session)
-    ds = c.return_value.apply.call_args[0][0]
-    assert ds["kind"] == "DaemonSet"
-    assert [i["image"] for i in ds["spec"]["template"]["spec"]["initContainers"]] == ["a/x:1"]
+    applied = {call[0][0]["metadata"]["name"]: call[0][0] for call in cl.apply.call_args_list}
+    assert set(applied) == {pp.prepull_name("shared/x:1"), pp.prepull_name("admin/y:1")}
+    cl.delete.assert_called_once_with("apps/v1", "DaemonSet", "styx-instances", "styx-prepull-stale")
 
 
 def test_schedule_noop_on_docker(monkeypatch):

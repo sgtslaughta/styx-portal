@@ -1,36 +1,44 @@
 """Pre-pull instance images on every node via a DaemonSet of pull-only initContainers."""
 import asyncio
+import hashlib
 import logging
 from datetime import datetime, timezone
 
 from sqlmodel import select
 
 from app.config import Settings
-from app.models import ServiceTemplate
+from app.models import ServiceTemplate, User
 from app.services.k8s_instance_objects import MANAGED, refuse_reason
 
 logger = logging.getLogger("styx-portal")
-NAME = "styx-image-prepull"
-_RES = {"requests": {"cpu": "1m", "memory": "8Mi"}}
-_SEC = {"allowPrivilegeEscalation": False, "capabilities": {"drop": ["ALL"]}}
+PREFIX = "styx-prepull-"
+_RES = {"requests": {"cpu": "10m", "memory": "16Mi"}, "limits": {"cpu": "10m", "memory": "16Mi"}}
+_SEC = {"runAsNonRoot": True, "runAsUser": 65534, "runAsGroup": 65534,
+        "allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True,
+        "capabilities": {"drop": ["ALL"]}}
 _bg: set[asyncio.Task] = set()
 
 
-def build_prepull_daemonset(images: list[str], ns: str, stamp: str | None = None) -> dict:
+def prepull_name(image: str) -> str:
+    return PREFIX + hashlib.sha1(image.encode(), usedforsecurity=False).hexdigest()[:10]
+
+
+def build_prepull_daemonset(image: str, ns: str, stamp: str | None = None) -> dict:
     stamp = stamp or datetime.now(timezone.utc).isoformat()
-    labels = {"app": NAME, **MANAGED}
-    # ponytail: images whose shell lacks sh fail the initContainer; add a per-template pull-only flag if that happens
-    inits = [{"name": f"img-{i}", "image": img, "imagePullPolicy": "Always",
-              "command": ["sh", "-c", "exit 0"], "resources": _RES,
-              "securityContext": dict(_SEC)} for i, img in enumerate(images)]
+    name = prepull_name(image)
+    labels = {"app": name, "styx/prepull": "true", **MANAGED}
+    # ponytail: images whose shell lacks sh (or can't run as 65534) fail the initContainer; add a per-template pull-only flag if that happens
+    init = {"name": "img", "image": image, "imagePullPolicy": "Always",
+            "command": ["sh", "-c", "exit 0"], "resources": _RES, "securityContext": dict(_SEC)}
     pod = {"automountServiceAccountToken": False, "enableServiceLinks": False,
            "securityContext": {"seccompProfile": {"type": "RuntimeDefault"}},
-           "tolerations": [{"operator": "Exists"}], "initContainers": inits,
+           "initContainers": [init],
            "containers": [{"name": "pause", "image": "registry.k8s.io/pause:3.10",
                            "resources": _RES, "securityContext": dict(_SEC)}]}
     return {"apiVersion": "apps/v1", "kind": "DaemonSet",
-            "metadata": {"name": NAME, "namespace": ns, "labels": dict(MANAGED)},
-            "spec": {"selector": {"matchLabels": {"app": NAME}},
+            "metadata": {"name": name, "namespace": ns,
+                         "labels": {"styx/prepull": "true", **MANAGED}},
+            "spec": {"selector": {"matchLabels": {"app": name}},
                      "template": {"metadata": {"labels": labels,
                                                "annotations": {"styx/prepull-at": stamp}},
                                   "spec": pod}}}
@@ -51,9 +59,22 @@ async def sync_prepull(session) -> None:
     if Settings().ROUTE_BACKEND != "k8s":
         return
     from app.services.k8s_api import incluster_client
-    templates = (await session.exec(select(ServiceTemplate))).all()
-    ds = build_prepull_daemonset(prepull_images(templates), Settings().K8S_INSTANCE_NAMESPACE)
-    await asyncio.to_thread(incluster_client().apply, ds)
+    # only shared or admin-owned templates: member templates pull at launch
+    rows = await session.exec(
+        select(ServiceTemplate).outerjoin(User, ServiceTemplate.owner_id == User.id)
+        .where((ServiceTemplate.owner_id.is_(None)) | (User.role == "admin")))
+    ns = Settings().K8S_INSTANCE_NAMESPACE
+    desired = {prepull_name(i): i for i in prepull_images(rows.all())}
+    client = incluster_client()
+
+    def _apply() -> None:
+        stamp = datetime.now(timezone.utc).isoformat()
+        for img in desired.values():
+            client.apply(build_prepull_daemonset(img, ns, stamp))
+        for name in client.list_names("apps/v1", "DaemonSet", ns, "styx/prepull=true"):
+            if name not in desired:
+                client.delete("apps/v1", "DaemonSet", ns, name)
+    await asyncio.to_thread(_apply)
 
 
 async def _sync_own_session() -> None:
