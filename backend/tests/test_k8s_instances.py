@@ -115,10 +115,10 @@ def test_status_mapping():
     assert _status(None) == {"status": "not_found"}
     assert _status({"spec": {"replicas": 0}, "status": {}})["status"] == "exited"
     assert _status({"spec": {"replicas": 1}, "status": {}})["status"] == "created"
-    s = _status({"spec": {"replicas": 1}, "status": {"readyReplicas": 1}},
+    s = _status({"spec": {"replicas": 1}, "status": {"readyReplicas": 1, "updatedReplicas": 1}},
                 [{"status": {"startTime": "2026-01-01T00:00:00Z"}}])
     assert s == {"status": "running", "started_at": "2026-01-01T00:00:00Z"}
-    assert _status({"spec": {"replicas": 1}, "status": {"readyReplicas": 1}})["started_at"] == ""
+    assert _status({"spec": {"replicas": 1}, "status": {"readyReplicas": 1, "updatedReplicas": 1}})["started_at"] == ""
 
 
 def test_container_logs():
@@ -159,3 +159,44 @@ def test_instance_usage_missing_is_zeros():
     assert _usage([])[1] == zero
     assert Rec({("GET", MET): httpx.Response(404, json={})}).runtime() \
         .instance_usage("selkies-a") == zero
+
+
+PODS = f"/api/v1/namespaces/{NS}/pods"
+
+
+def _status_rt(dep_status, pods):
+    dep = httpx.Response(200, json={"spec": {"replicas": 1}, "status": dep_status})
+    return Rec({("GET", DEP): dep,
+                ("GET", PODS): httpx.Response(200, json={"items": pods})}).runtime()
+
+
+@pytest.mark.parametrize("pods,detail", [
+    ([], "Scheduling"),
+    ([{"status": {"phase": "Pending"}}], "Scheduling"),
+    ([{"status": {"containerStatuses": [{"state": {"waiting": {"reason": "ImagePullBackOff"}}}]}}],
+     "ImagePullBackOff"),
+    ([{"status": {"containerStatuses": [{"state": {"waiting": {"reason": "ContainerCreating"}}}]}}],
+     "ContainerCreating"),
+    ([{"status": {"containerStatuses": [{"state": {"running": {}}}]}}], "Starting"),
+])
+def test_not_ready_reports_detail(pods, detail):
+    st = _status_rt({"readyReplicas": 0}, pods).get_container_status("selkies-a")
+    assert st == {"status": "created", "detail": detail}
+
+
+def _rollout_rt(dep):
+    return Rec({("GET", DEP): httpx.Response(200, json=dep),
+                ("GET", PODS): httpx.Response(200, json={"items": []})}).runtime()
+
+
+def test_old_generation_ready_is_not_running():
+    dep = {"metadata": {"generation": 3}, "spec": {"replicas": 1},
+           "status": {"observedGeneration": 2, "updatedReplicas": 1, "readyReplicas": 1}}
+    assert _rollout_rt(dep).get_container_status("selkies-a") == {
+        "status": "created", "detail": "Starting"}
+
+
+def test_updated_and_ready_is_running():
+    dep = {"metadata": {"generation": 3}, "spec": {"replicas": 1},
+           "status": {"observedGeneration": 3, "updatedReplicas": 1, "readyReplicas": 1}}
+    assert _rollout_rt(dep).get_container_status("selkies-a")["status"] == "running"

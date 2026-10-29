@@ -8,12 +8,18 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Settings
+from app.services.audit import audit
 from app.models import Instance, ServiceTemplate, UserProfile
 from app.services.template_validation import resolve_volume_name, validate_volumes
 
 logger = logging.getLogger(__name__)
 
 ACTIVE = ("running", "starting", "pulling")
+
+
+def profile_mount_of(template) -> str | None:
+    # ponytail: first volume = where the template keeps its data; explicit profile_mount overrides
+    return template.profile_mount or (template.volumes[0]["mount"] if template.volumes else None)
 
 
 def profile_volume_name(user_id: str, template_id: str) -> str:
@@ -86,16 +92,35 @@ async def delete_profile(session: AsyncSession, runtime, user_id: str, template_
     await session.commit()
 
 
+async def delete_after_instance(session: AsyncSession, runtime, instance, actor_id: str) -> bool:
+    """Best-effort profile removal after the instance row is gone; never raises 409."""
+    if not instance.profile_volume:
+        return False
+    try:
+        await delete_profile(session, runtime, instance.owner_id, instance.template_id)
+    except HTTPException as e:
+        logger.info("profile kept for %s: %s", instance.template_id, e.detail)
+        await audit(session, "profile.delete.skipped", user_id=actor_id,
+                    resource=instance.template_id, detail={"reason": str(e.detail)})
+        await session.commit()
+        return False
+    await audit(session, "profile.delete", user_id=actor_id, resource=instance.template_id,
+                detail={"profile_owner": instance.owner_id})
+    await session.commit()
+    return True
+
+
 def mounts_for(template, instance) -> list[tuple[str, str]]:
     """[(volume_name, mount)]: template volumes, profile volume replacing the one at profile_mount."""
-    prof = instance.profile_volume if template.profile_mount else None
+    mount = profile_mount_of(template)
+    prof = instance.profile_volume if mount else None
     out = []
     for vol in template.volumes:
-        if prof and vol["mount"] == template.profile_mount:
+        if prof and vol["mount"] == mount:
             continue
         out.append((resolve_volume_name(vol["name"], instance.id), vol["mount"]))
     if prof:
-        out.append((prof, template.profile_mount))
+        out.append((prof, mount))
     return out
 
 
@@ -107,7 +132,7 @@ async def _ensure_free(session, volume, template, exclude_instance_id=None) -> N
 
 async def claim_profile(session, user_id: str, template) -> str:
     """Profile volume for a new instance; 422 if the template has none, 409 if in use."""
-    if not template.profile_mount:
+    if not profile_mount_of(template):
         raise HTTPException(422, "Template does not offer persistent profiles")
     vol = await ensure_profile(session, user_id, template)
     await _ensure_free(session, vol, template)

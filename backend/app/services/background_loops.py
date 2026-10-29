@@ -89,7 +89,8 @@ async def _reconcile_instances_at_boot(session, docker) -> None:
         )
     )
     docker_down = False
-    for inst in result.all():
+    starting = result.all()
+    for inst in starting:
         if inst.container_id:
             try:
                 status = await asyncio.to_thread(docker.get_container_status, inst.container_id)
@@ -110,6 +111,11 @@ async def _reconcile_instances_at_boot(session, docker) -> None:
             inst.status = "stopped"
             session.add(inst)
     await session.commit()
+    if Settings().ROUTE_BACKEND == "k8s":
+        from app.services import instance_readiness
+        for inst in starting:
+            if inst.status == "starting":
+                instance_readiness.start_waiting(inst.id)
 
 
 async def _service_health_loop():

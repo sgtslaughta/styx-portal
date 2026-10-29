@@ -121,11 +121,26 @@ class K8sInstanceRuntime:
             return {"status": "not_found"}
         if (dep.get("spec") or {}).get("replicas", 0) == 0:
             return {"status": "exited"}
-        if ((dep.get("status") or {}).get("readyReplicas") or 0) >= 1:
+        status = dep.get("status") or {}
+        ready = (status.get("readyReplicas") or 0) >= 1
+        rolled = ((status.get("observedGeneration") or 0)
+                  >= ((dep.get("metadata") or {}).get("generation") or 0)
+                  and (status.get("updatedReplicas") or 0) >= 1)
+        if ready and not rolled:
+            return {"status": "created", "detail": "Starting"}
+        if ready:
             pods = self._pods(name)
             started = (pods[0].get("status") or {}).get("startTime", "") if pods else ""
             return {"status": "running", "started_at": started}
-        return {"status": "created"}
+        return {"status": "created", "detail": self._not_ready_reason(name)}
+
+    def _not_ready_reason(self, name: str) -> str:
+        pods = self._pods(name)
+        cs = ((pods[0].get("status") or {}).get("containerStatuses") or []) if pods else []
+        if not cs:
+            return "Scheduling"
+        state = cs[0].get("state") or {}
+        return (state.get("waiting") or {}).get("reason") or "Starting"
 
     def get_container_stats(self, name: str) -> dict:
         return {}

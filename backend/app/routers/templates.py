@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.services.k8s_prepull import schedule_sync
 from app.database import get_session
 from app.models import ServiceTemplate, User
 from app.routers.instances import get_docker_manager
@@ -96,6 +97,7 @@ async def create_template(
     session.add(template)
     await session.commit()
     await session.refresh(template)
+    schedule_sync()
     return template
 
 
@@ -150,6 +152,7 @@ async def update_template(
     session.add(template)
     await session.commit()
     await session.refresh(template)
+    schedule_sync()
     return template
 
 
@@ -174,4 +177,5 @@ async def delete_template(
     await profiles.purge_profiles(session, docker, template_id=template.id, actor=user)
     await session.delete(template)
     await session.commit()
+    schedule_sync()
     return Response(status_code=204)
