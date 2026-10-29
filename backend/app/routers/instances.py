@@ -808,7 +808,9 @@ async def get_screenshot(
     if not path:
         raise HTTPException(404, "No screenshot available")
 
-    return FileResponse(path, media_type="image/png")
+    from app.routers.instance_thumbs import head as _head, sniff_image_type
+    media = sniff_image_type(_head(path)) or "image/png"
+    return FileResponse(path, media_type=media)
 
 
 @router.post("/{instance_id}/screenshot/refresh")

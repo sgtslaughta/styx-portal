@@ -17,7 +17,7 @@ from app.middleware.rate_limit import RateLimitMiddleware
 from app.security.same_origin import svc_cookie_guard
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.models import Instance, SessionEvent, User
-from app.routers import templates, instances, registry, images
+from app.routers import templates, instances, registry, images, instance_thumbs
 from app.routers import auth as auth_router
 from app.routers import users as users_router
 from app.routers import matrix as matrix_router
@@ -170,6 +170,7 @@ app.add_middleware(
 )
 
 app.include_router(templates.router, prefix="/api/templates", tags=["templates"])
+app.include_router(instance_thumbs.router, prefix="/api/instances", tags=["instances"])
 app.include_router(instances.router, prefix="/api/instances", tags=["instances"])
 app.include_router(registry.router, prefix="/api/registry/images", tags=["registry"])
 app.include_router(images.router, prefix="/api/images", tags=["images"])
