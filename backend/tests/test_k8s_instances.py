@@ -159,3 +159,26 @@ def test_instance_usage_missing_is_zeros():
     assert _usage([])[1] == zero
     assert Rec({("GET", MET): httpx.Response(404, json={})}).runtime() \
         .instance_usage("selkies-a") == zero
+
+
+PODS = f"/api/v1/namespaces/{NS}/pods"
+
+
+def _status_rt(dep_status, pods):
+    dep = httpx.Response(200, json={"spec": {"replicas": 1}, "status": dep_status})
+    return Rec({("GET", DEP): dep,
+                ("GET", PODS): httpx.Response(200, json={"items": pods})}).runtime()
+
+
+@pytest.mark.parametrize("pods,detail", [
+    ([], "Scheduling"),
+    ([{"status": {"phase": "Pending"}}], "Scheduling"),
+    ([{"status": {"containerStatuses": [{"state": {"waiting": {"reason": "ImagePullBackOff"}}}]}}],
+     "ImagePullBackOff"),
+    ([{"status": {"containerStatuses": [{"state": {"waiting": {"reason": "ContainerCreating"}}}]}}],
+     "ContainerCreating"),
+    ([{"status": {"containerStatuses": [{"state": {"running": {}}}]}}], "Starting"),
+])
+def test_not_ready_reports_detail(pods, detail):
+    st = _status_rt({"readyReplicas": 0}, pods).get_container_status("selkies-a")
+    assert st == {"status": "created", "detail": detail}

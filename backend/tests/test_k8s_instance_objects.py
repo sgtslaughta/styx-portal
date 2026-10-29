@@ -124,3 +124,9 @@ def test_parse_quantity():
     assert parse_qty("1Gi") == 1024 ** 3
     assert parse_qty("1048576Ki") == 1024 ** 3
     assert parse_qty("") == 0 and parse_qty(None) == 0
+
+
+def test_readiness_probe_on_web_port():
+    _, _, _, c = _build()
+    assert c["readinessProbe"] == {"tcpSocket": {"port": 3000}, "initialDelaySeconds": 2,
+                                   "periodSeconds": 2, "failureThreshold": 3}

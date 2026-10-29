@@ -125,7 +125,15 @@ class K8sInstanceRuntime:
             pods = self._pods(name)
             started = (pods[0].get("status") or {}).get("startTime", "") if pods else ""
             return {"status": "running", "started_at": started}
-        return {"status": "created"}
+        return {"status": "created", "detail": self._not_ready_reason(name)}
+
+    def _not_ready_reason(self, name: str) -> str:
+        pods = self._pods(name)
+        cs = ((pods[0].get("status") or {}).get("containerStatuses") or []) if pods else []
+        if not cs:
+            return "Scheduling"
+        state = cs[0].get("state") or {}
+        return (state.get("waiting") or {}).get("reason") or "Starting"
 
     def get_container_stats(self, name: str) -> dict:
         return {}
