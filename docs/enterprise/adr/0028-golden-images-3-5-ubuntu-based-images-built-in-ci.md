@@ -15,6 +15,8 @@ Source: docs/enterprise/design.md section 5.
 
 Maintain 3-5 Ubuntu-based golden images (base-office, developer, browser-only, GPU later) built in CI on upstream federal GitLab with on-prem runners.
 
+Images are designed around M365 GCC High web apps (Outlook, Teams, Office, OneDrive) used from the in-desktop browser (owner-confirmed workflow); local office suites only where web apps fall short.
+
 ## Alternatives considered
 
 Entries beyond those recorded in design.md are the obvious options, not documented discussion.
