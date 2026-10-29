@@ -8,6 +8,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.database import get_session
 from app.models import User, Invite, RefreshToken, Instance, ServiceTemplate, FederatedIdentity
+from app.routers.instances import get_docker_manager
+from app.services import profiles
 from app.schemas import UserOut, CreateInviteRequest, InviteOut, TempPasswordOut
 from app.security.deps import require_admin
 from app.security.passwords import hash_password, current_policy
@@ -166,7 +168,8 @@ async def force_password_change(user_id: str, request: Request,
 @router.delete("/{user_id}")
 async def delete_user(user_id: str, request: Request,
                       admin: User = Depends(require_admin),
-                      session: AsyncSession = Depends(get_session)):
+                      session: AsyncSession = Depends(get_session),
+                      docker=Depends(get_docker_manager)):
     user = await session.get(User, user_id)
     if not user:
         raise HTTPException(status.HTTP_404_NOT_FOUND)
@@ -184,6 +187,7 @@ async def delete_user(user_id: str, request: Request,
             status.HTTP_409_CONFLICT,
             detail=f"User owns {len(inst)} instance(s) and {len(tmpls)} template(s); "
                    "reassign or remove them first.")
+    await profiles.purge_profiles(session, docker, user_id=user.id)
     await session.exec(update(RefreshToken).where(RefreshToken.user_id == user.id).values(revoked=True))
     fids = (await session.exec(select(FederatedIdentity).where(FederatedIdentity.user_id == user.id))).all()
     for f in fids:

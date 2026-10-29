@@ -147,6 +147,8 @@ async def test_profiles_api_list_delete(admin_client, session, tid, shared_docke
                      "display_name": "Prof Desktop", "volume_name": vol, "in_use": True}]
     assert (await admin_client.delete(f"/api/profiles/{tid}")).status_code == 409
     await admin_client.post(f"/api/instances/{a['id']}/stop")
+    assert (await admin_client.delete(f"/api/profiles/{tid}")).status_code == 409
+    assert (await admin_client.delete(f"/api/instances/{a['id']}")).status_code == 204
     assert (await admin_client.delete(f"/api/profiles/{tid}")).status_code == 204
     shared_docker.remove_volume.assert_called_with(vol)
     assert (await admin_client.delete(f"/api/profiles/{tid}")).status_code == 404
@@ -169,3 +171,79 @@ async def test_member_cannot_use_admin_profile_endpoints(member_client, session)
     assert (await member_client.get(f"/api/users/{uid}/profiles")).status_code == 403
     assert (await member_client.delete(f"/api/users/{uid}/profiles/x")).status_code == 403
     assert (await member_client.get("/api/profiles")).status_code == 200
+
+
+async def _profile_row(session, uid, tid):
+    vol = profile_volume_name(uid, tid)
+    session.add(UserProfile(user_id=uid, template_id=tid, volume_name=vol))
+    await session.commit()
+    return vol
+
+
+@pytest.mark.asyncio
+async def test_reset_blocked_by_stopped_instance(admin_client, session, tid, shared_docker):
+    admin = await _admin(session)
+    vol = await _profile_row(session, admin.id, tid)
+    inst = Instance(template_id=tid, owner_id=admin.id, name="stp", subdomain="stp",
+                    status="stopped", profile_volume=vol)
+    session.add(inst)
+    await session.commit()
+    r = await admin_client.delete(f"/api/profiles/{tid}")
+    assert r.status_code == 409
+    assert "delete that instance first" in r.json()["detail"]
+    await session.delete(inst)
+    await session.commit()
+    assert (await admin_client.delete(f"/api/profiles/{tid}")).status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_template_delete_purges_profiles(admin_client, session, tid, shared_docker):
+    admin = await _admin(session)
+    vol = await _profile_row(session, admin.id, tid)
+    assert (await admin_client.delete(f"/api/templates/{tid}")).status_code == 204
+    shared_docker.remove_volume.assert_called_once_with(vol)
+    assert (await session.exec(select(UserProfile))).all() == []
+
+
+@pytest.mark.asyncio
+async def test_template_delete_409_when_profile_referenced(admin_client, session, tid, shared_docker):
+    admin = await _admin(session)
+    vol = await _profile_row(session, admin.id, tid)
+    session.add(Instance(template_id=tid, owner_id=admin.id, name="ref", subdomain="ref",
+                         status="stopped", profile_volume=vol))
+    await session.commit()
+    r = await admin_client.delete(f"/api/templates/{tid}")
+    assert r.status_code == 409
+    assert "still used by an instance" in r.json()["detail"] and "ref" not in r.json()["detail"]
+    shared_docker.remove_volume.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_user_delete_purges_profiles(admin_client, session, tid, shared_docker):
+    uid = (await session.exec(select(User).where(User.username == "admin"))).first().id
+    other = User(username="victim", email="v@example.com", password_hash="x", role="member")
+    session.add(other)
+    await session.commit()
+    await session.refresh(other)
+    vol = await _profile_row(session, other.id, tid)
+    r = await admin_client.delete(f"/api/users/{other.id}")
+    assert r.status_code == 200, r.text
+    shared_docker.remove_volume.assert_called_once_with(vol)
+    assert (await session.exec(select(UserProfile))).all() == []
+    assert uid
+
+
+@pytest.mark.asyncio
+async def test_member_template_delete_spares_other_users_profiles(member_client, session, shared_docker):
+    r = await member_client.post("/api/templates", json={**TMPL, "name": "mine-tmpl"})
+    assert r.status_code in (200, 201), r.text
+    mtid = r.json()["id"]
+    other = User(username="other", email="o@example.com", password_hash="x", role="member")
+    session.add(other)
+    await session.commit()
+    await session.refresh(other)
+    await _profile_row(session, other.id, mtid)          # someone else's profile
+    r = await member_client.delete(f"/api/templates/{mtid}")
+    assert r.status_code == 409 and "ask an admin" in r.json()["detail"]
+    shared_docker.remove_volume.assert_not_called()
+    assert len((await session.exec(select(UserProfile))).all()) == 1
