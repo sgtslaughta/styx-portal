@@ -30,7 +30,7 @@ Positive:
 
 Negative:
 
-- The 8-10 s launch target (ADR-0046) leaves little margin under the p95 < 10 s gate.
+- Launch goal p50 ≤ 5 s (ADR-0046) gives margin under the p95 < 10 s gate; launch time is tracked as an SLO from pilot 25 onward.
 
 Follow-up work:
 
