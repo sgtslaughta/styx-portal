@@ -106,7 +106,7 @@ export function ActionBar({ instance, size = "default", showConnect = true, clas
       )}
 
       {group === "transition" && (
-        <Button size={btn} variant="secondary" disabled>
+        <Button size={btn} variant="secondary" disabled title="Starting…">
           {label}…
         </Button>
       )}

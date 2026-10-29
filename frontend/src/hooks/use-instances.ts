@@ -1,12 +1,34 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
-import type { InstanceCreate } from "@/lib/types";
+import { toast } from "sonner";
+import type { Instance, InstanceCreate } from "@/lib/types";
+
+const BUSY = ["starting", "pulling"];
+const prevStatus = new Map<string, string>();
+
+/** Toast once when an instance we saw starting/pulling becomes running. */
+function notifyReady(list: Instance[]) {
+  for (const i of list) {
+    const was = prevStatus.get(i.id);
+    if (was && BUSY.includes(was) && i.status === "running") {
+      toast.success(`${i.name} is ready`, {
+        id: `ready-${i.id}`,
+        action: { label: "Open", onClick: () => window.open(`/i/${i.subdomain}/`, "_blank") },
+      });
+    }
+    prevStatus.set(i.id, i.status);
+  }
+}
 
 export function useInstances() {
   return useQuery({
     queryKey: ["instances"],
-    queryFn: api.listInstances,
-    refetchInterval: 5000,
+    queryFn: async () => {
+      const list = await api.listInstances();
+      notifyReady(list);
+      return list;
+    },
+    refetchInterval: (q) => (q.state.data?.some((i) => BUSY.includes(i.status)) ? 2000 : 5000),
   });
 }
 
