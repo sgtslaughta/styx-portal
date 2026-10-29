@@ -115,7 +115,7 @@ def build_objects(name, image, env, volumes, port, ns, owner, *, gpu_enabled=Fal
     if caps:
         cap_spec["add"] = caps
     container: dict = {
-        "name": "desktop", "image": image,
+        "name": "desktop", "image": image, "imagePullPolicy": "IfNotPresent",
         "env": [{"name": k, "value": v}
                 for k, v in {"PIXELFLUX_WAYLAND": "true", **env}.items()],
         "ports": [{"containerPort": port}],
@@ -123,6 +123,9 @@ def build_objects(name, image, env, volumes, port, ns, owner, *, gpu_enabled=Fal
                             "readOnlyRootFilesystem": read_only_rootfs,
                             "capabilities": cap_spec},
         "volumeMounts": mounts,
+        # ponytail: TCP on the web port; selkies' own port is loopback-only so it can't be probed from the kubelet
+        "readinessProbe": {"tcpSocket": {"port": port}, "initialDelaySeconds": 2,
+                           "periodSeconds": 2, "failureThreshold": 3},
     }
     if limits:
         container["resources"] = {"limits": limits, "requests": requests}

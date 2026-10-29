@@ -191,6 +191,7 @@ class Instance(SQLModel, table=True):
     container_id: str | None = None
     status: str = "created"
     error_message: str | None = None
+    status_detail: str | None = None
     env_overrides: dict[str, str] = Field(default_factory=dict, sa_column=Column(JSON))
     volume_names: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     profile_volume: str | None = None

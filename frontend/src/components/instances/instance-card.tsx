@@ -1,3 +1,4 @@
+import { Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { StatusBadge } from "./status-badge";
 import { OverlaySparkline } from "./sparkline";
@@ -71,6 +72,12 @@ export function InstanceCard({ instance, icon, onSelect }: InstanceCardProps) {
             )}
           </AnimatePresence>
         </div>
+
+        {isPulling && instance.status_detail && (
+          <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Loader2 className="size-3 animate-spin" aria-hidden /> {instance.status_detail}
+          </p>
+        )}
 
         {/* Error message */}
         {instance.status === "error" && instance.error_message && (

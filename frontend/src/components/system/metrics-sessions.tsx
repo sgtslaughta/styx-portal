@@ -182,7 +182,7 @@ function SessionRow({
 
   function connect() {
     choose("workspaces", instance.name, (mode) => {
-      openPending(mode, `Launching ${instance.name}…`, async () => `/i/${instance.subdomain}/`)
+      openPending(mode, `Launching ${instance.name}…`, async () => `/desktop/${instance.subdomain}`)
         .catch((e: Error) => toast.error(`Connect failed: ${e.message}`));
     });
   }
