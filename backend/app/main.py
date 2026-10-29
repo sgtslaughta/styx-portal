@@ -1,9 +1,10 @@
 import asyncio
+import re
 import logging
 from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlmodel import select
@@ -213,9 +214,32 @@ _INSTANCE_UNAVAILABLE_HTML = """<!doctype html>
 """
 
 
+_INSTANCE_STOPPED_HTML = r"""<!doctype html>
+<meta charset="utf-8">
+<title>Instance unavailable</title>
+<meta http-equiv="refresh" content="3;url=/">
+<script>
+  (function () {
+    var m = location.pathname.match(/^\/i\/([^\/]+)/);
+    var q = m ? "?stopped=" + encodeURIComponent(m[1]) : "";
+    location.replace("/" + q);
+  })();
+  /* This page handles /i/subdomain routes that are no longer running */
+</script>
+<p>Instance unavailable. Redirecting&hellip; <a href="/">My Instances</a></p>
+"""
+
+
 @app.get("/api/instance-unavailable", response_class=HTMLResponse)
-async def instance_unavailable():
-    return HTMLResponse(content=_INSTANCE_UNAVAILABLE_HTML)
+async def instance_unavailable(request: Request, session: AsyncSession = Depends(get_session)):
+    # Traefik replacePath keeps the original path in X-Replaced-Path.
+    m = re.match(r"^/i/([a-z0-9-]+)", request.headers.get("x-replaced-path", ""))
+    inst = None
+    if m:
+        inst = (await session.exec(select(Instance).where(Instance.subdomain == m[1]))).first()
+    if inst and inst.status in ("starting", "pulling", "running"):
+        return HTMLResponse(content=_INSTANCE_UNAVAILABLE_HTML)
+    return HTMLResponse(content=_INSTANCE_STOPPED_HTML)
 
 
 @app.get("/api/system/gpu")
