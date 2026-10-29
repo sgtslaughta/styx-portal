@@ -565,6 +565,7 @@ async def delete_instance(
     remove_volumes: bool = Query(False),
     remove_image: bool = Query(False),
     remove_template: bool = Query(False),
+    delete_profile: bool = Query(False),
     session: AsyncSession = Depends(get_session),
     docker: DockerManager = Depends(get_docker_manager),
     user: User = Depends(get_current_user),
@@ -573,6 +574,7 @@ async def delete_instance(
     if not instance:
         raise HTTPException(404, "Instance not found")
     require_owner_or_admin(instance.owner_id, user)
+    profile_owner, profile_tmpl, profile_vol = instance.owner_id, instance.template_id, instance.profile_volume
 
     # Capture subdomain before deletion for audit
     subdomain = instance.subdomain
@@ -608,6 +610,11 @@ async def delete_instance(
         detail={"subdomain": subdomain}
     )
     await session.commit()
+
+    if delete_profile and profile_vol:
+        await profiles.delete_after_instance(
+            session, docker, Instance(owner_id=profile_owner, template_id=profile_tmpl,
+                                      profile_volume=profile_vol), user.id)
 
     # Opt-in image prune — only when requested AND no other instance uses the image.
     if remove_image and image_tag:
