@@ -82,4 +82,24 @@ describe("LaunchModal registry import", () => {
     await waitFor(() => expect(createTemplate).toHaveBeenCalled());
     expect(createTemplate.mock.calls[0]![0].profile_mount).toBe("/config");
   });
+
+  test("other user's same-name template is not reused and shows an error", async () => {
+    listTemplates.mockResolvedValue([{ ...existing, owner_id: "someone-else" }]);
+    wrap(<LaunchModal open onClose={vi.fn()} registryImage={reg} />);
+    expect(await screen.findByText(/already exists with a different image or owner/i)).toBeInTheDocument();
+    expect(screen.queryByText(/using (your existing|the shared) template/i)).toBeNull();
+  });
+
+  test("same name with a different image is not reused", async () => {
+    listTemplates.mockResolvedValue([{ ...existing, image: "evil/other:latest" }]);
+    wrap(<LaunchModal open onClose={vi.fn()} registryImage={reg} />);
+    expect(await screen.findByText(/already exists with a different image or owner/i)).toBeInTheDocument();
+    expect(screen.queryByText(/using (your existing|the shared) template/i)).toBeNull();
+  });
+
+  test("shared template with the same image is reused", async () => {
+    listTemplates.mockResolvedValue([{ ...existing, owner_id: null }]);
+    wrap(<LaunchModal open onClose={vi.fn()} registryImage={reg} />);
+    expect(await screen.findByText(/using the shared template/i)).toBeInTheDocument();
+  });
 });

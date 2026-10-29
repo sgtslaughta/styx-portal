@@ -26,12 +26,27 @@ interface LaunchModalProps {
 export function LaunchModal(props: LaunchModalProps) {
   const { registryImage, template } = props;
   const { data: templates, isLoading } = useTemplates();
-  const existing = !template && registryImage ? templates?.find((t) => t.name === slugify(registryImage.name)) : undefined;
+  const { user } = useAuth();
+  const found = !template && registryImage ? templates?.find((t) => t.name === slugify(registryImage.name)) : undefined;
+  const existing = found && isReusable(found, registryImage?.name, user?.id) ? found : undefined;
+  const conflict = found && !existing ? found : undefined;
   if (registryImage && !template && isLoading) return null;
-  return <LaunchModalBody key={existing?.id ?? "new"} {...props} existing={existing} />;
+  return <LaunchModalBody key={existing?.id ?? (conflict ? "conflict" : "new")} {...props} existing={existing} conflict={conflict} />;
 }
 
-function LaunchModalBody({ open, onClose, registryImage: regProp, template: tmplProp, existing }: LaunchModalProps & { existing?: ServiceTemplate }) {
+const repoOf = (image: string) => image.split("@")[0]!.replace(/:[^:/]*$/, "");
+
+/** Reuse only a same-repo template that is the user's own or shared (no owner). */
+function isReusable(t: ServiceTemplate, regName: string | undefined, userId: string | undefined) {
+  if (!regName) return false;
+  const sameRepo = [`lscr.io/linuxserver/${regName}`, `linuxserver/${regName}`].includes(repoOf(t.image));
+  return sameRepo && (t.owner_id == null || t.owner_id === userId);
+}
+
+const conflictMsg = (name: string) =>
+  `A template named “${name}” already exists with a different image or owner — choose another name`;
+
+function LaunchModalBody({ open, onClose, registryImage: regProp, template: tmplProp, existing, conflict }: LaunchModalProps & { existing?: ServiceTemplate; conflict?: ServiceTemplate }) {
   // A registry import that matches a saved template launches from that template instead.
   const template = tmplProp ?? existing ?? null;
   const registryImage = existing ? null : regProp;
@@ -70,6 +85,7 @@ function LaunchModalBody({ open, onClose, registryImage: regProp, template: tmpl
       } catch {
         const found = (await api.listTemplates()).find((t) => t.name === templateData.name);
         if (!found) throw new Error("Failed to create or find template");
+        if (regProp ? !isReusable(found, regProp.name, user?.id) : found.owner_id != null && found.owner_id !== user?.id) throw new Error(conflictMsg(found.display_name));
         if (!update) return found;
         return await saveOver(found, templateData);
       }
@@ -141,9 +157,12 @@ function LaunchModalBody({ open, onClose, registryImage: regProp, template: tmpl
           </div>
         </DialogHeader>
 
+        {conflict && (
+          <p role="alert" className="text-xs text-destructive">{conflictMsg(conflict.display_name)}</p>
+        )}
         {existing && (
           <p className="text-xs text-muted-foreground">
-            Using your existing template “{existing.display_name}” — edit it in Templates to change its settings.
+            Using {existing.owner_id === user?.id ? "your existing" : "the shared"} template “{existing.display_name}” — edit it in Templates to change its settings.
           </p>
         )}
 
