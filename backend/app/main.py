@@ -4,7 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlmodel import select
@@ -239,7 +239,15 @@ async def instance_unavailable(request: Request, session: AsyncSession = Depends
     if m:
         inst = (await session.exec(select(Instance).where(Instance.subdomain == m[1]))).first()
     if inst and inst.status in ("starting", "pulling", "running"):
-        return HTMLResponse(content=_INSTANCE_UNAVAILABLE_HTML)
+        # X-Replaced-Path is client-settable on a direct call: reveal status only to
+        # the instance's owner or an admin, everyone else sees the stopped page.
+        from app.security.deps import get_current_user
+        try:
+            user = await get_current_user(request, session)
+        except HTTPException:
+            user = None
+        if user and (user.role == "admin" or user.id == inst.owner_id):
+            return HTMLResponse(content=_INSTANCE_UNAVAILABLE_HTML)
     return HTMLResponse(content=_INSTANCE_STOPPED_HTML)
 
 

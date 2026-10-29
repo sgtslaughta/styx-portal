@@ -24,11 +24,23 @@ async def _inst(session, status):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status", ["starting", "pulling", "running"])
-async def test_unavailable_starting_page_auto_refreshes(client, session, status):
+async def test_unavailable_starting_page_auto_refreshes(admin_client, session, status):
     await _inst(session, status)
-    body = await _page(client, "/i/box/")
+    body = await _page(admin_client, "/i/box/")
     assert 'http-equiv="refresh" content="3"' in body
     assert "starting" in body.lower()
+
+
+@pytest.mark.asyncio
+async def test_unavailable_starting_hidden_from_anonymous_and_non_owner(client, member_client, session):
+    """X-Replaced-Path is client-settable: no status leak to non-owners."""
+    await _inst(session, "starting")          # ownerless instance
+    for c in (member_client,):
+        body = await _page(c, "/i/box/")
+        assert "stopped=" in body and 'content="3"' not in body
+    client.cookies.clear()
+    body = await _page(client, "/i/box/")
+    assert "stopped=" in body and 'content="3"' not in body
 
 
 @pytest.mark.asyncio
