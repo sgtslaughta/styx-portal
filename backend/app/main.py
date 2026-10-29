@@ -37,6 +37,7 @@ from app.routers import services_auth as services_auth_router
 from app.security.deps import get_current_user, require_admin
 from app.services.docker_manager import DockerManager
 from app.services.k8s_runtime import instance_runtime
+from app.services.k8s_prepull import prepull_loop
 from app.services.background_loops import (  # noqa: F401 - re-exported for tests
     _capture_running_instances, _health_sample_loop, _log_portal_instances,
     _metrics_collection_loop, _monitor_tick, _reconcile_instances_at_boot,
@@ -118,12 +119,15 @@ async def lifespan(app: FastAPI):
     screenshot_task = asyncio.create_task(_screenshot_capture_loop())
     health_task = asyncio.create_task(_health_sample_loop())
     svc_health_task = asyncio.create_task(_service_health_loop())
+    prepull_task = asyncio.create_task(prepull_loop()) if _settings.ROUTE_BACKEND == "k8s" else None
     yield
     task.cancel()
     metrics_task.cancel()
     screenshot_task.cancel()
     health_task.cancel()
     svc_health_task.cancel()
+    if prepull_task:
+        prepull_task.cancel()
     await asyncio.gather(svc_health_task, return_exceptions=True)
 
 

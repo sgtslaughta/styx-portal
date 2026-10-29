@@ -115,7 +115,7 @@ def build_objects(name, image, env, volumes, port, ns, owner, *, gpu_enabled=Fal
     if caps:
         cap_spec["add"] = caps
     container: dict = {
-        "name": "desktop", "image": image,
+        "name": "desktop", "image": image, "imagePullPolicy": "IfNotPresent",
         "env": [{"name": k, "value": v}
                 for k, v in {"PIXELFLUX_WAYLAND": "true", **env}.items()],
         "ports": [{"containerPort": port}],

@@ -130,3 +130,8 @@ def test_readiness_probe_on_web_port():
     _, _, _, c = _build()
     assert c["readinessProbe"] == {"tcpSocket": {"port": 3000}, "initialDelaySeconds": 2,
                                    "periodSeconds": 2, "failureThreshold": 3}
+
+
+def test_image_pull_policy_if_not_present():
+    _, _, _, c = _build()
+    assert c["imagePullPolicy"] == "IfNotPresent"
