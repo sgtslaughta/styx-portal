@@ -21,7 +21,7 @@ function wsItem(w: Workstation): Item {
 function instItem(i: Instance): Item {
   return { key: `i${i.id}`, name: i.name, icon: <Box className="size-7 shrink-0 p-1 text-muted-foreground" aria-hidden />,
     status: i.status, ok: i.status === "running" || i.status === "idle",
-    verb: "Launching", url: async () => `/i/${i.subdomain}/` };
+    verb: "Launching", url: async () => `/desktop/${i.subdomain}` };
 }
 
 const DOT = (ok: boolean) => (ok ? "bg-success" : "bg-transparent ring-1 ring-inset ring-muted-foreground");

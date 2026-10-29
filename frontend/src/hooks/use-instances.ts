@@ -13,7 +13,7 @@ function notifyReady(list: Instance[]) {
     if (was && BUSY.includes(was) && i.status === "running") {
       toast.success(`${i.name} is ready`, {
         id: `ready-${i.id}`,
-        action: { label: "Open", onClick: () => window.open(`/i/${i.subdomain}/`, "_blank") },
+        action: { label: "Open", onClick: () => window.open(`/desktop/${i.subdomain}`, "_blank") },
       });
     }
     prevStatus.set(i.id, i.status);

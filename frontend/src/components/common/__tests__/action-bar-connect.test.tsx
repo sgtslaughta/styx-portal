@@ -14,5 +14,5 @@ test("instance Connect uses the Workspaces preference", async () => {
   fireEvent.click(screen.getByRole("button", { name: /connect/i }));
   expect(choose).toHaveBeenCalledWith("workspaces", "Desk", expect.any(Function));
   expect(openPending.mock.calls[0]!.slice(0, 2)).toEqual(["same_tab", "Launching Desk…"]);
-  await expect(openPending.mock.calls[0]![2]()).resolves.toBe("/i/desk/");
+  await expect(openPending.mock.calls[0]![2]()).resolves.toBe("/desktop/desk");
 });
