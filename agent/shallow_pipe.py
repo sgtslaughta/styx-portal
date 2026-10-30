@@ -91,3 +91,53 @@ def owner_gate(relay_cls, wm, version: str) -> None:
         return True
 
     relay_cls._forward = _forward
+
+
+CALM_MS = 30.0         # queue under this: hold or probe
+COLLAPSE_MS = 150.0    # queue past this: the path fell away (a hotspot dip)
+EASE_MS = 300.0        # between: target = delivered * (1 - q / EASE_MS)
+PROBE = 1.05           # per second near known capacity, and past it at most
+RECOVER = 1.15         # per second while under RECOVER_SHARE of known capacity
+RECOVER_SHARE = 0.85
+SETTLE_S = 0.5         # past a collapse's drain before the queue is read again
+COLLAPSE_CUT = 0.5
+
+
+def smooth_steer(steer_cls) -> None:
+    """Replace selkies' CBR steer (cut to ~half once a queue reads, then climb
+    x1.15/s back into it) with one proportional to the queue it reads
+    (`styx_q_ms`, from trace_steer): ease off in step with the queue, cut hard
+    only on a collapse and then hold while it drains, and probe slowly, never
+    past what a calm path has delivered. A still screen's trickle holds the
+    rate and teaches nothing. A queue teaches the path's capacity (what it
+    delivered meanwhile); under most of it the rate climbs back fast.
+    Same signature as CongestionSteer.target.
+    ponytail: replaces selkies' halving steer; drop once upstream adopts
+    delay-proportional backoff (issue TBD; also closes selkies#489)."""
+    def target(self, current, ceiling, floor, goodput_bps, loss, now,
+               queue_s=None, offered_bps=None):
+        last, self._tick_at = getattr(self, "_tick_at", None), now
+        dt = 1.0 if last is None else min(max(now - last, 0.0), 2.0)
+
+        def clamp(x):
+            return max(floor, min(ceiling, x))
+
+        q = getattr(self, "styx_q_ms", None)
+        d = goodput_bps / 1_000
+        moving = offered_bps is None or offered_bps >= current * 1_000 * getattr(self, "APP_LIMITED", 0.5)
+        if q is None or not moving or now < getattr(self, "styx_hold_until", 0.0):
+            return clamp(current)
+        if q >= CALM_MS and d > 0:
+            self.styx_known_kbps = d
+        if q >= COLLAPSE_MS:
+            # The cut drains the queue in ~2q; a tick inside that still reads it.
+            self.styx_hold_until = now + 2 * q / 1_000 + SETTLE_S
+            return clamp(min(current, d * COLLAPSE_CUT) if d > 0 else current * COLLAPSE_CUT)
+        if q >= CALM_MS:
+            return clamp(min(current, d * (1 - q / EASE_MS)))
+        known = self.styx_known_kbps = max(getattr(self, "styx_known_kbps", None) or 0.0, d)
+        step = RECOVER if known and current < known * RECOVER_SHARE else PROBE
+        raised = current * step ** dt
+        return clamp(min(raised, known * PROBE) if known else raised)
+
+    steer_cls.target = target

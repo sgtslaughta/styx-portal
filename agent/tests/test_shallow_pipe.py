@@ -154,3 +154,82 @@ def test_version_mismatch_skips_patch():
     cls = type("R", (_Relay,), {})
     shallow_pipe.owner_gate(cls, SimpleNamespace(FRAME_NUM_WRAP=WRAP), "2.2.0")
     assert cls()._forward(8, 7) == "upstream"
+
+
+class _UpSteer:
+    APP_LIMITED = 0.5
+
+    def __init__(self):
+        self._tick_at = None
+
+    def target(self, *a, **kw):
+        return "upstream"
+
+
+def _smooth():
+    cls = type("S", (_UpSteer,), {})
+    shallow_pipe.smooth_steer(cls)
+    return cls()
+
+
+def _t(s, q, cur, d_kbps, offered_kbps, now=0.0):
+    if q is not None:
+        s.styx_q_ms = q
+    return s.target(cur, 16000, 1000, d_kbps * 1000, 0.0, now, 0.0,
+                    None if offered_kbps is None else offered_kbps * 1000)
+
+
+def test_calm_probes_gently():
+    s, cur, out = _smooth(), 8000, []
+    for i in range(10):
+        cur = _t(s, 0, cur, 8000, cur, now=i * 0.5)
+        out.append(cur)
+    assert out[0] > 8000 and max(out) <= 8400
+
+
+def test_ease_is_proportional():
+    assert _t(_smooth(), 60, 12000, 10000, 12000) == 8000
+
+
+def test_ease_never_raises():
+    assert _t(_smooth(), 60, 5000, 10000, 5000) == 5000
+
+
+def test_collapse_cuts_once_then_holds():
+    # Real ticks are 0.5 s apart: the draining queue still reads on the next one.
+    s = _smooth()
+    assert _t(s, 200, 8000, 8000, 8000, now=10.0) == 4000
+    assert _t(s, 200, 4000, 3000, 4000, now=10.5) == 4000
+    assert _t(s, 150, 4000, 3000, 4000, now=10.8) == 4000
+
+
+def test_queue_teaches_capacity():
+    s = _smooth()
+    s.styx_known_kbps = 16000
+    _t(s, 60, 12000, 6000, 12000)
+    assert s.styx_known_kbps == 6000
+
+
+def test_recovers_fast_below_known_then_gently():
+    s = _smooth()
+    s.styx_known_kbps, s._tick_at = 6000, 0.0
+    assert _t(s, 0, 2500, 2500, 2500, now=1.0) == 2500 * 1.15
+    assert _t(s, 0, 5500, 5500, 5500, now=2.0) == 5500 * 1.05
+
+
+def test_still_screen_holds():
+    s = _smooth()
+    s.styx_known_kbps = 6000
+    assert _t(s, 0, 8000, 100, 100) == 8000 and s.styx_known_kbps == 6000
+
+
+def test_no_measure_holds():
+    assert _t(_smooth(), None, 8000, 8000, 8000) == 8000
+
+
+def test_never_below_floor_or_above_ceiling():
+    assert _t(_smooth(), 1000, 8000, 10, 8000) == 1000
+    s, cur = _smooth(), 15900
+    for i in range(10):
+        cur = _t(s, 0, cur, 50000, cur, now=i * 0.5)
+    assert cur <= 16000
