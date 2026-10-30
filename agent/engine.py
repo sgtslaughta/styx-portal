@@ -13,6 +13,8 @@ import sys
 import time
 from pathlib import Path
 
+import shallow_pipe
+
 HOME = Path.home()
 DRI_DIR = "/dev/dri"
 SEAT_SINK = "styx-seat"    # null sink so seat audio never hits the speakers
@@ -257,8 +259,10 @@ def seat_selkies_main() -> None:
             return SEAT_CLIPBOARD.get(name) or getattr(self._real, name)
 
     input_handler.ScreenCapture = SeatCapture
+    from selkies import websockets_mode
     from selkies.stream_server import CongestionSteer
     cap_still_raise(CongestionSteer)
+    shallow_pipe.trace_steer(websockets_mode.DataStreamingServer, websockets_mode, CongestionSteer)
     sys.exit(main())
 
 
