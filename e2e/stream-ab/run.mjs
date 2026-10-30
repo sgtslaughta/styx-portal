@@ -26,8 +26,9 @@ if (a.refuse) {
 }
 const page = await ctx.newPage();
 await page.goto(a.url);
-const video = page.locator('canvas, video').first();
-await video.waitFor({ state: 'visible', timeout: 30000 });
+// selkies draws to <video id=videoStream> or a canvas depending on the sink: wait for whichever shows.
+await page.waitForFunction(() => [...document.querySelectorAll('#videoStream, #videoCanvas')]
+  .some(e => e.offsetWidth > 0 && getComputedStyle(e).display !== 'none'), null, { timeout: 30000 });
 mark('page');
 await sleep(4000);                          // first frames + paint-over
 mark('ready');

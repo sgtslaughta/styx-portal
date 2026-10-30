@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -74,9 +75,24 @@ def seat_env() -> dict:
     return env
 
 
+FIREFOX_PREFS = {
+    "browser.aboutwelcome.enabled": "false",
+    "browser.preonboarding.enabled": "false",
+    "trailhead.firstrun.didSeeAboutWelcome": "true",
+    "datareporting.policy.dataSubmissionEnabled": "false",
+    "datareporting.policy.dataSubmissionPolicyBypassNotification": "true",
+    "termsofuse.bypassNotification": "true",
+    "browser.startup.homepage_override.mstone": '"ignore"',
+    "browser.shell.checkDefaultBrowser": "false",
+    "browser.sessionstore.resume_from_crash": "false",
+}
+
+
 def open_workload() -> subprocess.Popen:
     profile = HERE / "results/.firefox"
     profile.mkdir(parents=True, exist_ok=True)
+    # A first-run welcome / terms dialog would cover the page and eat the input.
+    (profile / "user.js").write_text("".join(f'user_pref("{k}", {v});\n' for k, v in FIREFOX_PREFS.items()))
     return subprocess.Popen(
         ["firefox", "--no-remote", "--profile", str(profile), "--kiosk", (HERE / "workload.html").as_uri()],
         env=seat_env(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
@@ -134,6 +150,8 @@ def main() -> None:
     ap.add_argument("--profiles", default="hotel,office")
     ap.add_argument("--fallback", action="store_true", help="also run av1-30 with AV1 refused by the browser")
     a = ap.parse_args()
+    # systemctl stop sends SIGTERM: exit through `finally` so the override is removed.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(1))
     user, pw = creds()
     rows, firefox = [], open_workload()
     try:
