@@ -283,13 +283,13 @@ for art in wheelhouse-x86_64; do
 done
 
 note "creating venv (system python, prebuilt wheels only — no compiling)…"
-# The wheelhouse already contains every selkies 2.0 wheel + deps, so install
+# The wheelhouse already contains every selkies 2.x wheel + deps, so install
 # by name with --no-index — nothing is ever compiled on the workstation.
 python3 -m venv "$INSTALL_DIR/venv" \
   || fail E01 "venv creation failed — check python3-venv is installed and $HOME has free space."
 "$INSTALL_DIR/venv/bin/pip" -q install --no-index \
   --find-links "$INSTALL_DIR/wheelhouse" \
-  selkies==2.0.0 pixelflux==2.1.0 pcmflux==2.1.0 setuptools aiohttp pulsectl \
+  selkies==2.1.0 pixelflux==2.2.1 pcmflux==2.2.0 setuptools aiohttp pulsectl \
   || fail E03 "Wheel install failed — likely an unsupported python version ($(python3 -V)). The wheelhouse covers python 3.10–3.14; rebuild it on the server (scripts/build_agent_artifacts.sh) if your python is newer."
 
 # Seat-only, OPTIONAL: nwg-drawer (app grid) + nwg-dock binaries, server-built

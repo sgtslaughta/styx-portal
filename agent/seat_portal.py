@@ -68,6 +68,7 @@ class Session(dbus.service.Object):
         self.rd = self.rd_path = self.stream_path = self.clip = self.sc = None
         self.devices = 3
         self.want_screen = True
+        self.scale = _seat_scale()      # fixed per session: a scale change restarts selkies
 
     @dbus.service.method(SESS_IFACE)
     def Close(self):
@@ -216,7 +217,21 @@ def rd_select(self, handle, session_handle, app_id, options):
     return dbus.UInt32(0), dbus.Dictionary({}, signature="sv")
 
 
+def _seat_scale() -> float:
+    path = os.environ.get("STYX_SEAT_SCALE_FILE", "")
+    return read_scale(path) if path else 1.0
+
+
 def rd_eis(self, session_handle, app_id, options):
+    # pixelflux sends libei absolute motion in stream (physical) px, but libei
+    # regions are logical: at scale 2 the pointer ran 2x ahead. Refused, it
+    # falls back to Notify*, which Mutter divides by the stream's scale.
+    # The scale is fixed per session: a scale change restarts selkies.
+    scale = sessions[str(session_handle)].scale
+    if scale != 1.0:
+        log("ConnectToEIS refused at scale", scale, "-> portal notify input")
+        raise dbus.exceptions.DBusException("libei disabled on a scaled seat",
+                                            name="org.freedesktop.DBus.Error.NotSupported")
     return sessions[str(session_handle)].rd.ConnectToEIS(dbus.Dictionary({}, signature="sv"))
 
 
@@ -237,7 +252,9 @@ def _motion(s, o, dx, dy):
 
 
 def _abs(s, o, stream, x, y):
-    return s.stream_path, x, y
+    # pixelflux divides by its (= the seat's) scale and Mutter divides again:
+    # undo pixelflux's, so the pointer lands where the browser's is.
+    return s.stream_path, x * s.scale, y * s.scale
 
 
 def _button(s, o, b, st):
@@ -447,9 +464,13 @@ def main(argv) -> int:
             return True
         rq["tries"] += 1
         if mon.is_current():
+            # A resize can reset the scale: re-apply BEFORE ready, so the
+            # selkies started on ready opens its stream at the final scale
+            # (Mutter maps pointer input with the scale the stream was made at).
+            sc["mtime"] = None
+            watch_scale()
             _write_ready(ready, f"{mon.w}x{mon.h}")
             log("resized live", f"{mon.w}x{mon.h}", f"after {rq['tries']*25} ms")
-            sc["mtime"] = None      # a resize can reset the scale: re-apply
             rq["pending"] = None
         elif rq["tries"] >= LIVE_TRIES * 8:        # 10 s at 25 ms
             log("resize never became current", f"{mon.w}x{mon.h}")

@@ -6,7 +6,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 gateway = pytest.importorskip("gateway")
 aiohttp = pytest.importorskip("aiohttp")
-from .test_gateway import _basic, _refit_pair  # noqa: E402
+from .test_gateway import _aborted, _basic, _refit_pair  # noqa: E402
 
 
 async def _until(cond, timeout=3.0):
@@ -98,8 +98,7 @@ async def test_owner_reconnect_within_grace_keeps_ownership_then_hands_to_older_
         await asyncio.sleep(0.8)
         assert not (tmp_path / "refit-request").exists()    # A never became owner
         await b2.close()                                    # for good
-        msg = await asyncio.wait_for(a.receive(), timeout=3)
-        assert msg.data == "styx-refit"
+        await _aborted(a)
         assert (tmp_path / "refit-request").read_text() == "1280x720"
     finally:
         gateway.OWNER_GRACE_S = saved
@@ -185,3 +184,54 @@ async def test_previous_owners_pending_refit_timer_dies_when_replaced(tmp_path, 
     finally:
         await client.close()
         await up.close()
+
+
+@pytest.mark.asyncio
+async def test_seat_dpi_reaches_gnome_and_selkies_snapped(tmp_path):
+    """GNOME and selkies must run one scale: pixelflux maps libei pointer
+    input with selkies' scale. Both get the snapped seat scale."""
+    import json
+    received = []
+    up, client = await _refit_pair(tmp_path, received, str(tmp_path))
+    hdr = {"Authorization": _basic("styx", "pw")}
+    try:
+        a = await _vid_ws(client, "A", hdr)
+        await a.send_str('SETTINGS,{"scaling_dpi": 192, "h264_crf": 25}')
+        await _until(lambda: any(m.startswith("SETTINGS,") for m in received))
+        assert (tmp_path / "seat-scale").read_text() == "2"
+        await a.send_str("s,120,primary")                     # side panel 125% -> 1.5
+        await _until(lambda: any(m.startswith("s,") for m in received))
+        assert (tmp_path / "seat-scale").read_text() == "1.5"
+    finally:
+        await client.close()
+        await up.close()
+    settings = [json.loads(m[9:]) for m in received if m.startswith("SETTINGS,")]
+    assert settings == [{"scaling_dpi": 192, "h264_crf": 25}]
+    assert [m for m in received if m.startswith("s,")] == ["s,144,primary"]
+
+
+@pytest.mark.asyncio
+async def test_seat_scale_change_restarts_selkies_at_same_size(tmp_path):
+    """pixelflux's monitor stream keeps the scale it was made at (frozen
+    stream, pointer off): a scale change refits at the live size, which
+    restarts selkies on a fresh stream. An unchanged scale does not."""
+    (tmp_path / "seat-size").write_text("2560x1440")
+    up, client = await _refit_pair(tmp_path, [], str(tmp_path))
+    hdr = {"Authorization": _basic("styx", "pw")}
+    try:
+        a = await _vid_ws(client, "A", hdr)
+        await a.send_str("s,96")                              # scale 1 = file default: no restart
+        await asyncio_sleep(0.8)
+        assert not (tmp_path / "refit-request").exists()
+        await a.send_str("s,144")
+        await _aborted(a)
+        assert (tmp_path / "refit-request").read_text() == "2560x1440"
+        assert (tmp_path / "seat-scale").read_text() == "1.5"
+    finally:
+        await client.close()
+        await up.close()
+
+
+async def asyncio_sleep(t):
+    import asyncio
+    await asyncio.sleep(t)

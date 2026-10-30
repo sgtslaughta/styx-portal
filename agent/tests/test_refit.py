@@ -70,8 +70,7 @@ def test_wait_for_request_clears_garbage(tmp_path):
 def test_inject_reload():
     html = "<html><head></head><body></body></html>"
     out = refit.inject_reload(html, True)
-    assert 'id="styx-refit"' in out and "4002" in out and "styx-resizing" in out and refit.MARKER in out
-    assert "window.WebSocket=S" in out and "self.WebSocket=S" in out and out.index("styx-refit") < out.index("</head>")
+    assert 'id="styx-refit"' in out and out.index("styx-refit") < out.index("</head>")
     assert "q.delete('socket_worker')" in out    # an older shim pinned the page socket; undo it
     assert "Resizing" in refit.HOLD_HTML
     assert refit.inject_reload(html, False) == html
@@ -96,10 +95,12 @@ def test_wait_for_request_stops_early(tmp_path):
     assert t["now"] == 0.0
 
 
-def test_shim_reconnects_transparently():
-    out = refit.inject_reload("<html><head></head><body></body></html>", True)
-    assert "_resume" in out and "START_VIDEO" in out and "X-Styx-Hold" in out and "location.reload()" in out
-    assert "new WebSocket(m.url)" in out and "styx-pill" in out   # worker source hook + page pill relay
+def test_tagger_wraps_worker_postmessage_and_websocket():
+    js = refit.RELOAD_JS
+    assert "Worker.prototype.postMessage" in js and "window.WebSocket" in js and "styx_vid" in js
+    for gone in ("new WebSocket(m.url)", "styx-resizing", "styx-busy"):
+        assert gone not in js
+    assert not hasattr(refit, "MARKER") and not hasattr(refit, "CLOSE_CODE")
 
 
 def test_size_owner_first_viewer_wins_until_it_leaves():

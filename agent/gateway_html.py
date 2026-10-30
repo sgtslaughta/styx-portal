@@ -154,3 +154,13 @@ def is_activity(data) -> bool:
         return True
     cmd = data.split(",", 1)[0]
     return not (cmd.isupper() or cmd.startswith("_") or cmd == "pong")
+
+
+def is_bare_motion(data) -> bool:
+    """A pointer move with no button held and no wheel ('m'/'m2',x,y,0,0...).
+    With the browser-drawn cursor it changes nothing on screen, so a still
+    desktop answers it with no frames: it must not re-arm the stall watchdog."""
+    if not isinstance(data, str):
+        return False
+    t = data.split(",")
+    return t[0] in ("m", "m2") and len(t) >= 5 and t[3] == "0" and t[4] == "0"

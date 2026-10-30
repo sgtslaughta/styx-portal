@@ -3,46 +3,63 @@ import os
 from pathlib import Path
 
 
-def scale_for_dpi(dpi) -> int:
-    # ponytail: integer scales only; Mutter offers [1.0, 2.0] without the fractional experimental feature.
-    # 168 = midpoint of 96 and 240.
-    return 2 if dpi and dpi >= 168 else 1
+# Scales GNOME (scale-monitor-framebuffer) and selkies both take: selkies snaps
+# its DPI to 24-dpi stops, Mutter offers 1, 1.33, 1.5, 2, 2.67, 3 at most modes.
+# They must agree: pixelflux maps libei pointer input with selkies' scale.
+SCALES = (1.0, 1.5, 2.0, 3.0)
 
 
-def read_scale(path) -> int:
+def scale_for_dpi(dpi) -> float:
+    """Shared seat scale nearest dpi/96 (ties round up: 125% -> 1.5)."""
     try:
-        return 2 if Path(path).read_text().strip() == "2" else 1
-    except OSError:
-        return 1
+        want = float(dpi) / 96.0 if dpi else 1.0
+    except (TypeError, ValueError):
+        want = 1.0
+    return min(SCALES, key=lambda v: (abs(v - want), -v))
+
+
+def dpi_for_scale(scale) -> int:
+    return round(float(scale) * 96)
+
+
+def read_scale(path) -> float:
+    try:
+        return max(1.0, float(Path(path).read_text().strip()))
+    except (OSError, ValueError):
+        return 1.0
 
 
 def write_scale(path, s) -> None:
     p = Path(path)
     tmp = p.with_name(p.name + ".tmp")
-    tmp.write_text(str(int(s)))
+    tmp.write_text(f"{float(s):g}")
     os.replace(tmp, p)
 
 
 def monitors_config(state, scale):
-    """ApplyMonitorsConfig args for GetCurrentState `state` at `scale`, or None
-    when the scale is unsupported or already in effect."""
+    """ApplyMonitorsConfig args for GetCurrentState `state` at the supported
+    scale nearest `scale`, or None when none is offered or it is in effect."""
     serial, monitors, logical, _props = state
     modes = {tuple(spec)[0]: ms for spec, ms, _p in monitors}
     out, changed = [], False
     for x, y, cur, transform, primary, specs, _p in logical:
-        mons = []
+        mons, offered = [], None
         for spec in specs:
             cur_mode = next((m for m in modes.get(spec[0], ()) if m[6].get("is-current")), None)
-            if cur_mode is None or float(scale) not in [float(v) for v in cur_mode[5]]:
+            if cur_mode is None or not cur_mode[5]:
                 return None
+            offered = [float(v) for v in cur_mode[5]]
             mons.append((spec[0], cur_mode[0], {}))
-        changed = changed or float(cur) != float(scale)
-        out.append((x, y, float(scale), transform, bool(primary), mons))
+        pick = min(offered, key=lambda v: abs(v - float(scale)))
+        if abs(pick - float(scale)) > 0.5:          # e.g. 2.0 wanted, only 1.0 offered
+            return None
+        changed = changed or float(cur) != pick
+        out.append((x, y, pick, transform, bool(primary), mons))
     return (serial, 1, out, {}) if out and changed else None
 
 
 def _at_scale(state, scale) -> bool:
-    return all(float(lm[2]) == float(scale) for lm in state[2])
+    return all(abs(float(lm[2]) - float(scale)) <= 0.5 for lm in state[2])
 
 
 def apply_scale(bus, scale, log) -> None:

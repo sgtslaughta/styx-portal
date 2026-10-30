@@ -40,11 +40,13 @@ async def _pair(**kw):
     return up, client
 
 
-async def _closed_with(ws, code=None, t=3.0):
+async def _closed_with(ws, code=None, t=3.0, reason=None):
     msg = await asyncio.wait_for(ws.receive(), t)
     assert msg.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED)
     if code is not None:
         assert ws.close_code == code
+    if reason is not None:
+        assert msg.extra == reason
 
 
 @pytest.mark.asyncio
@@ -55,7 +57,7 @@ async def test_second_controller_rejected_while_first_active(capsys):
         await a.send_str("m2,10,10,0,0")          # real input: A is active
         await asyncio.sleep(0.05)
         b = await _vid_ws(client, "B", {**HDR, "CF-Connecting-IP": "203.0.113.7"})
-        await _closed_with(b, gateway.BUSY_CODE)
+        await _closed_with(b, gateway.BUSY_CODE, reason="superseded: in use on another device")
         assert not a.closed                         # active session untouched
         out = capsys.readouterr().out
         assert "ws reject vid=B from=203.0.113.7" in out and "ws open vid=A" in out
