@@ -26,9 +26,6 @@ def queue_ms(state: dict, wm) -> float | None:
     return max(0.0, min(stand) - floor)
 
 
-KNOWN_KBPS: dict = {}  # display -> path capacity the steer learned; outlives a reconnect
-
-
 def trace_steer(server_cls, wm, steer_cls) -> None:
     """Hand each congestion tick's queue to the display's steer (`styx_q_ms`)
     and log one STYX-CC line per measured tick, for cc_report.py.
@@ -38,15 +35,8 @@ def trace_steer(server_cls, wm, steer_cls) -> None:
     def steer(self, display_id, state, now):
         q = queue_ms(state, wm)
         if q is not None:
-            steer = state.setdefault("link_steer", steer_cls())
-            steer.styx_q_ms = q
-            # selkies' _forget_path drops the steer on reconnect: keep its capacity.
-            if getattr(steer, "styx_known_kbps", None) is None and display_id in KNOWN_KBPS:
-                steer.styx_known_kbps = KNOWN_KBPS[display_id]
+            state.setdefault("link_steer", steer_cls()).styx_q_ms = q
         out = orig(self, display_id, state, now)
-        known = getattr(state.get("link_steer"), "styx_known_kbps", None)
-        if known:
-            KNOWN_KBPS[display_id] = known
         if q is not None:
             log.info(f"STYX-CC {display_id} q={q:.0f} floor={state.get('rtt_floor_ms', 0):.0f} "
                      f"dlv={state.get('link_delivered_bps', 0) / 1000:.0f} "
@@ -135,10 +125,8 @@ def smooth_steer(steer_cls) -> None:
         q = getattr(self, "styx_q_ms", None)
         d = goodput_bps / 1_000
         moving = offered_bps is None or offered_bps >= current * 1_000 * getattr(self, "APP_LIMITED", 0.5)
-        known = getattr(self, "styx_known_kbps", None)
         if q is None or not moving or now < getattr(self, "styx_hold_until", 0.0):
-            # Hold, but never above what the path carries: the next motion would burst into it.
-            return clamp(min(current, known * PROBE) if known else current)
+            return clamp(current)
         if q >= CALM_MS and d > 0:
             self.styx_known_kbps = d
         if q >= COLLAPSE_MS:
