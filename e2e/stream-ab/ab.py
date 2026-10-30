@@ -42,6 +42,18 @@ GWLOG = INSTALL / "logs/gateway.log"
 WS_OPEN = re.compile(r"ws open .*from=(\S+)")
 
 
+def watchdog_restarts(lines) -> int:
+    """Agent watchdog restarts of selkies (15 s with no frame while driven):
+    a run that had one measured a restart, not the variant."""
+    return sum("watchdog: viewer frameless" in line for line in lines)
+
+
+def journal_since(since: str) -> list:
+    r = subprocess.run(["journalctl", "--user", "-u", "styx-agent", "--since", since, "--no-pager"],
+                       capture_output=True, text=True, check=False)
+    return r.stdout.splitlines()
+
+
 def foreign_client(lines) -> str | None:
     """A real user's tab that opened during a run: the run is void, and the
     harness yields (it would fight the user for control otherwise)."""
@@ -129,6 +141,7 @@ def server_metrics(start: int) -> dict:
 
 def run_one(variant: str, profile: str, user: str, pw: str, refuse: str = "") -> dict:
     start, gw_start = log_lines(), GWLOG.stat().st_size
+    since = time.strftime("%Y-%m-%d %H:%M:%S")
     proxy = subprocess.Popen([sys.executable, str(HERE / "netem.py"), f"--profile={profile}",
                               f"--listen={PROXY}", f"--target=127.0.0.1:{GATEWAY}"])
     try:
@@ -146,12 +159,14 @@ def run_one(variant: str, profile: str, user: str, pw: str, refuse: str = "") ->
     with open(GWLOG, errors="replace") as f:
         f.seek(gw_start)
         foreign = foreign_client(f.readlines())
+    restarts = watchdog_restarts(journal_since(since))
     return {"variant": variant, "profile": profile, "refuse": refuse, "foreign": foreign,
+            "watchdog": restarts, "valid": not foreign and not restarts,
             **server_metrics(start), **client}
 
 
 def table(rows: list) -> str:
-    cols = ["variant", "profile", "refuse", "foreign", "codec", "q_floor_p90", "cuts_gt30_per5m", "lost",
+    cols = ["variant", "profile", "refuse", "valid", "watchdog", "foreign", "codec", "q_floor_p90", "cuts_gt30_per5m", "lost",
             "decode_fps_min", "sharpStill", "sharpAfterScroll", "sharpEnd"]
     out = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
     for r in rows:
@@ -165,6 +180,7 @@ def main() -> None:
     ap.add_argument("--variants", default="h264-16,h264-30,av1-30")
     ap.add_argument("--profiles", default="hotel,office")
     ap.add_argument("--fallback", action="store_true", help="also run av1-30 with AV1 refused by the browser")
+    ap.add_argument("--repeats", type=int, default=1)
     a = ap.parse_args()
     # systemctl stop sends SIGTERM: exit through `finally` so the override is removed.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(1))
@@ -175,7 +191,7 @@ def main() -> None:
         for v in a.variants.split(","):
             OVERRIDE.write_text(json.dumps({"args": VARIANTS[v]}))
             restart_selkies(user, pw)
-            for p in a.profiles.split(","):
+            for p in [p for p in a.profiles.split(",") for _ in range(a.repeats)]:
                 rows.append(run_one(v, p, user, pw))
                 print(json.dumps(rows[-1]), flush=True)
                 if rows[-1]["foreign"]:

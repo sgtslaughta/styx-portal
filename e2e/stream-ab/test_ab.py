@@ -17,3 +17,10 @@ def test_foreign_client_detected():
 
 def test_av1_16_variant():
     assert ab.VARIANTS["av1-16"][0].startswith("--encoder=av1enc,h265enc,h264enc")
+
+
+def test_watchdog_restart_detected():
+    lines = ["Oct 30 16:36:11 host python[1]: watchdog: viewer frameless 15s — restarting selkies",
+             "Oct 30 16:37:19 host python[1]: refit: rebuilding seat monitor at 2560x1440"]
+    assert ab.watchdog_restarts(lines) == 1
+    assert ab.watchdog_restarts(lines[1:]) == 0
