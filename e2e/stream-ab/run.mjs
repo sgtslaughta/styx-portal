@@ -9,6 +9,7 @@ const a = Object.fromEntries(process.argv.slice(2).map(s => s.replace(/^--/, '')
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const t0 = Date.now(), marks = [];
 const mark = name => marks.push([name, (Date.now() - t0) / 1000]);
+const cx = 640, cy = 400;
 
 const browser = await chromium.launch();
 const ctx = await browser.newContext({
@@ -24,14 +25,82 @@ if (a.refuse) {
       ? Promise.resolve({ supported: false, config: c }) : orig(c);
   }, a.refuse);
 }
+await ctx.addInitScript(() => {
+  const W = self.WritableStreamDefaultWriter;
+  if (!W || !self.VideoFrame) return;
+  const px = new OffscreenCanvas(1, 1).getContext('2d', { willReadFrequently: true });
+  self.__frames = []; self.__luma = -1;
+  const write = W.prototype.write;
+  W.prototype.write = function (chunk) {
+    if (chunk instanceof VideoFrame) {
+      self.__frames.push(performance.now());
+      try {
+        px.drawImage(chunk, 200, 500, 1, 1, 0, 0, 1, 1);
+        const d = px.getImageData(0, 0, 1, 1).data;
+        self.__luma = 0.299 * d[0] + 0.587 * d[1] + 0.114 * d[2];
+      } catch (e) { /* closed frame */ }
+    }
+    return write.call(this, chunk);
+  };
+});
 const page = await ctx.newPage();
 await page.goto(a.url);
 // selkies draws to <video id=videoStream> or a canvas depending on the sink: wait for whichever shows.
 await page.waitForFunction(() => [...document.querySelectorAll('#videoStream, #videoCanvas')]
   .some(e => e.offsetWidth > 0 && getComputedStyle(e).display !== 'none'), null, { timeout: 30000 });
 mark('page');
+// Frame monitor at the source: selkies writes each decoded VideoFrame to a
+// MediaStreamTrackGenerator; time every write and read the F8 square's luma from
+// the frame itself (workload.html #flip: CSS 0..200 x 150..350 -> stream px
+// 0..400 x 300..700 at scale 2). Independent of headless rendering.
+await page.evaluate(() => {
+  window.__waitFlip = (from, timeout) => new Promise(res => {
+    const t0 = performance.now();
+    const poll = () => {
+      if (Math.abs(window.__luma - from) > 80) return res(performance.now() - t0);
+      if (performance.now() - t0 > timeout) return res(null);
+      setTimeout(poll, 2);
+    };
+    poll();
+  });
+});
 await sleep(4000);                          // first frames + paint-over
 mark('ready');
+
+async function latency(n) {                 // key -> first frame showing the flip, ms
+  await page.mouse.click(cx, 40);           // focus the workload page
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const from = await page.evaluate(() => window.__luma);
+    const wait = page.evaluate(([f]) => window.__waitFlip(f, 3000), [from]);
+    await page.keyboard.press('F8');
+    out.push(await wait);
+    await sleep(400);
+  }
+  const ok = out.filter(v => v !== null).sort((a, b) => a - b);
+  const q = p => ok.length ? Math.round(ok[Math.min(ok.length - 1, Math.floor(p * ok.length))]) : null;
+  return { latP50: q(0.5), latP95: q(0.95), latMissed: out.length - ok.length };
+}
+
+function gaps() {                           // frame gaps over the run
+  return page.evaluate(() => {
+    const f = window.__frames, g = [];
+    for (let i = 1; i < f.length; i++) g.push(f[i] - f[i - 1]);
+    const long = g.map((v, i) => [Math.round(f[i] / 1000), Math.round(v)]).filter(([, v]) => v > 500);
+    return { frames: f.length, maxGapMs: Math.round(Math.max(0, ...g)), gapsOver500: long.slice(0, 10) };
+  });
+}
+
+if (a.mode === 'recovery') {                // outage profiles: steady motion, measure the hole
+  await page.mouse.click(cx, 40);
+  await page.keyboard.press('F9');
+  await sleep(Number(a.seconds || 90) * 1000);
+  await page.keyboard.press('F9');
+  mark('end');
+  console.log(JSON.stringify({ marks, ...(await gaps()), ...(await latency(5)) }));
+  await browser.close();
+  process.exit(0);
+}
 
 // Sharpness: variance of the Laplacian over a screenshot's grey levels (higher = crisper text).
 async function sharpness() {
@@ -52,7 +121,7 @@ async function sharpness() {
   }, png);
 }
 
-const cx = 640, cy = 400;
+
 await page.mouse.move(cx, cy);
 await sleep(8000); mark('still');
 const sharpStill = await sharpness();
@@ -69,6 +138,9 @@ await page.mouse.click(cx, 40);             // the workload's text box
 await page.keyboard.type('the quick brown fox jumps over the lazy dog 0123456789 '.repeat(6), { delay: 60 });
 mark('type');
 
+const lat = await latency(15);
+mark('latency');
+
 await page.keyboard.press('F9');            // animation on
 await sleep(20000);
 await page.keyboard.press('F9');
@@ -77,5 +149,6 @@ await sleep(5000);
 const sharpEnd = await sharpness();
 mark('end');
 
-console.log(JSON.stringify({ marks, sharpStill, sharpAfterScroll, sharpEnd }));
+// Frame gaps only mean something under steady motion (recovery mode): a still screen sends none.
+console.log(JSON.stringify({ marks, sharpStill, sharpAfterScroll, sharpEnd, ...lat }));
 await browser.close();

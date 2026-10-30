@@ -24,6 +24,8 @@ class Profile:
     collapse_every_s: float = 0
     collapse_for_s: float = 0
     collapse_mbps: float = 0
+    drop_at_s: float = 0        # one outage: nothing gets through for drop_for_s,
+    drop_for_s: float = 0       # what was sent meanwhile arrives after (TCP retransmits)
 
 
 PROFILES = {
@@ -31,6 +33,10 @@ PROFILES = {
     "office": Profile(100, 5, 2),
     "hotel": Profile(45, 20, 70, collapse_every_s=60, collapse_for_s=3, collapse_mbps=1),
     "hotspot": Profile(10, 40, 30, collapse_every_s=30, collapse_for_s=2, collapse_mbps=2),
+    # Wi-Fi -> cellular handoff, tunnel in a dead zone: an office link that vanishes once.
+    "drop3": Profile(100, 5, 2, drop_at_s=40, drop_for_s=3),
+    "drop10": Profile(100, 5, 2, drop_at_s=40, drop_for_s=10),
+    "drop30": Profile(100, 5, 2, drop_at_s=40, drop_for_s=30),
 }
 
 
@@ -48,6 +54,9 @@ class Shaper:
     def deliver_at(self, nbytes: int, now: float) -> float:
         """When `nbytes` written at `now` reach the far end."""
         start = max(now, self.free_at)
+        p = self.p
+        if p.drop_for_s and p.drop_at_s <= start < p.drop_at_s + p.drop_for_s:
+            start = p.drop_at_s + p.drop_for_s
         rate = self.rate_bps(start)
         self.free_at = start + (nbytes * 8 / rate if rate else 0.0)
         t = self.free_at + (self.p.base_ms + self.rng.uniform(0, self.p.jitter_ms)) / 1000

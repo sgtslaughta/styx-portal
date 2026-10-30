@@ -25,6 +25,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1] / "docs/spikes/2026-10-30-shallow-pipe"))
 import cc_report  # noqa: E402
+import probes  # noqa: E402
 
 INSTALL = Path.home() / ".local/share/styx-agent"
 LOG = INSTALL / "logs/selkies.log"
@@ -147,11 +148,18 @@ def run_one(variant: str, profile: str, user: str, pw: str, refuse: str = "") ->
     try:
         time.sleep(1)
         args = ["node", str(HERE / "run.mjs"), f"--url=http://127.0.0.1:{PROXY}/"]
+        if profile.startswith("drop"):          # outage profiles: steady motion through the hole
+            args.append("--mode=recovery")
         if refuse:
             args.append(f"--refuse={refuse}")
         # Credentials via env, not argv: argv is world-readable in ps.
         env = {**os.environ, "STYX_USER": user, "STYX_PASS": pw}
-        r = subprocess.run(args, capture_output=True, text=True, timeout=240, cwd=HERE.parent, env=env)
+        sampler = probes.Sampler()
+        sampler.start()
+        try:
+            r = subprocess.run(args, capture_output=True, text=True, timeout=240, cwd=HERE.parent, env=env)
+        finally:
+            load = sampler.stop()
         client = json.loads(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 else {"error": r.stderr[-400:]}
     finally:
         proxy.terminate()
@@ -161,13 +169,14 @@ def run_one(variant: str, profile: str, user: str, pw: str, refuse: str = "") ->
         foreign = foreign_client(f.readlines())
     restarts = watchdog_restarts(journal_since(since))
     return {"variant": variant, "profile": profile, "refuse": refuse, "foreign": foreign,
-            "watchdog": restarts, "valid": not foreign and not restarts,
+            "watchdog": restarts, "valid": not foreign and not restarts, **load,
             **server_metrics(start), **client}
 
 
 def table(rows: list) -> str:
-    cols = ["variant", "profile", "refuse", "valid", "watchdog", "foreign", "codec", "q_floor_p90", "cuts_gt30_per5m", "lost",
-            "decode_fps_min", "sharpStill", "sharpAfterScroll", "sharpEnd"]
+    cols = ["variant", "profile", "refuse", "valid", "watchdog", "foreign", "codec",
+            "cuts_gt30_per5m", "lost", "latP50", "latP95", "maxGapMs", "sharpStill",
+            "sharpAfterScroll", "sharpEnd", "cpu_mean", "vcn_mean", "rss_mb_growth"]
     out = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
     for r in rows:
         out.append("| " + " | ".join(

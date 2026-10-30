@@ -24,3 +24,11 @@ def test_watchdog_restart_detected():
              "Oct 30 16:37:19 host python[1]: refit: rebuilding seat monitor at 2560x1440"]
     assert ab.watchdog_restarts(lines) == 1
     assert ab.watchdog_restarts(lines[1:]) == 0
+
+
+def test_soak_crash_count():
+    import soak
+    lines = ["Oct 30 python[1]: selkies exited rc=0; restart in 2s",
+             "Oct 30 python[1]: selkies exited rc=-6; restart in 2s",
+             "Oct 30 python[1]: selkies exited rc=1; restart in 2s"]
+    assert soak.crashes(lines) == 2

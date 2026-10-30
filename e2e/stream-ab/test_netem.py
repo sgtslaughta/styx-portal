@@ -25,3 +25,16 @@ def test_collapse_window_slows_link():
 
 def test_profiles_exist():
     assert {"lan", "office", "hotel", "hotspot"} <= set(netem.PROFILES)
+
+
+def test_outage_holds_data_until_link_returns():
+    p = netem.Profile(mbps=8, base_ms=0, jitter_ms=0, drop_at_s=30, drop_for_s=10)
+    s = netem.Shaper(p, seed=1)
+    assert round(s.deliver_at(1000, 29.0), 3) == 29.001       # before: normal
+    assert round(s.deliver_at(1000, 31.0), 3) == 40.001       # during: held until 40 s
+    assert round(s.deliver_at(1000, 45.0), 3) == 45.001       # after: normal
+
+
+def test_outage_profiles_exist():
+    assert {"drop3", "drop10", "drop30"} <= set(netem.PROFILES)
+    assert netem.PROFILES["drop30"].drop_for_s == 30

@@ -5,13 +5,15 @@
 <style>
   body { margin: 0; font: 15px/1.5 sans-serif; background: #fff; color: #111; }
   #type { position: fixed; top: 0; left: 0; right: 0; height: 90px; font: 16px monospace; z-index: 2; }
+  #flip { position: fixed; top: 150px; left: 0; width: 200px; height: 200px; background: #000; z-index: 3; }
   #anim { position: fixed; right: 20px; bottom: 20px; width: 480px; height: 270px; display: none; z-index: 2; }
-  main { padding: 110px 40px 40px; columns: 2; }
+  main { padding: 110px 40px 40px 240px; columns: 2; }
   p:nth-child(3n) { color: #b00; } p:nth-child(5n) { color: #06a; }
 </style></head>
 <body>
 <textarea id="type" placeholder="harness types here"></textarea>
 <canvas id="anim" width="480" height="270"></canvas>
+<div id="flip"></div><!-- F8 flips it: the harness times key -> pixels on this square -->
 <main id="text"></main>
 <script>
 const words = "remote desktop streaming crisp text sharp scroll latency jitter bitrate encoder frame queue path capacity".split(" ");
@@ -32,7 +34,9 @@ function frame() {
   }
   requestAnimationFrame(frame);
 }
+const flip = document.getElementById("flip"); let white = false;
 addEventListener("keydown", e => {
+  if (e.key === "F8") { e.preventDefault(); white = !white; flip.style.background = white ? "#fff" : "#000"; return; }
   if (e.key === "F9") { e.preventDefault(); on = !on; c.style.display = on ? "block" : "none"; if (on) frame(); }
 });
 </script></body></html>
