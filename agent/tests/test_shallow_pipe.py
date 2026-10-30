@@ -71,3 +71,86 @@ def test_queue_ms_thin_window_judged_with_acks_before():
     # One fresh ack (t=3, rtt 120) is judged with the earlier ones, as upstream does.
     state = {**_state(), "link_tick_at": 2.5}
     assert shallow_pipe.queue_ms(state, _wm([100, 90, 120])) == 30
+
+
+WRAP = 16
+
+
+class _Relay:
+    """Upstream _VideoRelay cut down to what _forward reads."""
+    def __init__(self, owner=True, lag=0.0, room=True):
+        self.numbered, self.since_key, self.sent = False, 1, {7}
+        self.lost_first, self.gauged, self.lost = None, False, []
+        self.ws, self.display_id = object(), "primary"
+        self.server = SimpleNamespace(_owns_display=lambda ws, d: owner)
+        self.lag_s, self.room = lag, room
+
+    def _lose(self, frame_id):
+        self.lost.append(frame_id)
+
+    def _repair(self):
+        return False
+
+    def _lag(self):
+        return self.lag_s
+
+    def _room(self):
+        return self.room
+
+    def _anchor_room(self):
+        return False
+
+    def _end_lost(self):
+        self.lost_first = None
+
+    def _forward(self, frame_id, reference, anchor=False):
+        return "upstream"
+
+
+def _gated(**kw):
+    cls = type("R", (_Relay,), {})
+    shallow_pipe.owner_gate(cls, SimpleNamespace(FRAME_NUM_WRAP=WRAP), "2.1.0")
+    return cls(**kw)
+
+
+def test_owner_over_lag_skips_delta():
+    r = _gated(lag=0.2)
+    assert r._forward(8, 7) is False and r.lost == [8]
+
+
+def test_owner_under_lag_passes():
+    assert _gated(lag=0.05)._forward(8, 7) is True
+
+
+def test_owner_without_floor_passes():
+    assert _gated(lag=0.0)._forward(8, 7) is True
+
+
+def test_owner_anchor_and_kept_never_skipped():
+    assert _gated(lag=5)._forward(8, 7, anchor=True) is True
+    r = _gated(lag=5)
+    r.numbered, r.since_key = True, WRAP
+    assert r._forward(8, 7) is True and r.lost == []
+
+
+def test_owner_sets_gauged():
+    r = _gated(lag=0.0)
+    r._forward(8, 7)
+    assert r.gauged is True
+
+
+def test_viewer_rules_unchanged():
+    r = _gated(owner=False, room=False)
+    assert r._forward(8, 7) is False and r.lost == [8]
+    assert _gated(owner=False, room=True)._forward(8, 7) is True
+
+
+def test_missing_reference_still_repairs():
+    r = _gated(lag=0.0)
+    assert r._forward(8, 99) is False and r.lost == [8]
+
+
+def test_version_mismatch_skips_patch():
+    cls = type("R", (_Relay,), {})
+    shallow_pipe.owner_gate(cls, SimpleNamespace(FRAME_NUM_WRAP=WRAP), "2.2.0")
+    assert cls()._forward(8, 7) == "upstream"

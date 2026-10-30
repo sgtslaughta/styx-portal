@@ -44,3 +44,50 @@ def trace_steer(server_cls, wm, steer_cls) -> None:
         return out
 
     server_cls._steer_bitrate_to_link = steer
+
+
+OWNER_LAG_S = 0.1      # queue past the round trip the controlling tab may build
+GATED_SELKIES = "2.1.0"
+
+
+def owner_gate(relay_cls, wm, version: str) -> None:
+    """The shallow-pipe gate for the tab that owns the display. Upstream
+    gates only other pages (`_room`); the owner's frames queue up to the 2 s
+    relay budget, so a Wi-Fi hiccup becomes seconds of late video. Past
+    OWNER_LAG_S of queue a delta is left out the way a page's is: the encoder
+    predicts past it (`_lose` -> `_repair`). Anchors and frame_num-wrap frames
+    always go.
+    ponytail: copy of upstream _forward (selkies 2.1.0); drop when selkies
+    gates the owner (issue TBD). Another version keeps upstream's."""
+    if version != GATED_SELKIES:
+        log.warning(f"shallow pipe: selkies {version} != {GATED_SELKIES}; owner gate off")
+        return
+
+    def _forward(self, frame_id, reference, anchor=False):
+        kept = self.numbered and not self.since_key % wm.FRAME_NUM_WRAP
+        if reference not in self.sent:
+            self._lose(frame_id)
+            return self._repair()
+        if self.lost_first is not None:
+            if not anchor or kept or self._anchor_room():
+                self._end_lost()
+                return True
+            self.lost_first = frame_id
+            self.lost_told = False
+            self._lose(frame_id)
+            return self._repair()
+        if self.server._owns_display(self.ws, self.display_id):
+            self.gauged = True      # pings go behind the owner's frames too, so _lag() reads
+            if kept or anchor or self._lag() < OWNER_LAG_S:
+                return True
+            self._lose(frame_id)
+            return self._repair()
+        self.gauged = True
+        if anchor and self._anchor_room():
+            return True
+        if not kept and not self._room():
+            self._lose(frame_id)
+            return self._repair()
+        return True
+
+    relay_cls._forward = _forward

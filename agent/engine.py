@@ -263,6 +263,8 @@ def seat_selkies_main() -> None:
     from selkies.stream_server import CongestionSteer
     cap_still_raise(CongestionSteer)
     shallow_pipe.trace_steer(websockets_mode.DataStreamingServer, websockets_mode, CongestionSteer)
+    import selkies
+    shallow_pipe.owner_gate(websockets_mode._VideoRelay, websockets_mode, selkies.__version__)
     sys.exit(main())
 
 
