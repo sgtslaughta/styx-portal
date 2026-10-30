@@ -9,6 +9,7 @@ import glob
 import json
 import os
 import socket
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -49,6 +50,37 @@ def pick_free_port() -> int:
 def pick_dri_node() -> str:
     nodes = sorted(glob.glob(os.path.join(DRI_DIR, "renderD*")))
     return nodes[0] if nodes else ""
+
+
+# VA-API encode profiles -> selkies encoders, most efficient first.
+VA_ENCODERS = (("VAProfileAV1", "av1enc"), ("VAProfileHEVC", "h265enc"))
+
+
+def parse_vainfo_encoders(text: str) -> tuple:
+    """The selkies encoders past H.264 that `vainfo` shows the GPU encoding."""
+    enc = [line.split(":")[0].strip() for line in text.splitlines() if "VAEntrypointEnc" in line]
+    return tuple(name for prefix, name in VA_ENCODERS if any(p.startswith(prefix) for p in enc))
+
+
+_HW_ENCODERS: dict = {}
+
+
+def hw_encoders(node: str) -> tuple:
+    """Hardware AV1/HEVC encoders on `node`, probed once. selkies falls back to
+    a software encoder (SVT-AV1, x265) for a codec the GPU lacks, which would
+    pin the CPU, so only probed codecs go ahead of H.264. No node or no vainfo:
+    none, and the session stays on H.264.
+    ponytail: VA-API only; NVENC hosts (GAME-01) stay on H.264 until probed too."""
+    if not node:
+        return ()
+    if node not in _HW_ENCODERS:
+        try:
+            out = subprocess.run(["vainfo", "--display", "drm", "--device", node],
+                                 capture_output=True, text=True, timeout=10).stdout
+        except (OSError, subprocess.SubprocessError):
+            out = ""
+        _HW_ENCODERS[node] = parse_vainfo_encoders(out)
+    return _HW_ENCODERS[node]
 
 
 def query_display_geometry(display: str, xauthority: str | None) -> tuple[int, int]:
@@ -342,7 +374,6 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
         f"--port={internal_port}",          # 2.0 binds loopback by default
         "--enable-basic-auth=false",        # gateway owns auth
         "--mode=websockets",
-        "--encoder=h264enc",
         f"--framerate={s.get('framerate', 60)}",
         "--second-screen=false",
         # Off until their phase ships (spec §6): devices, printing.
@@ -352,6 +383,8 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
         "--video-10bit=false|locked",
     ]
     dri = pick_dri_node()
+    # AV1 -> HEVC -> H.264: the first the browser decodes wins (selkies steps down).
+    cmd.insert(4, "--encoder=" + ",".join((*hw_encoders(dri), "h264enc")))
     if dri:
         cmd += [f"--encode-dri={dri}", f"--render-dri={dri}"]
         # Client pushes use_cpu=true; "|locked" keeps the GPU encoder on.
@@ -389,7 +422,7 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
     env["SELKIES_VIDEO_STREAMING_MODE"] = "true" if streaming is True else "false"
     # Admin bitrate is the default AND the ceiling; viewers may lower it. Floor
     # 1000 kbps: stale 1.x storage sends 8 (Mbps) which would otherwise mean 8 kbps.
-    kbps = _int_in(s.get("video_bitrate_kbps", s.get("bitrate_kbps")), 500, 200000) or 16000
+    kbps = _int_in(s.get("video_bitrate_kbps", s.get("bitrate_kbps")), 500, 200000) or 30000
     lo = min(1000, kbps)
     cmd.append(f"--video-bitrate={kbps},{lo}-{kbps}")
     # CBR at the admin bitrate: CRF + a QP cap made scrolls burst far past the

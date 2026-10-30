@@ -32,8 +32,9 @@ def _flags(cmd):
     return {a.split("=", 1)[0] for a in cmd if a.startswith("--")}
 
 
-def _stub(monkeypatch, dri="", monitor=""):
+def _stub(monkeypatch, dri="", monitor="", hw=()):
     monkeypatch.setattr(engine, "pick_dri_node", lambda: dri)
+    monkeypatch.setattr(engine, "hw_encoders", lambda node: hw)
     monkeypatch.setattr(engine, "resolve_monitor_source", lambda: monitor)
     monkeypatch.setattr(engine, "_find_xauthority", lambda c: None)
     monkeypatch.setattr(engine, "query_display_geometry", lambda d, x: (1920, 1080))
@@ -251,13 +252,13 @@ def test_bitrate_is_viewer_adjustable_ceiling(tmp_path, monkeypatch):
     cmd = _seat_cmd(tmp_path, monkeypatch, {"video_bitrate_kbps": 20000})
     assert "--video-bitrate=20000,1000-20000" in cmd
     cmd = _seat_cmd(tmp_path, monkeypatch, {})
-    assert "--video-bitrate=16000,1000-16000" in cmd
+    assert "--video-bitrate=30000,1000-30000" in cmd
     cmd = _seat_cmd(tmp_path, monkeypatch, {"video_bitrate_kbps": 800})
     assert "--video-bitrate=800,800-800" in cmd
     cmd = _seat_cmd(tmp_path, monkeypatch, {"bitrate_kbps": 12000})   # admin form key
     assert "--video-bitrate=12000,1000-12000" in cmd
     cmd = _seat_cmd(tmp_path, monkeypatch, {"video_bitrate_kbps": "junk"})
-    assert "--video-bitrate=16000,1000-16000" in cmd
+    assert "--video-bitrate=30000,1000-30000" in cmd
 
 
 def test_gnome_seat_always_disables_client_cursor(tmp_path, monkeypatch):
@@ -366,3 +367,31 @@ def test_stream_override_appends_args(tmp_path):
     assert engine.apply_stream_override(argv, f) == argv          # broken file: ignored
     f.write_text('{"args": ["ok", 3]}')
     assert engine.apply_stream_override(argv, f) == argv          # non-string args: ignored
+
+
+VAINFO_780M = """
+      VAProfileH264Main               :	VAEntrypointEncSlice
+      VAProfileH264High               :	VAEntrypointEncSlice
+      VAProfileHEVCMain               :	VAEntrypointEncSlice
+      VAProfileHEVCMain10             :	VAEntrypointEncSlice
+      VAProfileAV1Profile0            :	VAEntrypointVLD
+      VAProfileAV1Profile0            :	VAEntrypointEncSlice
+"""
+
+
+def test_parse_vainfo_encoders():
+    assert engine.parse_vainfo_encoders(VAINFO_780M) == ("av1enc", "h265enc")
+    assert engine.parse_vainfo_encoders("VAProfileAV1Profile0 : VAEntrypointVLD") == ()   # decode only
+    assert engine.parse_vainfo_encoders("") == ()
+
+
+def test_encoder_ladder_from_hardware(tmp_path, monkeypatch):
+    """A/B 2026-10-30: AV1 at 30 Mbps beat H.264 at 16 (settled text +15-39%).
+    Only codecs the GPU encodes lead: selkies would run AV1 in software otherwise."""
+    cfg = _cfg(tmp_path, stream_settings={})
+    _stub(monkeypatch, hw=("av1enc", "h265enc"))
+    cmd, _ = engine.build_selkies_cmd(cfg, 1)
+    assert "--encoder=av1enc,h265enc,h264enc" in cmd
+    _stub(monkeypatch, hw=())
+    cmd, _ = engine.build_selkies_cmd(cfg, 1)
+    assert "--encoder=h264enc" in cmd
