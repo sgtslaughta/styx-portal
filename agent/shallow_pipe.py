@@ -40,6 +40,7 @@ def trace_steer(server_cls, wm, steer_cls) -> None:
         if q is not None:
             steer = state.setdefault("link_steer", steer_cls())
             steer.styx_q_ms = q
+            steer.styx_jitter_ms = state.get("link_jitter_ms") or 0.0
             # selkies' _forget_path drops the steer on reconnect: keep its capacity.
             if getattr(steer, "styx_known_kbps", None) is None and display_id in KNOWN_KBPS:
                 steer.styx_known_kbps = KNOWN_KBPS[display_id]
@@ -50,7 +51,7 @@ def trace_steer(server_cls, wm, steer_cls) -> None:
         if q is not None:
             log.info(f"STYX-CC {display_id} q={q:.0f} floor={state.get('rtt_floor_ms', 0):.0f} "
                      f"dlv={state.get('link_delivered_bps', 0) / 1000:.0f} "
-                     f"rate={state.get('link_kbps', 0):.0f}")
+                     f"rate={state.get('link_kbps', 0):.0f} jit={state.get('link_jitter_ms') or 0:.0f}")
         return out
 
     server_cls._steer_bitrate_to_link = steer
@@ -133,6 +134,9 @@ def smooth_steer(steer_cls) -> None:
             return max(floor, min(ceiling, x))
 
         q = getattr(self, "styx_q_ms", None)
+        if q is not None:
+            # Half the path's jitter is noise, not queue (upstream allows the same).
+            q = max(0.0, q - (getattr(self, "styx_jitter_ms", 0.0) or 0.0) / 2)
         d = goodput_bps / 1_000
         moving = offered_bps is None or offered_bps >= current * 1_000 * getattr(self, "APP_LIMITED", 0.5)
         known = getattr(self, "styx_known_kbps", None)

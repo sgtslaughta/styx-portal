@@ -254,3 +254,19 @@ def test_known_capacity_survives_reconnect():
     fresh = {**_state(), "link_tick_at": 0}                  # reconnect: new state, no steer
     cls()._steer_bitrate_to_link("primary", fresh, 7.0)
     assert fresh["link_steer"].styx_known_kbps == 5400
+
+
+def test_jitter_is_not_a_queue():
+    # Hotel Wi-Fi: 70 ms of jitter under load. Half of it is noise, as upstream allows.
+    s = _smooth()
+    s.styx_jitter_ms, s.styx_known_kbps = 70, 8000
+    assert _t(s, 50, 6000, 6000, 6000, now=1.0) > 6000           # 50 - 35 = 15: calm
+    assert _t(s, 100, 6000, 6000, 6000, now=2.0) == 6000 * (1 - 65 / 300)
+
+
+def test_trace_passes_jitter():
+    cls = _server()
+    shallow_pipe.trace_steer(cls, _wm([100, 90, 120]), _Steer)
+    state = {**_state(), "link_jitter_ms": 42}
+    cls()._steer_bitrate_to_link("primary", state, 5.0)
+    assert state["link_steer"].styx_jitter_ms == 42
