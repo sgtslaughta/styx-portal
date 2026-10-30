@@ -69,6 +69,7 @@ class Session(dbus.service.Object):
         self.devices = 3
         self.want_screen = True
         self.scale = _seat_scale()      # fixed per session: a scale change restarts selkies
+        self.down, self.early = set(), {}   # _ordered: held keys/buttons, early releases
 
     @dbus.service.method(SESS_IFACE)
     def Close(self):
@@ -239,11 +240,36 @@ def rd_eis(self, session_handle, app_id, options):
     return sessions[str(session_handle)].rd.ConnectToEIS(dbus.Dictionary({}, signature="sv"))
 
 
+REORDER_S = 0.05
+PAIRED = ("NotifyPointerButton", "NotifyKeyboardKeycode", "NotifyKeyboardKeysym")
+
+
+def _ordered(s, name, code, down, send):
+    """xdg-desktop-portal can swap a press and release sent back to back (seen
+    on stream stutter: release, press -> Mutter keeps the key down, autorepeat).
+    A release for something not down waits up to REORDER_S for its press."""
+    key, now = (name, code), time.monotonic()
+    if down:
+        s.down.add(key)
+        send(code, True)
+        if now - s.early.pop(key, -REORDER_S - 1) <= REORDER_S:
+            s.down.discard(key)
+            send(code, False)
+    elif key in s.down:
+        s.down.discard(key)
+        send(code, False)
+    else:
+        s.early[key] = now
+
+
 def _forward(name, conv):
     """Notify* passthrough with the fixed arity dbus-python needs."""
     def fn2(self, sh, o, a1, a2):
         s = sessions[str(sh)]
-        getattr(s.rd, name)(*conv(s, o, a1, a2))
+        if name in PAIRED:
+            _ordered(s, name, *conv(s, o, a1, a2), send=getattr(s.rd, name))
+        else:
+            getattr(s.rd, name)(*conv(s, o, a1, a2))
 
     def fn3(self, sh, o, a1, a2, a3):
         s = sessions[str(sh)]
