@@ -32,6 +32,7 @@ from gateway_html import (  # noqa: F401  (re-exported for tests)
     CURSOR_HIDE_CSS,
     VIS_GRACE_MS,
     inject_cursor_hide,
+    inject_touch_scroll,
     inject_idle_watchdog,
     inject_title,
     inject_favicon,
@@ -481,6 +482,7 @@ def create_app(user: str, password: str,
             html = inject_favicon(html, icon[2])
         html = inject_idle_watchdog(html, idle_timeout_s, idle_lead_s, idle_enabled)
         html = inject_cursor_hide(html, bool(seat_dir))
+        html = inject_touch_scroll(html)
         html = refit.inject_reload(html, bool(seat_dir))
         return web.Response(text=html, content_type="text/html")
 

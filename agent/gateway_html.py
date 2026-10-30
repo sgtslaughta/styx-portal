@@ -134,6 +134,40 @@ def inject_cursor_hide(html: str, enabled: bool) -> str:
     return html.replace("</head>", CURSOR_HIDE_CSS + "</head>", 1)
 
 
+TOUCH_SCROLL_JS = (
+    "<script>(function(){"
+    "function patch(inp){"
+    "if(!inp||inp.__styxTouchScroll||typeof inp._twoFingerMove!=='function'"
+    "||typeof inp._endFingerScroll!=='function')return;"
+    "inp.__styxTouchScroll=1;var orig=inp._twoFingerMove;"
+    "inp._twoFingerMove=function(x1,y1,x2,y2){var g=this._twoFinger;"
+    "if(!this.fingerScroll||!g||g.kind!=='scroll')return orig.apply(this,arguments);"
+    "var a=(x1+x2)/2,o=(y1+y2)/2,s=this._pointerScale(),"
+    "dx=g.rail!=='y'?(g.x-a)*s.x:0,dy=g.rail!=='x'?(g.y-o)*s.y:0;g.x=a;g.y=o;"
+    "if(!dx&&!dy)return;this.send('sf,'+dx.toFixed(2)+','+dy.toFixed(2));"
+    "var self=this;clearTimeout(this._fingerScrollTimer);"
+    "this._fingerScrollTimer=setTimeout(function(){self._endFingerScroll();},200);};"
+    "function end(e){if(e.touches.length<2&&inp._fingerScrollTimer!==null)inp._endFingerScroll();}"
+    "document.addEventListener('touchend',end,true);"
+    "document.addEventListener('touchcancel',end,true);}"
+    "setInterval(function(){patch(window.webrtcInput);},500);"
+    "})();</script>")
+
+
+def inject_touch_scroll(html: str) -> str:
+    """A touchscreen's two-finger scroll goes out as selkies' finger scroll
+    (`sf` deltas, `sfe` on lift) instead of one wheel notch per 50 px: smooth,
+    and the lift is the axis stop GNOME starts its kinetic scroll on. Selkies
+    2.1 sends `sf` only for a touchpad's wheel events; the page already holds
+    `fingerScroll` from the server's display config, so a session without
+    finger scroll keeps the notches. ponytail: patches minified client
+    internals (_twoFingerMove, _endFingerScroll); a client lacking them is
+    left alone. Drop once upstream routes touch scroll through sf (issue TBD)."""
+    if "</head>" not in html:
+        return html
+    return html.replace("</head>", TOUCH_SCROLL_JS + "</head>", 1)
+
+
 def is_activity(data) -> bool:
     """Whether a client->server message counts as user activity for idle timing.
 
