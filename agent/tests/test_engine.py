@@ -353,3 +353,16 @@ def test_unmeasured_offer_never_raises_past_known():
 
 def test_no_measurement_yet_is_upstream_behaviour():
     assert _tick(_steer(), 2000, 100, 100) == 2300
+
+
+def test_stream_override_appends_args(tmp_path):
+    f = tmp_path / "stream-override.json"
+    argv = ["selkies", "--encoder=h264enc"]
+    assert engine.apply_stream_override(argv, f) == argv          # no file: unchanged
+    f.write_text('{"args": ["--encoder=av1enc,h265enc,h264enc", "--video-bitrate=30000,1000-30000"]}')
+    out = engine.apply_stream_override(argv, f)
+    assert out == argv + ["--encoder=av1enc,h265enc,h264enc", "--video-bitrate=30000,1000-30000"]
+    f.write_text("not json")
+    assert engine.apply_stream_override(argv, f) == argv          # broken file: ignored
+    f.write_text('{"args": ["ok", 3]}')
+    assert engine.apply_stream_override(argv, f) == argv          # non-string args: ignored

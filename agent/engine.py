@@ -242,11 +242,29 @@ SEAT_CLIPBOARD = {
 }
 
 
+STREAM_OVERRIDE = HOME / ".local/share/styx-agent/stream-override.json"
+
+
+def apply_stream_override(argv: list, path: Path = STREAM_OVERRIDE) -> list:
+    """argv plus the selkies flags in `path` ({"args": [...]}), which win as
+    argparse keeps the last value. The stream A/B harness swaps encoder and
+    bitrate this way and restarts only selkies, so the seat survives.
+    ponytail: dev/harness hook; production settings still come from the portal."""
+    try:
+        extra = json.loads(path.read_text()).get("args", [])
+    except (OSError, ValueError, AttributeError):
+        return argv
+    if not isinstance(extra, list) or not all(isinstance(a, str) for a in extra):
+        return argv
+    return argv + extra
+
+
 def seat_selkies_main() -> None:
     """selkies for the GNOME seat (`python engine.py <selkies args>`). Mutter
     has no wlr/ext data-control, so selkies' clipboard calls aimed at the seat
     socket fail; route them to seat_clipboard.py, which serves the seat's
     clipboard (all flavours) from Mutter's RemoteDesktop clipboard API."""
+    sys.argv = apply_stream_override(sys.argv)     # before selkies parses its settings on import
     from pixelflux import ScreenCapture
     from selkies import input_handler
     from selkies.__main__ import main
