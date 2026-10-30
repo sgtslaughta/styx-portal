@@ -10,6 +10,8 @@ Results: results/soak-<stamp>.json (per-cycle rows + 10 s memory series) and .md
 import argparse
 import json
 import re
+import signal
+import sys
 import time
 
 import ab
@@ -26,15 +28,20 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--minutes", type=float, default=90)
     ap.add_argument("--profile", default="office")
+    ap.add_argument("--variant", default="", help="run under an ab.VARIANTS override instead of the live settings")
     a = ap.parse_args()
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(1))   # stop -> finally restores selkies
     user, pw = ab.creds()
+    if a.variant:
+        ab.OVERRIDE.write_text(json.dumps({"args": ab.VARIANTS[a.variant]}))
+        ab.restart_selkies(user, pw)
     since, end = time.strftime("%Y-%m-%d %H:%M:%S"), time.time() + a.minutes * 60
     trend, rows, firefox = probes.Sampler(every=10), [], ab.open_workload()
     trend.start()
     try:
         time.sleep(5)
         while time.time() < end:
-            rows.append(ab.run_one("live", a.profile, user, pw))
+            rows.append(ab.run_one(a.variant or "live", a.profile, user, pw))
             print(json.dumps({k: rows[-1].get(k) for k in (
                 "codec", "valid", "watchdog", "latP50", "maxGapMs", "rss_mb_max", "gtt_mb_max")}), flush=True)
             if rows[-1]["foreign"]:
@@ -43,6 +50,9 @@ def main() -> None:
     finally:
         summary = trend.stop()
         firefox.terminate()
+        if a.variant:
+            ab.OVERRIDE.unlink(missing_ok=True)
+            ab.restart_selkies(user, pw)
     journal = ab.journal_since(since)
     summary |= {"minutes": round(a.minutes), "cycles": len(rows), "crashes": crashes(journal),
                 "watchdog": ab.watchdog_restarts(journal),
