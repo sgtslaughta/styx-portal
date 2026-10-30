@@ -170,8 +170,9 @@ def create_app(user: str, password: str,
                 abort_for_refit(w)
 
     def seat_dpi() -> int:
-        """The live seat scale as the DPI selkies must run at."""
-        return seat_scale.dpi_for_scale(seat_scale.read_scale(scale_file))
+        """The scale the seat runs at (seat helper's record) as the DPI selkies must run at."""
+        live = seat_scale.live_path(scale_file)
+        return seat_scale.dpi_for_scale(seat_scale.read_scale(live if os.path.exists(live) else scale_file))
 
     def publish_scale(rec):
         """Owner's HiDPI choice -> <install>/seat-scale (the seat helper applies it)."""

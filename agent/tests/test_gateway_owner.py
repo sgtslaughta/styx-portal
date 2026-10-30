@@ -211,6 +211,25 @@ async def test_seat_dpi_reaches_gnome_and_selkies_snapped(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_selkies_runs_at_the_scale_the_seat_applied(tmp_path):
+    """The mode may not offer the wanted scale: selkies takes the scale the
+    seat helper applied (seat-scale-live), not the one asked for."""
+    received = []
+    (tmp_path / "seat-scale").write_text("3")
+    (tmp_path / "seat-scale-live").write_text("2")
+    up, client = await _refit_pair(tmp_path, received, str(tmp_path))
+    hdr = {"Authorization": _basic("styx", "pw")}
+    try:
+        a = await _vid_ws(client, "A", hdr)
+        await a.send_str("s,288,primary")
+        await _until(lambda: any(m.startswith("s,") for m in received))
+    finally:
+        await client.close()
+        await up.close()
+    assert [m for m in received if m.startswith("s,")] == ["s,192,primary"]
+
+
+@pytest.mark.asyncio
 async def test_seat_scale_change_restarts_selkies_at_same_size(tmp_path):
     """pixelflux's monitor stream keeps the scale it was made at (frozen
     stream, pointer off): a scale change refits at the live size, which

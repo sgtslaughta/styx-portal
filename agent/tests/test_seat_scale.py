@@ -44,18 +44,19 @@ def _state(scales=(1.0, 2.0), cur=1.0):
 
 def test_monitors_config():
     assert seat_scale.monitors_config(_state(), 2) == (
-        5, 1, [(0, 0, 2.0, 0, True, [('Meta-0', '2560x1252@60.000', {})])], {})
-    assert seat_scale.monitors_config(_state(), 1) is None
-    assert seat_scale.monitors_config(_state(scales=(1.0,)), 2) is None
+        (5, 1, [(0, 0, 2.0, 0, True, [('Meta-0', '2560x1252@60.000', {})])], {}), 2.0)
+    assert seat_scale.monitors_config(_state(), 1) == (None, 1.0)
+    assert seat_scale.monitors_config(_state(scales=(1.0,)), 2) == (None, 1.0)
 
 
-def test_monitors_config_snaps_fractional_to_nearest_supported():
-    offered = (1.0, 1.3333333730697632, 1.5, 2.0, 2.6666667461395264, 3.0)
-    pick = lambda want: seat_scale.monitors_config(_state(scales=offered), want)[2][0][2]  # noqa: E731
-    assert pick(1.25) == 1.3333333730697632
-    assert pick(1.5) == 1.5
-    assert pick(2.5) == 2.6666667461395264
-    assert seat_scale.monitors_config(_state(scales=offered, cur=1.5), 1.5) is None
+def test_pick_scale_only_takes_scales_selkies_shares():
+    qhd = (1.0, 1.25, 1.3333333730697632, 1.6666666269302368, 2.0, 2.5, 2.6666667461395264)
+    assert seat_scale.pick_scale(qhd, 3) == 2.0         # 2.67 would split GNOME from selkies
+    assert seat_scale.pick_scale(qhd, 1.5) == 1.0
+    assert seat_scale.pick_scale((1.0, 1.5, 2.0, 3.0), 3) == 3.0
+    assert seat_scale.pick_scale((1.0, 1.5, 2.0, 3.0), 2) == 2.0
+    assert seat_scale.pick_scale((1.0, 1.5, 2.0, 3.0), 1.5) == 1.5
+    assert seat_scale.pick_scale((), 2) == 1.0
 
 
 class _Bus:
@@ -86,15 +87,15 @@ def fake_dbus(monkeypatch):
     monkeypatch.setitem(sys.modules, "dbus", m)
 
 
-def _run(bus, scale):
+def _run(bus, scale, live=""):
     out = []
-    seat_scale.apply_scale(bus, scale, lambda *a: out.append(" ".join(map(str, a))))
+    seat_scale.apply_scale(bus, scale, lambda *a: out.append(" ".join(map(str, a))), live)
     return out
 
 
 def test_apply_scale_applies(fake_dbus):
     bus = _Bus(_state())
-    assert _run(bus, 2) == ["scale 2 applied"] and len(bus.applied) == 1
+    assert _run(bus, 2) == ["scale 2.0 applied"] and len(bus.applied) == 1
 
 
 def test_apply_scale_already_at_scale_is_silent(fake_dbus):
@@ -110,3 +111,17 @@ def test_apply_scale_logs_unsupported(fake_dbus):
 def test_apply_scale_never_raises(fake_dbus):
     out = _run(_Bus(_state(), err=RuntimeError("bus gone")), 2)
     assert len(out) == 1 and "bus gone" in out[0]
+
+
+def test_apply_scale_records_the_scale_it_applied(fake_dbus, tmp_path):
+    live = tmp_path / "seat-scale-live"
+    bus = _Bus(_state(scales=(1.0, 1.25, 2.0, 2.6666667461395264), cur=2.6666667461395264))
+    out = _run(bus, 3, str(live))
+    assert seat_scale.read_scale(live) == 2.0
+    assert bus.applied[0][2][0][2] == 2.0 and "using 2.0" in out[0]
+
+
+def test_apply_scale_failure_leaves_live_untouched(fake_dbus, tmp_path):
+    live = tmp_path / "seat-scale-live"
+    _run(_Bus(_state(), err=RuntimeError("bus gone")), 2, str(live))
+    assert not live.exists()

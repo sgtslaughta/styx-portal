@@ -28,7 +28,7 @@ gi.require_version("Gst", "1.0")
 from gi.repository import GLib, Gst  # noqa: E402
 
 from seat_clipboard import ClipboardServer  # noqa: E402
-from seat_scale import apply_scale, read_scale  # noqa: E402
+from seat_scale import apply_scale, live_path, read_scale  # noqa: E402
 import seat_systemd  # noqa: E402
 from seat_systemd import SD_NAME, SystemdStub, snap_scope_props  # noqa: E402, F401
 
@@ -218,8 +218,12 @@ def rd_select(self, handle, session_handle, app_id, options):
 
 
 def _seat_scale() -> float:
+    """The scale Mutter runs the seat at (what the helper applied)."""
     path = os.environ.get("STYX_SEAT_SCALE_FILE", "")
-    return read_scale(path) if path else 1.0
+    if not path:
+        return 1.0
+    live = live_path(path)
+    return read_scale(live if os.path.exists(live) else path)
 
 
 def rd_eis(self, session_handle, app_id, options):
@@ -446,7 +450,8 @@ def main(argv) -> int:
             m = -1
         if m != sc["mtime"] or sc["first"]:
             sc["mtime"], sc["first"] = m, False
-            apply_scale(bus, read_scale(sc["path"]) if sc["path"] else 1, log)
+            apply_scale(bus, read_scale(sc["path"]) if sc["path"] else 1, log,
+                        live_path(sc["path"]) if sc["path"] else "")
         return True
 
     def watch_resize():
