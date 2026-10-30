@@ -219,8 +219,8 @@ def test_recovers_fast_below_known_then_gently():
 
 def test_still_screen_holds():
     s = _smooth()
-    s.styx_known_kbps = 6000
-    assert _t(s, 0, 8000, 100, 100) == 8000 and s.styx_known_kbps == 6000
+    s.styx_known_kbps = 9000
+    assert _t(s, 0, 8000, 100, 100) == 8000 and s.styx_known_kbps == 9000
 
 
 def test_no_measure_holds():
@@ -233,3 +233,24 @@ def test_never_below_floor_or_above_ceiling():
     for i in range(10):
         cur = _t(s, 0, cur, 50000, cur, now=i * 0.5)
     assert cur <= 16000
+
+
+def test_still_screen_never_holds_above_known():
+    # 0.9.14 hotel run: rate sat at the 16000 ceiling on a still screen over a ~6 Mbps path.
+    s = _smooth()
+    s.styx_known_kbps = 6000
+    assert _t(s, 0, 16000, 100, 100) == 6300
+
+
+def test_known_capacity_survives_reconnect():
+    # selkies' _forget_path drops link_steer on reconnect; the path's capacity is kept per display.
+    shallow_pipe.KNOWN_KBPS.clear()
+    cls = _server()
+    shallow_pipe.trace_steer(cls, _wm([100, 90, 120]), _Steer)
+    state = _state()
+    cls()._steer_bitrate_to_link("primary", state, 5.0)
+    state["link_steer"].styx_known_kbps = 5400
+    cls()._steer_bitrate_to_link("primary", state, 6.0)     # remembered after the tick
+    fresh = {**_state(), "link_tick_at": 0}                  # reconnect: new state, no steer
+    cls()._steer_bitrate_to_link("primary", fresh, 7.0)
+    assert fresh["link_steer"].styx_known_kbps == 5400
