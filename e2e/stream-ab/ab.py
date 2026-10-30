@@ -36,7 +36,19 @@ VARIANTS = {
     "h264-16": ["--encoder=h264enc", "--video-bitrate=16000,1000-16000"],
     "h264-30": ["--encoder=h264enc", "--video-bitrate=30000,1000-30000"],
     "av1-30": ["--encoder=av1enc,h265enc,h264enc", "--video-bitrate=30000,1000-30000"],
+    "av1-16": ["--encoder=av1enc,h265enc,h264enc", "--video-bitrate=16000,1000-16000"],
 }
+GWLOG = INSTALL / "logs/gateway.log"
+WS_OPEN = re.compile(r"ws open .*from=(\S+)")
+
+
+def foreign_client(lines) -> str | None:
+    """A real user's tab that opened during a run: the run is void, and the
+    harness yields (it would fight the user for control otherwise)."""
+    for line in lines:
+        if (m := WS_OPEN.search(line)) and m[1] not in ("127.0.0.1", "::1"):
+            return m[1]
+    return None
 SETTINGS = re.compile(r"Stream settings active -> .*?Mode: (\S+) \((\w+)\).*?(CBR \d+|CRF: \d+)")
 DECODE_FPS = re.compile(r"decoder keeps up with (\d+) fps")
 
@@ -116,7 +128,7 @@ def server_metrics(start: int) -> dict:
 
 
 def run_one(variant: str, profile: str, user: str, pw: str, refuse: str = "") -> dict:
-    start = log_lines()
+    start, gw_start = log_lines(), GWLOG.stat().st_size
     proxy = subprocess.Popen([sys.executable, str(HERE / "netem.py"), f"--profile={profile}",
                               f"--listen={PROXY}", f"--target=127.0.0.1:{GATEWAY}"])
     try:
@@ -131,11 +143,15 @@ def run_one(variant: str, profile: str, user: str, pw: str, refuse: str = "") ->
     finally:
         proxy.terminate()
     time.sleep(2)
-    return {"variant": variant, "profile": profile, "refuse": refuse, **server_metrics(start), **client}
+    with open(GWLOG, errors="replace") as f:
+        f.seek(gw_start)
+        foreign = foreign_client(f.readlines())
+    return {"variant": variant, "profile": profile, "refuse": refuse, "foreign": foreign,
+            **server_metrics(start), **client}
 
 
 def table(rows: list) -> str:
-    cols = ["variant", "profile", "refuse", "codec", "q_floor_p90", "cuts_gt30_per5m", "lost",
+    cols = ["variant", "profile", "refuse", "foreign", "codec", "q_floor_p90", "cuts_gt30_per5m", "lost",
             "decode_fps_min", "sharpStill", "sharpAfterScroll", "sharpEnd"]
     out = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
     for r in rows:
@@ -162,6 +178,9 @@ def main() -> None:
             for p in a.profiles.split(","):
                 rows.append(run_one(v, p, user, pw))
                 print(json.dumps(rows[-1]), flush=True)
+                if rows[-1]["foreign"]:
+                    print(f"ABORT: a user tab ({rows[-1]['foreign']}) connected; yielding the seat", flush=True)
+                    return finish(rows)
         if a.fallback:
             OVERRIDE.write_text(json.dumps({"args": VARIANTS["av1-30"]}))
             restart_selkies(user, pw)
@@ -171,6 +190,10 @@ def main() -> None:
         OVERRIDE.unlink(missing_ok=True)
         restart_selkies(user, pw)
         firefox.terminate()
+    finish(rows)
+
+
+def finish(rows: list) -> None:
     stamp = time.strftime("%Y%m%d-%H%M%S")
     res = HERE / "results"
     (res / f"{stamp}.json").write_text(json.dumps(rows, indent=1))
