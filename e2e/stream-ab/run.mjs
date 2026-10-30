@@ -1,6 +1,6 @@
 // Headless controller for one A/B run: opens the real selkies page through
 // netem.py, drives a scripted workload over the stream, prints JSON metrics.
-//   node run.mjs --url=http://127.0.0.1:18443/ --user=U --pass=P [--refuse=av01]
+//   STYX_USER=U STYX_PASS=P node run.mjs --url=http://127.0.0.1:18443/ [--refuse=av01]
 // ponytail: client metrics are coarse (first frame, sharpness of screenshots);
 // the server log carries the rest (ab.py).
 import { chromium } from 'playwright';
@@ -12,7 +12,7 @@ const mark = name => marks.push([name, (Date.now() - t0) / 1000]);
 
 const browser = await chromium.launch();
 const ctx = await browser.newContext({
-  httpCredentials: { username: a.user, password: a.pass },
+  httpCredentials: { username: process.env.STYX_USER, password: process.env.STYX_PASS },
   viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2,
 });
 if (a.refuse) {

@@ -105,10 +105,12 @@ def run_one(variant: str, profile: str, user: str, pw: str, refuse: str = "") ->
                               f"--listen={PROXY}", f"--target=127.0.0.1:{GATEWAY}"])
     try:
         time.sleep(1)
-        args = ["node", str(HERE / "run.mjs"), f"--url=http://127.0.0.1:{PROXY}/", f"--user={user}", f"--pass={pw}"]
+        args = ["node", str(HERE / "run.mjs"), f"--url=http://127.0.0.1:{PROXY}/"]
         if refuse:
             args.append(f"--refuse={refuse}")
-        r = subprocess.run(args, capture_output=True, text=True, timeout=240, cwd=HERE.parent)
+        # Credentials via env, not argv: argv is world-readable in ps.
+        env = {**os.environ, "STYX_USER": user, "STYX_PASS": pw}
+        r = subprocess.run(args, capture_output=True, text=True, timeout=240, cwd=HERE.parent, env=env)
         client = json.loads(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 else {"error": r.stderr[-400:]}
     finally:
         proxy.terminate()
