@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import socket
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -12,6 +13,8 @@ logger = logging.getLogger("styx-portal")
 
 _VIEWPORT = {"width": 1920, "height": 1080}
 _NAV_TIMEOUT_MS = 10000
+_URL_VIEWPORT = {"width": 1280, "height": 800}
+_URL_SETTLE_MS = 3000
 # Poll for an active stream before screenshotting.
 _STREAM_POLLS = 8
 _STREAM_POLL_MS = 700
@@ -230,6 +233,61 @@ class ScreenshotService:
         finally:
             if joined and self_id:
                 await asyncio.to_thread(self._leave_nets, joined, self_id)
+
+    async def capture_url(self, key: str, url: str) -> bool:
+        """Screenshot a proxied service's internal URL into svc-{key}.png, under the same
+        network jail as capture(): only the target's own host:port/scheme is reachable."""
+        parts = urlsplit(url)
+        try:
+            host, protocol = parts.hostname, parts.scheme.lower()
+            port = parts.port or _DEFAULT_PORT[protocol]
+        except (ValueError, KeyError):
+            return False
+        if protocol not in ("http", "https") or not host:
+            return False
+        try:
+            await self._ensure_browser()
+        except Exception:
+            logger.debug("screenshot: browser launch failed", exc_info=True)
+            return False
+        async with self._sem:
+            context = None
+            try:
+                context = await self._browser.new_context(
+                    ignore_https_errors=True, viewport=_URL_VIEWPORT, service_workers="block",
+                    proxy={"server": "http://127.0.0.1:9", "bypass": f"{host}:{port}"},
+                )
+
+                async def guard(route):
+                    if _origin_allowed(route.request.url, host, port, protocol):
+                        resp = await route.fetch(max_redirects=0)
+                        await route.fulfill(response=resp)
+                    else:
+                        logger.warning("screenshot: blocked request to %s", route.request.url)
+                        await route.abort()
+
+                async def guard_ws(ws):
+                    if _origin_allowed(ws.url, host, port, protocol):
+                        ws.connect_to_server()
+                    else:
+                        await ws.close()
+
+                await context.route("**/*", guard)
+                await context.route_web_socket("**/*", guard_ws)
+                page = await self._open(context, url)
+                await page.wait_for_timeout(_URL_SETTLE_MS)
+                png = await page.screenshot(type="png")
+                final = self._cache_dir / f"svc-{key}.png"
+                tmp = final.with_suffix(".png.tmp")
+                tmp.write_bytes(png)
+                os.replace(tmp, final)
+                return True
+            except Exception:
+                logger.debug("screenshot: url capture failed for %s", key, exc_info=True)
+                return False
+            finally:
+                if context is not None:
+                    await context.close()
 
     async def _open(self, context, url):
         page = await context.new_page()

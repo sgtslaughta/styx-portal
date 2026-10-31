@@ -17,6 +17,7 @@ from app.middleware.rate_limit import RateLimitMiddleware
 from app.security.same_origin import svc_cookie_guard
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.models import Instance, SessionEvent, User
+from app.services.screenshot_url import service_thumbnail_loop
 from app.routers import templates, instances, registry, images
 from app.routers import auth as auth_router
 from app.routers import users as users_router
@@ -174,12 +175,14 @@ async def lifespan(app: FastAPI):
     task = asyncio.create_task(_session_monitor_loop())
     metrics_task = asyncio.create_task(_metrics_collection_loop())
     screenshot_task = asyncio.create_task(_screenshot_capture_loop())
+    svc_thumb_task = asyncio.create_task(service_thumbnail_loop(async_session, _settings.SCREENSHOT_CACHE_DIR))
     health_task = asyncio.create_task(_health_sample_loop())
     svc_health_task = asyncio.create_task(_service_health_loop())
     yield
     task.cancel()
     metrics_task.cancel()
     screenshot_task.cancel()
+    svc_thumb_task.cancel()
     health_task.cancel()
     svc_health_task.cancel()
     await asyncio.gather(svc_health_task, return_exceptions=True)
