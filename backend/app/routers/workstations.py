@@ -367,8 +367,12 @@ async def get_thumbnail(ws_id: str,
     allowed = await _allowed_ids(session, ws.id)
     if not (user.role == "admin" or ws.all_users or user.id in allowed):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this workstation")
+    # The live screen of someone else's session is theirs: the gateway refuses a
+    # second controller, so the thumbnail must not show it either (404, not 403,
+    # so occupancy itself does not leak).
+    busy = ws.active_connections > 0 and ws.occupied_by not in (None, user.id)
     p = ws_thumb.path(ws.id)
-    if not p.is_file():
+    if ws.status == "revoked" or (busy and user.role != "admin") or not p.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No thumbnail")
     return FileResponse(p, media_type="image/jpeg",
                         headers={"Cache-Control": "private, no-cache"})

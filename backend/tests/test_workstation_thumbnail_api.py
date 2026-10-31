@@ -76,6 +76,26 @@ async def test_fetch_denied_without_access(member_client, session, _cache):
 
 
 @pytest.mark.asyncio
+async def test_hidden_while_someone_else_is_connected(member_client, session, _cache):
+    ws = await _ws(session, all_users=True, active_connections=1)
+    member = (await session.exec(select(User).where(User.username == "member"))).first()
+    ws.occupied_by = ws.created_by        # the admin's session
+    session.add(ws)
+    await session.commit()
+    (_cache / f"ws-{ws.id}.jpg").write_bytes(JPG)
+    url = f"/api/workstations/{ws.id}/thumbnail"
+    assert (await member_client.get(url)).status_code == 404
+    ws.occupied_by = member.id
+    session.add(ws)
+    await session.commit()
+    assert (await member_client.get(url)).status_code == 200      # own session
+    ws.active_connections, ws.occupied_by, ws.status = 0, None, "revoked"
+    session.add(ws)
+    await session.commit()
+    assert (await member_client.get(url)).status_code == 404      # revoked
+
+
+@pytest.mark.asyncio
 async def test_purge_and_deregister_delete_file(client, admin_client, session, _cache):
     ws = await _ws(session)
     f = _cache / f"ws-{ws.id}.jpg"
