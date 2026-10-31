@@ -155,6 +155,7 @@ AGENT_UPDATE_FILES = [
     ("portal_api.py", "portal_api.py"),
     ("clipboard_bridge.py", "clipboard_bridge.py"),
     ("favicon.py", "favicon.py"),
+    ("seat_thumb.py", "seat_thumb.py"),
 ]
 
 

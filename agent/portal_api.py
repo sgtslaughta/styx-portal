@@ -56,3 +56,15 @@ def api_bytes(cfg: dict, path: str) -> tuple[bytes, str, str]:
     with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
         ctype = resp.headers.get("Content-Type", "").split(";")[0].strip()
         return resp.read(), ctype, resp.headers.get("ETag", "").removeprefix("W/").strip('"')
+
+
+def api_post_bytes(cfg: dict, path: str, data: bytes, ctype: str) -> None:
+    """POST a raw body (e.g. a JPEG); the reply is ignored (204)."""
+    url = cfg["server"].rstrip("/") + path
+    req = urllib.request.Request(
+        url, data=data, method="POST",
+        headers={"Authorization": f"Bearer {cfg['agent_token']}",
+                 "Content-Type": ctype, "User-Agent": UA})
+    ctx = _ssl_context(cfg) if url.startswith("https") else None
+    with urllib.request.urlopen(req, timeout=15, context=ctx):
+        pass

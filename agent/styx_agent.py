@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-AGENT_VERSION = "0.9.19"
+AGENT_VERSION = "0.9.20"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -30,6 +30,7 @@ def load_config(path: Path = CONFIG_PATH) -> dict:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import favicon  # noqa: E402
+import seat_thumb  # noqa: E402
 import refit  # noqa: E402
 import engine  # noqa: E402  (installed next to this file by enroll.sh)
 import seat_gnome  # noqa: E402
@@ -355,6 +356,7 @@ def run(cfg: dict) -> int:
                       flush=True)
                 break
             favicon.on_heartbeat(cfg, hb)
+            gseat and seat_thumb.on_heartbeat(cfg)
             if hb.get("disconnect_clients"):
                 print("server requested client disconnect (logout); "
                       "restarting gateway", flush=True)
