@@ -32,7 +32,10 @@ await ctx.addInitScript(() => {
   self.__frames = []; self.__luma = -1;
   const write = W.prototype.write;
   W.prototype.write = function (chunk) {
-    if (chunk instanceof VideoFrame) {
+    // selkies re-writes its last frame about every 1.2 s when nothing arrives (keeps the
+    // track alive): only a new timestamp is a new frame.
+    if (chunk instanceof VideoFrame && chunk.timestamp !== self.__lastTs) {
+      self.__lastTs = chunk.timestamp;
       self.__frames.push(performance.now());
       try {
         px.drawImage(chunk, 200, 500, 1, 1, 0, 0, 1, 1);
@@ -95,7 +98,7 @@ if (a.mode === 'recovery') {                // outage profiles: steady motion, m
   await page.mouse.click(cx, 40);
   await page.keyboard.press('F9');
   await sleep(Number(a.seconds || 90) * 1000);
-  await page.keyboard.press('F9');
+  await page.keyboard.press('F10');
   mark('end');
   console.log(JSON.stringify({ marks, ...(await gaps()), ...(await latency(5)) }));
   await browser.close();
@@ -143,7 +146,7 @@ mark('latency');
 
 await page.keyboard.press('F9');            // animation on
 await sleep(20000);
-await page.keyboard.press('F9');
+await page.keyboard.press('F10');
 mark('anim');
 await sleep(5000);
 const sharpEnd = await sharpness();

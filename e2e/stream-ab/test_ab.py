@@ -32,3 +32,9 @@ def test_soak_crash_count():
              "Oct 30 python[1]: selkies exited rc=-6; restart in 2s",
              "Oct 30 python[1]: selkies exited rc=1; restart in 2s"]
     assert soak.crashes(lines) == 2
+
+
+def test_recovery_run_needs_steady_motion():
+    assert ab.motion_ok("drop10", {"frames": 2000, "marks": [["page", 1], ["end", 91]]})
+    assert not ab.motion_ok("drop10", {"frames": 193, "marks": [["page", 1], ["end", 91]]})
+    assert ab.motion_ok("hotel", {"frames": 0})            # only outage runs need motion

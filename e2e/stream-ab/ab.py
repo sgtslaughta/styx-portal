@@ -55,6 +55,18 @@ def journal_since(since: str) -> list:
     return r.stdout.splitlines()
 
 
+MIN_MOTION_FPS = 10      # an outage run measures nothing without steady motion
+
+
+def motion_ok(profile: str, client: dict) -> bool:
+    """An outage (drop*) run counts only if its animation actually streamed."""
+    if not profile.startswith("drop"):
+        return True
+    marks = dict(client.get("marks") or [])
+    span = marks.get("end", 0) - marks.get("page", 0)
+    return span > 0 and (client.get("frames") or 0) >= MIN_MOTION_FPS * span
+
+
 def foreign_client(lines) -> str | None:
     """A real user's tab that opened during a run: the run is void, and the
     harness yields (it would fight the user for control otherwise)."""
@@ -140,6 +152,13 @@ def server_metrics(start: int) -> dict:
     return out
 
 
+def warm_up(user: str, pw: str) -> None:
+    """A throwaway run after a selkies restart: the first session on a fresh
+    selkies sometimes went 15 s frameless and tripped the agent watchdog
+    (5 of 5 such stalls on 2026-10-30), which measured the restart, not the variant."""
+    print(json.dumps({"warmup": run_one("warmup", "lan", user, pw).get("valid")}), flush=True)
+
+
 def run_one(variant: str, profile: str, user: str, pw: str, refuse: str = "") -> dict:
     start, gw_start = log_lines(), GWLOG.stat().st_size
     since = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -169,7 +188,8 @@ def run_one(variant: str, profile: str, user: str, pw: str, refuse: str = "") ->
         foreign = foreign_client(f.readlines())
     restarts = watchdog_restarts(journal_since(since))
     return {"variant": variant, "profile": profile, "refuse": refuse, "foreign": foreign,
-            "watchdog": restarts, "valid": not foreign and not restarts, **load,
+            "watchdog": restarts, "valid": not foreign and not restarts and motion_ok(profile, client),
+            **load,
             **server_metrics(start), **client}
 
 
@@ -200,6 +220,7 @@ def main() -> None:
         for v in a.variants.split(","):
             OVERRIDE.write_text(json.dumps({"args": VARIANTS[v]}))
             restart_selkies(user, pw)
+            warm_up(user, pw)
             for p in [p for p in a.profiles.split(",") for _ in range(a.repeats)]:
                 rows.append(run_one(v, p, user, pw))
                 print(json.dumps(rows[-1]), flush=True)
@@ -209,6 +230,7 @@ def main() -> None:
         if a.fallback:
             OVERRIDE.write_text(json.dumps({"args": VARIANTS["av1-30"]}))
             restart_selkies(user, pw)
+            warm_up(user, pw)
             rows.append(run_one("av1-30", "lan", user, pw, refuse="av01"))
             print(json.dumps(rows[-1]), flush=True)
     finally:

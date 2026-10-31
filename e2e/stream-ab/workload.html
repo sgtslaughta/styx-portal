@@ -1,6 +1,6 @@
 <!doctype html>
 <!-- Opened inside the seat (firefox --kiosk) by ab.py: long text to scroll,
-     a box to type into, and an animation toggled by F9 for the "video" phase. -->
+     a box to type into, and an animation started by F9 / stopped by F10 for the "video" phase. -->
 <html><head><meta charset="utf-8"><title>styx-ab-workload</title>
 <style>
   body { margin: 0; font: 15px/1.5 sans-serif; background: #fff; color: #111; }
@@ -37,6 +37,10 @@ function frame() {
 const flip = document.getElementById("flip"); let white = false;
 addEventListener("keydown", e => {
   if (e.key === "F8") { e.preventDefault(); white = !white; flip.style.background = white ? "#fff" : "#000"; return; }
-  if (e.key === "F9") { e.preventDefault(); on = !on; c.style.display = on ? "block" : "none"; if (on) frame(); }
+  // F9 starts, F10 stops: explicit, so no state carries between harness runs.
+  if (e.key === "F9" || e.key === "F10") {
+    e.preventDefault(); const want = e.key === "F9";
+    if (want !== on) { on = want; c.style.display = on ? "block" : "none"; if (on) frame(); }
+  }
 });
 </script></body></html>
