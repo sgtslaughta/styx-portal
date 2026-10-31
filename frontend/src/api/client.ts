@@ -264,6 +264,8 @@ export const api = {
     request<string[]>(`/users/${userId}/groups`, { method: "PUT", body: JSON.stringify({ group_ids: groupIds }) }),
   listInstances: () => request<Instance[]>("/instances"),
   screenshotUrl: (id: string) => `${BASE}/instances/${id}/screenshot`,
+  workstationThumbUrl: (id: string) => `${BASE}/workstations/${id}/thumbnail`,
+  serviceThumbUrl: (id: string) => `${BASE}/services/${id}/thumbnail`,
   refreshScreenshot: (id: string) =>
     request<{ ok: boolean }>(`/instances/${id}/screenshot/refresh`, { method: "POST" }),
   createInstance: (data: InstanceCreate) =>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, Search } from "lucide-react";
 import { api, ApiError, type Workstation } from "@/api/client";
+import { Thumbnail } from "@/components/common/thumbnail";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { WorkstationIcon } from "@/components/system/workstation-icon";
@@ -203,6 +204,9 @@ export function WorkstationList() {
                 <LedDot led={led} />
                 <WorkstationIcon ws={ws} />
                 {osBadge(ws)}
+                <div className="hidden w-28 shrink-0 sm:block" data-testid="ws-thumb">
+                  <Thumbnail src={api.workstationThumbUrl(ws.id)} icon={null} isLive={ws.status === "online"} small />
+                </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{ws.name}</p>
                   <p className="truncate text-xs text-muted-foreground">

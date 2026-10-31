@@ -1,24 +1,26 @@
 import { useEffect, useState } from "react";
 import { RotateCw } from "lucide-react";
-import { api } from "@/api/client";
 
-interface InstanceThumbnailProps {
-  instanceId: string;
+interface ThumbnailProps {
+  /** Image URL; a cache-busting `?t=` tick is appended on every refresh. */
+  src: string;
   icon: string | null;
-  isLive: boolean;
+  isLive?: boolean;
   /** Fill the parent's height (for equal-height column layouts) instead of 16:9. */
   fill?: boolean;
+  refreshMs?: number;
+  /** When given, shows a refresh button that awaits this, then re-fetches the image. */
+  onRefresh?: () => Promise<unknown>;
+  /** Small tile (list rows/cards): smaller fallback icon. */
+  small?: boolean;
+  className?: string;
 }
 
-const REFRESH_MS = 30000;
-
 /**
- * Live preview tile for the detail pane: shows the cached screenshot for a
- * running/idle instance, refreshed every 30s, falling back to the template
- * icon when no screenshot is available (404/error) or the instance isn't live.
- * Unlike IconViewport it carries no name/status overlay — the pane header owns those.
+ * Preview tile: shows `src` refreshed on an interval, falling back to the icon
+ * when the image is unavailable (404/error) or `isLive` is false.
  */
-export function InstanceThumbnail({ instanceId, icon, isLive, fill }: InstanceThumbnailProps) {
+export function Thumbnail({ src, icon, isLive = true, fill, refreshMs = 60000, onRefresh, small, className }: ThumbnailProps) {
   const [tick, setTick] = useState(0);
   const [shotOk, setShotOk] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -28,15 +30,15 @@ export function InstanceThumbnail({ instanceId, icon, isLive, fill }: InstanceTh
       setShotOk(false);
       return;
     }
-    const t = setInterval(() => setTick((n) => n + 1), REFRESH_MS);
+    const t = setInterval(() => setTick((n) => n + 1), refreshMs);
     return () => clearInterval(t);
-  }, [isLive]);
+  }, [isLive, refreshMs]);
 
   const handleRefresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
     try {
-      await api.refreshScreenshot(instanceId);
+      await onRefresh?.();
       setTick((n) => n + 1); // re-fetch the freshly captured frame
     } catch {
       // ignore — the existing image stays
@@ -45,20 +47,20 @@ export function InstanceThumbnail({ instanceId, icon, isLive, fill }: InstanceTh
     }
   };
 
-  const iconContent = icon?.startsWith("http") ? (
-    <img src={icon} alt="" className="w-20 h-20 object-contain opacity-60" draggable={false} />
+  const iconContent = icon?.startsWith("http") || icon?.startsWith("/") ? (
+    <img src={icon} alt="" className={`${small ? "w-8 h-8" : "w-20 h-20"} object-contain opacity-60`} draggable={false} />
   ) : (
-    <span className="text-7xl leading-none select-none opacity-60">{icon ?? "🖥️"}</span>
+    <span className={`${small ? "text-3xl" : "text-7xl"} leading-none select-none opacity-60`}>{icon ?? "🖥️"}</span>
   );
 
   return (
-    <div className={`relative w-full rounded-lg border border-border bg-secondary overflow-hidden flex items-center justify-center ${fill ? "h-full min-h-[200px]" : "aspect-video"}`}>
+    <div className={`relative w-full ${className ?? ""} rounded-lg border border-border bg-secondary overflow-hidden flex items-center justify-center ${fill ? "h-full min-h-[200px]" : "aspect-video"}`}>
       <div className={`flex items-center justify-center ${shotOk ? "hidden" : ""}`}>
         {iconContent}
       </div>
       {isLive && (
         <img
-          src={`${api.screenshotUrl(instanceId)}?t=${tick}`}
+          src={`${src}?t=${tick}`}
           alt="Live preview"
           className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-300 ${shotOk ? "opacity-100" : "opacity-0"}`}
           draggable={false}
@@ -66,7 +68,7 @@ export function InstanceThumbnail({ instanceId, icon, isLive, fill }: InstanceTh
           onError={() => setShotOk(false)}
         />
       )}
-      {isLive && (
+      {isLive && onRefresh && (
         <button
           type="button"
           onClick={handleRefresh}

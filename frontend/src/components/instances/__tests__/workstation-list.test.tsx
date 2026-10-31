@@ -19,7 +19,7 @@ const openPending = vi.fn((_m: string, _l: string, get: () => Promise<string>) =
 vi.mock("@/lib/connect-wipe", () => ({ openPending: (...a: Parameters<typeof openPending>) => openPending(...a) }));
 
 vi.mock("@/api/client", () => ({
-  api: { myWorkstations: () => Promise.resolve(rows),
+  api: { workstationThumbUrl: (id: string) => `/api/workstations/${id}/thumbnail`, myWorkstations: () => Promise.resolve(rows),
     workstationConnectUrl: (...a: unknown[]) => connectUrl(...a) },
   ApiError: class extends Error {},
 }));
@@ -49,4 +49,11 @@ test("Connect on a workstation in use by someone else confirms takeover first", 
   fireEvent.click(await screen.findByRole("button", { name: "Connect" }));
   await screen.findByText('Take over "Studio"?');
   expect(openPending).not.toHaveBeenCalled();
+});
+
+test("online workstation row shows a thumbnail from the contract URL", async () => {
+  rows = [row];
+  const { container } = render(<WorkstationList />);
+  await screen.findByText("Studio");
+  expect(container.querySelector('img[src="/api/workstations/w9/thumbnail?t=0"]')).not.toBeNull();
 });
