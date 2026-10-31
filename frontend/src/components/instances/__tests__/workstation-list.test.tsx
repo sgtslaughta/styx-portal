@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { test, expect, vi } from "vitest";
-import { WorkstationList } from "../workstation-list";
+import { WorkstationList, WorkstationPreview } from "../workstation-list";
 import type { Workstation } from "@/api/client";
 
 let rows: Workstation[] = [];
@@ -55,5 +55,27 @@ test("online workstation row shows a thumbnail from the contract URL", async () 
   rows = [row];
   const { container } = render(<WorkstationList />);
   await screen.findByText("Studio");
+  expect(container.querySelector('img[src="/api/workstations/w9/thumbnail?t=0"]')).not.toBeNull();
+});
+
+test("clicking a row selects it without connecting; Connect button does not select", async () => {
+  rows = [row];
+  openPending.mockClear();
+  const onSelect = vi.fn();
+  render(<WorkstationList selectedId="w9" onSelect={onSelect} />);
+  const opt = await screen.findByRole("option", { name: /Studio/ });
+  expect(opt.getAttribute("aria-selected")).toBe("true");
+  fireEvent.click(opt);
+  expect(onSelect).toHaveBeenCalledTimes(1);
+  fireEvent.keyDown(opt, { key: "Enter" });
+  expect(onSelect).toHaveBeenCalledTimes(2);
+  expect(openPending).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+  expect(onSelect).toHaveBeenCalledTimes(2);
+});
+
+test("preview shows name and thumbnail", () => {
+  const { container } = render(<WorkstationPreview ws={row} />);
+  expect(screen.getByText("Studio")).toBeTruthy();
   expect(container.querySelector('img[src="/api/workstations/w9/thumbnail?t=0"]')).not.toBeNull();
 });

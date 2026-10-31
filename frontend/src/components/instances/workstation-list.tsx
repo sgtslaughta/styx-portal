@@ -95,7 +95,30 @@ function fmtSeen(iso: string | null): string {
   return new Date(iso).toLocaleDateString();
 }
 
-export function WorkstationList() {
+/** Detail-pane preview for a selected workstation: live thumbnail + status and specs. */
+export function WorkstationPreview({ ws }: { ws: Workstation }) {
+  const led = ledFor(ws);
+  return (
+    <div className="space-y-3 p-4" data-testid="ws-preview">
+      <div className="flex items-center gap-2">
+        <LedDot led={led} />
+        <WorkstationIcon ws={ws} />
+        <h3 className="min-w-0 flex-1 truncate text-base font-semibold">{ws.name}</h3>
+      </div>
+      <Thumbnail src={api.workstationThumbUrl(ws.id)} icon={null} isLive={ws.status === "online"} />
+      <p className="text-xs text-muted-foreground">{led.label} · seen {fmtSeen(ws.last_heartbeat)}</p>
+      <WorkstationSpecs ws={ws} />
+    </div>
+  );
+}
+
+interface WorkstationListProps {
+  selectedId?: string;
+  /** Row click/Enter/Space selects (preview); launching is the Connect button only. */
+  onSelect?: (ws: Workstation) => void;
+}
+
+export function WorkstationList({ selectedId, onSelect }: WorkstationListProps = {}) {
   const [rows, setRows] = useState<Workstation[]>([]);
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("status");
@@ -190,7 +213,7 @@ export function WorkstationList() {
 
       {err && <p className="text-xs text-rose-400">{err}</p>}
 
-      <ul className="divide-y divide-border rounded-lg border border-border bg-surface">
+      <ul role="listbox" aria-label="Workstations" className="divide-y divide-border rounded-lg border border-border bg-surface">
         {visible.length === 0 && (
           <li className="p-3 text-xs text-muted-foreground">No workstations match.</li>
         )}
@@ -199,7 +222,23 @@ export function WorkstationList() {
           const os = ws.os_info as Record<string, string | number | undefined>;
           const isOpen = expanded === ws.id;
           return (
-            <li key={ws.id} className="px-3 py-2">
+            <li
+              key={ws.id}
+              role="option"
+              aria-selected={selectedId === ws.id}
+              tabIndex={0}
+              onClick={() => onSelect?.(ws)}
+              onKeyDown={(e) => {
+                if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) {
+                  e.preventDefault();
+                  onSelect?.(ws);
+                }
+              }}
+              className={cn(
+                "cursor-pointer px-3 py-2 outline-none transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-ring",
+                selectedId === ws.id && "bg-primary/10 ring-2 ring-inset ring-primary/50"
+              )}
+            >
               <div className="flex items-center gap-3">
                 <LedDot led={led} />
                 <WorkstationIcon ws={ws} />
@@ -216,7 +255,7 @@ export function WorkstationList() {
                   </p>
                 </div>
                 <button
-                  onClick={() => setExpanded(isOpen ? null : ws.id)}
+                  onClick={(e) => { e.stopPropagation(); setExpanded(isOpen ? null : ws.id); }}
                   className="rounded p-1 text-muted-foreground hover:text-foreground"
                   title="Details"
                   aria-expanded={isOpen}
@@ -227,7 +266,7 @@ export function WorkstationList() {
                   size="sm"
                   variant={ws.in_use && !ws.in_use_self ? "secondary" : "default"}
                   disabled={ws.status !== "online"}
-                  onClick={() => connect(ws)}
+                  onClick={(e) => { e.stopPropagation(); connect(ws); }}
                 >
                   {ws.in_use_self ? "Reconnect" : "Connect"}
                 </Button>
