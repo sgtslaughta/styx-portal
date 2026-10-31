@@ -63,6 +63,25 @@ def parse_vainfo_encoders(text: str) -> tuple:
     return tuple(name for prefix, name in VA_ENCODERS if any(p.startswith(prefix) for p in enc))
 
 
+def nvenc_encoders(compute_cap: str) -> tuple:
+    """NVENC encoders past H.264 for an `nvidia-smi` compute capability:
+    AV1 from Ada (8.9, RTX 40), HEVC from Maxwell 2 (5.2)."""
+    try:
+        cc = tuple(int(x) for x in compute_cap.strip().split("."))
+    except ValueError:
+        return ()
+    return ("av1enc", "h265enc") if cc >= (8, 9) else ("h265enc",) if cc >= (5, 2) else ()
+
+
+def _probe_nvenc() -> tuple:
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader"],
+                             capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ()
+    return nvenc_encoders(out.splitlines()[0]) if out.strip() else ()
+
+
 _HW_ENCODERS: dict = {}
 
 
@@ -70,8 +89,8 @@ def hw_encoders(node: str) -> tuple:
     """Hardware AV1/HEVC encoders on `node`, probed once. selkies falls back to
     a software encoder (SVT-AV1, x265) for a codec the GPU lacks, which would
     pin the CPU, so only probed codecs go ahead of H.264. No node or no vainfo:
-    none, and the session stays on H.264.
-    ponytail: VA-API only; NVENC hosts (GAME-01) stay on H.264 until probed too."""
+    none, and the session stays on H.264. NVIDIA (no VA-API encode): NVENC by GPU
+    generation. ponytail: first GPU only; multi-GPU hosts pick by node later."""
     if not node:
         return ()
     if node not in _HW_ENCODERS:
@@ -80,7 +99,7 @@ def hw_encoders(node: str) -> tuple:
                                  capture_output=True, text=True, timeout=10).stdout
         except (OSError, subprocess.SubprocessError):
             out = ""
-        _HW_ENCODERS[node] = parse_vainfo_encoders(out)
+        _HW_ENCODERS[node] = parse_vainfo_encoders(out) or _probe_nvenc()
     return _HW_ENCODERS[node]
 
 
