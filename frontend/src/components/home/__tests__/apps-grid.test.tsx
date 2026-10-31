@@ -6,7 +6,7 @@ vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: { id: "u", role: ro
 const listServiceTiles = vi.fn<() => Promise<unknown>>();
 const serviceFocus = vi.fn<() => Promise<{ slug: string | null }>>();
 vi.mock("@/api/client", () => ({
-  api: { listServiceTiles: () => listServiceTiles(), serviceFocus: () => serviceFocus() },
+  api: { serviceThumbUrl: (id: string) => `/api/services/${id}/thumbnail`, listServiceTiles: () => listServiceTiles(), serviceFocus: () => serviceFocus() },
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn() } }));
 const choose = vi.fn();
@@ -32,6 +32,12 @@ beforeEach(() => {
 });
 
 describe("AppsGrid", () => {
+  test("tile shows the service thumbnail", async () => {
+    listServiceTiles.mockResolvedValue([tile({})]);
+    const { container } = renderList();
+    await screen.findByRole("link", { name: /open sonarr/i });
+    expect(container.querySelector('img[src="/api/services/1/thumbnail?t=0"]')).not.toBeNull();
+  });
   test("tile shows the server icon by id and etag", async () => {
     listServiceTiles.mockResolvedValue([tile({})]);
     const { container } = renderList();

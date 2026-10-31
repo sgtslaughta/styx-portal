@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from sqlmodel import select, delete
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -23,7 +23,7 @@ from app.security.crypto import decrypt_secret
 from app.security.nav import is_navigation, no_access
 from app.security.safe_next import safe_next
 from app.security.deps import require_admin, get_current_user
-from app.services import ws_icon
+from app.services import ws_icon, ws_thumb
 from app.services.audit import audit_request
 from app.services.workstations import (
     kick_unqualified,
@@ -359,6 +359,25 @@ async def get_icon(ws_id: str, request: Request,
     return ws_icon.icon_response(request, ws.icon, ws.name, ws.id)
 
 
+@router.get("/{ws_id}/thumbnail")
+async def get_thumbnail(ws_id: str,
+                        user: User = Depends(get_current_user),
+                        session: AsyncSession = Depends(get_session)):
+    ws = await _get_or_404(session, ws_id)
+    allowed = await _allowed_ids(session, ws.id)
+    if not (user.role == "admin" or ws.all_users or user.id in allowed):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "No access to this workstation")
+    # The live screen of someone else's session is theirs: the gateway refuses a
+    # second controller, so the thumbnail must not show it either (404, not 403,
+    # so occupancy itself does not leak).
+    busy = ws.active_connections > 0 and ws.occupied_by not in (None, user.id)
+    p = ws_thumb.path(ws.id)
+    if ws.status == "revoked" or (busy and user.role != "admin") or not p.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No thumbnail")
+    return FileResponse(p, media_type="image/jpeg",
+                        headers={"Cache-Control": "private, no-cache"})
+
+
 @router.put("/{ws_id}/access", response_model=WorkstationOut)
 async def set_access(ws_id: str, body: WorkstationAccessUpdate,
                      request: Request,
@@ -389,6 +408,7 @@ async def delete_workstation(ws_id: str, request: Request, purge: bool = False,
         await audit_request(session, request, "workstation.purge",
                             user_id=admin.id, resource=ws.id)
         await session.delete(ws)
+        ws_thumb.delete(ws.id)
     else:
         ws.status = "revoked"
         session.add(ws)

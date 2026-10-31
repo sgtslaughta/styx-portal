@@ -45,7 +45,8 @@ spec:
                   src.backup(dst)
                   r = dst.execute('PRAGMA integrity_check').fetchone()[0]
                   dst.close()
-                  sys.exit(0 if r == 'ok' else 1)
+                  if r != 'ok':
+                      sys.exit('backup integrity_check failed: ' + r)
                   "
                   if [ -f /app/data/secrets.json ]; then
                     cp /app/data/secrets.json "/backups/secrets-$D.json"

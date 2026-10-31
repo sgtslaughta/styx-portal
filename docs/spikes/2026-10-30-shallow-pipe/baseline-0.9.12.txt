@@ -1,0 +1,17 @@
+# Baseline 0.9.12 (trace + touch scroll), 2026-10-30 ~15:18, hotel Wi-Fi via phone
+# session: idle / scroll / type / video / idle, ~5 min
+ticks            465
+q_floor_p50      1.06
+q_floor_p90      1.22
+cuts_gt30_per5m  6.45
+lost_per5m       3.87
+dlv_cv           1.15
+
+# extra queue ms: p50 4, p90 15, p99 116, max 735; floor 63-67 ms; backpressure triggers 9
+# cuts:
+Congestion control[primary]: video bitrate 16000 -> 4707 kbps (round trip 239 ms over a 67 ms floor, 7090 kbps delivered)
+Congestion control[primary]: video bitrate 8946 -> 4060 kbps (round trip 135 ms over a 67 ms floor, 5664 kbps delivered)
+Congestion control[primary]: video bitrate 7126 -> 3509 kbps (round trip 121 ms over a 67 ms floor, 4748 kbps delivered)
+Congestion control[primary]: video bitrate 5597 -> 1979 kbps (round trip 233 ms over a 64 ms floor, 3899 kbps delivered)
+Congestion control[primary]: video bitrate 5411 -> 3841 kbps (round trip 142 ms over a 63 ms floor, 4984 kbps delivered)
+Congestion control[primary]: video bitrate 4984 -> 1523 kbps (round trip 798 ms over a 63 ms floor, 3047 kbps delivered)

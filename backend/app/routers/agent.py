@@ -5,7 +5,7 @@ no cookies, so cross-site request forgery does not apply.
 """
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlmodel import select, delete
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -13,7 +13,7 @@ from app.config import Settings
 from app.database import get_session
 from app.models import Workstation, WorkstationAccess
 from app.schemas import WorkstationHeartbeatRequest, WorkstationHeartbeatResponse
-from app.services import ws_icon
+from app.services import ws_icon, ws_thumb
 from app.services.audit import audit_request
 from app.services.workstations import sha256_hex
 from app.services.settings_store import settings as _sys_settings
@@ -116,6 +116,22 @@ async def icon(request: Request, ws: Workstation = Depends(get_agent_workstation
     return ws_icon.icon_response(request, ws.icon, ws.name, ws.id)
 
 
+@router.post("/thumbnail", status_code=204)
+async def thumbnail(request: Request, ws: Workstation = Depends(get_agent_workstation)):
+    if int(request.headers.get("content-length") or 0) > ws_thumb.MAX_BYTES:
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Thumbnail too large")
+    data = bytearray()   # streamed + capped: chunked bodies carry no Content-Length
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > ws_thumb.MAX_BYTES:
+            raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Thumbnail too large")
+    data = bytes(data)
+    if data[:3] != b"\xff\xd8\xff":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Not a JPEG")
+    ws_thumb.write(ws.id, data)
+    return Response(status_code=204)
+
+
 @router.post("/deregister")
 async def deregister(request: Request,
                      ws: Workstation = Depends(get_agent_workstation),
@@ -128,6 +144,7 @@ async def deregister(request: Request,
                                                "lan_ip": ws.lan_ip})
     await session.delete(ws)
     await session.commit()
+    ws_thumb.delete(ws.id)
     from app.services.route_writer import refresh_routes_from_db
     await refresh_routes_from_db(session)
     return {"ok": True}

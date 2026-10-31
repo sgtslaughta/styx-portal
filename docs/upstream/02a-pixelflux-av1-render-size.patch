@@ -1,0 +1,73 @@
+From 83c0d82f2cd74b6a38911d21bde5163f360a9f70 Mon Sep 17 00:00:00 2001
+From: sgtslaughta <sgtslaughta@dev.local>
+Date: Thu, 29 Oct 2026 21:51:30 -0400
+Subject: [PATCH] fix(vaapi): Signal the AV1 render size where the driver pads
+ the frame
+
+radeonsi before VCN 5 writes its own sequence header and pads the coded
+height to a multiple of 16 when it is 8 mod 16 (1080 becomes 1082) and the
+width to a multiple of 64 (1366 becomes 1408). The frame header pixelflux
+packs said render_and_frame_size_different = 0, so a decoder took the
+padded size as the picture. The frame header now carries the negotiated
+size as the render size on every key and inter frame.
+
+---
+ pixelflux/src/encoders/vaapi/av1.rs           | 9 +++++++--
+ pixelflux/src/encoders/vaapi/session_tests.rs | 7 +++++--
+ 2 files changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/pixelflux/src/encoders/vaapi/av1.rs b/pixelflux/src/encoders/vaapi/av1.rs
+index de8e9ff..d5d81ac 100644
+--- a/pixelflux/src/encoders/vaapi/av1.rs
++++ b/pixelflux/src/encoders/vaapi/av1.rs
+@@ -339,6 +339,11 @@ impl Arm {
+         };
+         let t = self.tiles;
+ 
++        let render_size = |w: &mut BitWriter| {
++            w.flag(true);
++            w.u(16, (n.width - 1) as u64);
++            w.u(16, (n.height - 1) as u64);
++        };
+         let mut w = BitWriter::new();
+         w.flag(false);
+         w.u(2, if frame.key { 0 } else { 1 });
+@@ -356,13 +361,13 @@ impl Arm {
+             for _ in 0..7 {
+                 w.u(3, reference_slot.unwrap() as u64);
+             }
+-            w.flag(false);
++            render_size(&mut w);
+             w.flag(false);
+             w.flag(false);
+             w.u(2, 0);
+             w.flag(false);
+         } else {
+-            w.flag(false);
++            render_size(&mut w);
+         }
+         w.flag(false);
+         w.flag(true);
+diff --git a/pixelflux/src/encoders/vaapi/session_tests.rs b/pixelflux/src/encoders/vaapi/session_tests.rs
+index 6c292e8..d4c50e5 100644
+--- a/pixelflux/src/encoders/vaapi/session_tests.rs
++++ b/pixelflux/src/encoders/vaapi/session_tests.rs
+@@ -1086,10 +1086,13 @@ fn av1_names_its_reference_slot_in_the_frame_header() {
+         for i in 0..7 {
+             assert_eq!(r.u(3), 4, "ref_frame_idx[{i}]");
+         }
++        assert_eq!(r.u(1), 1, "render_and_frame_size_different");
++        assert_eq!(r.u(16), (W - 1) as u32, "render_width_minus_1");
++        assert_eq!(r.u(16), (H - 1) as u32, "render_height_minus_1");
+         assert_eq!(
+             pic.bit_offset_qindex as usize,
+-            r.pos + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 1 + 1,
+-            "the quantizer follows render_and_frame_size_different, allow_high_precision_mv, is_filter_switchable, interpolation_filter, \
++            r.pos + 1 + 1 + 2 + 1 + 1 + 1 + 1 + 1,
++            "the quantizer follows allow_high_precision_mv, is_filter_switchable, interpolation_filter, \
+              is_motion_mode_switchable, disable_frame_end_update_cdf, uniform_tile_spacing_flag, and one tile increment bit each for \
+              columns and rows, with no use_ref_frame_mvs in a sequence without reference motion vectors"
+         );
+-- 
+2.53.0
+

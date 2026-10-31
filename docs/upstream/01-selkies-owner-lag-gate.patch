@@ -1,0 +1,27 @@
+--- a/selkies/websockets_mode.py
++++ b/selkies/websockets_mode.py
+@@ -242,6 +242,11 @@
+ # proxy or a bloated hop ahead of the page holds one no local count sees.
+ VIDEO_RELAY_ROOM_FRAMES = 3
+ VIDEO_RELAY_LAG_SECONDS = 0.1
++# The page that owns its display is held to a queue of its own: a delta frame
++# is left out (as for any page) once the ping behind its frames has gone
++# unanswered this long past the round trip. Anchors and frame_num-wrap frames
++# still go. Without it the owner's backlog is bounded only by the relay budget.
++VIDEO_RELAY_OWNER_LAG_SECONDS = 0.1
+ VIDEO_RELAY_PING_SECONDS = 0.05
+ # Frames a run left out of a page may span before the encoder is told without
+ # waiting for the page's room: the encoder predicts from the last eight
+@@ -1300,7 +1305,11 @@
+             self._lose(frame_id)
+             return self._repair()
+         if self.server._owns_display(self.ws, self.display_id):
+-            return True
++            self.gauged = True      # the pings that read `_lag` go behind the owner's frames too
++            if kept or anchor or self._lag() < VIDEO_RELAY_OWNER_LAG_SECONDS:
++                return True
++            self._lose(frame_id)
++            return self._repair()
+         self.gauged = True
+         if anchor and self._anchor_room():
+             return True

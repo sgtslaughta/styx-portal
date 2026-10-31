@@ -1,0 +1,31 @@
+--- a/selkies_web/src/selkies-core.js
++++ b/selkies_web/src/selkies-core.js
+@@ -1432,13 +1432,27 @@
+   wireCodec = null; wireW = 0; wireH = 0; wireDesc = null;
+ }
+ 
++// A driver may code a larger picture than the stream's (radeonsi pads AV1 to its
++// alignment) and the decoder does not crop to the render size, so the frame is
++// cropped to the configured size here; visibleRect cropping copies nothing.
++function fitDecoded(f) {
++  const c = decConfig;
++  if (!c || (f.displayWidth === c.codedWidth && f.displayHeight === c.codedHeight)
++      || f.codedWidth < c.codedWidth || f.codedHeight < c.codedHeight) return f;
++  try {
++    const g = new VideoFrame(f, { visibleRect: { x: 0, y: 0, width: c.codedWidth, height: c.codedHeight } });
++    f.close();
++    return g;
++  } catch (_) { return f; }
++}
++
+ function configureDecoder(codec, w, h, software, description) {
+   // Another picture size costs the decoder another rate; a new codec string
+   // alone, such as the level a lower rate declares, does not.
+   if (decConfig && (decConfig.codedWidth !== w || decConfig.codedHeight !== h)) resetPace();
+   closeDecoder();
+   try {
+-    dec = new VideoDecoder({ output: (f) => { pace.decoded(); statsFormat = f.format; tellFacts(); present(f, statsOpen ? arrivalOf(f.timestamp) : NaN); },
++    dec = new VideoDecoder({ output: (f) => { pace.decoded(); statsFormat = f.format; tellFacts(); present(fitDecoded(f), statsOpen ? arrivalOf(f.timestamp) : NaN); },
+                              error: () => { closeDecoder(); self.postMessage({ type: 'decoderError' }); } });
+     // configure() is synchronous, so the next chunk decodes without an async gap and
+     // an unsupported config surfaces via error(). The page owns the acceleration

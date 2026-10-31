@@ -65,7 +65,7 @@ scripts/build_agent_artifacts.sh ./data/artifacts
 ```
 
 This generates:
-- `wheelhouse-x86_64.tar.gz` — pinned upstream wheels (selkies 2.0.0, pixelflux 2.1.0, pcmflux 2.1.0) and dependencies (covers Python 3.10–3.14). Wheels are built on the server; nothing is compiled on enrolled boxes.
+- `wheelhouse-x86_64.tar.gz` — pinned upstream wheels (selkies 2.1.0, pixelflux 2.2.1, pcmflux 2.2.0) and dependencies (covers Python 3.10–3.14). Wheels are built on the server; nothing is compiled on enrolled boxes.
 
 Rerun this after portal upgrades to sync agent versions.
 
@@ -277,10 +277,11 @@ bash ~/.local/share/styx-agent/uninstall.sh
 
 ## GNOME seat
 
-Agent 0.5.0 runs upstream selkies 2.0.0 + pixelflux 2.1.0 + pcmflux 2.1.0. In seat mode the default `seat_shell: gnome` starts a real headless GNOME Shell on a private D-Bus session and captures it through xdg-desktop-portal.
+Agent 0.9.0 runs upstream selkies 2.1.0 + pixelflux 2.2.1 + pcmflux 2.2.0 (0.5.0–0.8.x ran selkies 2.0.0). In seat mode the default `seat_shell: gnome` starts a real headless GNOME Shell on a private D-Bus session and captures it through xdg-desktop-portal.
 
 - **Requirement:** GNOME Shell >= 46 on the box. If GNOME is unavailable the agent automatically falls back to `seat_shell: labwc` (the previous labwc/waybar seat). Changing `seat_shell` restarts the agent.
-- **Resolution:** follows the browser. The first viewer to connect owns the seat size; when its window changes size the seat monitor is resized in place (Mutter keeps the monitor, windows reflow) and the stream restarts from a warm standby selkies, about 0.3-0.5 s under a small "Resizing…" pill with no page reload. Other viewers see the owner's size scaled to fit and take over when the owner leaves. `seat_width` / `seat_height` (system defaults 2560x1440 in **Settings -> Workstation features**) only size the seat before the first viewer connects. The standby costs one extra idle selkies process (~190 MB).
+- **Resolution:** follows the browser. The first viewer to connect owns the seat size; when its window changes size the seat monitor is resized in place (Mutter keeps the monitor, windows reflow) and the stream restarts from a warm standby selkies: the gateway cuts the stream socket and selkies 2.1 reconnects in place, holding the last frame for ~0.1-0.4 s with no page reload. Other viewers see the owner's size scaled to fit and take over when the owner leaves. `seat_width` / `seat_height` (system defaults 2560x1440 in **Settings -> Workstation features**) only size the seat before the first viewer connects. The standby costs one extra idle selkies process (~190 MB).
+- **Stream connection:** selkies 2.1 adapts the bitrate to the path (congestion control, CBR) up to the configured bitrate. The gateway pings every 30 s so a background tab's quiet socket is not dropped by proxies, and logs `ws stall` lines when a browser goes silent for more than 1 s while video plays (network jitter shows up there).
 - **Chroma:** streams are 4:2:0 (hardware encoded). **Full colour (4:4:4)** in the workstation's stream settings gives crisp text, but VA-API GPUs cannot encode H.264 4:4:4, so it switches to software x264: more CPU, larger frames, and audio can stutter on a slow uplink.
 - **Cursor:** the GNOME seat always embeds the cursor in the video (Mutter cursor-mode 1); the `cursor_workaround` setting was removed.
 - **Shared profile:** the seat runs as the same Linux user as the physical login, so dconf settings, extensions, wallpaper and keyring are shared with the local session.

@@ -24,7 +24,7 @@ one of two modes, auto-detected at enrollment:
 ### 2a. GNOME seat (default)
 
 ```
-browser <── selkies 2.0 (gateway → selkies) ── pixelflux ── xdg-desktop-portal ScreenCast/RemoteDesktop
+browser <── selkies 2.1 (gateway → selkies) ── pixelflux ── xdg-desktop-portal ScreenCast/RemoteDesktop
                                                                 └── headless gnome-shell on a private D-Bus session
                                                                       └── host apps (Wayland clients)
 ```

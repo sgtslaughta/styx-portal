@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-AGENT_VERSION = "0.8.3"
+AGENT_VERSION = "0.9.23"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -30,6 +30,7 @@ def load_config(path: Path = CONFIG_PATH) -> dict:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import favicon  # noqa: E402
+import seat_thumb  # noqa: E402
 import refit  # noqa: E402
 import engine  # noqa: E402  (installed next to this file by enroll.sh)
 import seat_gnome  # noqa: E402
@@ -355,6 +356,7 @@ def run(cfg: dict) -> int:
                       flush=True)
                 break
             favicon.on_heartbeat(cfg, hb)
+            gseat and seat_thumb.on_heartbeat(cfg)
             if hb.get("disconnect_clients"):
                 print("server requested client disconnect (logout); "
                       "restarting gateway", flush=True)
@@ -409,7 +411,7 @@ def doctor(cfg: dict) -> int:
     ok &= _check("config readable", True, str(CONFIG_PATH))
     install = Path(cfg["install_dir"])
     ok &= _check("venv present", (install / "venv/bin/python").exists())
-    ok &= _check("selkies 2.0 installed", (install / "venv/bin/selkies").exists())
+    ok &= _check("selkies 2.x installed", (install / "venv/bin/selkies").exists())
     ok &= _check(f"mode: {cfg.get('mode', 'mirror')}", True)
     if cfg.get("mode") == "mirror":
         xa = engine._find_xauthority(cfg)

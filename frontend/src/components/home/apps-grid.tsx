@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Info, Plus, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { Thumbnail } from "@/components/common/thumbnail";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api, type ServiceTile } from "@/api/client";
@@ -27,13 +28,14 @@ function Tile({ s, focused, choose }: { s: ServiceTile; focused: boolean; choose
   // Unhealthy tiles stay clickable: health is advisory, the app may still work.
   return (
     <div className="flex w-full items-stretch gap-2">
-      <a href={href} className={cn(tileCls, focused && "border-obol-foreground dark:border-obol")} aria-label={s.needs_setup ? `Set up ${s.name}` : `Open ${s.name}`} aria-current={focused ? "true" : undefined} title={href}
+      <a href={href} className={cn(tileCls, "flex-col items-stretch", focused && "border-obol-foreground dark:border-obol")} aria-label={s.needs_setup ? `Set up ${s.name}` : `Open ${s.name}`} aria-current={focused ? "true" : undefined} title={href}
         onClick={(e) => {
           // Native new-tab gestures and the admin setup link keep plain link behaviour.
           if (s.needs_setup || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
           e.preventDefault();
           choose("apps", s.name, (mode) => openHref(mode, href));
         }}>
+        <span className="flex w-full items-center gap-2.5">
         <ServiceIcon s={s} />
         <span className="min-w-0 flex-1">
           <span className="block truncate font-medium">{s.name}</span>
@@ -46,6 +48,10 @@ function Tile({ s, focused, choose }: { s: ServiceTile; focused: boolean; choose
             <span className={cn("size-2.5 shrink-0 rounded-full", h.dot)} aria-hidden />
             <span className="sr-only">{h.label}</span>
           </span>
+        )}
+        </span>
+        {!s.needs_setup && (
+          <Thumbnail src={api.serviceThumbUrl(s.id)} icon={`/api/services/${s.id}/icon?v=${s.icon_etag}`} isLive={s.up !== false} small />
         )}
       </a>
       {focused && (
