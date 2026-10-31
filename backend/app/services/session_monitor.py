@@ -30,8 +30,8 @@ class SessionMonitor:
         if config.get("never_timeout"):
             return []
 
-        idle_timeout = self._parse_duration(config.get("idle_timeout", "30m"))
-        grace_period = self._parse_duration(config.get("grace_period", "5m"))
+        idle_timeout = self._parse_duration(config.get("idle_timeout", "14m"))
+        grace_period = self._parse_duration(config.get("grace_period", "1m"))
 
         now = datetime.now(timezone.utc)
         last_activity = instance.last_activity or instance.started_at or now

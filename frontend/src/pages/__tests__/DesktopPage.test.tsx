@@ -1,9 +1,11 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const useInstances = vi.fn();
-vi.mock("@/hooks/use-instances", () => ({ useInstances: () => useInstances() }));
+const mutate = vi.fn();
+vi.mock("@/hooks/use-instances", () => ({ useInstances: () => useInstances(), useKeepalive: () => ({ mutate }) }));
+vi.mock("@/lib/activity", () => ({ startActivityHeartbeat: () => () => {} }));
 const useTemplates = vi.fn(() => ({ data: [{ id: "t1", icon: "🌐" }] }));
 vi.mock("@/hooks/use-templates", () => ({ useTemplates: () => useTemplates() }));
 vi.mock("@/lib/stream-thumb", () => ({ startThumbUploader: () => () => {} }));
@@ -23,7 +25,7 @@ function renderAt(list: unknown[] | undefined, pending = false) {
 }
 
 describe("DesktopPage", () => {
-  beforeEach(() => useInstances.mockReset());
+  beforeEach(() => { useInstances.mockReset(); mutate.mockReset(); });
 
   it("mounts the iframe when running", () => {
     renderAt([inst("running")]);
@@ -57,5 +59,17 @@ describe("DesktopPage", () => {
   it("shows not found for an unknown subdomain", () => {
     renderAt([]);
     expect(screen.getByText("Desktop not found")).toBeTruthy();
+  });
+
+  it("shows the idle banner and keeps alive on click", () => {
+    renderAt([inst("idle")]);
+    expect(screen.getByText(/Pausing soon/)).toBeTruthy();
+    fireEvent.click(screen.getByText("I'm here"));
+    expect(mutate).toHaveBeenCalledWith("i1", expect.anything());
+  });
+
+  it("no banner when running", () => {
+    renderAt([inst("running")]);
+    expect(screen.queryByText(/Pausing soon/)).toBeNull();
   });
 });

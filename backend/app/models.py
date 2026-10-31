@@ -168,8 +168,8 @@ class ServiceTemplate(SQLModel, table=True):
     tags: list[str] = Field(default_factory=list, sa_column=Column(JSON))
     session_config: dict[str, Any] = Field(
         default_factory=lambda: {
-            "idle_timeout": "30m",
-            "grace_period": "5m",
+            "idle_timeout": "14m",
+            "grace_period": "1m",
             "timeout_action": "stop",
             "never_timeout": False,
             "max_session_duration": None,

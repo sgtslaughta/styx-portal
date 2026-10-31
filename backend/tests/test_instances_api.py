@@ -193,6 +193,21 @@ async def test_keepalive(admin_client, template_id):
 
 
 @pytest.mark.asyncio
+async def test_keepalive_revives_idle(admin_client, template_id, session):
+    r = await admin_client.post(
+        "/api/instances",
+        json={"template_id": template_id, "name": "ki", "subdomain": "ki"},
+    )
+    instance_id = r.json()["id"]
+    inst = await session.get(Instance, instance_id)
+    inst.status = "idle"
+    session.add(inst)
+    await session.commit()
+    resp = await admin_client.post(f"/api/instances/{instance_id}/keepalive")
+    assert resp.json()["status"] == "running"
+
+
+@pytest.mark.asyncio
 async def test_duplicate_subdomain(admin_client, template_id):
     await admin_client.post(
         "/api/instances",

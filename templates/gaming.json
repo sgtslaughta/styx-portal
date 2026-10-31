@@ -36,8 +36,8 @@
     "entertainment"
   ],
   "session_config": {
-    "idle_timeout": "30m",
-    "grace_period": "5m",
+    "idle_timeout": "14m",
+    "grace_period": "1m",
     "timeout_action": "stop",
     "never_timeout": false,
     "max_session_duration": "8h"
