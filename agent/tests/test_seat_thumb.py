@@ -90,8 +90,10 @@ def _reply(jpeg=b"\xff\xd8\xff!"):
 @pytest.fixture(autouse=True)
 def _reset():
     seat_thumb._proc = seat_thumb._proc_bus = None
+    seat_thumb._starts = 0
     yield
     seat_thumb._proc = seat_thumb._proc_bus = None
+    seat_thumb._starts = 0
 
 
 def _popen(*procs):
@@ -124,6 +126,20 @@ def test_restart_on_bus_change(tmp_path):
         seat_thumb.capture(tmp_path, "b1")
         seat_thumb.capture(tmp_path, "b2")
     assert a.killed and po.call_count == 2 and not b.killed
+
+
+def test_gives_up_after_max_starts_until_bus_changes(tmp_path):
+    dead = [_P() for _ in range(seat_thumb.MAX_STARTS)]
+    for d in dead:
+        d.dead = True
+    fresh = _P([_reply()])
+    with _popen(*dead, fresh) as po:
+        for _ in range(seat_thumb.MAX_STARTS):
+            seat_thumb._helper(tmp_path, "b1")
+        with pytest.raises(seat_thumb.GaveUp):
+            seat_thumb._helper(tmp_path, "b1")
+        assert po.call_count == seat_thumb.MAX_STARTS
+        assert seat_thumb.capture(tmp_path, "b2") == b"\xff\xd8\xff!"  # seat restart resets
 
 
 def test_timeout_kills_helper(tmp_path):

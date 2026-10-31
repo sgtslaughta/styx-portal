@@ -24,6 +24,15 @@ _busy = False
 
 _proc = None
 _proc_bus = None
+# Every helper start ends with a session teardown (the 25-75 s freeze above), so a
+# helper that keeps dying must not be restarted every minute: give up after
+# MAX_STARTS per seat bus; a seat restart (new bus) resets the count.
+MAX_STARTS = 3
+_starts = 0
+
+
+class GaveUp(RuntimeError):
+    pass
 
 
 def _kill() -> None:
@@ -36,10 +45,16 @@ def _kill() -> None:
 
 def _helper(install: Path, bus_addr: str):
     """The live grabber, (re)started only if dead or the seat bus changed."""
-    global _proc, _proc_bus
+    global _proc, _proc_bus, _starts
+    if _proc_bus != bus_addr:
+        _starts = 0
     if _proc is not None and (_proc.poll() is not None or _proc_bus != bus_addr):
         _kill()
     if _proc is None:
+        if _starts >= MAX_STARTS:
+            _proc_bus = bus_addr
+            raise GaveUp(f"grabber failed {_starts}x on this seat; off until seat restart")
+        _starts += 1
         env = dict(os.environ, DBUS_SESSION_BUS_ADDRESS=bus_addr)
         _proc = subprocess.Popen([SYS_PYTHON, str(install / "seat_thumb_grab.py"), bus_addr],
                                  env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
