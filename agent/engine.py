@@ -14,6 +14,7 @@ import sys
 import time
 from pathlib import Path
 
+import bundle_patch
 import shallow_pipe
 
 HOME = Path.home()
@@ -361,6 +362,7 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
     Mirror mode queries the live X display and may raise; the supervisor reports it.
     """
     install = Path(cfg["install_dir"])
+    bundle_patch.apply(install, lambda m: print(m, flush=True))  # before the page is served
     s = cfg.get("stream_settings", {})
     env = {
         "HOME": str(HOME),
