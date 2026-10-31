@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useId } from "react";
+import { monotonePath, type Pt } from "@/lib/chart";
 
 interface Series {
   value: number;
@@ -14,14 +15,11 @@ interface OverlaySparklineProps {
   className?: string;
 }
 
-function buildPolyline(history: number[], max: number, w: number, h: number, pad: number): string {
-  return history
-    .map((v, i) => {
-      const x = (i / (history.length - 1)) * w;
-      const y = h - pad - (v / max) * (h - pad * 2);
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .join(" ");
+function toPts(history: number[], max: number, w: number, h: number, pad: number): Pt[] {
+  return history.map((v, i) => [
+    (i / (history.length - 1)) * w,
+    h - pad - (Math.min(v, max) / max) * (h - pad * 2),
+  ]);
 }
 
 export function OverlaySparkline({
@@ -46,6 +44,8 @@ export function OverlaySparkline({
     );
   }, [series, points]);
 
+  const uid = useId().replace(/:/g, "");
+  const [hover, setHover] = useState<number | null>(null); // 0..1 across the plot
   const w = 100;
   const pad = 2;
   const allMax = Math.max(max, ...histories.flat(), 1);
@@ -55,7 +55,7 @@ export function OverlaySparkline({
     return (
       <div className={`relative ${className}`}>
         <svg width="100%" height={height} viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none">
-          <line x1={0} y1={height / 2} x2={w} y2={height / 2} stroke="var(--muted-foreground)" strokeWidth={0.5} opacity={0.2} strokeDasharray="2 3" />
+          <line x1={0} y1={height / 2} x2={w} y2={height / 2} stroke="var(--muted-foreground)" strokeWidth={1} vectorEffect="non-scaling-stroke" opacity={0.2} strokeDasharray="2 3" />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center gap-3">
           {series.map((s) => (
@@ -68,46 +68,65 @@ export function OverlaySparkline({
     );
   }
 
+  const idxAt = (hist: number[]) => (hover == null ? hist.length - 1 : Math.round(hover * (hist.length - 1)));
+
   return (
-    <div className={`relative ${className}`}>
-      <svg width="100%" height={height} viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none">
+    <div
+      className={`relative ${className}`}
+      onMouseMove={(e) => {
+        const r = e.currentTarget.getBoundingClientRect();
+        setHover(r.width ? Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) : null);
+      }}
+      onMouseLeave={() => setHover(null)}
+    >
+      <svg width="100%" height={height} viewBox={`0 0 ${w} ${height}`} preserveAspectRatio="none" className="overflow-visible">
+        <defs>
+          {series.map((s, i) => (
+            <linearGradient key={s.label} id={`${uid}-${i}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={s.color} stopOpacity={0.35} />
+              <stop offset="100%" stopColor={s.color} stopOpacity={0} />
+            </linearGradient>
+          ))}
+        </defs>
         {histories.map((hist, i) => {
           if (hist.length < 2) return null;
           const s = series[i]!;
-          const pts = buildPolyline(hist, allMax, w, height, pad);
-          const lastVal = hist[hist.length - 1]!;
-          const prevVal = hist[hist.length - 2]!;
-          const lastY = height - pad - (lastVal / allMax) * (height - pad * 2);
-          const fillPts = `0,${height} ${pts} ${w},${height}`;
-          const delta = lastVal - prevVal;
-
+          const line = monotonePath(toPts(hist, allMax, w, height, pad));
           return (
             <g key={s.label}>
-              <polygon points={fillPts} fill={s.color} opacity={0.08} />
-              <polyline fill="none" stroke={s.color} strokeWidth={1.5} points={pts} strokeLinejoin="bevel" />
-              <circle cx={w} cy={lastY} r={2.5} fill={s.color} />
-              {Math.abs(delta) > 1 && (
-                <text
-                  x={w - 8}
-                  y={lastY + (delta > 0 ? -5 : 8)}
-                  fill={s.color}
-                  fontSize={7}
-                  fontWeight="bold"
-                  textAnchor="end"
-                >
-                  {delta > 0 ? "▲" : "▼"}
-                </text>
-              )}
+              <path d={`${line}L${w},${height}L0,${height}Z`} fill={`url(#${uid}-${i})`} stroke="none" />
+              <path d={line} fill="none" stroke={s.color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
             </g>
           );
         })}
       </svg>
 
-      {/* Legend overlay — top right */}
-      <div className="absolute top-0 right-0 flex gap-2 pr-1">
+      {/* Active-point dots (HTML so the stretched viewBox cannot squash them) */}
+      {histories.map((hist, i) => {
+        if (hist.length < 2) return null;
+        const idx = idxAt(hist);
+        const y = (toPts(hist, allMax, w, height, pad)[idx]![1] / height) * 100;
+        return (
+          <span
+            key={series[i]!.label}
+            className="pointer-events-none absolute h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full"
+            style={{ left: `${(idx / (hist.length - 1)) * 100}%`, top: `${y}%`, backgroundColor: series[i]!.color }}
+          />
+        );
+      })}
+
+      {/* Value label: current values, or the hovered sample in a small tooltip */}
+      <div
+        role={hover != null ? "tooltip" : undefined}
+        className={
+          hover != null
+            ? "pointer-events-none absolute -top-5 right-0 z-10 flex gap-2 rounded-md border border-border bg-popover px-1.5 py-0.5 shadow-sm"
+            : "absolute top-0 right-0 flex gap-2 pr-1"
+        }
+      >
         {series.map((s, i) => {
           const hist = histories[i] || [];
-          const val = hist.length > 0 ? hist[hist.length - 1]! : 0;
+          const val = hist.length > 0 ? hist[idxAt(hist)]! : 0;
           return (
             <span key={s.label} className="text-[9px] font-mono leading-none" style={{ color: s.color }}>
               {s.label} {Math.round(val)}%
