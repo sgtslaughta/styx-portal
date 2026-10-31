@@ -740,6 +740,8 @@ async def keepalive(
     require_owner_or_admin(instance.owner_id, user)
 
     instance.last_activity = datetime.now(timezone.utc)
+    if instance.status == "idle":
+        instance.status = "running"
     session.add(instance)
     await session.commit()
     await session.refresh(instance)
