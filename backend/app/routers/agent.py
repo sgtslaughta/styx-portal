@@ -120,9 +120,12 @@ async def icon(request: Request, ws: Workstation = Depends(get_agent_workstation
 async def thumbnail(request: Request, ws: Workstation = Depends(get_agent_workstation)):
     if int(request.headers.get("content-length") or 0) > ws_thumb.MAX_BYTES:
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Thumbnail too large")
-    data = await request.body()
-    if len(data) > ws_thumb.MAX_BYTES:
-        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Thumbnail too large")
+    data = bytearray()   # streamed + capped: chunked bodies carry no Content-Length
+    async for chunk in request.stream():
+        data += chunk
+        if len(data) > ws_thumb.MAX_BYTES:
+            raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "Thumbnail too large")
+    data = bytes(data)
     if data[:3] != b"\xff\xd8\xff":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Not a JPEG")
     ws_thumb.write(ws.id, data)

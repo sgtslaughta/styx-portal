@@ -52,6 +52,11 @@ async def test_upload_rejects_bad_magic_and_oversize_and_auth(client, session):
     r = await client.post("/api/agent/thumbnail",
                           content=JPG + b"0" * (512 * 1024), headers=H)
     assert r.status_code == 413
+    async def chunked():   # no Content-Length: the streamed cap must still apply
+        for _ in range(64):
+            yield b"0" * (16 * 1024)
+    r = await client.post("/api/agent/thumbnail", content=chunked(), headers=H)
+    assert r.status_code == 413
     r = await client.post("/api/agent/thumbnail", content=JPG,
                           headers={"Authorization": "Bearer wrong"})
     assert r.status_code == 401
