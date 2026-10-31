@@ -3,6 +3,8 @@ profile with a headless controller, no human in the loop.
 
     python3 ab.py --variants h264-16,h264-30,av1-30 --profiles hotel,office
 
+    python3 ab.py --suite latency [--quick] [--dry-run]   # gaming latency suite, see suite_latency.py
+
 Per variant: write stream-override.json, restart only selkies (the agent
 respawns it; the seat and its apps survive), open the workload page in the
 seat. Per profile: netem.py in front of the gateway, run.mjs drives it, the
@@ -38,6 +40,19 @@ VARIANTS = {
     "h264-30": ["--encoder=h264enc", "--video-bitrate=30000,1000-30000"],
     "av1-30": ["--encoder=av1enc,h265enc,h264enc", "--video-bitrate=30000,1000-30000"],
     "av1-16": ["--encoder=av1enc,h265enc,h264enc", "--video-bitrate=16000,1000-16000"],
+    # Gaming latency suite (--suite latency). Flags from `selkies --help` (2.1.0): --framerate takes
+    # "initial,min-max"; encoders are tried in order and the first the browser decodes wins. All 30 Mbps CBR.
+    "av1-60": ["--encoder=av1enc,h265enc,h264enc", "--framerate=60,8-240", "--video-bitrate=30000,1000-30000"],
+    "av1-120": ["--encoder=av1enc,h265enc,h264enc", "--framerate=120,8-240", "--video-bitrate=30000,1000-30000"],
+    "h264-60": ["--encoder=h264enc", "--framerate=60,8-240", "--video-bitrate=30000,1000-30000"],
+    "h264-120": ["--encoder=h264enc", "--framerate=120,8-240", "--video-bitrate=30000,1000-30000"],
+    # HEVC encodes on this GPU (vainfo) but the bundled headless Chromium cannot decode it (isConfigSupported
+    # hvc1 = false): the run falls back to H.264 and is marked invalid. Not in the suite; for a browser with HEVC.
+    "hevc-120": ["--encoder=h265enc,h264enc", "--framerate=120,8-240", "--video-bitrate=30000,1000-30000"],
+    # Latency knob: --backpressure-queue-size (default 120 frames) bounds what is buffered per stream before
+    # dropping under backpressure; "higher tolerates larger client hiccups at the cost of latency".
+    "av1-60-bp8": ["--encoder=av1enc,h265enc,h264enc", "--framerate=60,8-240", "--video-bitrate=30000,1000-30000",
+                   "--backpressure-queue-size=8"],
 }
 GWLOG = INSTALL / "logs/gateway.log"
 WS_OPEN = re.compile(r"ws open .*from=(\S+)")
@@ -75,6 +90,7 @@ def foreign_client(lines) -> str | None:
             return m[1]
     return None
 SETTINGS = re.compile(r"Stream settings active -> .*?Mode: (\S+) \((\w+)\).*?(CBR \d+|CRF: \d+)")
+FPS_SET = re.compile(r"Stream settings active -> .*?FPS: ([\d.]+)")
 DECODE_FPS = re.compile(r"decoder keeps up with (\d+) fps")
 
 
@@ -135,6 +151,18 @@ def open_workload() -> subprocess.Popen:
         env=seat_env(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
 
+def snapshot_override(path: Path):
+    """The override file's bytes (None = absent), to put back when a run ends, however it ends."""
+    return path.read_bytes() if path.exists() else None
+
+
+def restore_override(path: Path, snap) -> None:
+    if snap is None:
+        path.unlink(missing_ok=True)
+    else:
+        path.write_bytes(snap)
+
+
 def log_lines() -> int:
     with open(LOG, "rb") as f:
         return sum(1 for _ in f)
@@ -147,26 +175,29 @@ def server_metrics(start: int) -> dict:
     modes = [m.groups() for line in lines if (m := SETTINGS.search(line))]
     fps = [int(m[1]) for line in lines if (m := DECODE_FPS.search(line))]
     out["codec"] = f"{modes[-1][0]} {modes[-1][1]} {modes[-1][2]}" if modes else "?"
+    fps_set = [float(m[1]) for line in lines if (m := FPS_SET.search(line))]
+    out["fps"] = fps_set[-1] if fps_set else None
     out["decode_fps_min"] = min(fps) if fps else None
     out["lost"] = sum("lost by a client" in line for line in lines)
     return out
 
 
-def warm_up(user: str, pw: str) -> None:
+def warm_up(user: str, pw: str, **kw) -> None:
     """A throwaway run after a selkies restart: the first session on a fresh
     selkies sometimes went 15 s frameless and tripped the agent watchdog
     (5 of 5 such stalls on 2026-10-30), which measured the restart, not the variant."""
-    print(json.dumps({"warmup": run_one("warmup", "lan", user, pw).get("valid")}), flush=True)
+    print(json.dumps({"warmup": run_one("warmup", "lan", user, pw, **kw).get("valid")}), flush=True)
 
 
-def run_one(variant: str, profile: str, user: str, pw: str, refuse: str = "") -> dict:
+def run_one(variant: str, profile: str, user: str, pw: str, refuse: str = "",
+            script: str = "run.mjs", extra: tuple = (), timeout: int = 240) -> dict:
     start, gw_start = log_lines(), GWLOG.stat().st_size
     since = time.strftime("%Y-%m-%d %H:%M:%S")
     proxy = subprocess.Popen([sys.executable, str(HERE / "netem.py"), f"--profile={profile}",
                               f"--listen={PROXY}", f"--target=127.0.0.1:{GATEWAY}"])
     try:
         time.sleep(1)
-        args = ["node", str(HERE / "run.mjs"), f"--url=http://127.0.0.1:{PROXY}/"]
+        args = ["node", str(HERE / script), f"--url=http://127.0.0.1:{PROXY}/", *extra]
         if profile.startswith("drop"):          # outage profiles: steady motion through the hole
             args.append("--mode=recovery")
         if refuse:
@@ -176,7 +207,7 @@ def run_one(variant: str, profile: str, user: str, pw: str, refuse: str = "") ->
         sampler = probes.Sampler()
         sampler.start()
         try:
-            r = subprocess.run(args, capture_output=True, text=True, timeout=240, cwd=HERE.parent, env=env)
+            r = subprocess.run(args, capture_output=True, text=True, timeout=timeout, cwd=HERE.parent, env=env)
         finally:
             load = sampler.stop()
         client = json.loads(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 else {"error": r.stderr[-400:]}
@@ -206,15 +237,27 @@ def table(rows: list) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--variants", default="h264-16,h264-30,av1-30")
-    ap.add_argument("--profiles", default="hotel,office")
+    ap.add_argument("--variants", help="default h264-16,h264-30,av1-30 (suite: every latency variant)")
+    ap.add_argument("--profiles", help="default hotel,office (suite: lan,cf-tunnel,wifi-loss)")
+    ap.add_argument("--suite", choices=["latency"], help="gaming latency suite: input-to-photon, see suite_latency.py")
+    ap.add_argument("--quick", action="store_true", help="suite: av1-60 and h264-120 on lan and cf-tunnel only")
+    ap.add_argument("--dry-run", action="store_true", help="print the plan and the wall-time estimate, run nothing")
     ap.add_argument("--fallback", action="store_true", help="also run av1-30 with AV1 refused by the browser")
     ap.add_argument("--repeats", type=int, default=1)
     a = ap.parse_args()
-    # systemctl stop sends SIGTERM: exit through `finally` so the override is removed.
+    # systemctl stop sends SIGTERM: exit through `finally` so the override is put back.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(1))
+    if a.suite:
+        import suite_latency
+        variants, profiles = suite_latency.select(a.quick, a.variants, a.profiles)
+        if a.dry_run:
+            return print(suite_latency.format_plan(variants, profiles, a.repeats))
+        return suite_latency.run(sys.modules[__name__], variants, profiles, a.repeats)
+    a.variants, a.profiles = a.variants or "h264-16,h264-30,av1-30", a.profiles or "hotel,office"
+    if a.dry_run:
+        return print("\n".join(f"{v} x {p}" for v in a.variants.split(",") for p in a.profiles.split(",")))
     user, pw = creds()
-    rows, firefox = [], open_workload()
+    rows, firefox, orig = [], open_workload(), snapshot_override(OVERRIDE)
     try:
         time.sleep(5)
         for v in a.variants.split(","):
@@ -234,9 +277,9 @@ def main() -> None:
             rows.append(run_one("av1-30", "lan", user, pw, refuse="av01"))
             print(json.dumps(rows[-1]), flush=True)
     finally:
-        OVERRIDE.unlink(missing_ok=True)
-        restart_selkies(user, pw)
+        restore_override(OVERRIDE, orig)
         firefox.terminate()
+        restart_selkies(user, pw)
     finish(rows)
 
 

@@ -26,13 +26,23 @@ class Profile:
     collapse_mbps: float = 0
     drop_at_s: float = 0        # one outage: nothing gets through for drop_for_s,
     drop_for_s: float = 0       # what was sent meanwhile arrives after (TCP retransmits)
+    loss_pct: float = 0         # per-packet loss; a TCP path shows it as a retransmit stall
+    retrans_ms: float = 0       # ...of this long (RTT + RTO slack), holding up everything behind it
+    burst_p: float = 0          # per-write chance of a Wi-Fi jitter burst
+    burst_ms: float = 0         # ...of up to this much extra delay
 
 
 PROFILES = {
-    "lan": Profile(0, 0, 0),
+    "lan": Profile(0, 0.25, 0),            # ~0.5 ms RTT, no loss
     "office": Profile(100, 5, 2),
     "hotel": Profile(45, 20, 70, collapse_every_s=60, collapse_for_s=3, collapse_mbps=1),
     "hotspot": Profile(10, 40, 30, collapse_every_s=30, collapse_for_s=2, collapse_mbps=2),
+    # Cloudflare tunnel hairpin to g.jmolabs.dev, measured 2026-10-31 (20x curl, TCP connect c and
+    # time_starttransfer t): connect median 13.5 ms (9-24); app-level RTT = t - 2c: median 52.8 ms,
+    # p10-p90 46-68 ms, min 43, max 74, sd 8. Here: 20 ms each way + uniform 0-25 ms down = 52.5 ms median RTT.
+    "cf-tunnel": Profile(0, 20, 25),
+    # cf-tunnel on flaky Wi-Fi: 0.5% packet loss (retransmit stall ~1.5 RTT) and jitter bursts to 80 ms.
+    "wifi-loss": Profile(0, 20, 25, loss_pct=0.5, retrans_ms=80, burst_p=0.02, burst_ms=80),
     # Wi-Fi -> cellular handoff, tunnel in a dead zone: an office link that vanishes once.
     "drop3": Profile(100, 5, 2, drop_at_s=40, drop_for_s=3),
     "drop10": Profile(100, 5, 2, drop_at_s=40, drop_for_s=10),
@@ -51,6 +61,17 @@ class Shaper:
             return p.collapse_mbps * 1e6
         return p.mbps * 1e6
 
+    def penalty_ms(self, nbytes: int) -> float:
+        """Loss stall and jitter burst for one write. No rng draws when both are off."""
+        p, extra = self.p, 0.0
+        if p.loss_pct:
+            pkts = max(1, nbytes // 1400)
+            if self.rng.random() < 1 - (1 - p.loss_pct / 100) ** pkts:
+                extra += p.retrans_ms
+        if p.burst_p and self.rng.random() < p.burst_p:
+            extra += self.rng.uniform(0, p.burst_ms)
+        return extra
+
     def deliver_at(self, nbytes: int, now: float) -> float:
         """When `nbytes` written at `now` reach the far end."""
         start = max(now, self.free_at)
@@ -59,7 +80,8 @@ class Shaper:
             start = p.drop_at_s + p.drop_for_s
         rate = self.rate_bps(start)
         self.free_at = start + (nbytes * 8 / rate if rate else 0.0)
-        t = self.free_at + (self.p.base_ms + self.rng.uniform(0, self.p.jitter_ms)) / 1000
+        extra = self.penalty_ms(nbytes)
+        t = self.free_at + (self.p.base_ms + self.rng.uniform(0, self.p.jitter_ms) + extra) / 1000
         self.last = max(t, self.last)        # a TCP path never reorders
         return self.last
 
