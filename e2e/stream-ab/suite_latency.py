@@ -15,10 +15,10 @@ import latstats
 SUITE_VARIANTS = ["av1-60", "av1-120", "h264-60", "h264-120", "av1-60-bp8"]    # hevc-120: see ab.VARIANTS
 SUITE_PROFILES = ["lan", "cf-tunnel", "wifi-loss"]
 QUICK = (["av1-60", "h264-120"], ["lan", "cf-tunnel"])
-MIN_SAMPLES = 90                      # presented samples per input kind for a cell to count
+MIN_HIT = 0.9                         # share of the asked samples that must be hits for a cell to count
 CODEC = {"av1enc": ("AV1",), "h265enc": ("HEVC", "H265"), "h264enc": ("H264",)}
 WARMUP_ARGS = ("--n=5",)
-CELL_TIMEOUT = 420
+CELL_TIMEOUT = 480
 # Rough per-sample cost (s): mean 275 ms wait + the profile's typical input-to-photon.
 SAMPLE_S = {"lan": 0.32, "cf-tunnel": 0.42, "wifi-loss": 0.5}
 FIXED_S = 4 + 4 + 4.5 + 17 + 6       # proxy + page load + baselines + pacing phase + teardown/probes
@@ -34,19 +34,19 @@ def cell_seconds(profile: str, n: int = 100) -> float:
     return 3 * (n + 1) * SAMPLE_S.get(profile, 0.45) + FIXED_S
 
 
-def estimate_s(variants: list, profiles: list, repeats: int = 1) -> float:
-    return sum(RESTART_S + sum(cell_seconds(p) * repeats for p in profiles) for _ in variants) + 60
+def estimate_s(variants: list, profiles: list, repeats: int = 1, n: int = 100) -> float:
+    return sum(RESTART_S + sum(cell_seconds(p, n) * repeats for p in profiles) for _ in variants) + 60
 
 
-def format_plan(variants: list, profiles: list, repeats: int = 1) -> str:
+def format_plan(variants: list, profiles: list, repeats: int = 1, n: int = 100) -> str:
     import ab
     lines = ["latency suite plan (dry run, nothing started):"]
     for v in variants:
         lines.append(f"  {v}: selkies {' '.join(ab.VARIANTS[v])}")
         lines += [f"      x {p}" + (f" (x{repeats})" if repeats > 1 else "") for p in profiles]
-    n = len(variants) * len(profiles) * repeats
-    lines.append(f"{n} cells x 3 inputs x 100 samples + 15 s pacing each; est. wall time "
-                 f"{estimate_s(variants, profiles, repeats) / 60:.0f} min")
+    cells = len(variants) * len(profiles) * repeats
+    lines.append(f"{cells} cells x 3 inputs x {n} samples + 15 s pacing each; est. wall time "
+                 f"{estimate_s(variants, profiles, repeats, n) / 60:.0f} min")
     lines.append("results -> results/<stamp>-latency.json and .md; override restored at the end")
     return "\n".join(lines)
 
@@ -58,7 +58,7 @@ def expected(args: list) -> tuple:
     return CODEC[enc], fps
 
 
-def problems(args: list, ab_row: dict, flat: dict) -> list:
+def problems(args: list, ab_row: dict, flat: dict, n: int = 100) -> list:
     """Why a cell does not measure its variant (empty = valid)."""
     out = []
     codec, fps = expected(args)
@@ -67,10 +67,10 @@ def problems(args: list, ab_row: dict, flat: dict) -> list:
     if ab_row.get("fps") is not None and abs(ab_row["fps"] - fps) > 1:
         out.append(f"fps {ab_row['fps']} != {fps}")
     for k in latstats.KINDS:
-        if (flat.get(k) or {}).get("n", 0) < MIN_SAMPLES:
-            out.append(f"{k}: {(flat.get(k) or {}).get('n', 0)} presented samples")
+        if (flat.get(k) or {}).get("n", 0) < MIN_HIT * n:
+            out.append(f"{k}: {(flat.get(k) or {}).get('n', 0)} of {n} samples hit")
     if flat.get("error"):
-        out.append("client error")
+        out.append(f"client error: {str(flat['error'])[:80]}")
     if not ab_row.get("valid"):
         out.append("foreign client / watchdog restart")
     return out
@@ -83,7 +83,7 @@ def write_results(rows: list, res: Path) -> Path:
     return res / f"{stamp}-latency.md"
 
 
-def run(ab, variants: list, profiles: list, repeats: int = 1) -> None:
+def run(ab, variants: list, profiles: list, repeats: int = 1, n: int = 100) -> None:
     user, pw = ab.creds()
     orig, rows, firefox = ab.snapshot_override(ab.OVERRIDE), [], None
     try:
@@ -94,12 +94,17 @@ def run(ab, variants: list, profiles: list, repeats: int = 1) -> None:
             ab.restart_selkies(user, pw)
             ab.warm_up(user, pw, script="latency.mjs", extra=WARMUP_ARGS, timeout=CELL_TIMEOUT)
             for p in [p for p in profiles for _ in range(repeats)]:
-                r = ab.run_one(v, p, user, pw, script="latency.mjs", timeout=CELL_TIMEOUT)
+                try:
+                    r = ab.run_one(v, p, user, pw, script="latency.mjs", extra=(f"--n={n}",),
+                                   timeout=CELL_TIMEOUT)
+                except Exception as e:       # a bad cell is recorded and the suite goes on
+                    r = {"error": f"{type(e).__name__}: {e}"[:300]}
+                    time.sleep(5)
                 row = latstats.flat(v, p, r)
-                row["problems"] = problems(ab.VARIANTS[v], r, row)
+                row["problems"] = problems(ab.VARIANTS[v], r, row, n)
                 row["valid"] = not row["problems"]
                 row |= {k: r.get(k) for k in ("codec", "fps", "foreign", "watchdog", "lost", "cuts_gt30_per5m")}
-                row["raw"] = {k: r.get(k) for k in ("samples", "presentedTimes", "decodedFrames")}
+                row["raw"] = {k: r.get(k) for k in ("samples", "presentedTimes", "decodedFrames", "sent", "delivered")}
                 rows.append(row)
                 print(json.dumps({k: v_ for k, v_ in row.items() if k != "raw"}), flush=True)
                 if row["foreign"]:

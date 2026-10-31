@@ -13,6 +13,7 @@ Needs the seat idle: the gateway refuses a second controlling tab while
 another one has input (gateway.py BUSY_CODE).
 """
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -189,6 +190,22 @@ def warm_up(user: str, pw: str, **kw) -> None:
     print(json.dumps({"warmup": run_one("warmup", "lan", user, pw, **kw).get("valid")}), flush=True)
 
 
+def run_node(args: list, env: dict, timeout: int) -> tuple:
+    """(returncode, stdout, stderr). On timeout the whole process group (node + its headless chromium) is
+    killed, stray playwright chromiums are swept, and returncode is None."""
+    p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=HERE.parent,
+                         env=env, start_new_session=True)
+    try:
+        out, err = p.communicate(timeout=timeout)
+        return p.returncode, out, err
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(p.pid, signal.SIGKILL)
+        subprocess.run(["pkill", "-9", "-f", "ms-playwright/.*--headless"], check=False)
+        out, err = p.communicate()
+        return None, out, err
+
+
 def run_one(variant: str, profile: str, user: str, pw: str, refuse: str = "",
             script: str = "run.mjs", extra: tuple = (), timeout: int = 240) -> dict:
     start, gw_start = log_lines(), GWLOG.stat().st_size
@@ -207,10 +224,14 @@ def run_one(variant: str, profile: str, user: str, pw: str, refuse: str = "",
         sampler = probes.Sampler()
         sampler.start()
         try:
-            r = subprocess.run(args, capture_output=True, text=True, timeout=timeout, cwd=HERE.parent, env=env)
+            rc, out, err = run_node(args, env, timeout)
         finally:
             load = sampler.stop()
-        client = json.loads(r.stdout.strip().splitlines()[-1]) if r.returncode == 0 else {"error": r.stderr[-400:]}
+        try:
+            client = ({"error": "timeout"} if rc is None else json.loads(out.strip().splitlines()[-1]) if rc == 0
+                      else {"error": err[-400:]})
+        except (ValueError, IndexError):
+            client = {"error": "no json: " + (err or out)[-300:]}
     finally:
         proxy.terminate()
     time.sleep(2)
@@ -241,6 +262,7 @@ def main() -> None:
     ap.add_argument("--profiles", help="default hotel,office (suite: lan,cf-tunnel,wifi-loss)")
     ap.add_argument("--suite", choices=["latency"], help="gaming latency suite: input-to-photon, see suite_latency.py")
     ap.add_argument("--quick", action="store_true", help="suite: av1-60 and h264-120 on lan and cf-tunnel only")
+    ap.add_argument("--samples", type=int, default=100, help="suite: samples per input type (validation: 30)")
     ap.add_argument("--dry-run", action="store_true", help="print the plan and the wall-time estimate, run nothing")
     ap.add_argument("--fallback", action="store_true", help="also run av1-30 with AV1 refused by the browser")
     ap.add_argument("--repeats", type=int, default=1)
@@ -251,8 +273,8 @@ def main() -> None:
         import suite_latency
         variants, profiles = suite_latency.select(a.quick, a.variants, a.profiles)
         if a.dry_run:
-            return print(suite_latency.format_plan(variants, profiles, a.repeats))
-        return suite_latency.run(sys.modules[__name__], variants, profiles, a.repeats)
+            return print(suite_latency.format_plan(variants, profiles, a.repeats, a.samples))
+        return suite_latency.run(sys.modules[__name__], variants, profiles, a.repeats, a.samples)
     a.variants, a.profiles = a.variants or "h264-16,h264-30,av1-30", a.profiles or "hotel,office"
     if a.dry_run:
         return print("\n".join(f"{v} x {p}" for v in a.variants.split(",") for p in a.profiles.split(",")))

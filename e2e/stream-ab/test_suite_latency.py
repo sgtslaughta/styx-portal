@@ -63,27 +63,47 @@ def test_override_restored(tmp_path):
     assert p.read_text() == '{"args": ["--x"]}'
 
 
-def test_run_restores_override_when_a_cell_fails(tmp_path, monkeypatch):
+def test_samples_option_scales_plan_and_hit_requirement():
+    assert S.estimate_s(["av1-60"], ["lan"], 1, 30) < S.estimate_s(["av1-60"], ["lan"], 1, 100)
+    assert "x 30 samples" in S.format_plan(["av1-60"], ["lan"], 1, 30)
+    row = {"codec": "AV1 VAAPI CBR 30000", "fps": 60.0, "valid": True}
+    flat = {k: {"n": 28} for k in latstats.KINDS}
+    assert S.problems(ab.VARIANTS["av1-60"], row, flat, 30) == []        # 28/30 >= 90%
+    assert S.problems(ab.VARIANTS["av1-60"], row, flat, 100)
+
+
+def test_cell_error_is_recorded_and_suite_continues(tmp_path, monkeypatch):
     p = tmp_path / "o.json"
     p.write_text('{"args": ["--orig"]}')
-    calls = []
+    cells, restarts = [], []
 
     class Fake:
         VARIANTS, OVERRIDE, HERE = ab.VARIANTS, p, tmp_path
+        (tmp_path / "results").mkdir()
         snapshot_override, restore_override = staticmethod(ab.snapshot_override), staticmethod(ab.restore_override)
         creds = staticmethod(lambda: ("u", "p"))
-        open_workload = staticmethod(lambda: type("F", (), {"terminate": lambda s: calls.append("ff")})())
-        restart_selkies = staticmethod(lambda u, pw: calls.append(("restart", p.read_text())))
+        open_workload = staticmethod(lambda: type("F", (), {"terminate": lambda s: None})())
+        restart_selkies = staticmethod(lambda u, pw: restarts.append(p.read_text()))
         warm_up = staticmethod(lambda *a, **k: None)
 
         @staticmethod
-        def run_one(*a, **k):
-            raise RuntimeError("boom")
+        def run_one(v, prof, *a, **k):
+            cells.append(prof)
+            if prof == "lan":
+                raise TimeoutError("boom")
+            return {"error": "timeout"}
 
     monkeypatch.setattr(S.time, "sleep", lambda s: None)
-    try:
-        S.run(Fake, ["av1-60"], ["lan"])
-    except RuntimeError:
-        pass
-    assert p.read_text() == '{"args": ["--orig"]}'
-    assert calls[-1] == ("restart", '{"args": ["--orig"]}')      # selkies restarted onto the restored file
+    S.run(Fake, ["av1-60"], ["lan", "cf-tunnel"])
+    assert cells == ["lan", "cf-tunnel"]
+    import json
+    rows = json.loads(next((tmp_path / "results").glob("*-latency.json")).read_text())
+    assert all(not r["valid"] and r["error"] for r in rows)
+    assert p.read_text() == '{"args": ["--orig"]}' and restarts[-1] == p.read_text()
+
+
+def test_run_node_kills_the_process_group_on_timeout():
+    import time
+    t = time.time()
+    rc, out, err = ab.run_node([sys.executable, "-c", "import time; time.sleep(60)"], dict(__import__("os").environ), 1)
+    assert rc is None and time.time() - t < 10

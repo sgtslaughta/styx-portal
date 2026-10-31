@@ -6,9 +6,12 @@
   body { margin: 0; font: 15px/1.5 sans-serif; background: #fff; color: #111; }
   #type { position: fixed; top: 0; left: 0; right: 0; height: 90px; font: 16px monospace; z-index: 2; }
   #flip { position: fixed; top: 150px; left: 0; width: 200px; height: 200px; background: #000; z-index: 3; }
-  #mflip { position: fixed; top: 370px; left: 0; width: 200px; height: 200px; background: #000; z-index: 3; }
+  /* latency suite: viewport-relative, so frame fractions map to page fractions at any stream size */
+  #kflip, #mflip { position: fixed; left: 1vw; width: 8vw; height: 12vh; background: #000; z-index: 3; }
+  #kflip { top: 55vh; } #mflip { top: 70vh; }
+  .bit { position: fixed; width: 1.2vw; height: 3vh; background: #000; z-index: 3; }
   #cover { position: fixed; inset: 0; background: #fff; z-index: 1; display: none; }
-  #blk { position: fixed; width: 200px; height: 200px; background: #000; z-index: 4; display: none; left: -300px; top: 0; }
+  #blk { position: fixed; width: 14vw; height: 25vh; background: #000; z-index: 4; display: none; left: -300px; top: 0; }
   #anim { position: fixed; right: 20px; bottom: 20px; width: 480px; height: 270px; display: none; z-index: 2; }
   main { padding: 110px 40px 40px 240px; columns: 2; }
   p:nth-child(3n) { color: #b00; } p:nth-child(5n) { color: #06a; }
@@ -17,7 +20,9 @@
 <textarea id="type" placeholder="harness types here"></textarea>
 <canvas id="anim" width="480" height="270"></canvas>
 <div id="cover"></div><div id="blk"></div>
-<div id="mflip"></div><!-- any mouse button press flips it (latency.mjs) -->
+<!-- latency.mjs: F8 / a mouse press / a pointer move to a target steps these through 4 greys; the
+     bit rows (key, mouse, motion) show how many such events the page really received, 12-bit binary. -->
+<div id="kflip"></div><div id="mflip"></div>
 <div id="flip"></div><!-- F8 flips it: the harness times key -> pixels on this square -->
 <main id="text"></main>
 <script>
@@ -40,12 +45,33 @@ function frame() {
   requestAnimationFrame(frame);
 }
 const cover = document.getElementById("cover"), blk = document.getElementById("blk"), mflip = document.getElementById("mflip");
-let mwhite = false;
-addEventListener("mousedown", () => { mwhite = !mwhite; mflip.style.background = mwhite ? "#fff" : "#000"; });
-addEventListener("mousemove", e => { blk.style.left = e.clientX - 100 + "px"; blk.style.top = e.clientY - 100 + "px"; });
+const kflip = document.getElementById("kflip"), GREY = ["#000", "#555", "#aaa", "#fff"];
+const count = [0, 0, 0], bits = [];                       // received events: key, mouse, motion
+for (let r = 0; r < 3; r++) for (let i = 0; i < 12; i++) {
+  const b = document.createElement("div"); b.className = "bit";
+  b.style.left = 1 + 1.6 * i + "vw"; b.style.top = 86 + 4 * r + "vh"; document.body.appendChild(b); bits.push(b);
+}
+function tick(r) {
+  count[r]++; for (let i = 0; i < 12; i++) bits[r * 12 + i].style.background = (count[r] >> i) & 1 ? "#fff" : "#000";
+  return count[r];
+}
+let lastT = -1;
+const TARGETS = [[0.70, 0.45], [0.80, 0.75]];             // pointer-motion targets, viewport fractions
+addEventListener("mousedown", e => {
+  if (e.target.id !== "type") mflip.style.background = GREY[tick(1) % 4];   // the harness's focus click is not a sample
+});
+addEventListener("mousemove", e => {
+  blk.style.left = e.clientX - blk.offsetWidth / 2 + "px"; blk.style.top = e.clientY - blk.offsetHeight / 2 + "px";
+  const t = TARGETS.findIndex(([x, y]) => Math.abs(e.clientX / innerWidth - x) < 0.004 && Math.abs(e.clientY / innerHeight - y) < 0.004);
+  if (t >= 0 && t !== lastT) tick(2);                     // arrivals only: repeats at the same spot are not moves
+  lastT = t;
+});
 const flip = document.getElementById("flip"); let white = false;
 addEventListener("keydown", e => {
-  if (e.key === "F8") { e.preventDefault(); white = !white; flip.style.background = white ? "#fff" : "#000"; return; }
+  if (e.key === "F8") {
+    e.preventDefault(); white = !white; flip.style.background = white ? "#fff" : "#000";
+    kflip.style.background = GREY[tick(0) % 4]; return;
+  }
   // F7 / F6: pointer-motion mode on / off. A white cover hides the text, a black block follows the pointer.
   if (e.key === "F7" || e.key === "F6") {
     e.preventDefault(); const on7 = e.key === "F7";

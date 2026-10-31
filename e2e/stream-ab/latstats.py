@@ -54,7 +54,10 @@ def analyse(client: dict) -> dict:
         raw = (client.get("samples") or {}).get(kind) or []
         dec = [v for s in raw if (v := sample_ms(s, "dec")) is not None]
         pres = [v for s in raw if (v := sample_ms(s, "pres")) is not None]
-        out[kind] = {"decoded": summarize(dec), "presented": summarize(pres), "missed": len(raw) - len(pres)}
+        sent = (client.get("sent") or {}).get(kind)
+        out[kind] = {"decoded": summarize(dec), "presented": summarize(pres), "missed": len(raw) - len(pres),
+                     "miss_rate": (len(raw) - len(pres)) / len(raw) if raw else None,
+                     "sent": sent, "delivered": (client.get("delivered") or {}).get(kind)}
     out["pacing"] = pacing(client.get("presentedTimes") or [])
     return out
 
@@ -64,7 +67,7 @@ def flat(variant: str, profile: str, client: dict) -> dict:
     a = analyse(client)
     row = {"variant": variant, "profile": profile, "sink": client.get("sink"), "error": client.get("error")}
     for k in KINDS:
-        row[k] = a[k]["presented"] | {"missed": a[k]["missed"]}
+        row[k] = a[k]["presented"] | {x: a[k][x] for x in ("missed", "miss_rate", "sent", "delivered")}
     row["legacy"] = {"latP50": a["key"]["decoded"]["p50"], "latP95": a["key"]["decoded"]["p95"]}
     row["pacing"] = a["pacing"]
     return row
@@ -74,7 +77,7 @@ def _f(v) -> str:
     return "-" if v is None else f"{v:.1f}" if isinstance(v, float) else str(v)
 
 
-COLS = ["variant", "profile", "input", "p50", "p95", "p99", "jitter", ">100ms", "missed", "stalls", "pacing sd", "valid"]
+COLS = ["variant", "profile", "input", "p50", "p95", "p99", "jitter", ">100ms", "miss%", "deliv/sent", "stalls", "pacing sd", "valid"]
 
 
 def table(rows: list) -> str:
@@ -86,6 +89,7 @@ def table(rows: list) -> str:
             c = r.get(k) or {}
             out.append("| " + " | ".join(_f(x) for x in (
                 r["variant"], r["profile"], k, c.get("p50"), c.get("p95"), c.get("p99"), c.get("std"),
-                c.get("over100"), c.get("missed"), pc.get("stalls"), pc.get("interval_std"),
+                c.get("over100"), None if c.get("miss_rate") is None else round(100 * c["miss_rate"]),
+                f"{c.get('delivered')}/{c.get('sent')}", pc.get("stalls"), pc.get("interval_std"),
                 r.get("valid"))) + " |")
     return "\n".join(out)
