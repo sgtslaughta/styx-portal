@@ -43,7 +43,9 @@ def _open(bus_addr: str):
     import dbus.mainloop.glib
     from gi.repository import GLib
     bus = dbus.bus.BusConnection(bus_addr, mainloop=dbus.mainloop.glib.DBusGMainLoop())
-    name, loop, st = "org.gnome.Mutter.ScreenCast", GLib.MainLoop(), {}
+    # st holds the bus: a collected BusConnection closes, and Mutter then ends
+    # the session ("D-Bus client with active sessions vanished"), node gone.
+    name, loop, st = "org.gnome.Mutter.ScreenCast", GLib.MainLoop(), {"bus": bus}
     sc = dbus.Interface(bus.get_object(name, "/org/gnome/Mutter/ScreenCast"), name)
     ses = dbus.Interface(bus.get_object(name, sc.CreateSession({})), name + ".Session")
     stream = bus.get_object(name, ses.RecordMonitor("", {"cursor-mode": dbus.UInt32(0)}))
