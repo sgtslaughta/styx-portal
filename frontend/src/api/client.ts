@@ -63,12 +63,13 @@ export type DiscoveredContainer = {
 };
 export type OpenMode = "new_tab" | "same_tab";
 export type Me = { id: string; username: string; email: string | null; role: string;
-  open_workspaces: OpenMode | null; open_apps: OpenMode | null; must_change_pw?: boolean };
-export type Group = { id: string; name: string; description: string | null; member_count: number };
+  open_workspaces: OpenMode | null; open_apps: OpenMode | null; must_change_pw?: boolean; can_use_gpu?: boolean };
+export type Group = { id: string; name: string; description: string | null; member_count: number; allow_gpu: boolean };
+export type Profile = { template_id: string; template_name: string; display_name: string; volume_name: string; in_use: boolean };
 
 export type MountChange = { target: string; key: string; old: string | null; new: string; created?: boolean };
 export type MountPlan = {
-  method: "config_file" | null; changes: MountChange[]; needs_consent: boolean; reason: string | null; retry?: boolean;
+  method: "config_file" | null; changes: MountChange[]; needs_consent: boolean; reason: string | null; retry?: boolean; manual?: boolean;
 };
 export type JobStep = {
   id: string; label: string;
@@ -125,6 +126,7 @@ export type DiagHistory = {
 
 export type SetupPreflight = {
   docker: { ok: boolean; detail: string };
+  runtime?: "docker" | "kubernetes";
   deploy_mode: string;
   domain_set: boolean;
   data_writable: boolean;
@@ -259,6 +261,13 @@ export const api = {
   createGroup: (data: { name: string; description?: string | null }) =>
     request<Group>("/groups", { method: "POST", body: JSON.stringify(data) }),
   deleteGroup: (id: string) => request<void>(`/groups/${id}`, { method: "DELETE" }),
+  updateGroup: (id: string, data: { allow_gpu?: boolean; description?: string | null }) =>
+    request<Group>(`/groups/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  getMyProfiles: () => request<Profile[]>("/profiles"),
+  deleteMyProfile: (templateId: string) => request<void>(`/profiles/${templateId}`, { method: "DELETE" }),
+  getUserProfiles: (userId: string) => request<Profile[]>(`/users/${userId}/profiles`),
+  deleteUserProfile: (userId: string, templateId: string) =>
+    request<void>(`/users/${userId}/profiles/${templateId}`, { method: "DELETE" }),
   getUserGroups: (userId: string) => request<string[]>(`/users/${userId}/groups`),
   setUserGroups: (userId: string, groupIds: string[]) =>
     request<string[]>(`/users/${userId}/groups`, { method: "PUT", body: JSON.stringify({ group_ids: groupIds }) }),
@@ -286,12 +295,12 @@ export const api = {
     request<Instance>(`/instances/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteInstance: (
     id: string,
-    removeVolumes = false,
     removeImage = false,
     removeTemplate = false,
+    deleteProfile = false,
   ) =>
     request<void>(
-      `/instances/${id}?remove_volumes=${removeVolumes}&remove_image=${removeImage}&remove_template=${removeTemplate}`,
+      `/instances/${id}?remove_image=${removeImage}&remove_template=${removeTemplate}&delete_profile=${deleteProfile}`,
       { method: "DELETE" },
     ),
   getInstanceStatus: (id: string) =>

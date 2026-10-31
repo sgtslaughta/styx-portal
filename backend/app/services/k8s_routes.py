@@ -3,15 +3,70 @@ import hashlib
 import ipaddress
 import logging
 import re
+import socket
 from urllib.parse import urlparse
 
 import httpx
 
+from app.config import Settings
 from app.schemas import allow_list_missing, workstation_ip_allowed
 
 logger = logging.getLogger("styx-portal")
 MANAGED_LABEL = {"app.kubernetes.io/managed-by": "styx-backend"}
 _TRAEFIK = "traefik.io/v1alpha1"
+_CLUSTER_SVC = re.compile(r"^([a-z0-9-]+)\.([a-z0-9-]+)\.svc(\.cluster\.local)?$")
+
+
+def denied_namespaces() -> set[str]:
+    cfg = Settings()
+    denied = {n.strip() for n in cfg.K8S_UPSTREAM_DENY_NAMESPACES.split(",")
+              if n.strip()} | {cfg.K8S_NAMESPACE}
+    return denied - {cfg.K8S_INSTANCE_NAMESPACE}  # instance routes must resolve
+
+
+_INTERNAL_SUFFIXES = (".svc", ".cluster.local", ".localhost")
+
+
+def _bad_external(host: str) -> bool:
+    """A hostname upstream (ExternalName) must never point back into the cluster."""
+    if _CLUSTER_SVC.match(host):
+        return False  # handled as a cross-namespace ref + denylist
+    return (host == "localhost" or host.endswith(_INTERNAL_SUFFIXES)
+            or ".svc." in host or not host
+            or any(not label for label in host.split(".")))
+
+
+_resolve = socket.getaddrinfo
+
+
+def _resolves_safely(host: str) -> bool:
+    """Resolve as Traefik's pod would (search domains apply: `kubernetes.default`
+    expands to a cluster name). Public and LAN IPs are fine; cluster, loopback,
+    link-local, unspecified and multicast are not."""
+    # ponytail: DNS rebinding ceiling - checked at sync time only; a Traefik
+    # egress NetworkPolicy is the full fix.
+    try:
+        infos = _resolve(host + ".", None)
+    except OSError:
+        return False
+    nets = [ipaddress.ip_network(c.strip(), strict=False)
+            for c in Settings().K8S_CLUSTER_CIDRS.split(",") if c.strip()]
+    if not infos:
+        return False
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0].split("%")[0])
+        except ValueError:
+            return False
+        if (ip.is_loopback or ip.is_link_local or ip.is_unspecified
+                or ip.is_multicast or any(ip in n for n in nets)):
+            return False
+    return True
+
+
+def _host_of(svc: dict) -> str:
+    h = urlparse(svc["loadBalancer"]["servers"][0]["url"]).hostname or ""
+    return h.rstrip(".").lower()
 
 
 def k8s_name(s: str) -> str:
@@ -41,7 +96,7 @@ def _service_objects(name: str, svc: dict, ns: str) -> tuple[dict, list[dict]]:
     lb = svc["loadBalancer"]
     u = urlparse(lb["servers"][0]["url"])
     port = u.port or (443 if u.scheme == "https" else 80)
-    host = u.hostname or ""
+    host = (u.hostname or "").rstrip(".").lower()
     ip = _ip(host)
     extra: list[dict] = []
     if ip is not None:
@@ -58,12 +113,23 @@ def _service_objects(name: str, svc: dict, ns: str) -> tuple[dict, list[dict]]:
         extra.append(ep)
     elif name == "api":
         ref = {"name": "backend", "port": 8000}
-    else:
+    elif m := _CLUSTER_SVC.match(host):
+        ref = {"name": m[1], "namespace": m[2], "port": port}
+    elif "." not in host:
         ref = {"name": host, "port": port}
+    else:
+        n = k8s_name(name)
+        ref = {"name": n, "port": port}
+        extra.append(_obj("v1", "Service", n, ns, spec={
+            "type": "ExternalName", "externalName": f"{host}.",
+            "ports": [{"name": "http", "port": port, "targetPort": port}]}))
     if u.scheme == "https":
         ref["scheme"] = "https"
     if lb.get("serversTransport"):
-        ref["serversTransport"] = k8s_name(lb["serversTransport"])
+        st = k8s_name(lb["serversTransport"])
+        # Traefik looks a bare name up in the Service's namespace; the transport lives in ours.
+        ref["serversTransport"] = (f"{ns}-{st}@kubernetescrd"
+                                   if ref.get("namespace", ns) != ns else st)
     return ref, extra
 
 
@@ -82,6 +148,22 @@ def to_k8s_objects(config: dict, namespace: str) -> list[dict]:
             # Defense in depth for rows stored before the allow-list existed.
             logger.warning("k8s: skipping service %s and its routers: upstream %s is "
                            "outside WORKSTATION_ALLOW_CIDRS", name, ip)
+            skipped.add(name)
+            continue
+        host = _host_of(svc)
+        m = _CLUSTER_SVC.match(host)
+        if name != "api" and ip is None and (
+                _bad_external(host)
+                or (name.startswith("svc-") and "." not in host)
+                or (not m and "." in host and not _resolves_safely(host))):
+            logger.warning("k8s: skipping service %s and its routers: upstream "
+                           "%s points into the cluster", name, host)
+            skipped.add(name)
+            continue
+        if m and (m[2] in denied_namespaces() or (
+                name.startswith("svc-") and m[2] == Settings().K8S_INSTANCE_NAMESPACE)):
+            logger.warning("k8s: skipping service %s and its routers: upstream "
+                           "namespace %s is denied", name, m[2])
             skipped.add(name)
             continue
         refs[name], extra = _service_objects(name, svc, ns)

@@ -119,7 +119,7 @@ def test_write_routes_k8s_applies_objects(monkeypatch):
                for r in seen)
 
 
-def test_build_routes_config_k8s_skips_lan_and_services(tmp_path, monkeypatch):
+def test_build_routes_config_k8s_skips_lan(tmp_path, monkeypatch):
     (tmp_path / "lan.crt").write_text("c")
     (tmp_path / "lan.key").write_text("k")
     monkeypatch.setattr(route_writer._settings, "LAN_CERT_DIR", str(tmp_path))
@@ -132,10 +132,6 @@ def test_build_routes_config_k8s_skips_lan_and_services(tmp_path, monkeypatch):
     assert not [n for n in routers if n.endswith("-lan")]
     assert "tls" not in cfg
     assert "ws-ws1" in routers
-    plain = build_routes_config([], "s.example", "tunnel",
-                                workstations=[_ws()], services=[svc])
-    assert [n for n in plain["http"]["routers"] if "sonarr" in n]
-    assert not [n for n in routers if "sonarr" in n]
 
 
 @pytest.mark.asyncio
@@ -283,3 +279,64 @@ def test_list_pod_ips_skips_host_network():
         ]})
 
     assert _client(handler).list_pod_ips("cloudflared", "pod=cloudflared") == {"10.42.3.70"}
+
+
+def test_get_json_ok_404_and_error():
+    def h(r):
+        code = {"/ok": 200, "/missing": 404}.get(r.url.path, 500)
+        return httpx.Response(code, json={"a": 1} if code == 200 else {})
+    c = _client(h)
+    assert c.get_json("/ok", {"x": "1"}) == {"a": 1}
+    assert c.get_json("/missing") is None
+    with pytest.raises(httpx.HTTPStatusError):
+        c.get_json("/boom")
+
+
+def _url_svc(upstream="http://sonarr.media.svc:8989", **kw):
+    return {"id": "s1", "slug": "sonarr", "upstream": upstream,
+            "mount_mode": "path", "auth_mode": "styx", "verify_tls": True,
+            "enabled": True, "upstream_host": None, **kw}
+
+
+def test_build_routes_config_k8s_includes_services():
+    cfg = build_routes_config([], "s.example", "tunnel",
+                              services=[_url_svc()], k8s=True)
+    assert "svc-sonarr" in cfg["http"]["routers"]
+
+
+def test_write_routes_k8s_applies_service_ingressroute(monkeypatch):
+    seen = []
+
+    def handler(r):
+        seen.append(r)
+        return httpx.Response(200, json={"items": []})
+
+    _k8s_mode(monkeypatch, handler)
+    route_writer.write_routes([], services=[_url_svc()], strict=True)
+    assert any(r.method == "PATCH" and r.url.path == f"{IR}/svc-sonarr"
+               for r in seen)
+
+
+def test_patch_merge_and_get_text_and_new_plurals():
+    seen = []
+
+    def h(r):
+        seen.append(r)
+        if r.url.path.endswith("/log"):
+            return httpx.Response(404) if "gone" in r.url.path else httpx.Response(200, text="a\nb")
+        return httpx.Response(200, json={})
+    c = _client(h)
+    c.patch_merge("apps/v1", "Deployment", "inst", "d1", {"spec": {"replicas": 1}})
+    r = seen[0]
+    assert r.method == "PATCH"
+    assert r.url.path == "/apis/apps/v1/namespaces/inst/deployments/d1"
+    assert r.headers["content-type"] == "application/merge-patch+json"
+    assert json.loads(r.content) == {"spec": {"replicas": 1}}
+    c.apply({"apiVersion": "v1", "kind": "PersistentVolumeClaim",
+             "metadata": {"name": "v", "namespace": "inst"}})
+    assert seen[1].url.path == "/api/v1/namespaces/inst/persistentvolumeclaims/v"
+    assert c.get_text("/api/v1/namespaces/i/pods/p/log", {"tailLines": 5}) == "a\nb"
+    assert c.get_text("/api/v1/namespaces/i/pods/gone/log") is None
+    with pytest.raises(httpx.HTTPStatusError):
+        _client(lambda r: httpx.Response(500, json={})).patch_merge(
+            "v1", "Service", "i", "s", {})

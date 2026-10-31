@@ -124,9 +124,8 @@ async def _docker_check(docker, container: str) -> str:
 
 
 def _default_docker():
-    from app.config import Settings
-    from app.services.docker_manager import DockerManager
-    return DockerManager(network_name=Settings().DOCKER_NETWORK)
+    from app.services.k8s_runtime import container_runtime
+    return container_runtime()
 
 
 async def run_health_pass(session: AsyncSession, checker=check_url, docker=None) -> int:

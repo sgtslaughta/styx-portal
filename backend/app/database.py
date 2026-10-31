@@ -79,6 +79,7 @@ async def _run_migrations(conn):
 
     migrations = [
         ("instances", "error_message", "TEXT"),
+        ("instances", "status_detail", "TEXT"),
         ("instances", "owner_id", "TEXT"),
         ("service_templates", "owner_id", "TEXT"),
         ("service_templates", "dind", "BOOLEAN"),
@@ -125,6 +126,11 @@ async def _run_migrations(conn):
         ("users", "matrix_challenge", "TEXT"),
         ("users", "matrix_serial", "INTEGER NOT NULL DEFAULT 0"),
         ("refresh_tokens", "session_only", "INTEGER NOT NULL DEFAULT 0"),
+        ("service_templates", "profile_mount", "TEXT"),
+        ("instances", "profile_volume", "TEXT"),
+        ("instances", "gpu", "BOOLEAN"),
+        ("instances", "notice", "TEXT"),
+        ("groups", "allow_gpu", "BOOLEAN DEFAULT 0"),
     ]
     for table, column, col_type in migrations:
         try:

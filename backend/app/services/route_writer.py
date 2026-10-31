@@ -137,6 +137,8 @@ def build_routes_config(instances: list[dict], domain: str,
                 or isinstance(port, bool) or not 1 <= port <= 65535:
             continue  # defense in depth for legacy DB rows
         container_name = f"selkies-{subdomain}"
+        if k8s:
+            container_name += f".{_settings.K8S_INSTANCE_NAMESPACE}.svc"
 
         strip_mw = f"strip-{subdomain}"
         middlewares[strip_mw] = {"stripPrefix": {"prefixes": [f"/i/{subdomain}"]}}
@@ -259,7 +261,7 @@ def build_routes_config(instances: list[dict], domain: str,
         config["http"]["serversTransports"] = {
             "selkies-transport": {"insecureSkipVerify": True}
         }
-    if services and not k8s:
+    if services:
         from app.services.service_routes import add_service_routes
         add_service_routes(config, middlewares, services, domain,
                            _router_transport(deploy_mode, domain))
@@ -282,7 +284,7 @@ def build_routes_config(instances: list[dict], domain: str,
     return config
 
 
-def _write_routes_k8s(instances, domain, workstations, strict):
+def _write_routes_k8s(instances, domain, workstations, services, strict):
     from app.services.k8s_api import incluster_client
     from app.services.k8s_routes import (
         K8sSyncError, sync_objects, to_k8s_objects)
@@ -290,7 +292,7 @@ def _write_routes_k8s(instances, domain, workstations, strict):
     try:
         client = incluster_client()
         config = build_routes_config(instances, domain, _settings.DEPLOY_MODE,
-                                     workstations, None, k8s=True)
+                                     workstations, services, k8s=True)
         sync_objects(client, to_k8s_objects(config, ns), ns)
     except Exception as e:
         if not isinstance(e, K8sSyncError):  # apply failures already logged
@@ -311,7 +313,8 @@ def _write_routes_locked(instances: list[dict], domain: str | None = None,
     """
     domain = domain or _settings.DOMAIN
     if _settings.ROUTE_BACKEND == "k8s":
-        return _write_routes_k8s(instances, domain, workstations, strict)
+        return _write_routes_k8s(instances, domain, workstations, services,
+                                 strict)
     out_dir = Path(_settings.TRAEFIK_DYNAMIC_DIR)
     try:
         out_dir.mkdir(parents=True, exist_ok=True)

@@ -178,3 +178,22 @@ async def test_fetch_url_kind_caps_body():
     big = httpx.MockTransport(lambda r: httpx.Response(200, content=b"x" * 2_000_000))
     svc = _svc(kind="url", upstream_url="http://app.test:8080", container=None)
     assert await sf.fetch_favicon(svc, None, transport=big) is None
+
+
+async def test_fetch_docker_local_on_k8s_uses_httpx(monkeypatch):
+    import httpx
+    monkeypatch.setenv("ROUTE_BACKEND", "k8s")
+    seen = []
+
+    def handler(req: httpx.Request):
+        seen.append(str(req.url))
+        if req.url.path == "/sonarr/":
+            return httpx.Response(200, html=_html('<link rel="icon" href="i.png">'))
+        if req.url.path == "/sonarr/i.png":
+            return httpx.Response(200, content=PNG)
+        return httpx.Response(404)
+    d = MagicMock()
+    out = await sf.fetch_favicon(_svc(container="app.media.svc"), d,
+                                 transport=httpx.MockTransport(handler))
+    assert out and base64.b64decode(out.split(",")[1]) == PNG
+    assert seen and not d.probe_fetch.called

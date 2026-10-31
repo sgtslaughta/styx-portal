@@ -2,8 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.services.k8s_prepull import schedule_sync
 from app.database import get_session
 from app.models import ServiceTemplate, User
+from app.routers.instances import get_docker_manager
+from app.services import profiles
 from app.schemas import TemplateCreate, TemplateUpdate
 from app.security.deps import get_current_user, require_owner_or_admin
 from app.services.docker_args import validate_extra_args, DockerArgError
@@ -40,7 +43,7 @@ _TEMPLATE_UPDATE_FIELDS = {
     "cap_add", "security_opt", "tls_skip_verify",
     "shared", "restart_policy", "read_only_rootfs", "tmpfs", "extra_hosts",
     "ulimits", "extra_ports", "entrypoint", "command", "devices",
-    "privileged", "extra_docker_args",
+    "privileged", "extra_docker_args", "profile_mount",
 }
 
 
@@ -94,6 +97,7 @@ async def create_template(
     session.add(template)
     await session.commit()
     await session.refresh(template)
+    schedule_sync()
     return template
 
 
@@ -117,6 +121,7 @@ async def update_template(
     body: TemplateUpdate,
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
+    docker=Depends(get_docker_manager),
 ):
     template = await session.get(ServiceTemplate, template_id)
     if not template:
@@ -147,6 +152,7 @@ async def update_template(
     session.add(template)
     await session.commit()
     await session.refresh(template)
+    schedule_sync()
     return template
 
 
@@ -155,6 +161,7 @@ async def delete_template(
     template_id: str,
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
+    docker=Depends(get_docker_manager),
 ):
     template = await session.get(ServiceTemplate, template_id)
     if not template:
@@ -167,6 +174,8 @@ async def delete_template(
     else:
         require_owner_or_admin(template.owner_id, user)
 
+    await profiles.purge_profiles(session, docker, template_id=template.id, actor=user)
     await session.delete(template)
     await session.commit()
+    schedule_sync()
     return Response(status_code=204)

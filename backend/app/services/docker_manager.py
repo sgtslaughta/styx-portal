@@ -254,6 +254,26 @@ class DockerManager(ContainerFilesMixin):
             return "healthy"
         return {"healthy": "healthy", "unhealthy": "unhealthy"}.get(hc.get("Status"), "unknown")
 
+    def instance_logs(self, container_id: str, tail: int = 500) -> list[str]:
+        raw = self._client.containers.get(container_id).logs(tail=tail, timestamps=True)
+        text = raw.decode("utf-8", errors="replace").strip()
+        return text.split("\n") if text else []
+
+    def instance_usage(self, container_id: str) -> dict:
+        raw = self.get_container_stats(container_id)
+        if not raw:
+            return {"cpu_percent": 0, "memory_mb": 0, "memory_limit_mb": 0, "memory_percent": 0}
+        cpu = raw.get("cpu_stats", {})
+        pre = raw.get("precpu_stats", {})
+        cpu_delta = cpu.get("cpu_usage", {}).get("total_usage", 0) - pre.get("cpu_usage", {}).get("total_usage", 0)
+        sys_delta = cpu.get("system_cpu_usage", 0) - pre.get("system_cpu_usage", 0)
+        cpu_percent = (cpu_delta / sys_delta * cpu.get("online_cpus", 1) * 100) if sys_delta > 0 else 0
+        usage = raw.get("memory_stats", {}).get("usage", 0)
+        limit = raw.get("memory_stats", {}).get("limit", 1)
+        return {"cpu_percent": round(cpu_percent, 1), "memory_mb": round(usage / (1024 * 1024)),
+                "memory_limit_mb": round(limit / (1024 * 1024)),
+                "memory_percent": round(usage / limit * 100, 1) if limit > 0 else 0}
+
     def get_container_stats(self, container_id: str) -> dict:
         try:
             container = self._client.containers.get(container_id)
@@ -261,9 +281,12 @@ class DockerManager(ContainerFilesMixin):
         except docker.errors.NotFound:
             return {}
 
-    def create_volume(self, name: str) -> str:
+    def create_volume(self, name: str, size: str | None = None) -> str:  # size: k8s only
         volume = self._client.volumes.create(name=name)
         return volume.name
+
+    def gpu_free(self, n: int) -> bool:
+        return True  # GPU is shared /dev/dri
 
     def remove_volume(self, name: str) -> None:
         volume = self._client.volumes.get(name)

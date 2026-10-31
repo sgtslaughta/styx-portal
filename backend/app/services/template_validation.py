@@ -22,10 +22,14 @@ def validate_volumes(volumes: list[dict]) -> list[dict]:
             raise ValueError("volume must be {name, mount}")
         # shape check with a dummy id; the real id is substituted at launch
         resolve_volume_name(str(v.get("name", "")), "0" * 36)
-        m = str(v.get("mount", ""))
-        if not m.startswith("/") or m == "/" or ".." in m.split("/") or "," in m or ":" in m:
-            raise ValueError("mount must be an absolute path other than /")
+        validate_mount(str(v.get("mount", "")))
     return volumes
+
+
+def validate_mount(m: str) -> str:
+    if not m.startswith("/") or m == "/" or ".." in m.split("/") or "," in m or ":" in m:
+        raise ValueError("mount must be an absolute path other than /")
+    return m
 
 
 def valid_extra_port(ep) -> bool:

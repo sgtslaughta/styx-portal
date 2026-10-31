@@ -8,18 +8,55 @@ from app.services.session_monitor import SessionMonitor
 from app.main import _run_monitor_pass
 
 
-@pytest.mark.asyncio
-async def test_instance_unavailable_page(client):
-    resp = await client.get("/api/instance-unavailable")
+async def _page(client, path=None):
+    h = {"X-Replaced-Path": path} if path else {}
+    resp = await client.get("/api/instance-unavailable", headers=h)
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/html")
-    body = resp.text
-    # JS derives subdomain from the path and redirects to /?stopped=...
-    assert "location.replace" in body
-    assert "/i/" in body
-    assert "stopped=" in body
-    # no-JS fallback to My Instances
-    assert 'href="/"' in body
+    return resp.text
+
+
+async def _inst(session, status):
+    t = await _make_template(session)
+    session.add(Instance(template_id=t.id, name="n", subdomain="box", status=status))
+    await session.commit()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["starting", "pulling", "running"])
+async def test_unavailable_starting_page_auto_refreshes(admin_client, session, status):
+    await _inst(session, status)
+    body = await _page(admin_client, "/i/box/")
+    assert 'http-equiv="refresh" content="3"' in body
+    assert "starting" in body.lower()
+
+
+@pytest.mark.asyncio
+async def test_unavailable_starting_hidden_from_anonymous_and_non_owner(client, member_client, session):
+    """X-Replaced-Path is client-settable: no status leak to non-owners."""
+    await _inst(session, "starting")          # ownerless instance
+    for c in (member_client,):
+        body = await _page(c, "/i/box/")
+        assert "stopped=" in body and 'content="3"' not in body
+    client.cookies.clear()
+    body = await _page(client, "/i/box/")
+    assert "stopped=" in body and 'content="3"' not in body
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["stopped", "error", "idle"])
+async def test_unavailable_redirects_when_not_starting(client, session, status):
+    await _inst(session, status)
+    body = await _page(client, "/i/box/")
+    assert "location.replace" in body and "stopped=" in body and 'href="/"' in body
+
+
+@pytest.mark.asyncio
+async def test_unavailable_unknown_or_headerless_matches_stopped(client, session):
+    await _inst(session, "stopped")
+    stopped = await _page(client, "/i/box/")
+    assert await _page(client, "/i/nope/") == stopped
+    assert await _page(client) == stopped
 
 
 async def _make_template(session):

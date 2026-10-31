@@ -2,10 +2,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { api, ApiError } from "@/api/client";
-import { Users, Copy, Trash2, Check, ShieldCheck, ShieldOff, Lock, Unlock, RefreshCw, AlertTriangle, UsersRound, MoreHorizontal, KeyRound } from "lucide-react";
+import { Users, Copy, Trash2, Check, ShieldCheck, ShieldOff, Lock, Unlock, RefreshCw, AlertTriangle, UsersRound, UserRound, MoreHorizontal, KeyRound } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { UserProfilesDialog } from "@/components/system/user-profiles-dialog";
 import { UserGroupsDialog } from "@/components/system/user-groups-dialog";
 import { ResetMatrixDialog } from "@/components/system/reset-matrix-dialog";
 import {
@@ -53,6 +54,7 @@ export function UsersPanel() {
   const [resetPasswordCopied, setResetPasswordCopied] = useState(false);
   const [deleteConfirmDialog, setDeleteConfirmDialog] = useState<string | null>(null);
   const [groupsFor, setGroupsFor] = useState<{ id: string; username: string } | null>(null);
+  const [profilesFor, setProfilesFor] = useState<{ id: string; username: string } | null>(null);
   const [matrixFor, setMatrixFor] = useState<{ id: string; username: string } | null>(null);
 
   const invite = useMutation({
@@ -318,6 +320,10 @@ export function UsersPanel() {
                                     <UsersRound className="h-4 w-4 mr-2" />
                                     Groups…
                                   </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => setProfilesFor({ id: u.id, username: u.username })}>
+                                    <UserRound className="h-4 w-4 mr-2" />
+                                    Profiles…
+                                  </DropdownMenuItem>
                                   <DropdownMenuItem
                                     onClick={() => resetPassword.mutate(u.id)}
                                     disabled={resetPassword.isPending}
@@ -372,6 +378,13 @@ export function UsersPanel() {
         userId={groupsFor?.id ?? ""}
         username={groupsFor?.username ?? ""}
         onOpenChange={(o) => { if (!o) setGroupsFor(null); }}
+      />
+
+      <UserProfilesDialog
+        open={profilesFor !== null}
+        userId={profilesFor?.id ?? ""}
+        username={profilesFor?.username ?? ""}
+        onOpenChange={(o) => { if (!o) setProfilesFor(null); }}
       />
 
       <ResetMatrixDialog user={matrixFor} onClose={() => setMatrixFor(null)} />

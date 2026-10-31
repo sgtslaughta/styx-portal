@@ -253,3 +253,19 @@ async def test_migrations_add_matrix_columns():
         rt = {r[1] for r in (await conn.execute(sqlalchemy.text("PRAGMA table_info(refresh_tokens)"))).fetchall()}
     assert {"matrix_card", "matrix_pending", "matrix_challenge", "matrix_serial"} <= users
     assert "session_only" in rt
+
+
+@pytest.mark.asyncio
+async def test_migrations_add_profile_and_gpu_columns():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        for t in ("service_templates", "instances", "groups"):
+            await conn.execute(sqlalchemy.text(f"CREATE TABLE {t} (id TEXT PRIMARY KEY)"))
+        await _run_migrations(conn)
+        cols = {}
+        for t in ("service_templates", "instances", "groups"):
+            rows = (await conn.execute(sqlalchemy.text(f"PRAGMA table_info({t})"))).fetchall()
+            cols[t] = {r[1] for r in rows}
+    assert "profile_mount" in cols["service_templates"]
+    assert {"profile_volume", "gpu", "notice"} <= cols["instances"]
+    assert "allow_gpu" in cols["groups"]

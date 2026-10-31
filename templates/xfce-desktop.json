@@ -21,6 +21,7 @@
       "mount": "/config"
     }
   ],
+  "profile_mount": "/config",
   "internal_port": 3000,
   "internal_protocol": "http",
   "category": "desktop",

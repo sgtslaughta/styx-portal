@@ -47,6 +47,7 @@ async def test_stale_or_path_mode_cookie_is_not_focus(admin_client, session):
     ({"sec-fetch-dest": "iframe", "referer": "http://test/groups"}, False),
     ({"sec-fetch-dest": "empty", "referer": "http://test/i/dev/app"}, False),
     ({"sec-fetch-dest": "empty", "referer": "http://test/w/box/"}, False),
+    ({"sec-fetch-dest": "empty", "referer": "http://test/desktop/box"}, False),  # wrapper framing /i/
     ({"sec-fetch-dest": "empty", "referer": "http://test/_styx/app/sonarr/"}, False),
     ({"sec-fetch-dest": "empty", "referer": "http://test/sonarr/ui"}, False),   # service slug
 ])

@@ -64,7 +64,7 @@ export function SetupWizard() {
           {pre && (
             <div className="space-y-1 rounded-md border border-border p-3 text-xs">
               <p className="font-medium">Environment check</p>
-              <PreRow ok={pre.docker.ok} label="Docker" detail={pre.docker.detail} />
+              <PreRow ok={pre.docker.ok} label={pre.runtime === "kubernetes" ? "Kubernetes" : "Docker"} detail={pre.docker.detail} />
               <PreRow ok={pre.data_writable} label="Data volume" detail={pre.data_writable ? "writable" : "not writable"} />
               <PreRow ok={pre.domain_set} label="Domain" detail={pre.domain_set ? "configured" : "DOMAIN not set — using localhost"} warnOnly />
               <p className="text-muted-foreground">Ingress mode: {pre.deploy_mode}</p>

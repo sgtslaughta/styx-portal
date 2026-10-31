@@ -219,10 +219,16 @@ class GroupCreate(BaseModel):
     description: str | None = Field(default=None, max_length=255)
 
 
+class GroupUpdate(BaseModel):
+    allow_gpu: bool | None = None
+    description: str | None = Field(default=None, max_length=255)
+
+
 class GroupOut(BaseModel):
     id: str
     name: str
     description: str | None
+    allow_gpu: bool = False
     member_count: int = 0
 
 

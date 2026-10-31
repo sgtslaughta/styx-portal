@@ -13,8 +13,9 @@ from app.models import Instance, ServiceTemplate, SessionEvent, PulledImage, Use
 from app.schemas import InstanceCreate, InstanceUpdate, SessionConfigUpdate, InstanceStatus
 from app.security.deps import get_current_user, require_owner_or_admin
 from app.services.docker_manager import DockerManager
+from app.services.k8s_runtime import ensure_instance_supported, instance_runtime
 from app.services.screenshot import ScreenshotService
-from app.services.template_validation import resolve_volume_name, validate_volumes
+from app.services import gpu_access, instance_readiness, profiles
 from app.services.traefik_labels import generate_traefik_labels
 from app.services.audit import audit
 from app.services.settings_store import settings as sys_settings
@@ -37,14 +38,14 @@ def _dind_store_volume(instance_id: str) -> str:
     return f"selkies-{instance_id}-dockerstore"
 
 
-def get_docker_manager() -> DockerManager:
-    return DockerManager(network_name=_settings.DOCKER_NETWORK)
+def get_docker_manager():
+    return instance_runtime()
 
 
 def get_screenshot_service() -> ScreenshotService:
     return ScreenshotService(
         cache_dir=_settings.SCREENSHOT_CACHE_DIR,
-        docker_manager=get_docker_manager(),
+        docker_manager=DockerManager(network_name=_settings.DOCKER_NETWORK),
     )
 
 
@@ -63,16 +64,12 @@ async def _isolate_or_409(docker, instance, container_id):
         raise HTTPException(409, "Instance network could not be isolated")
 
 
-async def _build_and_start_container(instance, template, docker):
+async def _build_and_start_container(instance, template, docker, session):
     """(Re)create the Docker container for an instance from its template,
     mounting the instance's existing named volumes (data preserved), then start it.
     Sets instance.container_id. Caller commits."""
-    validate_volumes(template.volumes)
-    volumes = {}
-    for vol in template.volumes:
-        vol_name = resolve_volume_name(vol["name"], instance.id)
-        await asyncio.to_thread(docker.create_volume, vol_name)
-        volumes[vol_name] = {"bind": vol["mount"], "mode": "rw"}
+    ensure_instance_supported(template)
+    volumes = await profiles.prepare_volumes(docker, template, instance)
 
     if template.dind:
         store = _dind_store_volume(instance.id)
@@ -101,7 +98,7 @@ async def _build_and_start_container(instance, template, docker):
         environment=env,
         volumes=volumes,
         port=template.internal_port,
-        gpu_enabled=template.gpu_enabled,
+        gpu_enabled=await gpu_access.resolve_gpu(session, docker, template, instance),
         gpu_count=template.gpu_count,
         memory_limit=template.memory_limit,
         cpu_limit=template.cpu_limit,
@@ -145,7 +142,7 @@ async def list_instances(
 
 async def _launch_instance_background(instance_id: str, template_id: str):
     """Background task: pull image, create container, start it."""
-    docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
+    docker = instance_runtime()
     async with async_session() as session:
         instance = await session.get(Instance, instance_id)
         template = await session.get(ServiceTemplate, template_id)
@@ -170,17 +167,7 @@ async def _launch_instance_background(instance_id: str, template_id: str):
                 finally:
                     pull_progress.clear(instance.id)  # never leave stale progress
 
-            validate_volumes(template.volumes)
-            volume_names = []
-            for vol in template.volumes:
-                vol_name = resolve_volume_name(vol["name"], instance.id)
-                await asyncio.to_thread(docker.create_volume, vol_name)
-                volume_names.append(vol_name)
-            instance.volume_names = volume_names
-
-            volumes = {}
-            for vol, vol_name in zip(template.volumes, volume_names):
-                volumes[vol_name] = {"bind": vol["mount"], "mode": "rw"}
+            volumes = await profiles.prepare_volumes(docker, template, instance)
 
             if template.dind:
                 store = _dind_store_volume(instance.id)
@@ -210,7 +197,7 @@ async def _launch_instance_background(instance_id: str, template_id: str):
                 environment=env,
                 volumes=volumes,
                 port=template.internal_port,
-                gpu_enabled=template.gpu_enabled,
+                gpu_enabled=await gpu_access.resolve_gpu(session, docker, template, instance),
                 gpu_count=template.gpu_count,
                 memory_limit=template.memory_limit,
                 cpu_limit=template.cpu_limit,
@@ -255,11 +242,13 @@ async def _launch_instance_background(instance_id: str, template_id: str):
             instance.status = "running"
             instance.started_at = now
             instance.last_activity = now
+            instance_readiness.defer_on_k8s(instance)
             session.add(instance)
 
             event = SessionEvent(instance_id=instance.id, event_type="started")
             session.add(event)
             await session.commit()
+            instance_readiness.kick(instance)
             await _refresh_routes(session)
 
         except Exception as e:
@@ -285,6 +274,7 @@ async def create_instance(
     template = await session.get(ServiceTemplate, body.template_id)
     if not template:
         raise HTTPException(404, "Template not found")
+    ensure_instance_supported(template)
 
     # Rate limit check for non-admin users
     if user.role != "admin":
@@ -311,9 +301,12 @@ async def create_instance(
     if existing:
         raise HTTPException(409, f"Subdomain '{body.subdomain}' already in use")
 
+    profile_volume = await profiles.claim_profile(session, user.id, template) if body.use_profile else None
     instance = Instance(
         template_id=template.id,
         owner_id=user.id,
+        profile_volume=profile_volume,
+        gpu=template.gpu_enabled and body.use_gpu and await gpu_access.user_may_use_gpu(session, user),
         name=body.name,
         subdomain=body.subdomain,
         status="starting",
@@ -364,6 +357,7 @@ async def start_instance(
     require_owner_or_admin(instance.owner_id, user)
     if instance.status == "running":
         raise HTTPException(409, "Instance already running")
+    await profiles.check_instance_profile(session, instance)
 
     container_exists = False
     if instance.container_id:
@@ -382,7 +376,7 @@ async def start_instance(
             raise HTTPException(400, "Template no longer exists, cannot recreate")
 
         try:
-            await _build_and_start_container(instance, template, docker)
+            await _build_and_start_container(instance, template, docker, session)
         except ValueError as e:
             raise HTTPException(422, f"Template volumes invalid: {e}")
 
@@ -390,6 +384,7 @@ async def start_instance(
     instance.status = "running"
     instance.started_at = now
     instance.last_activity = now
+    instance_readiness.defer_on_k8s(instance)
     session.add(instance)
 
     event = SessionEvent(
@@ -400,6 +395,7 @@ async def start_instance(
     session.add(event)
     await session.commit()
     await session.refresh(instance)
+    instance_readiness.kick(instance)
     await _refresh_routes(session)
     return instance
 
@@ -457,12 +453,14 @@ async def restart_instance(
     instance.started_at = now
     instance.last_activity = now
     instance.error_message = None
+    instance_readiness.defer_on_k8s(instance)
     session.add(instance)
 
     event = SessionEvent(instance_id=instance.id, event_type="restarted")
     session.add(event)
     await session.commit()
     await session.refresh(instance)
+    instance_readiness.kick(instance)
     return instance
 
 
@@ -482,6 +480,7 @@ async def recreate_instance(
     template = await session.get(ServiceTemplate, instance.template_id)
     if not template:
         raise HTTPException(400, "Template no longer exists, cannot recreate")
+    await profiles.check_instance_profile(session, instance)
 
     # Remove the old container, keep volumes.
     if instance.container_id:
@@ -491,29 +490,26 @@ async def recreate_instance(
                 await asyncio.to_thread(docker.stop_container, instance.container_id)
             await asyncio.to_thread(docker.remove_container, instance.container_id)
 
-    # Recompute volume names from the (possibly updated) template. instance.id is stable,
-    # so unchanged volume defs yield identical names -> create_volume returns the existing
-    # volume -> data preserved. New defs create new volumes; removed defs are left orphaned.
+    # Volume names are recomputed from the (possibly updated) template; instance.id is stable,
+    # so unchanged defs reuse the existing volume (data preserved).
     try:
-        instance.volume_names = [
-            resolve_volume_name(vol["name"], instance.id) for vol in template.volumes
-        ]
+        await _build_and_start_container(instance, template, docker, session)
     except ValueError as e:
         raise HTTPException(422, f"Template volumes invalid: {e}")
-
-    await _build_and_start_container(instance, template, docker)
 
     now = datetime.now(timezone.utc)
     instance.status = "running"
     instance.started_at = now
     instance.last_activity = now
     instance.error_message = None
+    instance_readiness.defer_on_k8s(instance)
     session.add(instance)
 
     event = SessionEvent(instance_id=instance.id, event_type="recreated")
     session.add(event)
     await session.commit()
     await session.refresh(instance)
+    instance_readiness.kick(instance)
     await _refresh_routes(session)
     return instance
 
@@ -577,6 +573,7 @@ async def delete_instance(
     remove_volumes: bool = Query(False),
     remove_image: bool = Query(False),
     remove_template: bool = Query(False),
+    delete_profile: bool = Query(False),
     session: AsyncSession = Depends(get_session),
     docker: DockerManager = Depends(get_docker_manager),
     user: User = Depends(get_current_user),
@@ -585,6 +582,7 @@ async def delete_instance(
     if not instance:
         raise HTTPException(404, "Instance not found")
     require_owner_or_admin(instance.owner_id, user)
+    profile_owner, profile_tmpl, profile_vol = instance.owner_id, instance.template_id, instance.profile_volume
 
     # Capture subdomain before deletion for audit
     subdomain = instance.subdomain
@@ -595,9 +593,11 @@ async def delete_instance(
         if status["status"] != "not_found":
             await asyncio.to_thread(docker.remove_container, instance.container_id)
 
-    if remove_volumes:
-        for vol_name in instance.volume_names:
+    for vol_name in instance.volume_names:  # remove_volumes is ignored; profile is never listed
+        try:
             await asyncio.to_thread(docker.remove_volume, vol_name)
+        except Exception:  # noqa: BLE001  volume may already be gone
+            logger.warning("could not remove volume %s", vol_name, exc_info=True)
 
     # Capture template/image before deleting the instance row.
     template = await session.get(ServiceTemplate, instance.template_id)
@@ -618,6 +618,11 @@ async def delete_instance(
         detail={"subdomain": subdomain}
     )
     await session.commit()
+
+    if delete_profile and profile_vol:
+        await profiles.delete_after_instance(
+            session, docker, Instance(owner_id=profile_owner, template_id=profile_tmpl,
+                                      profile_volume=profile_vol), user.id)
 
     # Opt-in image prune — only when requested AND no other instance uses the image.
     if remove_image and image_tag:
@@ -720,29 +725,7 @@ async def get_instance_stats(
     if not instance.container_id or instance.status not in ("running", "idle"):
         return {"cpu_percent": 0, "memory_mb": 0, "memory_limit_mb": 0, "memory_percent": 0}
 
-    raw = await asyncio.to_thread(docker.get_container_stats, instance.container_id)
-    if not raw:
-        return {"cpu_percent": 0, "memory_mb": 0, "memory_limit_mb": 0, "memory_percent": 0}
-
-    cpu_delta = raw.get("cpu_stats", {}).get("cpu_usage", {}).get("total_usage", 0) - \
-                raw.get("precpu_stats", {}).get("cpu_usage", {}).get("total_usage", 0)
-    system_delta = raw.get("cpu_stats", {}).get("system_cpu_usage", 0) - \
-                   raw.get("precpu_stats", {}).get("system_cpu_usage", 0)
-    num_cpus = raw.get("cpu_stats", {}).get("online_cpus", 1)
-    cpu_percent = (cpu_delta / system_delta * num_cpus * 100) if system_delta > 0 else 0
-
-    mem_usage = raw.get("memory_stats", {}).get("usage", 0)
-    mem_limit = raw.get("memory_stats", {}).get("limit", 1)
-    memory_mb = mem_usage / (1024 * 1024)
-    memory_limit_mb = mem_limit / (1024 * 1024)
-    memory_percent = (mem_usage / mem_limit * 100) if mem_limit > 0 else 0
-
-    return {
-        "cpu_percent": round(cpu_percent, 1),
-        "memory_mb": round(memory_mb),
-        "memory_limit_mb": round(memory_limit_mb),
-        "memory_percent": round(memory_percent, 1),
-    }
+    return await asyncio.to_thread(docker.instance_usage, instance.container_id)
 
 
 @router.post("/{instance_id}/keepalive", response_model=Instance)
@@ -825,7 +808,9 @@ async def get_screenshot(
     if not path:
         raise HTTPException(404, "No screenshot available")
 
-    return FileResponse(path, media_type="image/png")
+    from app.routers.instance_thumbs import head as _head, sniff_image_type
+    media = sniff_image_type(_head(path)) or "image/png"
+    return FileResponse(path, media_type=media)
 
 
 @router.post("/{instance_id}/screenshot/refresh")
@@ -841,6 +826,8 @@ async def refresh_screenshot(
     if not instance:
         raise HTTPException(404, "Instance not found")
     require_owner_or_admin(instance.owner_id, user)
+    if Settings().ROUTE_BACKEND == "k8s":
+        return {"ok": False, "reason": "screenshots are not available on Kubernetes"}
     if instance.status not in ("running", "idle") or not instance.container_id:
         return {"ok": False, "reason": "not running"}
 
@@ -899,11 +886,6 @@ async def get_instance_logs(
         return []
 
     try:
-        container = docker._client.containers.get(instance.container_id)
-        raw_logs = await asyncio.to_thread(
-            container.logs, tail=lines, timestamps=True
-        )
-        text = raw_logs.decode("utf-8", errors="replace")
-        return text.strip().split("\n") if text.strip() else []
+        return await asyncio.to_thread(docker.instance_logs, instance.container_id, lines)
     except Exception:
         return []

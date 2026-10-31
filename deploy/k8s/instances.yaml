@@ -1,0 +1,101 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: styx-instances
+  labels:
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: styx-backend-instances
+  namespace: styx-instances
+rules:
+  - apiGroups: [apps]
+    resources: [deployments, daemonsets]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [services, persistentvolumeclaims]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [resourcequotas]
+    verbs: [get]
+  - apiGroups: [metrics.k8s.io]
+    resources: [pods]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: styx-backend-instances
+  namespace: styx-instances
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: styx-backend-instances
+subjects:
+  - kind: ServiceAccount
+    name: styx-backend
+    namespace: styx
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: instances
+  namespace: styx-instances
+spec:
+  hard:
+    requests.cpu: "16"
+    requests.memory: 48Gi
+    limits.cpu: "32"
+    limits.memory: 96Gi
+    persistentvolumeclaims: "40"
+    requests.storage: 800Gi
+    requests.amd.com/gpu: "3"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: instances
+  namespace: styx-instances
+spec:
+  limits:
+    - type: Container
+      default: {cpu: "2", memory: 4Gi}
+      defaultRequest: {cpu: 250m, memory: 512Mi}
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: instances
+  namespace: styx-instances
+spec:
+  endpointSelector: {}
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: traefik
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - {port: "53", protocol: ANY}
+    # Cilium CIDR rules never select host/remote-node/kube-apiserver entities, so
+    # node IPs and the API stay blocked even inside 192.168.1.0/24.
+    - toCIDRSet:
+        - cidr: 0.0.0.0/0
+          except: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16]
+        - cidr: 192.168.1.0/24
+  # deny wins over the LAN allow above regardless of policy-cidr-match-mode
+  egressDeny:
+    - toEntities: [host, remote-node, kube-apiserver]

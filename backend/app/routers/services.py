@@ -27,7 +27,8 @@ log = logging.getLogger(__name__)
 
 
 def get_docker_manager() -> DockerManager:
-    return DockerManager(network_name=_settings.DOCKER_NETWORK)
+    from app.services.k8s_runtime import container_runtime
+    return container_runtime()
 
 
 def get_thumb_dir() -> Path:
@@ -42,6 +43,7 @@ def _needs_setup(s: ProxiedService, presets: dict[str, ServicePreset]) -> bool:
     """Docker app Styx can configure (config_file method) whose base path isn't confirmed yet."""
     p = presets.get(s.preset_id) if s.preset_id else None
     return (s.kind == "docker-local" and s.mount_mode == "path" and not s.mount_managed
+            and Settings().ROUTE_BACKEND != "k8s"   # k8s: the admin confirms by hand
             and p is not None
             and any(m.get("type") == "config_file" for m in (p.subpath or {}).get("methods", [])))
 

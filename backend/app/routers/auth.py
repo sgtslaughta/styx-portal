@@ -22,6 +22,7 @@ from app.security.deps import get_current_user
 from app.security.setup_gate import users_exist
 from app.services import federation, login_flow, single_use
 from app.services.audit import audit_request
+from app.services.gpu_access import user_may_use_gpu
 from app.middleware.rate_limit import client_ip_from_headers, client_ip_resolved
 from app.services.abuse import ban_cache
 
@@ -97,9 +98,18 @@ async def setup_preflight(session: AsyncSession = Depends(get_session)):
     # status is never exposed post-setup without auth.
     if await users_exist(session):
         raise HTTPException(status.HTTP_404_NOT_FOUND)
-    from app.services.docker_manager import DockerManager
-    docker = DockerManager(network_name=_settings.DOCKER_NETWORK)
-    reachable = await asyncio.to_thread(docker.ping)
+    k8s = Settings().ROUTE_BACKEND == "k8s"
+    if k8s:
+        from app.services.diagnostics import _check_kubernetes
+        try:
+            reachable, detail = await _check_kubernetes()
+            detail = f"Kubernetes {detail}"
+        except Exception:  # noqa: BLE001
+            reachable, detail = False, "Kubernetes API not reachable"
+    else:
+        from app.services.docker_manager import DockerManager
+        reachable = await asyncio.to_thread(DockerManager(network_name=_settings.DOCKER_NETWORK).ping)
+        detail = "reachable" if reachable else "not reachable — is docker-proxy running?"
     data_dir = Path(_settings.SCREENSHOT_CACHE_DIR).parent  # /app/data
     try:
         probe = data_dir / ".preflight"
@@ -109,10 +119,8 @@ async def setup_preflight(session: AsyncSession = Depends(get_session)):
     except Exception:  # noqa: BLE001
         writable = False
     return {
-        "docker": {
-            "ok": reachable,
-            "detail": "reachable" if reachable else "not reachable — is docker-proxy running?",
-        },
+        "docker": {"ok": reachable, "detail": detail},
+        "runtime": "kubernetes" if k8s else "docker",
         "deploy_mode": _settings.DEPLOY_MODE,
         "domain_set": bool(_settings.DOMAIN) and _settings.DOMAIN != "localhost",
         "data_writable": writable,
@@ -323,9 +331,15 @@ def _me_out(user: User) -> UserOut:
                    open_apps=user.open_apps, must_change_pw=user.must_change_pw)
 
 
+async def _me_full(session: AsyncSession, user: User) -> UserOut:
+    out = _me_out(user)
+    out.can_use_gpu = await user_may_use_gpu(session, user)
+    return out
+
+
 @router.get("/me", response_model=UserOut)
-async def me(user: User = Depends(get_current_user)):
-    return _me_out(user)
+async def me(session: AsyncSession = Depends(get_session), user: User = Depends(get_current_user)):
+    return await _me_full(session, user)
 
 
 @router.put("/me/preferences", response_model=UserOut)
@@ -338,7 +352,7 @@ async def set_preferences(body: OpenPreferences, session: AsyncSession = Depends
     session.add(row)
     await session.commit()
     await session.refresh(row)
-    return _me_out(row)
+    return await _me_full(session, row)
 
 
 @router.post("/change-password")

@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from app.config import Settings
 from app.database import async_session, get_session
 from app.models import MountJob, ServicePreset, User
 from app.routers.services import _get_or_404, _iso, get_docker_manager
@@ -63,7 +64,7 @@ async def mount_plan(sid: str, admin: User = Depends(require_admin),
         session.add(svc)
         await session.commit()
     return {"method": p.method, "changes": p.changes, "needs_consent": p.needs_consent,
-            "reason": p.reason, "retry": p.retry}
+            "reason": p.reason, "retry": p.retry, "manual": p.manual}
 
 
 @router.post("/{sid}/mount/apply", status_code=202)
@@ -71,6 +72,8 @@ async def mount_apply(sid: str, body: ApplyBody, request: Request,
                       admin: User = Depends(require_admin),
                       session: AsyncSession = Depends(get_session),
                       docker: DockerManager = Depends(get_docker_manager)):
+    if Settings().ROUTE_BACKEND == "k8s":
+        raise HTTPException(422, "Managed mounts are manual on Kubernetes: see the plan's instructions.")
     async with _apply_locks.setdefault(sid, asyncio.Lock()):
         running = (await session.exec(select(MountJob).where(
             MountJob.service_id == sid, MountJob.state.in_(["pending", "running"])))).first()
