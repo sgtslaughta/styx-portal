@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef } from "react";
 import { Link, useParams } from "react-router";
 import { Loader2 } from "lucide-react";
-import { useInstances } from "@/hooks/use-instances";
+import { useInstances, useKeepalive } from "@/hooks/use-instances";
 import { useTemplates } from "@/hooks/use-templates";
+import { startActivityHeartbeat } from "@/lib/activity";
 import { startThumbUploader } from "@/lib/stream-thumb";
 
 const ALLOW = "fullscreen; clipboard-read; clipboard-write; autoplay; gamepad; microphone; camera; display-capture; pointer-lock";
@@ -29,6 +30,7 @@ export function DesktopPage() {
   const { sub = "" } = useParams();
   const { data, isPending } = useInstances();
   const instance = data?.find((i) => i.subdomain === sub);
+  const keepalive = useKeepalive();
   const frameRef = useRef<HTMLIFrameElement>(null);
   const live = instance?.status === "running" || instance?.status === "idle";
   const id = instance?.id;
@@ -52,9 +54,10 @@ export function DesktopPage() {
   useEffect(() => {
     if (!live || !id) return;
     const stop = startThumbUploader(id, () => frameRef.current);
+    const stopBeat = startActivityHeartbeat(id, () => frameRef.current);
     const focus = () => frameRef.current?.focus();
     window.addEventListener("focus", focus);
-    return () => { stop(); window.removeEventListener("focus", focus); };
+    return () => { stop(); stopBeat(); window.removeEventListener("focus", focus); };
   }, [live, id]);
 
   const onLoad = useCallback(() => frameRef.current?.focus(), []);
@@ -75,6 +78,20 @@ export function DesktopPage() {
     return <Notice><p>{instance.name} is {instance.status}</p><Link to="/" className="underline">Go home</Link></Notice>;
   }
   return (
+    <>
+      {instance.status === "idle" && (
+        <div role="alert" className="fixed inset-x-0 top-0 z-10 flex items-center justify-center gap-3 bg-amber-500 px-3 py-2 text-sm font-medium text-black">
+          Pausing soon due to inactivity
+          <button
+            type="button"
+            className="rounded bg-black/80 px-2 py-0.5 text-white"
+            onClick={() => keepalive.mutate(instance.id, { onSettled: () => frameRef.current?.focus() })}
+          >
+            I'm here
+          </button>
+        </div>
+      )}
+  return (
     <iframe
       ref={frameRef}
       src={`/i/${sub}/`}
@@ -84,5 +101,6 @@ export function DesktopPage() {
       className="block h-screen w-screen border-0 bg-black"
       style={{ width: "100vw", height: "100vh" }}
     />
+    </>
   );
 }
