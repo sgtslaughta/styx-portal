@@ -27,3 +27,29 @@ describe("TemplateBuilder", () => {
     expect(screen.queryByText(/requires admin/i)).toBeNull();
   });
 });
+
+describe("TemplateBuilder on Kubernetes", () => {
+  function K8s() {
+    const cfg = useLaunchConfig({});
+    return <TemplateBuilder cfg={cfg} isAdmin k8s />;
+  }
+
+  test("hides Security section and Docker-only fields", () => {
+    render(<K8s />);
+    expect(screen.queryByRole("button", { name: /security/i })).toBeNull();
+    expect(screen.getByText(/docker-only settings are hidden/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /resources/i }));
+    expect(screen.queryByText(/restart policy/i)).toBeNull();
+    expect(screen.getByText(/memory limit/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /raw docker/i }));
+    expect(screen.queryByText(/extra docker args/i)).toBeNull();
+    expect(screen.getByText(/entrypoint/i)).toBeInTheDocument();
+  });
+
+  test("shows them on Docker", () => {
+    render(<Harness isAdmin />);
+    expect(screen.getByRole("button", { name: /security/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /resources/i }));
+    expect(screen.getByText(/restart policy/i)).toBeInTheDocument();
+  });
+});

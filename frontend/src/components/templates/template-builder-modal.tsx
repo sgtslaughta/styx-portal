@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { TemplateBuilder } from "./builder/template-builder";
 import { useCreateTemplate, useUpdateTemplate } from "@/hooks/use-templates";
 import { useLaunchConfig } from "@/hooks/use-launch-config";
+import { useIsK8s } from "@/hooks/use-gpu";
 import { useAuth } from "@/hooks/use-auth";
 import { toast } from "sonner";
 import type { ServiceTemplate } from "@/lib/types";
@@ -88,7 +89,7 @@ export function TemplateBuilderModal({
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
 
-        <TemplateBuilder cfg={cfg} isAdmin={isAdmin} />
+        <TemplateBuilder cfg={cfg} isAdmin={isAdmin} k8s={useIsK8s()} />
 
         <div className="flex gap-2 pt-4">
           <Button onClick={() => save(false)} disabled={saving}>

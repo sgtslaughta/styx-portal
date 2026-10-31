@@ -6,9 +6,10 @@ import type { LaunchConfig } from "@/hooks/use-launch-config";
 interface Props {
   cfg: LaunchConfig;
   isAdmin: boolean;
+  k8s?: boolean;
 }
 
-export function RawDockerSection({ cfg, isAdmin }: Props) {
+export function RawDockerSection({ cfg, isAdmin, k8s }: Props) {
   return (
     <div className="space-y-6 p-4">
       <LockedField locked={!isAdmin} label="Entrypoint">
@@ -39,7 +40,7 @@ export function RawDockerSection({ cfg, isAdmin }: Props) {
         />
       </LockedField>
 
-      <LockedField locked={!isAdmin} label="Extra Docker Args">
+      {!k8s && <LockedField locked={!isAdmin} label="Extra Docker Args">
         <div className="space-y-2">
           <RepeatableRows
             rows={Object.entries(cfg.extraDockerArgs).map(([k, v]) => ({
@@ -76,7 +77,7 @@ export function RawDockerSection({ cfg, isAdmin }: Props) {
             )}
           />
         </div>
-      </LockedField>
+      </LockedField>}
     </div>
   );
 }

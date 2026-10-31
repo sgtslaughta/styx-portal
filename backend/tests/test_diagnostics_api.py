@@ -19,3 +19,11 @@ async def test_diagnostics_history_admin_ok(admin_client):
     r = await admin_client.get("/api/system/diagnostics/history?range=1h")
     assert r.status_code == 200
     assert "timestamps" in r.json()
+
+
+@pytest.mark.asyncio
+async def test_system_runtime(admin_client, monkeypatch):
+    assert (await admin_client.get("/api/system/runtime")).json() == {"runtime": "docker"}
+    from app import main
+    monkeypatch.setattr(main._settings, "ROUTE_BACKEND", "k8s")
+    assert (await admin_client.get("/api/system/runtime")).json() == {"runtime": "kubernetes"}

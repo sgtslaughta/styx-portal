@@ -6,13 +6,14 @@ import type { LaunchConfig } from "@/hooks/use-launch-config";
 interface Props {
   cfg: LaunchConfig;
   isAdmin: boolean;
+  k8s?: boolean;
 }
 
 function gb(s: string): number {
   return Number(String(s).replace(/g$/i, "")) || 0;
 }
 
-export function ResourcesSection({ cfg }: Props) {
+export function ResourcesSection({ cfg, k8s }: Props) {
   return (
     <div className="space-y-6 p-4">
       <SliderInput
@@ -48,13 +49,15 @@ export function ResourcesSection({ cfg }: Props) {
         onChange={(v) => cfg.setShmSize(`${v}g`)}
       />
 
-      <EnumSelect
-        label="Restart Policy"
-        value={cfg.restartPolicy}
-        options={["no", "on-failure", "unless-stopped", "always"]}
-        tooltip="Container restart behavior"
-        onChange={cfg.setRestartPolicy}
-      />
+      {!k8s && (
+        <EnumSelect
+          label="Restart Policy"
+          value={cfg.restartPolicy}
+          options={["no", "on-failure", "unless-stopped", "always"]}
+          tooltip="Container restart behavior"
+          onChange={cfg.setRestartPolicy}
+        />
+      )}
 
       <ToggleField
         label="GPU Passthrough"
