@@ -156,6 +156,7 @@ AGENT_UPDATE_FILES = [
     ("clipboard_bridge.py", "clipboard_bridge.py"),
     ("favicon.py", "favicon.py"),
     ("seat_thumb.py", "seat_thumb.py"),
+    ("seat_thumb_grab.py", "seat_thumb_grab.py"),
     ("bundle_patch.py", "bundle_patch.py"),
 ]
 

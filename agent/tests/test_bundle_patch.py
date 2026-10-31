@@ -1,6 +1,8 @@
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
@@ -34,8 +36,22 @@ def test_unknown_bundle_unchanged():
     assert "page-fn" in skipped  # anchor occurs twice
 
 
+def test_partial_match_leaves_text_unchanged():
+    # worker anchors present, page anchors missing -> nothing applied
+    text = PRISTINE.replace("function Qa(){}", "")
+    new, applied, skipped = bp.patch_text(text)
+    assert new == text and applied == [] and "page-fn" in skipped
+
+
+def test_partial_with_marker_present_applies_rest():
+    half = bp.patch_text(PRISTINE)[0].replace("output:__styxFit.bind(null,s,l,u)",
+                                              "output:Bs.bind(null,s)")
+    new, applied, skipped = bp.patch_text(half)
+    assert applied == ["page-call"] and skipped == []
+
+
 def _tree(tmp_path, text):
-    d = tmp_path / "venv/lib/python3.99/site-packages/selkies/selkies_web/assets"
+    d = tmp_path / "selkies/selkies_web/assets"
     d.mkdir(parents=True)
     f = d / "selkies-core-abc123.js"
     f.write_text(text)
@@ -43,27 +59,46 @@ def _tree(tmp_path, text):
     return f
 
 
+def _spec(tmp_path):
+    return SimpleNamespace(submodule_search_locations=[str(tmp_path / "selkies")])
+
+
+def _apply(tmp_path, logs, spec="tree"):
+    s = _spec(tmp_path) if spec == "tree" else spec
+    with patch.object(bp.importlib.util, "find_spec", return_value=s) as fs:
+        bp.apply("/ignored", logs.append)
+    fs.assert_called_once_with("selkies")
+
+
 def test_apply_tree(tmp_path):
     f = _tree(tmp_path, PRISTINE)
     logs = []
-    bp.apply(tmp_path, logs.append)
+    _apply(tmp_path, logs)
     assert "__styxFit" in f.read_text()
     assert os.stat(f).st_mode & 0o777 == 0o640
     assert logs[0].startswith("bundle patch: applied")
     assert [p for p in f.parent.iterdir()] == [f]
     logs.clear()
-    bp.apply(tmp_path, logs.append)
+    _apply(tmp_path, logs)
     assert logs == ["bundle patch: already present in selkies-core-abc123.js"]
 
 
 def test_apply_unknown_and_missing(tmp_path):
     logs = []
-    bp.apply(tmp_path, logs.append)
-    assert "no selkies web bundle" in logs[0]
+    _apply(tmp_path, logs, spec=None)
+    assert logs == ["bundle patch: no selkies web bundle found"]
     f = _tree(tmp_path, "nope")
     logs.clear()
-    bp.apply(tmp_path, logs.append)
-    assert "unknown bundle" in logs[0] and f.read_text() == "nope"
+    _apply(tmp_path, logs)
+    assert logs == ["bundle patch: unknown bundle selkies-core-abc123.js, skipped"]
+    assert f.read_text() == "nope"
+
+
+def test_apply_partial_file_untouched(tmp_path):
+    text = PRISTINE.replace("function Qa(){}", "")
+    f = _tree(tmp_path, text)
+    _apply(tmp_path, [])
+    assert f.read_text() == text
 
 
 def test_apply_never_raises(tmp_path):
@@ -72,7 +107,7 @@ def test_apply_never_raises(tmp_path):
     if os.access(f, os.R_OK):
         pytest.skip("root ignores modes")
     logs = []
-    bp.apply(tmp_path, logs.append)
+    _apply(tmp_path, logs)
     assert "failed" in logs[0]
 
 

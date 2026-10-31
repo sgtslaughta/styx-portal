@@ -6,6 +6,7 @@ cropped to the configured size via VideoFrame visibleRect. Upstream:
 selkies-project/selkies#496. Lost on every selkies reinstall, hence this.
 """
 import glob
+import importlib.util
 import os
 import tempfile
 from pathlib import Path
@@ -45,38 +46,42 @@ PATCHES = [
 
 
 def patch_text(text: str) -> tuple[str, list[str], list[str]]:
-    """-> (new_text, applied, skipped). Idempotent; never raises. A patch whose
-    marker is present is already done; one whose anchor is not unique is
-    skipped (other selkies version)."""
-    applied, skipped = [], []
-    for name, marker, before, after in PATCHES:
-        if marker in text:
-            continue
-        if text.count(before) == 1:
-            text = text.replace(before, after)
-            applied.append(name)
-        else:
-            skipped.append(name)
-    return text, applied, skipped
+    """-> (new_text, applied, skipped). Idempotent; never raises. All or
+    nothing: a patch whose marker is present is already done; the rest apply
+    only if every anchor matches exactly once (else text is returned unchanged
+    and the unmatched names are `skipped`: another selkies version)."""
+    todo = [p for p in PATCHES if p[1] not in text]
+    skipped = [p[0] for p in todo if text.count(p[2]) != 1]
+    if skipped:
+        return text, [], skipped
+    for _, _, before, after in todo:
+        text = text.replace(before, after)
+    return text, [p[0] for p in todo], []
 
 
-def apply(install_dir, log=print) -> None:
-    """Patch every selkies-core bundle under <install>/venv. Never raises."""
-    pat = str(Path(install_dir) / "venv/lib/python*/site-packages/selkies"
-              "/selkies_web/assets/selkies-core-*.js")
+def _bundles() -> list[str]:
+    """selkies-core bundles of the selkies importable by this interpreter."""
+    spec = importlib.util.find_spec("selkies")
+    if spec is None or not spec.submodule_search_locations:
+        return []
+    return [f for d in spec.submodule_search_locations
+            for f in glob.glob(os.path.join(d, "selkies_web/assets/selkies-core-*.js"))]
+
+
+def apply(install_dir=None, log=print) -> None:
+    """Patch the selkies-core bundle of the installed selkies. Never raises."""
     try:
-        files = glob.glob(pat)
+        files = _bundles()
         if not files:
             log("bundle patch: no selkies web bundle found")
         for f in files:
             text = Path(f).read_text(encoding="utf-8")
             new, applied, skipped = patch_text(text)
             if skipped:
-                log(f"bundle patch: unknown bundle {Path(f).name}, "
-                    f"skipped {', '.join(skipped)}")
+                log(f"bundle patch: unknown bundle {Path(f).name}, skipped")
+                continue
             if not applied:
-                if not skipped:
-                    log(f"bundle patch: already present in {Path(f).name}")
+                log(f"bundle patch: already present in {Path(f).name}")
                 continue
             fd, tmp = tempfile.mkstemp(dir=os.path.dirname(f), suffix=".tmp")
             try:
@@ -89,5 +94,5 @@ def apply(install_dir, log=print) -> None:
                     os.unlink(tmp)
                 raise
             log(f"bundle patch: applied {', '.join(applied)} to {Path(f).name}")
-    except (OSError, ValueError) as e:
+    except (OSError, ValueError, ImportError) as e:
         log(f"bundle patch failed: {e}")
