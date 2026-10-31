@@ -2,10 +2,19 @@ import { useCallback, useEffect, useRef } from "react";
 import { Link, useParams } from "react-router";
 import { Loader2 } from "lucide-react";
 import { useInstances } from "@/hooks/use-instances";
+import { useTemplates } from "@/hooks/use-templates";
 import { startThumbUploader } from "@/lib/stream-thumb";
 
 const ALLOW = "fullscreen; clipboard-read; clipboard-write; autoplay; gamepad; microphone; camera; display-capture; pointer-lock";
 const WAITING = ["created", "creating", "pulling", "starting"];
+
+/** Tab icon for a template icon: image URL as-is, emoji drawn into an SVG. */
+export function faviconHref(icon: string | null | undefined): string | null {
+  if (!icon) return null;
+  if (icon.startsWith("http") || icon.startsWith("/")) return icon;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">${icon}</text></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
 
 function Notice({ children }: { children: React.ReactNode }) {
   return (
@@ -24,9 +33,21 @@ export function DesktopPage() {
   const live = instance?.status === "running" || instance?.status === "idle";
   const id = instance?.id;
 
+  const { data: templates } = useTemplates();
+  const icon = faviconHref(templates?.find((t) => t.id === instance?.template_id)?.icon);
+
   useEffect(() => {
     if (instance?.name) document.title = instance.name;
   }, [instance?.name]);
+
+  useEffect(() => {
+    const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (!link || !icon) return;
+    const prev = { href: link.href, type: link.type };
+    link.href = icon;
+    link.removeAttribute("type");
+    return () => { link.href = prev.href; link.type = prev.type; };
+  }, [icon]);
 
   useEffect(() => {
     if (!live || !id) return;
