@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { test, expect, vi } from "vitest";
-import { WorkstationList } from "../workstation-list";
+import { WorkstationList, WorkstationPreview } from "../workstation-list";
 import type { Workstation } from "@/api/client";
 
 let rows: Workstation[] = [];
@@ -19,7 +19,7 @@ const openPending = vi.fn((_m: string, _l: string, get: () => Promise<string>) =
 vi.mock("@/lib/connect-wipe", () => ({ openPending: (...a: Parameters<typeof openPending>) => openPending(...a) }));
 
 vi.mock("@/api/client", () => ({
-  api: { myWorkstations: () => Promise.resolve(rows),
+  api: { workstationThumbUrl: (id: string) => `/api/workstations/${id}/thumbnail`, myWorkstations: () => Promise.resolve(rows),
     workstationConnectUrl: (...a: unknown[]) => connectUrl(...a) },
   ApiError: class extends Error {},
 }));
@@ -49,4 +49,33 @@ test("Connect on a workstation in use by someone else confirms takeover first", 
   fireEvent.click(await screen.findByRole("button", { name: "Connect" }));
   await screen.findByText('Take over "Studio"?');
   expect(openPending).not.toHaveBeenCalled();
+});
+
+test("online workstation row shows a thumbnail from the contract URL", async () => {
+  rows = [row];
+  const { container } = render(<WorkstationList />);
+  await screen.findByText("Studio");
+  expect(container.querySelector('img[src="/api/workstations/w9/thumbnail?t=0"]')).not.toBeNull();
+});
+
+test("clicking a row selects it without connecting; Connect button does not select", async () => {
+  rows = [row];
+  openPending.mockClear();
+  const onSelect = vi.fn();
+  render(<WorkstationList selectedId="w9" onSelect={onSelect} />);
+  const opt = await screen.findByRole("option", { name: /Studio/ });
+  expect(opt.getAttribute("aria-selected")).toBe("true");
+  fireEvent.click(opt);
+  expect(onSelect).toHaveBeenCalledTimes(1);
+  fireEvent.keyDown(opt, { key: "Enter" });
+  expect(onSelect).toHaveBeenCalledTimes(2);
+  expect(openPending).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+  expect(onSelect).toHaveBeenCalledTimes(2);
+});
+
+test("preview shows name and thumbnail", () => {
+  const { container } = render(<WorkstationPreview ws={row} />);
+  expect(screen.getByText("Studio")).toBeTruthy();
+  expect(container.querySelector('img[src="/api/workstations/w9/thumbnail?t=0"]')).not.toBeNull();
 });

@@ -28,7 +28,7 @@ gi.require_version("Gst", "1.0")
 from gi.repository import GLib, Gst  # noqa: E402
 
 from seat_clipboard import ClipboardServer  # noqa: E402
-from seat_scale import apply_scale, read_scale  # noqa: E402
+from seat_scale import apply_scale, live_path, read_scale  # noqa: E402
 import seat_systemd  # noqa: E402
 from seat_systemd import SD_NAME, SystemdStub, snap_scope_props  # noqa: E402, F401
 
@@ -68,6 +68,8 @@ class Session(dbus.service.Object):
         self.rd = self.rd_path = self.stream_path = self.clip = self.sc = None
         self.devices = 3
         self.want_screen = True
+        self.scale = _seat_scale()      # fixed per session: a scale change restarts selkies
+        self.down, self.early = set(), {}   # _ordered: held keys/buttons, early releases
 
     @dbus.service.method(SESS_IFACE)
     def Close(self):
@@ -216,15 +218,58 @@ def rd_select(self, handle, session_handle, app_id, options):
     return dbus.UInt32(0), dbus.Dictionary({}, signature="sv")
 
 
+def _seat_scale() -> float:
+    """The scale Mutter runs the seat at (what the helper applied)."""
+    path = os.environ.get("STYX_SEAT_SCALE_FILE", "")
+    if not path:
+        return 1.0
+    live = live_path(path)
+    return read_scale(live if os.path.exists(live) else path)
+
+
 def rd_eis(self, session_handle, app_id, options):
+    # pixelflux sends libei absolute motion in stream (physical) px, but libei
+    # regions are logical: at scale 2 the pointer ran 2x ahead. Refused, it
+    # falls back to Notify*, which Mutter divides by the stream's scale.
+    # The scale is fixed per session: a scale change restarts selkies.
+    scale = sessions[str(session_handle)].scale
+    if scale != 1.0:
+        log("ConnectToEIS refused at scale", scale, "-> portal notify input")
+        raise dbus.exceptions.DBusException("libei disabled on a scaled seat",
+                                            name="org.freedesktop.DBus.Error.NotSupported")
     return sessions[str(session_handle)].rd.ConnectToEIS(dbus.Dictionary({}, signature="sv"))
+
+
+REORDER_S = 0.05
+PAIRED = ("NotifyPointerButton", "NotifyKeyboardKeycode", "NotifyKeyboardKeysym")
+
+
+def _ordered(s, name, code, down, send):
+    """xdg-desktop-portal can swap a press and release sent back to back (seen
+    on stream stutter: release, press -> Mutter keeps the key down, autorepeat).
+    A release for something not down waits up to REORDER_S for its press."""
+    key, now = (name, code), time.monotonic()
+    if down:
+        s.down.add(key)
+        send(code, True)
+        if now - s.early.pop(key, -REORDER_S - 1) <= REORDER_S:
+            s.down.discard(key)
+            send(code, False)
+    elif key in s.down:
+        s.down.discard(key)
+        send(code, False)
+    else:
+        s.early[key] = now
 
 
 def _forward(name, conv):
     """Notify* passthrough with the fixed arity dbus-python needs."""
     def fn2(self, sh, o, a1, a2):
         s = sessions[str(sh)]
-        getattr(s.rd, name)(*conv(s, o, a1, a2))
+        if name in PAIRED:
+            _ordered(s, name, *conv(s, o, a1, a2), send=getattr(s.rd, name))
+        else:
+            getattr(s.rd, name)(*conv(s, o, a1, a2))
 
     def fn3(self, sh, o, a1, a2, a3):
         s = sessions[str(sh)]
@@ -237,7 +282,9 @@ def _motion(s, o, dx, dy):
 
 
 def _abs(s, o, stream, x, y):
-    return s.stream_path, x, y
+    # pixelflux divides by its (= the seat's) scale and Mutter divides again:
+    # undo pixelflux's, so the pointer lands where the browser's is.
+    return s.stream_path, x * s.scale, y * s.scale
 
 
 def _button(s, o, b, st):
@@ -429,7 +476,8 @@ def main(argv) -> int:
             m = -1
         if m != sc["mtime"] or sc["first"]:
             sc["mtime"], sc["first"] = m, False
-            apply_scale(bus, read_scale(sc["path"]) if sc["path"] else 1, log)
+            apply_scale(bus, read_scale(sc["path"]) if sc["path"] else 1, log,
+                        live_path(sc["path"]) if sc["path"] else "")
         return True
 
     def watch_resize():
@@ -447,9 +495,13 @@ def main(argv) -> int:
             return True
         rq["tries"] += 1
         if mon.is_current():
+            # A resize can reset the scale: re-apply BEFORE ready, so the
+            # selkies started on ready opens its stream at the final scale
+            # (Mutter maps pointer input with the scale the stream was made at).
+            sc["mtime"] = None
+            watch_scale()
             _write_ready(ready, f"{mon.w}x{mon.h}")
             log("resized live", f"{mon.w}x{mon.h}", f"after {rq['tries']*25} ms")
-            sc["mtime"] = None      # a resize can reset the scale: re-apply
             rq["pending"] = None
         elif rq["tries"] >= LIVE_TRIES * 8:        # 10 s at 25 ms
             log("resize never became current", f"{mon.w}x{mon.h}")

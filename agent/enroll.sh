@@ -264,8 +264,8 @@ mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$UNIT_DIR" "$INSTALL_DIR/logs"
 for pair in "agent.py styx_agent.py" "engine.py engine.py" \
             "gateway.py gateway.py" "gateway_html.py gateway_html.py" "agent_procs.py agent_procs.py" "seat_systemd.py seat_systemd.py" "seat_gnome.py seat_gnome.py" \
             "seat_labwc.py seat_labwc.py" "health.py health.py" \
-            "refit.py refit.py" "seat_scale.py seat_scale.py" "viewers.py viewers.py" "seat_portal.py seat_portal.py" "seat_clipboard.py seat_clipboard.py" "portal_api.py portal_api.py" \
-            "clipboard_bridge.py clipboard_bridge.py" "favicon.py favicon.py" "uninstall uninstall.sh"; do
+            "refit.py refit.py" "seat_scale.py seat_scale.py" "shallow_pipe.py shallow_pipe.py" "viewers.py viewers.py" "seat_portal.py seat_portal.py" "seat_clipboard.py seat_clipboard.py" "portal_api.py portal_api.py" \
+            "clipboard_bridge.py clipboard_bridge.py" "favicon.py favicon.py" "seat_thumb.py seat_thumb.py" "seat_thumb_grab.py seat_thumb_grab.py" "bundle_patch.py bundle_patch.py" "uninstall uninstall.sh"; do
   read -r remote local_name <<<"$pair"
   fetch "$SERVER/api/enroll/$remote" -o "$INSTALL_DIR/$local_name" \
     || fail E05 "Could not download $remote from $SERVER/api/enroll/. Server may be mid-restart or missing its ./agent mount (AGENT_DIR) — retry, then check server logs."
@@ -283,13 +283,13 @@ for art in wheelhouse-x86_64; do
 done
 
 note "creating venv (system python, prebuilt wheels only — no compiling)…"
-# The wheelhouse already contains every selkies 2.0 wheel + deps, so install
+# The wheelhouse already contains every selkies 2.x wheel + deps, so install
 # by name with --no-index — nothing is ever compiled on the workstation.
 python3 -m venv "$INSTALL_DIR/venv" \
   || fail E01 "venv creation failed — check python3-venv is installed and $HOME has free space."
 "$INSTALL_DIR/venv/bin/pip" -q install --no-index \
   --find-links "$INSTALL_DIR/wheelhouse" \
-  selkies==2.0.0 pixelflux==2.1.0 pcmflux==2.1.0 setuptools aiohttp pulsectl \
+  selkies==2.1.0 pixelflux==2.2.1 pcmflux==2.2.0 setuptools aiohttp pulsectl \
   || fail E03 "Wheel install failed — likely an unsupported python version ($(python3 -V)). The wheelhouse covers python 3.10–3.14; rebuild it on the server (scripts/build_agent_artifacts.sh) if your python is newer."
 
 # Seat-only, OPTIONAL: nwg-drawer (app grid) + nwg-dock binaries, server-built

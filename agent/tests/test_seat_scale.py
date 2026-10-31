@@ -7,25 +7,29 @@ import seat_scale  # noqa: E402
 
 
 def test_scale_for_dpi():
-    for dpi, want in [(None, 1), (96, 1), (144, 1), (168, 2), (192, 2), (288, 2), (0, 1)]:
+    for dpi, want in [(None, 1.0), (96, 1.0), (120, 1.5), (144, 1.5), (168, 2.0), (192, 2.0),
+                      (240, 3.0), (288, 3.0), (0, 1.0), (72, 1.0), ("x", 1.0)]:
         assert seat_scale.scale_for_dpi(dpi) == want
+    assert [seat_scale.dpi_for_scale(v) for v in seat_scale.SCALES] == [96, 144, 192, 288]
 
 
 def test_read_scale(tmp_path):
     p = tmp_path / "seat-scale"
-    assert seat_scale.read_scale(p) == 1
+    assert seat_scale.read_scale(p) == 1.0
     p.write_text("2")
-    assert seat_scale.read_scale(p) == 2
+    assert seat_scale.read_scale(p) == 2.0
+    p.write_text("1.25")
+    assert seat_scale.read_scale(p) == 1.25
     p.write_text("x")
-    assert seat_scale.read_scale(p) == 1
+    assert seat_scale.read_scale(p) == 1.0
 
 
 def test_write_scale_roundtrip_atomic(tmp_path):
     p = tmp_path / "seat-scale"
-    seat_scale.write_scale(p, 2)
-    assert p.read_text() == "2" and seat_scale.read_scale(p) == 2
+    seat_scale.write_scale(p, 1.5)
+    assert seat_scale.read_scale(p) == 1.5
     seat_scale.write_scale(p, 1)
-    assert seat_scale.read_scale(p) == 1
+    assert seat_scale.read_scale(p) == 1.0
     assert not (tmp_path / "seat-scale.tmp").exists()
 
 
@@ -40,9 +44,19 @@ def _state(scales=(1.0, 2.0), cur=1.0):
 
 def test_monitors_config():
     assert seat_scale.monitors_config(_state(), 2) == (
-        5, 1, [(0, 0, 2.0, 0, True, [('Meta-0', '2560x1252@60.000', {})])], {})
-    assert seat_scale.monitors_config(_state(), 1) is None
-    assert seat_scale.monitors_config(_state(scales=(1.0,)), 2) is None
+        (5, 1, [(0, 0, 2.0, 0, True, [('Meta-0', '2560x1252@60.000', {})])], {}), 2.0)
+    assert seat_scale.monitors_config(_state(), 1) == (None, 1.0)
+    assert seat_scale.monitors_config(_state(scales=(1.0,)), 2) == (None, 1.0)
+
+
+def test_pick_scale_only_takes_scales_selkies_shares():
+    qhd = (1.0, 1.25, 1.3333333730697632, 1.6666666269302368, 2.0, 2.5, 2.6666667461395264)
+    assert seat_scale.pick_scale(qhd, 3) == 2.0         # 2.67 would split GNOME from selkies
+    assert seat_scale.pick_scale(qhd, 1.5) == 1.0
+    assert seat_scale.pick_scale((1.0, 1.5, 2.0, 3.0), 3) == 3.0
+    assert seat_scale.pick_scale((1.0, 1.5, 2.0, 3.0), 2) == 2.0
+    assert seat_scale.pick_scale((1.0, 1.5, 2.0, 3.0), 1.5) == 1.5
+    assert seat_scale.pick_scale((), 2) == 1.0
 
 
 class _Bus:
@@ -73,15 +87,15 @@ def fake_dbus(monkeypatch):
     monkeypatch.setitem(sys.modules, "dbus", m)
 
 
-def _run(bus, scale):
+def _run(bus, scale, live=""):
     out = []
-    seat_scale.apply_scale(bus, scale, lambda *a: out.append(" ".join(map(str, a))))
+    seat_scale.apply_scale(bus, scale, lambda *a: out.append(" ".join(map(str, a))), live)
     return out
 
 
 def test_apply_scale_applies(fake_dbus):
     bus = _Bus(_state())
-    assert _run(bus, 2) == ["scale 2 applied"] and len(bus.applied) == 1
+    assert _run(bus, 2) == ["scale 2.0 applied"] and len(bus.applied) == 1
 
 
 def test_apply_scale_already_at_scale_is_silent(fake_dbus):
@@ -97,3 +111,17 @@ def test_apply_scale_logs_unsupported(fake_dbus):
 def test_apply_scale_never_raises(fake_dbus):
     out = _run(_Bus(_state(), err=RuntimeError("bus gone")), 2)
     assert len(out) == 1 and "bus gone" in out[0]
+
+
+def test_apply_scale_records_the_scale_it_applied(fake_dbus, tmp_path):
+    live = tmp_path / "seat-scale-live"
+    bus = _Bus(_state(scales=(1.0, 1.25, 2.0, 2.6666667461395264), cur=2.6666667461395264))
+    out = _run(bus, 3, str(live))
+    assert seat_scale.read_scale(live) == 2.0
+    assert bus.applied[0][2][0][2] == 2.0 and "using 2.0" in out[0]
+
+
+def test_apply_scale_failure_leaves_live_untouched(fake_dbus, tmp_path):
+    live = tmp_path / "seat-scale-live"
+    _run(_Bus(_state(), err=RuntimeError("bus gone")), 2, str(live))
+    assert not live.exists()

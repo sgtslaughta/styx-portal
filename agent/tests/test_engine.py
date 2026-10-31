@@ -32,8 +32,9 @@ def _flags(cmd):
     return {a.split("=", 1)[0] for a in cmd if a.startswith("--")}
 
 
-def _stub(monkeypatch, dri="", monitor=""):
+def _stub(monkeypatch, dri="", monitor="", hw=()):
     monkeypatch.setattr(engine, "pick_dri_node", lambda: dri)
+    monkeypatch.setattr(engine, "hw_encoders", lambda node: hw)
     monkeypatch.setattr(engine, "resolve_monitor_source", lambda: monitor)
     monkeypatch.setattr(engine, "_find_xauthority", lambda c: None)
     monkeypatch.setattr(engine, "query_display_geometry", lambda d, x: (1920, 1080))
@@ -95,7 +96,8 @@ def test_features_off_until_their_phase(tmp_path, monkeypatch):
     _stub(monkeypatch)
     cmd, _ = engine.build_selkies_cmd(cfg, 1)
     for f in ("--printing-enabled=false|locked", "--microphone-enabled=false|locked",
-              "--webcam-enabled=false|locked", "--gamepad-enabled=false|locked"):
+              "--webcam-enabled=false|locked", "--gamepad-enabled=false|locked",
+              "--video-10bit=false|locked"):
         assert f in cmd
 
 
@@ -250,13 +252,13 @@ def test_bitrate_is_viewer_adjustable_ceiling(tmp_path, monkeypatch):
     cmd = _seat_cmd(tmp_path, monkeypatch, {"video_bitrate_kbps": 20000})
     assert "--video-bitrate=20000,1000-20000" in cmd
     cmd = _seat_cmd(tmp_path, monkeypatch, {})
-    assert "--video-bitrate=16000,1000-16000" in cmd
+    assert "--video-bitrate=30000,1000-30000" in cmd
     cmd = _seat_cmd(tmp_path, monkeypatch, {"video_bitrate_kbps": 800})
     assert "--video-bitrate=800,800-800" in cmd
     cmd = _seat_cmd(tmp_path, monkeypatch, {"bitrate_kbps": 12000})   # admin form key
     assert "--video-bitrate=12000,1000-12000" in cmd
     cmd = _seat_cmd(tmp_path, monkeypatch, {"video_bitrate_kbps": "junk"})
-    assert "--video-bitrate=16000,1000-16000" in cmd
+    assert "--video-bitrate=30000,1000-30000" in cmd
 
 
 def test_gnome_seat_always_disables_client_cursor(tmp_path, monkeypatch):
@@ -280,3 +282,116 @@ def test_quality_defaults(tmp_path, monkeypatch):
         {**cfg, "stream_settings": {"use_paint_over_quality": False}}, 1)
     assert env["SELKIES_USE_PAINT_OVER_QUALITY"] == "false"
 
+
+
+class _Steer:
+    """Upstream CongestionSteer cut down to what the cap reads: a queue tick
+    measures capacity and backs off to the floor; a clean tick forgets a
+    capacity the path delivers past, and raises x1.15."""
+    APP_LIMITED = 0.5
+    STEP = 1.15
+
+    def __init__(self):
+        self.capacity_kbps = None
+
+    def target(self, current, ceiling, floor, goodput_bps, loss, now,
+               queue_s=None, offered_bps=None):
+        if queue_s:
+            self.capacity_kbps = goodput_bps / 1_000
+            return floor
+        if self.capacity_kbps and goodput_bps / 1_000 * 0.9 > self.capacity_kbps:
+            self.capacity_kbps = None
+        return min(ceiling, current * 1.15)
+
+
+def _steer():
+    cls = type("S", (_Steer,), {})
+    engine.cap_still_raise(cls)
+    return cls()
+
+
+def _tick(s, cur, delivered_kbps, offered_kbps, queue_s=0.0):
+    return s.target(cur, 16000, 1000, delivered_kbps * 1000, 0.0, 0, queue_s,
+                    None if offered_kbps is None else offered_kbps * 1000)
+
+
+def test_still_screen_holds_at_measured_capacity():
+    s = _steer()
+    cur = _tick(s, 16000, 5000, 9000, queue_s=0.5)
+    for _ in range(30):
+        cur = _tick(s, cur, 200, 200)
+    assert cur == 5000
+
+
+def test_capacity_survives_upstream_forgetting_it():
+    """GAME-01 2026-10-24: motion carried just past the measured 1391 kbps,
+    upstream dropped the capacity, and the still screen climbed to 16000."""
+    s = _steer()
+    cur = _tick(s, 16000, 1391, 9000, queue_s=0.8)
+    for _ in range(8):
+        cur = _tick(s, cur, min(cur, 2000), cur)
+    assert s.capacity_kbps is None
+    for _ in range(20):
+        cur = _tick(s, cur, 200, 200)
+    assert cur <= 2000 * 1.15
+
+
+def test_motion_probes_up_from_a_bogus_low_measurement():
+    s = _steer()
+    cur = _tick(s, 16000, 553, 9000, queue_s=0.3)
+    for _ in range(15):
+        cur = _tick(s, cur, cur, cur)       # path keeps up with every raise
+    assert cur > 5000
+
+
+def test_unmeasured_offer_never_raises_past_known():
+    s = _steer()
+    cur = _tick(s, 16000, 3000, 9000, queue_s=0.3)
+    for _ in range(10):
+        cur = _tick(s, cur, 0, None)
+    assert cur == 3000
+
+
+def test_no_measurement_yet_is_upstream_behaviour():
+    assert _tick(_steer(), 2000, 100, 100) == 2300
+
+
+def test_stream_override_appends_args(tmp_path):
+    f = tmp_path / "stream-override.json"
+    argv = ["selkies", "--encoder=h264enc"]
+    assert engine.apply_stream_override(argv, f) == argv          # no file: unchanged
+    f.write_text('{"args": ["--encoder=av1enc,h265enc,h264enc", "--video-bitrate=30000,1000-30000"]}')
+    out = engine.apply_stream_override(argv, f)
+    assert out == argv + ["--encoder=av1enc,h265enc,h264enc", "--video-bitrate=30000,1000-30000"]
+    f.write_text("not json")
+    assert engine.apply_stream_override(argv, f) == argv          # broken file: ignored
+    f.write_text('{"args": ["ok", 3]}')
+    assert engine.apply_stream_override(argv, f) == argv          # non-string args: ignored
+
+
+VAINFO_780M = """
+      VAProfileH264Main               :	VAEntrypointEncSlice
+      VAProfileH264High               :	VAEntrypointEncSlice
+      VAProfileHEVCMain               :	VAEntrypointEncSlice
+      VAProfileHEVCMain10             :	VAEntrypointEncSlice
+      VAProfileAV1Profile0            :	VAEntrypointVLD
+      VAProfileAV1Profile0            :	VAEntrypointEncSlice
+"""
+
+
+def test_parse_vainfo_encoders():
+    assert engine.parse_vainfo_encoders(VAINFO_780M) == ("av1enc", "h265enc")
+    assert engine.parse_vainfo_encoders("VAProfileAV1Profile0 : VAEntrypointVLD") == ()   # decode only
+    assert engine.parse_vainfo_encoders("") == ()
+
+
+def test_encoder_ladder_from_hardware(tmp_path, monkeypatch):
+    """A/B 2026-10-30: AV1 at 30 Mbps beat H.264 at 16 (settled text +15-39%).
+    Only codecs the GPU encodes lead: selkies would run AV1 in software otherwise."""
+    cfg = _cfg(tmp_path, stream_settings={})
+    _stub(monkeypatch, hw=("av1enc", "h265enc"))
+    cmd, _ = engine.build_selkies_cmd(cfg, 1)
+    assert "--encoder=av1enc,h265enc,h264enc" in cmd
+    _stub(monkeypatch, hw=())
+    cmd, _ = engine.build_selkies_cmd(cfg, 1)
+    assert "--encoder=h264enc" in cmd
