@@ -6,7 +6,7 @@ this under the system interpreter and keeps it alive.
 Protocol: one Mutter ScreenCast session is created at start and never Stopped
 (ending a session froze gnome-shell 25-75 s on GNOME 50, 2026-10-31; Mutter
 cleans up when this process exits). For each stdin line `grab\\n` it writes a
-4-byte big-endian length + one 640x360 JPEG to stdout (length 0 = failure).
+4-byte big-endian length + one 1280-wide JPEG (aspect kept) to stdout (length 0 = failure).
 Exits on stdin EOF, non-zero if Mutter closed the session or the PipeWire node
 is gone. Never calls the xdg-desktop-portal Screenshot API (it froze the seat).
 """
@@ -18,11 +18,14 @@ import time
 from pathlib import Path
 
 
-def _frame(node, tmp: Path) -> bytes:
+THUMB_W = 1280
+
+
+def _frame(node, tmp: Path, caps: str = "video/x-raw,width=1280,height=720") -> bytes:
     gst = subprocess.Popen(
         ["gst-launch-1.0", "-q", "pipewiresrc", f"path={node}", "num-buffers=1", "!",
-         "videoconvert", "!", "videoscale", "!", "video/x-raw,width=640,height=360", "!",
-         "jpegenc", "quality=80", "!", "filesink", f"location={tmp}"],
+         "videoconvert", "!", "videoscale", "!", caps, "!",
+         "jpegenc", "quality=70", "!", "filesink", f"location={tmp}"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:   # pipewiresrc never EOSes: stop as soon as the file has bytes
         end = time.monotonic() + 10
@@ -52,6 +55,12 @@ def _open(bus_addr: str):
 
     def added(node):
         st["node"] = node
+        try:   # keep the seat's aspect (e.g. 2560x1290); unbounded caps pick nonsense
+            w, h = stream.Get(name + ".Stream", "Parameters",
+                              dbus_interface="org.freedesktop.DBus.Properties")["size"]
+            st["caps"] = f"video/x-raw,width={THUMB_W},height={round(THUMB_W * h / w / 2) * 2}"
+        except Exception:  # noqa: BLE001 - fall back to 16:9
+            pass
         loop.quit()
     stream.connect_to_signal("PipeWireStreamAdded", added, dbus_interface=name + ".Stream")
     ses.connect_to_signal("Closed", lambda: st.update(closed=True))
@@ -77,7 +86,7 @@ def main(bus_addr: str) -> int:
             if st.get("closed"):
                 return 1
             tmp.unlink(missing_ok=True)
-            jpeg = _frame(node, tmp)
+            jpeg = _frame(node, tmp, st.get("caps", f"video/x-raw,width={THUMB_W},height=720"))
             out.write(struct.pack(">I", len(jpeg)) + jpeg)
             out.flush()
             if not jpeg:   # node gone: let the agent restart us

@@ -1,5 +1,5 @@
 """Seat thumbnail: grab one frame of the GNOME seat via Mutter ScreenCast and
-PipeWire, upload it to the portal as a 640x360 JPEG (at most once a minute).
+PipeWire, upload it to the portal as a 1280-wide JPEG (at most once a minute).
 
 The grab needs dbus/GLib, so it runs in a long-lived helper under the system
 interpreter (seat_thumb_grab.py; protocol in its docstring); the agent venv has
