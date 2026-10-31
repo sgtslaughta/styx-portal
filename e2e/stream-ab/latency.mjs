@@ -84,7 +84,7 @@ await ctx.addInitScript(([VW, VH]) => {
   });
   for (const t of ['keydown', 'mousedown', 'mousemove'])    // runs first: registered before selkies'
     addEventListener(t, () => { const A = self.__A; if (A && A.t0 === null) A.t0 = performance.now(); }, true);
-});
+}, [VW, VH]);
 const page = await ctx.newPage();
 await page.goto(a.url);
 await page.waitForFunction(() => [...document.querySelectorAll('#videoStream, #videoCanvas')]
