@@ -15,7 +15,7 @@ from app.security.deps import get_current_user, require_owner_or_admin
 from app.services.docker_manager import DockerManager
 from app.services.k8s_runtime import ensure_instance_supported, instance_runtime
 from app.services.screenshot import ScreenshotService
-from app.services import gpu_access, profiles
+from app.services import gpu_access, instance_readiness, profiles
 from app.services.traefik_labels import generate_traefik_labels
 from app.services.audit import audit
 from app.services.settings_store import settings as sys_settings
@@ -242,11 +242,13 @@ async def _launch_instance_background(instance_id: str, template_id: str):
             instance.status = "running"
             instance.started_at = now
             instance.last_activity = now
+            instance_readiness.defer_on_k8s(instance)
             session.add(instance)
 
             event = SessionEvent(instance_id=instance.id, event_type="started")
             session.add(event)
             await session.commit()
+            instance_readiness.kick(instance)
             await _refresh_routes(session)
 
         except Exception as e:
@@ -382,6 +384,7 @@ async def start_instance(
     instance.status = "running"
     instance.started_at = now
     instance.last_activity = now
+    instance_readiness.defer_on_k8s(instance)
     session.add(instance)
 
     event = SessionEvent(
@@ -392,6 +395,7 @@ async def start_instance(
     session.add(event)
     await session.commit()
     await session.refresh(instance)
+    instance_readiness.kick(instance)
     await _refresh_routes(session)
     return instance
 
@@ -449,12 +453,14 @@ async def restart_instance(
     instance.started_at = now
     instance.last_activity = now
     instance.error_message = None
+    instance_readiness.defer_on_k8s(instance)
     session.add(instance)
 
     event = SessionEvent(instance_id=instance.id, event_type="restarted")
     session.add(event)
     await session.commit()
     await session.refresh(instance)
+    instance_readiness.kick(instance)
     return instance
 
 
@@ -496,12 +502,14 @@ async def recreate_instance(
     instance.started_at = now
     instance.last_activity = now
     instance.error_message = None
+    instance_readiness.defer_on_k8s(instance)
     session.add(instance)
 
     event = SessionEvent(instance_id=instance.id, event_type="recreated")
     session.add(event)
     await session.commit()
     await session.refresh(instance)
+    instance_readiness.kick(instance)
     await _refresh_routes(session)
     return instance
 
@@ -565,6 +573,7 @@ async def delete_instance(
     remove_volumes: bool = Query(False),
     remove_image: bool = Query(False),
     remove_template: bool = Query(False),
+    delete_profile: bool = Query(False),
     session: AsyncSession = Depends(get_session),
     docker: DockerManager = Depends(get_docker_manager),
     user: User = Depends(get_current_user),
@@ -573,6 +582,7 @@ async def delete_instance(
     if not instance:
         raise HTTPException(404, "Instance not found")
     require_owner_or_admin(instance.owner_id, user)
+    profile_owner, profile_tmpl, profile_vol = instance.owner_id, instance.template_id, instance.profile_volume
 
     # Capture subdomain before deletion for audit
     subdomain = instance.subdomain
@@ -608,6 +618,11 @@ async def delete_instance(
         detail={"subdomain": subdomain}
     )
     await session.commit()
+
+    if delete_profile and profile_vol:
+        await profiles.delete_after_instance(
+            session, docker, Instance(owner_id=profile_owner, template_id=profile_tmpl,
+                                      profile_volume=profile_vol), user.id)
 
     # Opt-in image prune — only when requested AND no other instance uses the image.
     if remove_image and image_tag:
@@ -793,7 +808,9 @@ async def get_screenshot(
     if not path:
         raise HTTPException(404, "No screenshot available")
 
-    return FileResponse(path, media_type="image/png")
+    from app.routers.instance_thumbs import head as _head, sniff_image_type
+    media = sniff_image_type(_head(path)) or "image/png"
+    return FileResponse(path, media_type=media)
 
 
 @router.post("/{instance_id}/screenshot/refresh")

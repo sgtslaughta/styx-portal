@@ -2,7 +2,9 @@ import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { useCreateTemplate, useUpdateTemplate } from "@/hooks/use-templates";
+import { profileMountOf } from "@/lib/profiles";
+import { slugify } from "@/lib/utils";
+import { useCreateTemplate, useUpdateTemplate, useTemplates } from "@/hooks/use-templates";
 import { useCreateInstance } from "@/hooks/use-instances";
 import { useLaunchConfig } from "@/hooks/use-launch-config";
 import { useAuth } from "@/hooks/use-auth";
@@ -22,7 +24,33 @@ interface LaunchModalProps {
   template?: ServiceTemplate | null;
 }
 
-export function LaunchModal({ open, onClose, registryImage, template }: LaunchModalProps) {
+export function LaunchModal(props: LaunchModalProps) {
+  const { registryImage, template } = props;
+  const { data: templates, isLoading } = useTemplates();
+  const { user } = useAuth();
+  const found = !template && registryImage ? templates?.find((t) => t.name === slugify(registryImage.name)) : undefined;
+  const existing = found && isReusable(found, registryImage?.name, user?.id) ? found : undefined;
+  const conflict = found && !existing ? found : undefined;
+  if (registryImage && !template && isLoading) return null;
+  return <LaunchModalBody key={existing?.id ?? (conflict ? "conflict" : "new")} {...props} existing={existing} conflict={conflict} />;
+}
+
+const repoOf = (image: string) => image.split("@")[0]!.replace(/:[^:/]*$/, "");
+
+/** Reuse only a same-repo template that is the user's own or shared (no owner). */
+function isReusable(t: ServiceTemplate, regName: string | undefined, userId: string | undefined) {
+  if (!regName) return false;
+  const sameRepo = [`lscr.io/linuxserver/${regName}`, `linuxserver/${regName}`].includes(repoOf(t.image));
+  return sameRepo && (t.owner_id == null || t.owner_id === userId);
+}
+
+const conflictMsg = (name: string) =>
+  `A template named “${name}” already exists with a different image or owner — choose another name`;
+
+function LaunchModalBody({ open, onClose, registryImage: regProp, template: tmplProp, existing, conflict }: LaunchModalProps & { existing?: ServiceTemplate; conflict?: ServiceTemplate }) {
+  // A registry import that matches a saved template launches from that template instead.
+  const template = tmplProp ?? existing ?? null;
+  const registryImage = existing ? null : regProp;
   const [mode, setMode] = useState<"easy" | "advanced">("easy");
   const [useProfile, setUseProfile] = useState(false);
   const [useGpu, setUseGpu] = useState(true);
@@ -48,24 +76,40 @@ export function LaunchModal({ open, onClose, registryImage, template }: LaunchMo
 
   const isAdmin = user?.role === "admin";
 
-  async function upsertTemplate() {
+  // Launching never overwrites a saved template; only the explicit "Save" does (merged, keeping admin fields).
+  async function upsertTemplate(update: boolean) {
+    if (template && !update) return template;
     const templateData = cfg.buildTemplateData();
-    try {
-      return await createTemplate.mutateAsync(templateData);
-    } catch {
-      const templates = await api.listTemplates();
-      const existing = templates.find((t) => t.name === templateData.name);
-      if (!existing) throw new Error("Failed to create or find template");
-      return await updateTemplate.mutateAsync({ id: existing.id, data: templateData });
+    if (!template) {
+      try {
+        return await createTemplate.mutateAsync(templateData);
+      } catch {
+        const found = (await api.listTemplates()).find((t) => t.name === templateData.name);
+        if (!found) throw new Error("Failed to create or find template");
+        if (regProp ? !isReusable(found, regProp.name, user?.id) : found.owner_id != null && found.owner_id !== user?.id) throw new Error(conflictMsg(found.display_name));
+        if (!update) return found;
+        return await saveOver(found, templateData);
+      }
     }
+    return await saveOver(template, templateData);
+  }
+
+  function saveOver(existingTmpl: ServiceTemplate, data: ReturnType<typeof cfg.buildTemplateData>) {
+    const merged = {
+      ...data,
+      profile_mount: data.profile_mount ?? existingTmpl.profile_mount ?? null,
+      gpu_enabled: data.gpu_enabled || existingTmpl.gpu_enabled,
+      gpu_count: data.gpu_count || existingTmpl.gpu_count,
+    };
+    return updateTemplate.mutateAsync({ id: existingTmpl.id, data: merged });
   }
 
   async function handleSaveAndLaunch() {
     if (!cfg.name.trim() || !cfg.image.trim()) { toast.error("Name and image required"); return; }
     try {
-      const tmpl = await upsertTemplate();
+      const tmpl = await upsertTemplate(false);
       await createInstance.mutateAsync({ template_id: tmpl.id, name: cfg.name, subdomain: cfg.subdomain,
-        use_profile: !!cfg.profileMount.trim() && useProfile,
+        use_profile: !!profileMountOf(cfg.profileMount, cfg.volumes) && useProfile,
         use_gpu: useGpu });
       onClose();
       wave.play(`Launching ${cfg.name}…`);
@@ -78,7 +122,7 @@ export function LaunchModal({ open, onClose, registryImage, template }: LaunchMo
   async function handleSaveTemplate() {
     if (!cfg.name.trim() || !cfg.image.trim()) { toast.error("Name and image required"); return; }
     try {
-      await upsertTemplate();
+      await upsertTemplate(true);
       toast.success(`Template "${cfg.name}" saved!`);
       onClose();
     } catch (e) {
@@ -95,7 +139,7 @@ export function LaunchModal({ open, onClose, registryImage, template }: LaunchMo
               {cfg.icon && <img src={cfg.icon} alt="" className="h-8 w-8 rounded object-contain" />}
               <div>
                 <DialogTitle>
-                  {registryImage ? `Import: ${registryImage.name}` : template ? `Launch: ${template.display_name}` : "Custom Template"}
+                  {regProp ? `Import: ${regProp.name}` : template ? `Launch: ${template.display_name}` : "Custom Template"}
                 </DialogTitle>
                 {registryImage?.description && (
                   <p className="text-xs text-muted-foreground line-clamp-2">{registryImage.description}</p>
@@ -114,6 +158,15 @@ export function LaunchModal({ open, onClose, registryImage, template }: LaunchMo
           </div>
         </DialogHeader>
 
+        {conflict && (
+          <p role="alert" className="text-xs text-destructive">{conflictMsg(conflict.display_name)}</p>
+        )}
+        {existing && (
+          <p className="text-xs text-muted-foreground">
+            Using {existing.owner_id === user?.id ? "your existing" : "the shared"} template “{existing.display_name}” — edit it in Templates to change its settings.
+          </p>
+        )}
+
         {mode === "easy" ? (
           <EasyLaunch
             cfg={cfg}
@@ -127,7 +180,7 @@ export function LaunchModal({ open, onClose, registryImage, template }: LaunchMo
         )}
 
         <LaunchOptions
-          showProfile={!!cfg.profileMount.trim()}
+          showProfile={!!profileMountOf(cfg.profileMount, cfg.volumes)}
           showGpu={cfg.gpuEnabled && !!user?.can_use_gpu}
           useProfile={useProfile} onProfile={setUseProfile}
           useGpu={useGpu} onGpu={setUseGpu}

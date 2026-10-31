@@ -19,7 +19,8 @@ from app.services.service_routes import COOKIE_NAME, focus_slug, focus_value
 _FOCUS_WRITE_OK = frozenset({"/api/auth/refresh", "/api/auth/logout", "/api/auth/me/preferences"})
 _FOCUS_WRITE_PREFIX = "/api/services/focus"
 # Referer paths that belong to a proxied app or stream, never to the Styx SPA.
-_APP_PREFIXES = ("/i/", "/w/", "/_styx/app")
+# /desktop/ frames /i/ same-origin, so an instance page can script its wrapper.
+_APP_PREFIXES = ("/i/", "/w/", "/_styx/app", "/desktop/")
 
 
 async def svc_cookie_guard(request: Request, session: AsyncSession = Depends(get_session)) -> None:

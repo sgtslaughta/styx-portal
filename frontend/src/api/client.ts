@@ -295,9 +295,10 @@ export const api = {
     id: string,
     removeImage = false,
     removeTemplate = false,
+    deleteProfile = false,
   ) =>
     request<void>(
-      `/instances/${id}?remove_image=${removeImage}&remove_template=${removeTemplate}`,
+      `/instances/${id}?remove_image=${removeImage}&remove_template=${removeTemplate}&delete_profile=${deleteProfile}`,
       { method: "DELETE" },
     ),
   getInstanceStatus: (id: string) =>

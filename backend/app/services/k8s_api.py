@@ -14,7 +14,7 @@ _PLURALS = {
     "IngressRoute": "ingressroutes", "Middleware": "middlewares",
     "ServersTransport": "serverstransports", "Service": "services",
     "EndpointSlice": "endpointslices", "Pod": "pods",
-    "Deployment": "deployments", "PersistentVolumeClaim": "persistentvolumeclaims",
+    "Deployment": "deployments", "DaemonSet": "daemonsets", "PersistentVolumeClaim": "persistentvolumeclaims",
 }
 
 

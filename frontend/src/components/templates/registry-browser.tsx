@@ -5,7 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SearchSortBar } from "@/components/common/search-sort-bar";
 import { useRegistryImages } from "@/hooks/use-registry";
-import { isWebUrl, openExternal } from "@/lib/connect-wipe";
+import { isWebUrl } from "@/lib/connect-wipe";
+import { RegistryPreviewCard } from "./registry-preview-card";
 import type { RegistryImage } from "@/lib/types";
 
 interface RegistryBrowserProps {
@@ -65,13 +66,11 @@ export function RegistryBrowser({ onImport }: RegistryBrowserProps) {
 
 function RegistryCard({ image: img, onImport }: { image: RegistryImage; onImport: (img: RegistryImage) => void }) {
   const [showPreview, setShowPreview] = useState(false);
-  const [previewReady, setPreviewReady] = useState(false);
   const [previewPos, setPreviewPos] = useState({ x: 0, y: 0 });
   const [spinIcon, setSpinIcon] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const hasHoveredRef = useRef(false);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const loadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function cancelDismiss() {
@@ -85,16 +84,14 @@ function RegistryCard({ image: img, onImport }: { image: RegistryImage; onImport
       setSpinIcon(true);
       setTimeout(() => setSpinIcon(false), 600);
     }
-    if (img.project_url) {
-      hoverTimer.current = setTimeout(() => setShowPreview(true), 800);
-    }
-  }, [img.project_url]);
+    hoverTimer.current = setTimeout(() => setShowPreview(true), 800);
+  }, []);
 
   function handleMouseMove(e: React.MouseEvent) {
     if (!showPreview) {
       setPreviewPos({
         x: Math.min(e.clientX + 16, window.innerWidth - 520),
-        y: Math.min(e.clientY - 200, window.innerHeight - 420),
+        y: Math.max(8, Math.min(e.clientY - 200, window.innerHeight - 480)),
       });
     }
   }
@@ -103,24 +100,13 @@ function RegistryCard({ image: img, onImport }: { image: RegistryImage; onImport
     cancelDismiss();
     dismissTimer.current = setTimeout(() => {
       setShowPreview(false);
-      setPreviewReady(false);
       setExpanded(false);
     }, 300);
   }
 
   function handleMouseLeave() {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    if (loadTimer.current) clearTimeout(loadTimer.current);
     scheduleDismiss();
-  }
-
-  function handleIframeLoad() {
-    loadTimer.current = setTimeout(() => setPreviewReady(true), 300);
-  }
-
-  function handleIframeError() {
-    setShowPreview(false);
-    setPreviewReady(false);
   }
 
   return (
@@ -160,45 +146,31 @@ function RegistryCard({ image: img, onImport }: { image: RegistryImage; onImport
         {img.version && <div className="mt-1 text-[10px] text-muted-foreground/60">{img.version}</div>}
       </div>
 
-      {showPreview && isWebUrl(img.project_url) && (
+      {showPreview && (
         <div
-          className={`styx-card fixed z-50 overflow-hidden rounded-lg shadow-2xl transition-all duration-200 ${previewReady ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+          role="dialog"
+          aria-label={`${img.name} details`}
+          className="styx-card fixed z-50 overflow-hidden rounded-lg shadow-2xl"
           style={{
             left: expanded ? Math.min(previewPos.x, window.innerWidth - 770) : previewPos.x,
-            top: expanded ? Math.min(previewPos.y, window.innerHeight - 620) : previewPos.y,
+            top: previewPos.y,
             width: expanded ? 750 : 500,
-            height: expanded ? 600 : 400,
           }}
           onMouseEnter={cancelDismiss}
           onMouseLeave={scheduleDismiss}
+          onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
-            <span className="text-[10px] text-muted-foreground truncate cursor-pointer" onClick={(e) => { e.stopPropagation(); openExternal(img.project_url); }}>{img.project_url}</span>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                className="rounded p-0.5 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
-                onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
-                title={expanded ? "Shrink" : "Expand"}
-              >
-                {expanded ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
-              </button>
-              <button
-                className="rounded p-0.5 hover:bg-secondary text-muted-foreground hover:text-foreground transition-colors"
-                onClick={(e) => { e.stopPropagation(); openExternal(img.project_url); }}
-                title="Open in new tab"
-              >
-                <ExternalLink className="h-3 w-3" />
-              </button>
-            </div>
+          <div className="flex items-center justify-end border-b border-border px-3 py-1.5">
+            <button
+              className="rounded p-0.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+              onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+              title={expanded ? "Shrink" : "Expand"}
+              aria-label={expanded ? "Shrink preview" : "Expand preview"}
+            >
+              {expanded ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
+            </button>
           </div>
-          <iframe
-            src={img.project_url}
-            className="h-[calc(100%-28px)] w-full"
-            sandbox="allow-scripts allow-same-origin"
-            title={`${img.name} preview`}
-            onLoad={handleIframeLoad}
-            onError={handleIframeError}
-          />
+          <RegistryPreviewCard image={img} />
         </div>
       )}
     </div>

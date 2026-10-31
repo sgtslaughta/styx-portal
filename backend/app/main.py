@@ -1,9 +1,10 @@
 import asyncio
+import re
 import logging
 from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from sqlmodel import select
@@ -16,7 +17,7 @@ from app.middleware.rate_limit import RateLimitMiddleware
 from app.security.same_origin import svc_cookie_guard
 from app.middleware.security_headers import SecurityHeadersMiddleware
 from app.models import Instance, SessionEvent, User
-from app.routers import templates, instances, registry, images
+from app.routers import templates, instances, registry, images, instance_thumbs
 from app.routers import auth as auth_router
 from app.routers import users as users_router
 from app.routers import matrix as matrix_router
@@ -37,6 +38,7 @@ from app.routers import services_auth as services_auth_router
 from app.security.deps import get_current_user, require_admin
 from app.services.docker_manager import DockerManager
 from app.services.k8s_runtime import instance_runtime
+from app.services.k8s_prepull import prepull_loop
 from app.services.background_loops import (  # noqa: F401 - re-exported for tests
     _capture_running_instances, _health_sample_loop, _log_portal_instances,
     _metrics_collection_loop, _monitor_tick, _reconcile_instances_at_boot,
@@ -118,12 +120,15 @@ async def lifespan(app: FastAPI):
     screenshot_task = asyncio.create_task(_screenshot_capture_loop())
     health_task = asyncio.create_task(_health_sample_loop())
     svc_health_task = asyncio.create_task(_service_health_loop())
+    prepull_task = asyncio.create_task(prepull_loop()) if _settings.ROUTE_BACKEND == "k8s" else None
     yield
     task.cancel()
     metrics_task.cancel()
     screenshot_task.cancel()
     health_task.cancel()
     svc_health_task.cancel()
+    if prepull_task:
+        prepull_task.cancel()
     await asyncio.gather(svc_health_task, return_exceptions=True)
 
 
@@ -165,6 +170,7 @@ app.add_middleware(
 )
 
 app.include_router(templates.router, prefix="/api/templates", tags=["templates"])
+app.include_router(instance_thumbs.router, prefix="/api/instances", tags=["instances"])
 app.include_router(instances.router, prefix="/api/instances", tags=["instances"])
 app.include_router(registry.router, prefix="/api/registry/images", tags=["registry"])
 app.include_router(images.router, prefix="/api/images", tags=["images"])
@@ -200,7 +206,16 @@ async def health():
     return {"status": "ok"}
 
 
-_INSTANCE_UNAVAILABLE_HTML = r"""<!doctype html>
+_INSTANCE_UNAVAILABLE_HTML = """<!doctype html>
+<meta charset="utf-8">
+<title>Starting your desktop</title>
+<meta http-equiv="refresh" content="3">
+<p>Your desktop is starting&hellip; this page reloads automatically.
+<a href="/">My desktops</a></p>
+"""
+
+
+_INSTANCE_STOPPED_HTML = r"""<!doctype html>
 <meta charset="utf-8">
 <title>Instance unavailable</title>
 <meta http-equiv="refresh" content="3;url=/">
@@ -217,8 +232,23 @@ _INSTANCE_UNAVAILABLE_HTML = r"""<!doctype html>
 
 
 @app.get("/api/instance-unavailable", response_class=HTMLResponse)
-async def instance_unavailable():
-    return HTMLResponse(content=_INSTANCE_UNAVAILABLE_HTML)
+async def instance_unavailable(request: Request, session: AsyncSession = Depends(get_session)):
+    # Traefik replacePath keeps the original path in X-Replaced-Path.
+    m = re.match(r"^/i/([a-z0-9-]+)", request.headers.get("x-replaced-path", ""))
+    inst = None
+    if m:
+        inst = (await session.exec(select(Instance).where(Instance.subdomain == m[1]))).first()
+    if inst and inst.status in ("starting", "pulling", "running"):
+        # X-Replaced-Path is client-settable on a direct call: reveal status only to
+        # the instance's owner or an admin, everyone else sees the stopped page.
+        from app.security.deps import get_current_user
+        try:
+            user = await get_current_user(request, session)
+        except HTTPException:
+            user = None
+        if user and (user.role == "admin" or user.id == inst.owner_id):
+            return HTMLResponse(content=_INSTANCE_UNAVAILABLE_HTML)
+    return HTMLResponse(content=_INSTANCE_STOPPED_HTML)
 
 
 @app.get("/api/system/gpu")

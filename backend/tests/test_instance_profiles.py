@@ -48,7 +48,7 @@ async def _admin(session):
 
 @pytest.mark.asyncio
 async def test_use_profile_requires_profile_mount(admin_client, shared_docker):
-    t = await admin_client.post("/api/templates", json={**TMPL, "name": "np", "profile_mount": None})
+    t = await admin_client.post("/api/templates", json={**TMPL, "name": "np", "profile_mount": None, "volumes": []})
     r = await _create(admin_client, t.json()["id"], "np", use_profile=True)
     assert r.status_code == 422
 
@@ -247,3 +247,50 @@ async def test_member_template_delete_spares_other_users_profiles(member_client,
     assert r.status_code == 409 and "ask an admin" in r.json()["detail"]
     shared_docker.remove_volume.assert_not_called()
     assert len((await session.exec(select(UserProfile))).all()) == 1
+
+
+@pytest.mark.asyncio
+async def test_profile_falls_back_to_first_volume(admin_client, shared_docker):
+    t = await admin_client.post("/api/templates", json={**TMPL, "name": "fb", "profile_mount": None})
+    r = await _create(admin_client, t.json()["id"], "fb", use_profile=True)
+    assert r.status_code == 201, r.text
+    assert r.json()["profile_volume"]
+
+
+async def _profiled(session, tid, name):
+    admin = await _admin(session)
+    vol = profile_volume_name(admin.id, tid)
+    session.add(UserProfile(user_id=admin.id, template_id=tid, volume_name=vol))
+    inst = Instance(template_id=tid, owner_id=admin.id, name=name, subdomain=name,
+                    status="stopped", volume_names=[], profile_volume=vol)
+    session.add(inst)
+    await session.commit()
+    return inst, vol
+
+
+@pytest.mark.asyncio
+async def test_delete_with_flag_removes_profile(admin_client, session, tid, shared_docker):
+    inst, vol = await _profiled(session, tid, "dp1")
+    r = await admin_client.delete(f"/api/instances/{inst.id}?delete_profile=true")
+    assert r.status_code == 204
+    shared_docker.remove_volume.assert_called_once_with(vol)
+    assert (await session.exec(select(UserProfile))).first() is None
+
+
+@pytest.mark.asyncio
+async def test_delete_with_flag_keeps_profile_if_referenced(admin_client, session, tid, shared_docker):
+    inst, vol = await _profiled(session, tid, "dp2")
+    admin = await _admin(session)
+    session.add(Instance(template_id=tid, owner_id=admin.id, name="dp3", subdomain="dp3",
+                         status="stopped", volume_names=[], profile_volume=vol))
+    await session.commit()
+    r = await admin_client.delete(f"/api/instances/{inst.id}?delete_profile=true")
+    assert r.status_code == 204
+    assert (await session.exec(select(UserProfile))).first() is not None
+
+
+@pytest.mark.asyncio
+async def test_delete_without_flag_keeps_profile(admin_client, session, tid, shared_docker):
+    inst, _ = await _profiled(session, tid, "dp4")
+    assert (await admin_client.delete(f"/api/instances/{inst.id}")).status_code == 204
+    assert (await session.exec(select(UserProfile))).first() is not None
