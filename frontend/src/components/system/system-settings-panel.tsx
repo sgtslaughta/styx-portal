@@ -170,11 +170,13 @@ export function SystemSettingsPanel() {
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {group.group === "webrtc" && (
-              <TurnSetupGuide provider={localState.WEBRTC_TURN_PROVIDER ?? providerRow(group)} />
-            )}
-            <div className="space-y-4">
+          <CardContent>
+            <div data-testid="settings-grid" className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+              {group.group === "webrtc" && (
+                <div data-testid="turn-guide-wrap" className="col-span-full">
+                  <TurnSetupGuide provider={localState.WEBRTC_TURN_PROVIDER ?? providerRow(group)} />
+                </div>
+              )}
               {group.settings
                 .filter((s) =>
                   group.group !== "webrtc" ||
@@ -203,8 +205,12 @@ export function SystemSettingsPanel() {
             </div>
           </CardContent>
         </Card>
-        {group.group === "webrtc" && <TurnSetupCheck provider={String(providerRow(group) ?? "none")} />}
-        {group.group === "webrtc" && <TurnCostCard />}
+        {group.group === "webrtc" && (
+          <div className="col-span-full"><TurnSetupCheck provider={String(providerRow(group) ?? "none")} /></div>
+        )}
+        {group.group === "webrtc" && (
+          <div data-testid="turn-cost-wrap" className="col-span-full"><TurnCostCard /></div>
+        )}
         </div>
       ))}
       </div>

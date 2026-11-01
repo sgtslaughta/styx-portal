@@ -65,3 +65,18 @@ describe("settings group nav", () => {
     expect(screen.queryByTestId("dirty-security")).toBeNull();
   });
 });
+
+describe("settings grid", () => {
+  test("rows sit in a responsive grid; guide and cost span all columns", async () => {
+    getSystemSettings.mockResolvedValue([
+      { group: "webrtc", label: "WebRTC", settings: [row("WEBRTC_TURN_PROVIDER", "str", "none")] },
+    ]);
+    wrap();
+    const grid = await screen.findByTestId("settings-grid");
+    expect(grid.className).toMatch(/grid-cols-1/);
+    expect(grid.className).toMatch(/lg:grid-cols-2/);
+    expect(grid.className).toMatch(/2xl:grid-cols-3/);
+    expect(screen.getByTestId("turn-guide-wrap").className).toMatch(/col-span-full/);
+    expect(screen.getByTestId("turn-cost-wrap").className).toMatch(/col-span-full/);
+  });
+});

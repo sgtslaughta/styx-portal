@@ -23,13 +23,13 @@ export function SettingsLayout() {
     sections.find((s) => s.id === activeId) ?? sections[0];
 
   if (loading) {
-    return <div className="mx-auto h-64 max-w-6xl animate-pulse rounded-lg bg-muted/30" />;
+    return <div className="mx-auto h-64 max-w-screen-2xl animate-pulse rounded-lg bg-muted/30" />;
   }
   if (!active) return null;
 
   const Section = active.Component;
   return (
-    <div className="mx-auto flex max-w-6xl flex-col md:flex-row md:gap-6">
+    <div className="mx-auto flex w-full max-w-[1800px] flex-col px-0 md:flex-row md:gap-6 2xl:gap-8">
       <SettingsNav categories={cats} activeId={active.id} onSelect={setActiveId} />
       <div className="min-w-0 flex-1 md:pl-0">
         {/* Mobile section selector (horizontal scrollable) */}

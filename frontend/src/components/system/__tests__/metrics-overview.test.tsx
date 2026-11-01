@@ -15,16 +15,16 @@ vi.mock("@/hooks/use-system", () => ({
     storage: { volumes_gb: 1, images_gb: 1, total_gb: 100, available_gb: 60 } } }),
 }));
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: () => ({ data: { ok: false, checked_at: new Date().toISOString(), checks: [
+  useQuery: (o: { queryKey: string[] }) => o.queryKey[0] === "workstations" ? { data: [] } : { data: { ok: false, checked_at: new Date().toISOString(), checks: [
     { key: "docker", ok: true, latency_ms: 1, detail: "" },
     { key: "disk", ok: false, latency_ms: 1, detail: "" },
-    { key: "gpu", ok: false, latency_ms: 1, detail: "" }] } }),
+    { key: "gpu", ok: false, latency_ms: 1, detail: "" }] } },
 }));
 import { MetricsOverview } from "../metrics-overview";
 
 test("renders a rollup card per section with figures and links", () => {
   render(<MetricsOverview />);
-  for (const s of ["health", "sessions", "resources", "logs"]) {
+  for (const s of ["health", "sessions", "resources", "logs", "workstations"]) {
     const link = screen.getByRole("link", { name: new RegExp(`View ${s}`, "i") });
     expect(link.getAttribute("href")).toBe(`?section=${s}`);
   }

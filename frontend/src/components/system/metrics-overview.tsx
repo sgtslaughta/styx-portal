@@ -5,6 +5,7 @@ import { useInstances } from "@/hooks/use-instances";
 import { useSystemMetrics, useResourceHistory } from "@/hooks/use-system";
 import { AlertTriangle } from "lucide-react";
 import { formatDuration } from "@/lib/utils";
+import { WorkstationsOverviewCard } from "./workstations-overview-card";
 import { OverviewCard, Figure, Sparkline, type Level } from "./overview-cards";
 
 function EventRow({ event }: { event: { type: string; instance: string; time: string; details?: string } }) {
@@ -86,7 +87,7 @@ export function MetricsOverview() {
         </motion.div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         <OverviewCard section="health" level={healthLevel}>
           <Figure label="Checks" value={`${checks.length - failing.length} ok / 0 warn / ${failing.length} fail`} />
           <Figure label="Status" value={failing.length ? `${failing.length} failing` : "All passing"} />
@@ -119,6 +120,8 @@ export function MetricsOverview() {
             {events.slice(0, 3).map((ev, i) => <EventRow key={i} event={ev} />)}
           </div>
         </OverviewCard>
+
+        <WorkstationsOverviewCard />
       </div>
 
       <div className="styx-card rounded-lg p-4">
