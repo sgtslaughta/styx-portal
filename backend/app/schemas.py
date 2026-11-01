@@ -5,6 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.config import Settings
+from app.schemas_stats import InviteOut, PendingInviteOut, RelayReason, TempPasswordOut  # noqa: F401  (re-export)
 from app.services import template_validation as _tv
 
 SUBDOMAIN_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
@@ -235,23 +236,6 @@ class CreateInviteRequest(BaseModel):
     role: str = "user"
 
 
-class InviteOut(BaseModel):
-    token: str
-    expires_at: str | None
-
-
-class PendingInviteOut(BaseModel):
-    id: str
-    email: str | None
-    role: str
-    created_at: str
-    expires_at: str | None
-
-
-class TempPasswordOut(BaseModel):
-    temp_password: str
-
-
 @dataclass
 class OAuthIdentity:
     sub: str
@@ -451,8 +435,7 @@ class WorkstationHeartbeatRequest(BaseModel):
     lan_ip: str | None = None
     last_error: str | None = None
     health: dict[str, Any] = {}
-    # Why the stream used the TURN relay (agent may omit; stored on the open stream session).
-    relay_reason: Literal["strict_nat", "firewall", "mobile", "unknown"] = "unknown"
+    relay_reason: RelayReason = "unknown"
 
     @field_validator("lan_ip")
     @classmethod

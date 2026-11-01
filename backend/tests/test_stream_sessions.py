@@ -116,3 +116,19 @@ async def test_sync_instances_open_close(session):
     await ss.sync_instances(session, NOW)
     await session.commit()
     assert (await session.exec(select(StreamSession).where(StreamSession.target_kind == "instance"))).one().ended_at is not None
+
+
+async def test_dangling_instance_closed_at_last_activity(session):
+    from app.models import Instance, ServiceTemplate
+    u, _ = await _ws(session)
+    t = ServiceTemplate(name="t2", display_name="T", image="img")
+    session.add(t)
+    await session.commit()
+    session.add(Instance(id="i2", template_id=t.id, name="n", subdomain="n2", owner_id=u.id,
+                         status="running", last_activity=NOW - timedelta(hours=1)))
+    session.add(StreamSession(target_kind="instance", target_id="i2", user_id=u.id,
+                              started_at=NOW - timedelta(hours=3)))
+    await session.commit()
+    await ss.close_dangling(session, 90, now=NOW)
+    r = (await session.exec(select(StreamSession).where(StreamSession.target_id == "i2"))).one()
+    assert r.ended_at == NOW - timedelta(hours=1)

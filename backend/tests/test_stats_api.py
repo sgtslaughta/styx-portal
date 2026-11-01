@@ -83,3 +83,18 @@ async def test_heartbeat_stores_relay_reason(client, session):
     from sqlmodel import select
     r = (await session.exec(select(StreamSession))).one()
     assert r.relayed and r.relay_reason == "mobile"
+
+
+async def test_heartbeat_unknown_relay_reason_not_422(client, session):
+    from app.models import User, Workstation
+    from app.services.workstations import sha256_hex
+    u = User(username="bo", password_hash="x", role="member")
+    session.add(u)
+    await session.commit()
+    session.add(Workstation(name="C", hostname="c", subdomain="c", created_by=u.id,
+                            agent_token_hash=sha256_hex("tok2"), status="online"))
+    await session.commit()
+    for v in ("weird", 5, None):
+        r = await client.post("/api/agent/heartbeat", json={"relay_reason": v},
+                              headers={"Authorization": "Bearer tok2"})
+        assert r.status_code == 200

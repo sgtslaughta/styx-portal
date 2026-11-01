@@ -85,7 +85,7 @@ async def sync_instances(session: AsyncSession, now: datetime | None = None) -> 
 async def close_dangling(session: AsyncSession, older_than_s: int,
                          now: datetime | None = None) -> int:
     """Startup: close sessions left open across a restart (older than the offline threshold).
-    Closed at the last time known active (workstation last_heartbeat, else started_at) so
+    Closed at the last time known active (workstation last_heartbeat / instance last_activity, else started_at) so
     server downtime never counts as streaming time."""
     cutoff = _utc(now) - timedelta(seconds=older_than_s)
     rows = (await session.exec(select(StreamSession).where(
@@ -96,6 +96,10 @@ async def close_dangling(session: AsyncSession, older_than_s: int,
             ws = await session.get(Workstation, r.target_id)
             if ws and ws.last_heartbeat:
                 end = max(end, min(_utc(ws.last_heartbeat), _utc(now)))
+        elif r.target_kind == "instance":
+            inst = await session.get(Instance, r.target_id)
+            if inst and inst.last_activity:
+                end = max(end, min(_utc(inst.last_activity), _utc(now)))
         r.ended_at = end
         session.add(r)
     return len(rows)
