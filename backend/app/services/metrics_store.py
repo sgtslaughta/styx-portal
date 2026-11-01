@@ -18,13 +18,20 @@ def record_sample(cpu: float, ram: float):
         _timestamps.append(time.time())
 
 
-def get_history(range_str: str = "1h") -> dict:
+def get_history(range_str: str = "1h", hour_rows=None) -> dict:
+    """1h/6h/24h from the 30s ring buffer; 7d/30d from MetricHour rows (hour_rows)."""
     ranges = {"1h": 120, "6h": 720, "24h": 2880}
     count = ranges.get(range_str, 120)
 
     with _lock:
         cpu = list(_cpu_history)[-count:]
         ram = list(_ram_history)[-count:]
+    extra = {}
+    if range_str in ("7d", "30d"):
+        rows = hour_rows or []
+        cpu = [r.cpu_avg for r in rows]
+        ram = [r.ram_avg for r in rows]
+        extra = {"timestamps": [r.ts_hour.isoformat() + "Z" for r in rows]}
 
     disk = shutil.disk_usage("/")
     total_gb = disk.total / 1024**3
@@ -47,6 +54,7 @@ def get_history(range_str: str = "1h") -> dict:
         volumes_size = 0.0
 
     return {
+        **extra,
         "aggregate_cpu": cpu,
         "aggregate_ram": ram,
         "storage": {

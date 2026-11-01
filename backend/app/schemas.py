@@ -451,6 +451,8 @@ class WorkstationHeartbeatRequest(BaseModel):
     lan_ip: str | None = None
     last_error: str | None = None
     health: dict[str, Any] = {}
+    # Why the stream used the TURN relay (agent may omit; stored on the open stream session).
+    relay_reason: Literal["strict_nat", "firewall", "mobile", "unknown"] = "unknown"
 
     @field_validator("lan_ip")
     @classmethod

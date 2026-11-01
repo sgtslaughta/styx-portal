@@ -124,10 +124,16 @@ async def _service_health_loop():
 
 
 async def _metrics_collection_loop():
-    """Collect aggregate CPU/RAM every 30s for time-series."""
+    """Every 30s: container aggregates for the time-series, host CPU/RAM for hourly rollups,
+    and instance stream-session reconciliation."""
+    import shutil
+
+    from app.services import host_metrics, metric_rollup, stream_sessions
+    from app.models import StreamSession
     from app.services.metrics_store import record_sample
 
     docker = instance_runtime()
+    host_metrics.cpu_pct()   # prime the /proc/stat delta
     while True:
         await asyncio.sleep(30)
         try:
@@ -150,8 +156,20 @@ async def _metrics_collection_loop():
                     pass
 
             record_sample(round(total_cpu, 1), round(total_ram_pct, 1))
+            async with async_session() as session:
+                await stream_sessions.sync_instances(session)
+                await session.commit()
+                live = len((await session.exec(select(StreamSession.id).where(
+                    StreamSession.ended_at.is_(None)))).all())
+                ram = host_metrics.ram()
+                d = await asyncio.to_thread(shutil.disk_usage, "/")
+                metric_rollup.record_host(host_metrics.cpu_pct(), ram[0] if ram else None,
+                                          round(100 * (d.total - d.free) / d.total, 1), live)
+                await metric_rollup.rollup(session)
+                await stream_sessions.prune(session)
+                await session.commit()
         except Exception:
-            pass
+            logger.warning("metrics tick failed", exc_info=True)
 
 
 async def _capture_running_instances(screenshots, targets):

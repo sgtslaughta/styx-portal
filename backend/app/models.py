@@ -69,6 +69,43 @@ class TurnUsage(SQLModel, table=True):
     bytes: int = 0
 
 
+class TurnUsageDay(SQLModel, table=True):
+    """Relayed TURN bytes per UTC day (all workstations)."""
+    __tablename__ = "turn_usage_day"
+
+    day: str = Field(primary_key=True)   # YYYY-MM-DD
+    bytes: int = 0
+
+
+class MetricHour(SQLModel, table=True):
+    """Hourly host metric rollup (kept 90 days). Percentages 0-100."""
+    __tablename__ = "metric_hours"
+
+    ts_hour: datetime = Field(primary_key=True)   # UTC, naive, top of the hour
+    cpu_avg: float = 0
+    cpu_max: float = 0
+    ram_avg: float = 0
+    disk_pct: float = 0
+    live_max: int = 0
+    health: str = "ok"                            # ok | warn | fail
+
+
+class StreamSession(SQLModel, table=True):
+    """One user's streaming stint on a workstation/instance (open while ended_at is NULL)."""
+    __tablename__ = "stream_sessions"
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    user_id: str | None = Field(default=None, index=True)
+    target_kind: str                              # workstation | instance
+    target_id: str = Field(index=True)
+    started_at: datetime = Field(default_factory=_now, index=True)
+    ended_at: datetime | None = None
+    transport: str | None = None
+    codec: str | None = None
+    relayed: bool = False
+    relay_reason: str | None = None               # strict_nat | firewall | mobile | unknown
+
+
 class Invite(SQLModel, table=True):
     __tablename__ = "invites"
 

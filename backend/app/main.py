@@ -32,6 +32,7 @@ from app.routers import enroll as enroll_router
 from app.routers import agent as agent_router
 from app.routers import system_settings as system_settings_router
 from app.routers import turn_usage as turn_usage_router
+from app.routers import stats as stats_router
 from app.routers import groups as groups_router
 from app.routers import profiles as profiles_router
 from app.routers import services as services_router
@@ -118,6 +119,11 @@ async def lifespan(app: FastAPI):
     async with async_session() as session:
         await refresh_routes_from_db(session)
 
+    from app.services import stream_sessions
+    async with async_session() as _s:
+        await stream_sessions.close_dangling(_s, _settings_store.get("WORKSTATION_OFFLINE_AFTER_S"))
+        await _s.commit()
+
     task = asyncio.create_task(_session_monitor_loop())
     metrics_task = asyncio.create_task(_metrics_collection_loop())
     screenshot_task = asyncio.create_task(_screenshot_capture_loop())
@@ -195,6 +201,7 @@ app.include_router(agent_router.router, prefix="/api/agent", tags=["agent"])
 app.include_router(system_settings_router.router, prefix="/api/system-settings", tags=["system-settings"])
 app.include_router(turn_usage_router.router, prefix="/api/admin/turn-usage", tags=["turn-usage"])
 app.include_router(turn_usage_router.check_router, prefix="/api/admin/turn-check", tags=["turn-usage"])
+app.include_router(stats_router.router, prefix="/api/admin/stats", tags=["stats"])
 app.include_router(groups_router.router, prefix="/api/groups", tags=["groups"])
 app.include_router(groups_router.users_router, prefix="/api/users", tags=["groups"])
 app.include_router(profiles_router.router, prefix="/api/profiles", tags=["profiles"])
@@ -328,7 +335,13 @@ async def system_metrics(
             "details": ev.details.get("error", "")[:100] if ev.details else None,
         })
 
+    from app.services import host_metrics, metric_rollup
+    host = metric_rollup.latest()   # cpu is a delta between loop samples; no extra reads here
+    ram = host_metrics.ram()
     return {
+        "host_cpu_pct": host.get("cpu"),
+        "host_ram_pct": ram[0] if ram else None,
+        "host_ram_total_mb": ram[1] if ram else None,
         "aggregate_cpu": round(aggregate_cpu, 1),
         "aggregate_ram_mb": round(aggregate_ram_mb, 1),
         "disk_used_gb": round((disk.total - disk.free) / 1024**3, 1),
@@ -345,10 +358,13 @@ async def system_metrics(
 @app.get("/api/system/metrics/history")
 async def system_metrics_history(
     range: str = "1h",
+    session: AsyncSession = Depends(get_session),
     admin: User = Depends(require_admin),
 ):
+    from app.services.metric_rollup import hour_rows
     from app.services.metrics_store import get_history
-    return get_history(range)
+    rows = await hour_rows(session, int(range[:-1])) if range in ("7d", "30d") else None
+    return get_history(range, rows)
 
 
 @app.get("/api/system/diagnostics")

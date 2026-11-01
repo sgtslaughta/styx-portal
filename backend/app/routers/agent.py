@@ -13,7 +13,7 @@ from app.config import Settings
 from app.database import get_session
 from app.models import Workstation, WorkstationAccess
 from app.schemas import WorkstationHeartbeatRequest, WorkstationHeartbeatResponse
-from app.services import ws_icon, ws_thumb
+from app.services import stream_sessions, ws_icon, ws_thumb
 from app.services.audit import audit_request
 from app.services.workstations import (
     build_update_manifest, can_self_update, get_latest_agent_version, request_agent_update, sha256_hex,
@@ -73,7 +73,11 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
                      and ws.update_state in ("requested", "updating", "rolled_back", "failed"))):
         request_agent_update(ws, latest)
     # Attribute relayed bytes before occupancy may clear (final delta of a session).
-    await record_turn_usage(session, ws, body.health.get("turn_bytes"))
+    turn_bytes = body.health.get("turn_bytes")
+    relayed = isinstance(turn_bytes, int) and not isinstance(turn_bytes, bool) and turn_bytes > 0
+    await record_turn_usage(session, ws, turn_bytes)
+    if relayed:
+        await stream_sessions.mark_relayed(session, ws, body.relay_reason)
     # Occupancy: the agent's gateway counts live stream websockets; the
     # occupant's identity comes from forward-auth. Zero connections clears it.
     conns = body.health.get("active_connections")
@@ -84,6 +88,9 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
             ws.occupied_at = None
             # Re-arm the idle latch: a future session starts fresh.
             ws.idle_disconnect_sent = False
+    await stream_sessions.sync_workstation(session, ws)   # idempotent open/close
+    if relayed:
+        await stream_sessions.mark_relayed(session, ws, body.relay_reason)
     # Resolve effective stream settings: per-workstation override else system default.
     sys_settings_dict = stream_sys_settings(_sys_settings)
     sys_settings_dict["TURN_OVER_BUDGET"] = await turn_over_budget(session)
@@ -168,6 +175,7 @@ async def thumbnail(request: Request, ws: Workstation = Depends(get_agent_workst
 async def deregister(request: Request,
                      ws: Workstation = Depends(get_agent_workstation),
                      session: AsyncSession = Depends(get_session)):
+    await stream_sessions.close_session(session, "workstation", ws.id)
     await session.exec(delete(WorkstationAccess).where(
         WorkstationAccess.workstation_id == ws.id))
     await audit_request(session, request, "workstation.deregister",
