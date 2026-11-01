@@ -18,7 +18,9 @@ def test_launch_script_scrubs_display_and_sets_activation_env_before_exec():
     assert "DISPLAY=" in lines[act] and "WAYLAND_DISPLAY=wayland-70" in lines[act]
     assert "PULSE_SINK=styx-seat" in lines[act]
     assert "export PULSE_SINK=styx-seat" in s
-    assert "--no-x11" in lines[exe]   # Xwayland-on-demand deadlocks the shell (libgvc/libpulse)
+    assert "--no-x11" not in lines[exe]   # Xwayland on demand for X11 apps (Steam)
+    pc = next(i for i, ln in enumerate(lines) if ln.startswith("export PULSE_CLIENTCONFIG="))
+    assert pc < exe and "auto-connect-display = no" in s   # else libpulse deadlocks the shell
     assert "--wayland-display=wayland-70" in lines[exe]
     assert "--unsafe-mode" not in s
     assert '> /tmp/bus' in s
