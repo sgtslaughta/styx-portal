@@ -165,32 +165,37 @@ addEventListener('pointerdown',function(e){try{if(on&&e.button===0&&!document.fu
 # deltas scaled to server pixels, so on screen they match 1:1) and clamped to
 # the stream; hidden whenever the remote cursor is hidden (sprite cleared).
 # While locked it also asks selkies for its pointer echo (`pointer,<display>,<x>,
-# <y>,<scale>,<seq>`, server pixels; needs a pixelflux reporting the host cursor)
-# and snaps the sprite to the true position once the mouse rests, so a game's
-# pointer warp no longer leaves it behind.
+# <y>,<scale>,<seq>`, server pixels, sent when the server pointer moves; needs a
+# pixelflux reporting the host cursor). The newest echo is applied once the mouse
+# rests, so a game's pointer warp no longer leaves the sprite behind. And when the
+# mouse keeps moving but no echo comes, the game has locked the pointer (GNOME
+# holds it still) and owns the mouse: the sprite hides until the pointer moves.
 LOCKCURSOR_JS = r"""<script id="styx-lockcursor">(function(){
 var img=null,x=0,y=0,lx=0,ly=0,hooked=null,raw=null,moved=0;
-var REST=120;
+var REST=120,OWN_PX=48,OWN_MS=250,live=false,ex=null,ey=null,echoAt=0,since=0,own=false,applied=true;
 function inp(){return window.webrtcInput}
 function hook(){var w=inp();if(!w||w===hooked||typeof w.send!=='function')return;hooked=w;var s=w.send.bind(w);raw=s;
 w.send=function(m){if(typeof m==='string'&&(m.indexOf('SET_NATIVE_CURSOR_RENDERING,')===0||/^p,[01]$/.test(m)))return;return s.apply(null,arguments)};
-var echo=w.onPointerEcho;w.onPointerEcho=function(m){try{snap(m)}catch(z){}if(typeof echo==='function')return echo.apply(w,arguments)}}
-function snap(m){var t=String(m).split(','),w=inp();if(t.length<6||!document.pointerLockElement||Date.now()-moved<REST)return;
-if(w.displayId&&t[1]!==w.displayId)return;var b=w._streamBox&&w._streamBox(),ex=+t[2],ey=+t[3];
-if(!b||!(b.scaleX>0)||!(b.scaleY>0)||!isFinite(ex)||!isFinite(ey))return;x=b.left+ex/b.scaleX;y=b.top+ey/b.scaleY;clamp();draw()}
+var echo=w.onPointerEcho;w.onPointerEcho=function(m){try{onEcho(m)}catch(z){}if(typeof echo==='function')return echo.apply(w,arguments)}}
+function onEcho(m){var t=String(m).split(','),w=inp(),px=+t[2],py=+t[3];if(t.length<6||!isFinite(px)||!isFinite(py))return;
+if(w.displayId&&t[1]!==w.displayId)return;live=true;echoAt=Date.now();since=0;own=false;ex=px;ey=py;applied=false;settle()}
+function settle(){if(applied||ex===null||!document.pointerLockElement||Date.now()-moved<REST)return;
+var w=inp(),b=w._streamBox&&w._streamBox();if(!b||!(b.scaleX>0)||!(b.scaleY>0))return;
+applied=true;x=b.left+ex/b.scaleX;y=b.top+ey/b.scaleY;clamp();draw()}
 function clamp(){var w=inp(),r=w&&w.element&&w.element.getBoundingClientRect();if(!r)return;
 x=Math.max(r.left,Math.min(r.right-1,x));y=Math.max(r.top,Math.min(r.bottom-1,y))}
 function draw(){hook();var w=inp(),d=w&&w._cursorBase64Data;
-if(!document.pointerLockElement||!d){if(img)img.style.display='none';return}
+if(!document.pointerLockElement||!d||own){if(img)img.style.display='none';return}
 if(!img){img=document.createElement('img');img.id='styx-lock-cursor';
 img.style.cssText='position:fixed;left:0;top:0;pointer-events:none;z-index:2147483647';document.body.appendChild(img)}
 var src='data:image/png;base64,'+d;if(img.getAttribute('src')!==src)img.setAttribute('src',src);
 var h=w.cursorHotspot||{x:0,y:0};img.style.display='block';
 img.style.transform='translate('+(x-h.x)+'px,'+(y-h.y)+'px)'}
-addEventListener('mousemove',function(e){try{if(document.pointerLockElement){moved=Date.now();x+=e.movementX||0;y+=e.movementY||0;clamp();draw()}
-else{lx=e.clientX;ly=e.clientY}}catch(z){}},true);
-document.addEventListener('pointerlockchange',function(){try{x=lx;y=ly;draw();if(raw)raw('_pointer_echo,'+(document.pointerLockElement?1:0))}catch(z){}});
-setInterval(function(){try{draw()}catch(z){}},100);
+addEventListener('mousemove',function(e){try{if(document.pointerLockElement){var dx=e.movementX||0,dy=e.movementY||0;
+moved=Date.now();since+=Math.abs(dx)+Math.abs(dy);if(live&&since>OWN_PX&&moved-echoAt>OWN_MS)own=true;
+x+=dx;y+=dy;clamp();draw()}else{lx=e.clientX;ly=e.clientY}}catch(z){}},true);
+document.addEventListener('pointerlockchange',function(){try{x=lx;y=ly;own=false;since=0;ex=null;draw();if(raw)raw('_pointer_echo,'+(document.pointerLockElement?1:0))}catch(z){}});
+setInterval(function(){try{settle();draw()}catch(z){}},100);
 })();</script>"""
 
 

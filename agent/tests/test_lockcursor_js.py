@@ -31,8 +31,8 @@ const input = {
   _streamBox: () => ({left: 10, top: 20, scaleX: 2, scaleY: 2}),
   echoes: [], onPointerEcho(m) { this.echoes.push(m) },
 };
-let T = 1000;
-Object.assign(win, {document: doc, Math, Date: {now: () => T}, setInterval: () => 0,
+let T = 1000, tick = null;
+Object.assign(win, {document: doc, Math, Date: {now: () => T}, setInterval: (f) => { tick = f; return 0 },
   addEventListener: (e, f) => { winL[e] = f }, webrtcInput: input});
 win.window = win;
 vm.createContext(win);
@@ -53,16 +53,25 @@ win.webrtcInput.send('SET_NATIVE_CURSOR_RENDERING,1');
 win.webrtcInput.send('p,1');
 win.webrtcInput.send('m2,3,4,0,0');
 assert.deepStrictEqual(sent, ['_pointer_echo,1', 'm2,3,4,0,0']);
-// the true server position: ignored while the mouse moves, snapped to once it rests
+// the true server position: held while the mouse moves, applied once it rests
 win.webrtcInput.onPointerEcho('pointer,primary,500,300,1,7');
 assert.strictEqual(img.style.transform, 'translate(-2px,177px)');
 assert.deepStrictEqual(input.echoes, ['pointer,primary,500,300,1,7']);  // selkies still sees it
-T += 200;
-win.webrtcInput.onPointerEcho('pointer,primary,500,300,1,8');
+T += 200; tick();
 assert.strictEqual(img.style.transform, 'translate(258px,167px)');      // 10+500/2-2, 20+300/2-3
 win.webrtcInput.onPointerEcho('pointer,other,0,0,1,9');                  // another display: ignored
 win.webrtcInput.onPointerEcho('pointer,none');
+T += 200; tick();
 assert.strictEqual(img.style.transform, 'translate(258px,167px)');
+// the mouse moves but the server pointer does not: a game locked it, the sprite hides
+T += 100; winL.mousemove({movementX: 30, movementY: 0});
+assert.strictEqual(img.style.display, 'block');
+T += 100; winL.mousemove({movementX: 30, movementY: 0});
+assert.strictEqual(img.style.display, 'none');
+win.webrtcInput.onPointerEcho('pointer,primary,600,300,1,12');          // pointer moves again: back
+T += 200; tick();
+assert.strictEqual(img.style.display, 'block');
+assert.strictEqual(img.style.transform, 'translate(308px,167px)');
 input._cursorBase64Data = null;                     // remote cursor hidden (games)
 winL.mousemove({movementX: 1, movementY: 1});
 assert.strictEqual(img.style.display, 'none');
