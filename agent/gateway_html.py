@@ -166,19 +166,20 @@ addEventListener('pointerdown',function(e){try{if(on&&e.button===0&&!document.fu
 # the stream; hidden whenever the remote cursor is hidden (sprite cleared).
 # While locked it also asks selkies for its pointer echo (`pointer,<display>,<x>,
 # <y>,<scale>,<seq>`, server pixels, sent when the server pointer moves; needs a
-# pixelflux reporting the host cursor). The newest echo is applied once the mouse
+# pixelflux reporting the host cursor; echoes count only once the position has
+# changed, as a seat without cursor metadata repeats a stale one). The newest echo is applied once the mouse
 # rests, so a game's pointer warp no longer leaves the sprite behind. And when the
 # mouse keeps moving but no echo comes, the game has locked the pointer (GNOME
 # holds it still) and owns the mouse: the sprite hides until the pointer moves.
 LOCKCURSOR_JS = r"""<script id="styx-lockcursor">(function(){
 var img=null,x=0,y=0,lx=0,ly=0,hooked=null,raw=null,moved=0;
-var REST=120,OWN_PX=48,OWN_MS=250,live=false,ex=null,ey=null,echoAt=0,since=0,own=false,applied=true;
+var REST=120,OWN_PX=48,OWN_MS=250,live=false,first=null,ex=null,ey=null,echoAt=0,since=0,own=false,applied=true;
 function inp(){return window.webrtcInput}
 function hook(){var w=inp();if(!w||w===hooked||typeof w.send!=='function')return;hooked=w;var s=w.send.bind(w);raw=s;
 w.send=function(m){if(typeof m==='string'&&(m.indexOf('SET_NATIVE_CURSOR_RENDERING,')===0||/^p,[01]$/.test(m)))return;return s.apply(null,arguments)};
 var echo=w.onPointerEcho;w.onPointerEcho=function(m){try{onEcho(m)}catch(z){}if(typeof echo==='function')return echo.apply(w,arguments)}}
 function onEcho(m){var t=String(m).split(','),w=inp(),px=+t[2],py=+t[3];if(t.length<6||!isFinite(px)||!isFinite(py))return;
-if(w.displayId&&t[1]!==w.displayId)return;live=true;echoAt=Date.now();since=0;own=false;ex=px;ey=py;applied=false;settle()}
+if(w.displayId&&t[1]!==w.displayId)return;var k=px+','+py;if(first===null)first=k;if(k!==first)live=true;if(!live)return;echoAt=Date.now();since=0;own=false;ex=px;ey=py;applied=false;settle()}
 function settle(){if(applied||ex===null||!document.pointerLockElement||Date.now()-moved<REST)return;
 var w=inp(),b=w._streamBox&&w._streamBox();if(!b||!(b.scaleX>0)||!(b.scaleY>0))return;
 applied=true;x=b.left+ex/b.scaleX;y=b.top+ey/b.scaleY;clamp();draw()}

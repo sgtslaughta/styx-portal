@@ -53,10 +53,15 @@ win.webrtcInput.send('SET_NATIVE_CURSOR_RENDERING,1');
 win.webrtcInput.send('p,1');
 win.webrtcInput.send('m2,3,4,0,0');
 assert.deepStrictEqual(sent, ['_pointer_echo,1', 'm2,3,4,0,0']);
+// a lone repeated position is not trusted (a seat without cursor metadata repeats 0,0)
+win.webrtcInput.onPointerEcho('pointer,primary,0.0,0.0,1,3');
+T += 200; tick();
+assert.strictEqual(img.style.transform, 'translate(-2px,177px)');
+T -= 200;
 // the true server position: held while the mouse moves, applied once it rests
 win.webrtcInput.onPointerEcho('pointer,primary,500,300,1,7');
 assert.strictEqual(img.style.transform, 'translate(-2px,177px)');
-assert.deepStrictEqual(input.echoes, ['pointer,primary,500,300,1,7']);  // selkies still sees it
+assert.deepStrictEqual(input.echoes, ['pointer,primary,0.0,0.0,1,3', 'pointer,primary,500,300,1,7']);  // selkies still sees it
 T += 200; tick();
 assert.strictEqual(img.style.transform, 'translate(258px,167px)');      // 10+500/2-2, 20+300/2-3
 win.webrtcInput.onPointerEcho('pointer,other,0,0,1,9');                  // another display: ignored
