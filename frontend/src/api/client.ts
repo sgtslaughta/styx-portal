@@ -376,6 +376,7 @@ export const api = {
     disk_total_gb: number;
     recent_events: { type: string; instance: string; time: string; details?: string }[];
     host: { docker_version?: string; gpu?: string; network?: string; uptime?: number };
+    host_cpu_pct?: number | null; host_ram_pct?: number | null; host_ram_total_mb?: number | null;
   }>("/system/metrics"),
   getDiagnostics: () => request<Diagnostics>("/system/diagnostics"),
   getDiagnosticsHistory: (range: string) =>
