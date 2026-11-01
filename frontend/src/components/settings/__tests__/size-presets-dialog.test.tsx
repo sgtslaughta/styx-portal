@@ -28,4 +28,15 @@ describe("size presets editor", () => {
     for (let i = 0; i < 3; i++) fireEvent.click(screen.getByText("Add a size"));
     expect((screen.getByText("Add a size") as HTMLButtonElement).disabled).toBe(true);
   });
+
+  test("removing a preset stages a shorter list, last one cannot be removed", () => {
+    const onChange = vi.fn();
+    render(<SettingField setting={setting} value={undefined} disabled={false} onChange={onChange} onRestore={vi.fn()} onResetDefault={vi.fn()} onClear={vi.fn()} />);
+    fireEvent.click(screen.getByText("Edit 3 sizes"));
+    fireEvent.click(screen.getByLabelText("Remove size 1"));
+    fireEvent.click(screen.getByLabelText("Remove size 1"));
+    expect((screen.getByLabelText("Remove size 1") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByText("Done"));
+    expect((onChange.mock.calls[0]![0] as { id: string }[]).map((p) => p.id)).toEqual(["heavy"]);
+  });
 });

@@ -1,9 +1,9 @@
 import type { Workstation } from "@/api/client";
 import {
-  CODECS, CODEC_LABEL, DEFAULT_ENCODER, DEFAULT_FPS, TRANSPORT_LABEL, current, setField, type Field, type WsEdits,
+  CODECS, CODEC_LABEL, FPS_CHOICES, TRANSPORT_LABEL, current, setField, type Field, type WsEdits,
 } from "./streaming-overrides";
 
-type Props = { workstations: Workstation[]; edits: WsEdits; transport: string; disabled: boolean; onEdits: (e: WsEdits) => void };
+type Props = { workstations: Workstation[]; edits: WsEdits; defaults: { transport: string; encoder: string; framerate: number }; disabled: boolean; onEdits: (e: WsEdits) => void };
 
 function live(ws: Workstation) {
   if (ws.in_use) return <><span className="sdot use" />Streaming{ws.in_use_by ? `, ${ws.in_use_by}` : ""}</>;
@@ -11,7 +11,7 @@ function live(ws: Workstation) {
   return <><span className="sdot" />{ws.status === "offline" ? "Offline" : ws.status.charAt(0).toUpperCase() + ws.status.slice(1)}</>;
 }
 
-export function StreamingWsTable({ workstations, edits, transport, disabled, onEdits }: Props) {
+export function StreamingWsTable({ workstations, edits, defaults, disabled, onEdits }: Props) {
   if (workstations.length === 0) return <p className="text-sm text-muted-foreground">No workstations enrolled yet.</p>;
   return (
     <table className="dense full ws-table">
@@ -28,7 +28,7 @@ export function StreamingWsTable({ workstations, edits, transport, disabled, onE
               <td>
                 <select aria-label={`${ws.name} connection`} className={val("transport") ? "override" : undefined} disabled={disabled}
                   value={val("transport")} onChange={(e) => set("transport", e.target.value)}>
-                  <option value="">Default ({TRANSPORT_LABEL[transport] ?? transport})</option>
+                  <option value="">Default ({TRANSPORT_LABEL[defaults.transport] ?? defaults.transport})</option>
                   <option value="websockets">WebSockets</option>
                   <option value="webrtc">WebRTC</option>
                 </select>
@@ -36,15 +36,15 @@ export function StreamingWsTable({ workstations, edits, transport, disabled, onE
               <td>
                 <select aria-label={`${ws.name} codec`} className={val("encoder") ? "override" : undefined} disabled={disabled}
                   value={val("encoder")} onChange={(e) => set("encoder", e.target.value)}>
-                  <option value="">Default ({CODEC_LABEL[DEFAULT_ENCODER]})</option>
+                  <option value="">Default ({CODEC_LABEL[defaults.encoder] ?? defaults.encoder})</option>
                   {CODECS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                 </select>
               </td>
               <td>
                 <select aria-label={`${ws.name} frame rate`} className={val("framerate") ? "override" : undefined} disabled={disabled}
                   value={val("framerate")} onChange={(e) => set("framerate", e.target.value)}>
-                  <option value="">Default ({DEFAULT_FPS})</option>
-                  {[30, 120].map((f) => <option key={f} value={String(f)}>{f}</option>)}
+                  <option value="">Default ({defaults.framerate})</option>
+                  {[...new Set([...FPS_CHOICES, ...(val("framerate") ? [Number(val("framerate"))] : [])])].sort((a, b) => a - b).map((f) => <option key={f} value={String(f)}>{f}</option>)}
                 </select>
               </td>
               <td>

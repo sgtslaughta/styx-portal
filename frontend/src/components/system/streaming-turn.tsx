@@ -8,6 +8,7 @@ import { TurnUsageMeter } from "./turn-usage-meter";
 const PROVIDERS = [["cloudflare", "Cloudflare"], ["generic", "Own server"], ["none", "None"]] as const;
 const CF_FIELDS = ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_TURN_TOKEN_ID", "CLOUDFLARE_ANALYTICS_TOKEN"];
 const OWN_FIELDS = ["TURN_HOST", "TURN_PORT", "TURN_PROTOCOL", "TURN_TLS", "TURN_SHARED_SECRET", "TURN_USERNAME", "TURN_PASSWORD"];
+const COST_FIELDS = ["TURN_FREE_GB_MONTH", "TURN_BUDGET_GB", "TURN_USD_PER_GB"];
 const TOKEN = "CLOUDFLARE_TURN_API_TOKEN";
 
 type Props = {
@@ -56,6 +57,7 @@ export function StreamingTurn({ provider, byKey, edits, disabled, onProvider, on
         {provider !== "none" && <button type="button" className="btn-ghost sm" onClick={() => setCheck(true)}>Check setup</button>}
       </div>
       {provider !== "none" && <TurnUsageMeter />}
+      {provider !== "none" && COST_FIELDS.filter((k) => byKey[k]).map(field)}
       <ReplaceTokenDialog open={token} onOpenChange={setToken} onStage={onToken} />
       <CheckSetupDialog open={check} onOpenChange={setCheck} provider={provider} />
     </fieldset>

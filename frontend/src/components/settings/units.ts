@@ -14,6 +14,8 @@ const UNITS: Record<string, { div: number; unit: string }> = {
   WORKSTATION_SEAT_HEIGHT: { div: 1, unit: "px" },
   TURN_FREE_GB_MONTH: { div: 1, unit: "GB" },
   TURN_BUDGET_GB: { div: 1, unit: "GB" },
+  WORKSTATION_DEFAULT_BITRATE_KBPS: { div: 1000, unit: "Mbps" },
+  WORKSTATION_DEFAULT_CRF: { div: 1, unit: "CRF" },
 };
 
 const PERIOD: Record<number, string> = { 1: "per sec", 60: "per min", 3600: "per hour", 86400: "per day" };

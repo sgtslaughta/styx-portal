@@ -39,6 +39,23 @@ beforeEach(() => {
     row("WEBRTC_TURN_PROVIDER", "enum", "cloudflare", { choices: ["none", "cloudflare", "generic"] }),
     row("CLOUDFLARE_TURN_API_TOKEN", "secret", null, { default: "", is_set: true }),
     row("WEBRTC_MAX_SESSION_H", "int", 8, { min: 0, max: 72 }),
+    row("WORKSTATION_DEFAULT_ENCODER", "enum", "hevc", { choices: ["auto", "av1", "hevc", "h264"] }),
+    row("WORKSTATION_DEFAULT_FRAMERATE", "int", 90, { min: 10, max: 240 }),
+    row("WORKSTATION_DEFAULT_BITRATE_KBPS", "int", 0, { min: 0, max: 500000 }),
+    row("WORKSTATION_DEFAULT_CRF", "int", 25, { min: 5, max: 50 }),
+    row("WORKSTATION_DEFAULT_PAINT_OVER", "bool", true),
+    row("WORKSTATION_DEFAULT_STREAMING_MODE", "bool", false),
+    row("WORKSTATION_DEFAULT_FULLCOLOR", "bool", false),
+    row("CLOUDFLARE_ACCOUNT_ID", "str", ""),
+    row("CLOUDFLARE_TURN_TOKEN_ID", "secret", null, { default: "", is_set: true }),
+    row("CLOUDFLARE_ANALYTICS_TOKEN", "secret", null, { default: "", is_set: false }),
+    row("TURN_HOST", "str", ""), row("TURN_PORT", "int", 3478, { min: 1, max: 65535 }),
+    row("TURN_PROTOCOL", "enum", "udp", { choices: ["udp", "tcp"] }), row("TURN_TLS", "bool", false),
+    row("TURN_SHARED_SECRET", "secret", null, { default: "", is_set: false }),
+    row("TURN_USERNAME", "str", ""), row("TURN_PASSWORD", "secret", null, { default: "", is_set: false }),
+    row("TURN_FREE_GB_MONTH", "int", 1000, { min: 0, max: 1000000 }),
+    row("TURN_BUDGET_GB", "int", 900, { min: 0, max: 1000000 }),
+    row("TURN_USD_PER_GB", "str", "0.05"),
   ] }]);
   listWorkstations.mockResolvedValue([
     ws("g", "GAME-01", { encoder: "av1", framerate: 120 }, { in_use: true, in_use_by: "Richard" }),
@@ -60,6 +77,9 @@ describe("StreamingPage", () => {
     const conn = screen.getByLabelText("mini connection") as HTMLSelectElement;
     expect(conn.className).not.toContain("override");
     expect(within(conn).getByText("Default (WebRTC)")).toBeTruthy();
+    // inherited labels read the real system defaults (mocked: HEVC, 90 fps)
+    expect(within(screen.getByLabelText("mini codec")).getByText("Default (HEVC)")).toBeTruthy();
+    expect(within(screen.getByLabelText("mini frame rate")).getByText("Default (90)")).toBeTruthy();
     expect(screen.getByText(/Streaming, Richard/)).toBeTruthy();
   });
 
@@ -70,13 +90,47 @@ describe("StreamingPage", () => {
     await waitFor(() => expect(screen.getByTestId("count").textContent).toBe("1"));
   });
 
+  test("codec segment in the defaults card marks one change", async () => {
+    mount();
+    await screen.findByLabelText("GAME-01 codec");
+    fireEvent.click(within(screen.getByRole("group", { name: "Codec" })).getByText("AV1"));
+    await waitFor(() => expect(screen.getByTestId("count").textContent).toBe("1"));
+  });
+
+  test("every webrtc-group setting renders on the page", async () => {
+    mount();
+    await screen.findByLabelText("GAME-01 codec");
+    const groupsData = (await getSystemSettings.mock.results[0]!.value) as { settings: { key: string; type: string }[] }[];
+    const keys = groupsData[0]!.settings.map((s) => s.key);
+    const seen = new Set<string>();
+    const scan = () => keys.forEach((k) => {
+      if (screen.queryByLabelText(k)) seen.add(k);
+    });
+    scan();
+    fireEvent.click(screen.getByText("Own server"));
+    await screen.findByLabelText("TURN_HOST");
+    scan();
+    // segments / token dialog cover these three
+    ["WORKSTATION_TRANSPORT", "WEBRTC_TURN_PROVIDER", "WORKSTATION_DEFAULT_ENCODER", "WORKSTATION_DEFAULT_FRAMERATE", "CLOUDFLARE_TURN_API_TOKEN"].forEach((k) => seen.add(k));
+    expect(keys.filter((k) => !seen.has(k))).toEqual([]);
+  });
+
+  test("a failed workstation save keeps its edit staged and names it", async () => {
+    updateWorkstation.mockRejectedValueOnce(new Error("boom"));
+    mount();
+    fireEvent.change(await screen.findByLabelText("mini codec"), { target: { value: "av1" } });
+    fireEvent.click(screen.getByText("Save changes"));
+    await waitFor(() => expect(updateWorkstation).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId("count").textContent).toBe("1"));
+  });
+
   test("workstation edit and default edit save in one click", async () => {
     mount();
-    fireEvent.change(await screen.findByLabelText("mini codec"), { target: { value: "hevc" } });
+    fireEvent.change(await screen.findByLabelText("mini codec"), { target: { value: "av1" } });
     fireEvent.click(within(screen.getByRole("group", { name: "Connection" })).getByText("WebSockets"));
     await waitFor(() => expect(screen.getByTestId("count").textContent).toBe("2"));
     fireEvent.click(screen.getByText("Save changes"));
-    await waitFor(() => expect(updateWorkstation).toHaveBeenCalledWith("m", { stream_settings: { encoder: "hevc" } }));
+    await waitFor(() => expect(updateWorkstation).toHaveBeenCalledWith("m", { stream_settings: { encoder: "av1" } }));
     expect(updateSystemSettings).toHaveBeenCalledWith({ WORKSTATION_TRANSPORT: "websockets" });
     expect(updateWorkstation).toHaveBeenCalledTimes(1);
   });

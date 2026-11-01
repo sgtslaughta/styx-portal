@@ -150,6 +150,21 @@ _SPECS: list[SettingSpec] = [
           "Transport for workstation streams unless a workstation overrides it. WebRTC is lower latency; "
           "from networks that block peer-to-peer UDP it needs a TURN relay (below).", "enum",
           default="websockets", choices=("websockets", "webrtc")),
+    _spec("WORKSTATION_DEFAULT_ENCODER", "webrtc", "Default codec",
+          "Preferred hardware codec for workstations that do not override it; others stay as fallbacks.",
+          "enum", default="auto", choices=("auto", "av1", "hevc", "h264")),
+    _spec("WORKSTATION_DEFAULT_FRAMERATE", "webrtc", "Default frame rate",
+          "Frames per second for workstations that do not override it.", "int", default=60, min=10, max=240),
+    _spec("WORKSTATION_DEFAULT_BITRATE_KBPS", "webrtc", "Default max bitrate",
+          "Starting bitrate ceiling in kbps; 0 = the agent's own default.", "int", default=0, min=0, max=500000),
+    _spec("WORKSTATION_DEFAULT_CRF", "webrtc", "Default quality (CRF)",
+          "H.264 CRF 5-50; lower = sharper, more bandwidth.", "int", default=25, min=5, max=50),
+    _spec("WORKSTATION_DEFAULT_PAINT_OVER", "webrtc", "Sharpen still screens",
+          "Re-encode static screens at higher quality (crisp text when idle).", "bool", default=True),
+    _spec("WORKSTATION_DEFAULT_STREAMING_MODE", "webrtc", "Full-motion encoding",
+          "Steadier latency in games; more bandwidth on a static desktop.", "bool", default=False),
+    _spec("WORKSTATION_DEFAULT_FULLCOLOR", "webrtc", "Full colour text (4:4:4)",
+          "Crisper text. On VA-API GPUs this falls back to software encoding.", "bool", default=False),
     _spec("WEBRTC_TURN_PROVIDER", "webrtc", "TURN provider",
           "Relay for WebRTC when a direct connection is blocked. none = direct/STUN only; "
           "cloudflare = Cloudflare Realtime TURN (billed per GB, 1,000 GB/month free); "

@@ -32,7 +32,10 @@ STREAM_SYS_KEYS = (
     "WORKSTATION_IDLE_TIMEOUT_ENABLED", "WORKSTATION_SEAT_WIDTH", "WORKSTATION_SEAT_HEIGHT",
     "WORKSTATION_TRANSPORT", "WEBRTC_TURN_PROVIDER", "WEBRTC_MAX_SESSION_H",
     "CLOUDFLARE_TURN_TOKEN_ID", "CLOUDFLARE_TURN_API_TOKEN", "TURN_HOST", "TURN_PORT",
-    "TURN_PROTOCOL", "TURN_TLS", "TURN_SHARED_SECRET", "TURN_USERNAME", "TURN_PASSWORD",
+    "TURN_PROTOCOL", "TURN_TLS",
+    "WORKSTATION_DEFAULT_ENCODER", "WORKSTATION_DEFAULT_FRAMERATE", "WORKSTATION_DEFAULT_BITRATE_KBPS",
+    "WORKSTATION_DEFAULT_CRF", "WORKSTATION_DEFAULT_PAINT_OVER", "WORKSTATION_DEFAULT_STREAMING_MODE",
+    "WORKSTATION_DEFAULT_FULLCOLOR", "TURN_SHARED_SECRET", "TURN_USERNAME", "TURN_PASSWORD",
 )
 
 
@@ -59,6 +62,29 @@ def _turn_config(sys: Mapping[str, Any]) -> dict | None:
     return None
 
 
+# (system key, stream key(s) that count as already set, output key, built-in value)
+_DEFAULTS = (
+    ("WORKSTATION_DEFAULT_ENCODER", ("encoder",), "encoder", "auto"),
+    ("WORKSTATION_DEFAULT_FRAMERATE", ("framerate",), "framerate", 60),
+    ("WORKSTATION_DEFAULT_BITRATE_KBPS", ("bitrate_kbps",), "bitrate_kbps", 0),
+    ("WORKSTATION_DEFAULT_CRF", ("h264_crf", "video_crf"), "video_crf", 25),
+    ("WORKSTATION_DEFAULT_PAINT_OVER", ("use_paint_over_quality",), "use_paint_over_quality", True),
+    ("WORKSTATION_DEFAULT_STREAMING_MODE", ("h264_streaming_mode", "video_streaming_mode"),
+     "video_streaming_mode", False),
+    ("WORKSTATION_DEFAULT_FULLCOLOR", ("video_fullcolor",), "video_fullcolor", False),
+)
+
+
+def _apply_defaults(eff: dict, sys: Mapping[str, Any]) -> None:
+    """System-wide stream defaults: only when the workstation has no value and the
+    default differs from the built-in (so unset/default output is unchanged)."""
+    for skey, have, out, builtin in _DEFAULTS:
+        v = sys.get(skey)
+        if v is None or v == builtin or any(h in eff for h in have):
+            continue
+        eff[out] = v
+
+
 def resolve_stream_settings(ws_ss: dict | None, sys: Mapping[str, Any],
                             agent_version: str | None) -> dict:
     ss = dict(ws_ss or {})
@@ -82,6 +108,7 @@ def resolve_stream_settings(ws_ss: dict | None, sys: Mapping[str, Any],
         turn = None if eff.get("turn_budget_paused") else _turn_config(sys)
         if turn:
             eff["turn"] = turn
+    _apply_defaults(eff, sys)
     for old, new in _VIDEO_ALIASES.items():
         if new not in eff and old in eff:
             eff[new] = eff[old]
