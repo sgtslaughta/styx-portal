@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { SettingsGroupNav } from "./settings-group-nav";
 import { SettingRow } from "./setting-row";
 import { TurnCostCard } from "./turn-cost-card";
+import { TurnSetupCheck } from "./turn-setup-check";
 import { TurnSetupGuide } from "./turn-setup-guide";
 import { isSettingVisible } from "./webrtc-fields";
 
@@ -202,6 +203,7 @@ export function SystemSettingsPanel() {
             </div>
           </CardContent>
         </Card>
+        {group.group === "webrtc" && <TurnSetupCheck provider={String(providerRow(group) ?? "none")} />}
         {group.group === "webrtc" && <TurnCostCard />}
         </div>
       ))}
