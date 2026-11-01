@@ -1,16 +1,29 @@
 version: 2
 # Keeps SHA-pinned GitHub Actions and language deps current with deliberate,
 # reviewable bump PRs (the maintained-pin half of the supply-chain hardening).
+# Minor/patch bumps are grouped into one PR per ecosystem; majors stay separate.
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
+    groups:
+      npm-minor:
+        update-types: [minor, patch]
   - package-ecosystem: pip
     directory: /backend
     schedule:
       interval: weekly
+    groups:
+      pip-minor:
+        update-types: [minor, patch]
+    ignore:
+      # ruff is pinned on purpose: newer rule defaults flag ~390 existing sites.
+      - dependency-name: ruff
