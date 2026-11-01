@@ -141,6 +141,7 @@ AGENT_UPDATE_FILES = [
     ("engine.py", "engine.py"),
     ("gateway.py", "gateway.py"),
     ("gateway_html.py", "gateway_html.py"),
+    ("gateway_ws.py", "gateway_ws.py"),
     ("agent_procs.py", "agent_procs.py"),
     ("seat_systemd.py", "seat_systemd.py"),
     ("seat_gnome.py", "seat_gnome.py"),

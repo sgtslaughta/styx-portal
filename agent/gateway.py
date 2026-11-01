@@ -27,6 +27,7 @@ import seat_scale
 import yarl
 from aiohttp import web
 from multidict import CIMultiDict
+from gateway_ws import raw_ws_proxy, same_origin
 from viewers import Viewers, split_vid
 from gateway_html import (  # noqa: F401  (re-exported for tests)
     CURSOR_HIDE_CSS,
@@ -302,6 +303,9 @@ def create_app(user: str, password: str,
         if request.headers.get("Upgrade", "").lower() != "websocket":
             # 2.0 client probes api/websockets over plain HTTP (409 = mode flip)
             return await forward(request, "/api/websockets" + (f"?{qs}" if qs else ""))
+        if not same_origin(request):
+            log(f"ws reject: origin {request.headers.get('Origin')!r} != host {request.host!r}")
+            return web.Response(status=403, text="forbidden origin")
         t0 = time.monotonic()
         while refit_file and refit.pending(refit_file) and time.monotonic() - t0 < REFIT_WAIT_S:
             await asyncio.sleep(REFIT_POLL_S)
@@ -583,6 +587,8 @@ def create_app(user: str, password: str,
     app = web.Application(middlewares=[auth_mw], client_max_size=0)
     for path in ("/api/websockets", "/websockets", "/websocket"):
         app.router.add_get(path, ws_proxy)
+    app.router.add_get("/api/webrtc/signaling/", lambda r: raw_ws_proxy(
+        r, f"ws://127.0.0.1:{live_port()}/api/webrtc/signaling/"))
     app.router.add_get("/", index)
     app.router.add_get("/styx-favicon", styx_favicon)
     if files_dir and os.path.isdir(files_dir):

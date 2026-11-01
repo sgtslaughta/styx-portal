@@ -409,6 +409,9 @@ async def test_single_upstream_index_assets_api_and_ws(tmp_path):
             assert msg.data == b"\x04\x11frame"
             await ws.close()
         assert (await c.get("/assets/app.js")).status == 401  # auth on proxied paths
+        with pytest.raises(aiohttp.WSServerHandshakeError) as e:   # cross-site hijack refused
+            await c.ws_connect("/api/websockets", headers={**h, "Origin": "https://evil.example"})
+        assert e.value.status == 403
     finally:
         await c.close()
         await up.close()
@@ -924,3 +927,48 @@ async def test_styx_favicon_served_and_injected(tmp_path):
     finally:
         await client.close()
         await up.close()
+
+
+@pytest.mark.asyncio
+async def test_webrtc_signaling_passes_through_as_websocket():
+    """WebRTC mode signals over /api/webrtc/signaling/: an upgrade, not a 204."""
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+
+    async def echo(request):
+        w = web.WebSocketResponse()
+        await w.prepare(request)
+        async for m in w:
+            await w.send_str("echo:" + m.data)
+        return w
+    upa = web.Application()
+    upa.router.add_get("/api/webrtc/signaling/", echo)
+    up = TestClient(TestServer(upa))
+    await up.start_server()
+    c = TestClient(TestServer(gateway.create_app("styx", "pw", upstream_port=up.server.port)))
+    await c.start_server()
+    h = {"Authorization": _basic("styx", "pw")}
+    try:
+        ws = await c.ws_connect("/api/webrtc/signaling/", headers=h)
+        await ws.send_str("HELLO 1")
+        assert (await ws.receive()).data == "echo:HELLO 1"
+        await ws.close()
+        assert (await c.get("/api/webrtc/signaling/")).status == 401   # auth still applies
+    finally:
+        await c.close()
+        await up.close()
+
+
+def test_same_origin_guard():
+    from types import SimpleNamespace as R
+    from gateway_ws import same_origin
+
+    def req(origin, host="g.example:443"):
+        return R(headers={"Origin": origin} if origin else {}, host=host)
+    assert same_origin(req(None))
+    assert same_origin(req("https://g.example:443"))
+    assert same_origin(req("https://g.example", "g.example"))           # behind TLS proxy: no ports
+    assert not same_origin(req("https://g.example:8080", "g.example"))
+    assert same_origin(req("http://127.0.0.1:18444", "127.0.0.1:18444"))
+    assert not same_origin(req("https://evil.example", "g.example"))
+    assert not same_origin(req("http://127.0.0.1:9999", "127.0.0.1:18444"))
