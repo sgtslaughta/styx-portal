@@ -1,3 +1,4 @@
+import { SectionHead } from "@/components/common/section-head";
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -68,10 +69,7 @@ function SettingsLayoutInner() {
         </div>
 
         {/* Section header */}
-        <div className="mb-6 space-y-1">
-          <h2 className="text-2xl font-semibold tracking-tight">{active.label}</h2>
-          <p className="text-sm text-muted-foreground">{active.description}</p>
-        </div>
+        <SectionHead size="page" title={active.label} note={active.description} />
 
         {/* Content pane */}
         <AnimatePresence mode="wait">

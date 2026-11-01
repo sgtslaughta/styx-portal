@@ -22,7 +22,7 @@ export function SettingsNav({ categories, activeId, onSelect }: Props) {
   return (
     <nav
       aria-label="Admin sections"
-      className="hidden md:sticky md:top-[82px] md:block md:max-h-[calc(100dvh-100px)] md:w-[210px] md:shrink-0 md:self-start md:overflow-y-auto"
+      className="hidden md:sticky md:top-0 md:block md:max-h-[calc(100dvh-100px)] md:w-[210px] md:shrink-0 md:self-start md:overflow-y-auto"
     >
       <label className="mb-3.5 flex items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 text-muted-foreground focus-within:ring-2 focus-within:ring-ring">
         <Search className="h-4 w-4 shrink-0" />

@@ -3,7 +3,7 @@ import type { Setting, SettingValue } from "@/api/client";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useState } from "react";
 import { SizePresetsDialog, type Preset } from "./size-presets-dialog";
-import { cleanLabel, divisor, fromDisplay, parseRate, toDisplay, unitOf } from "./units";
+import { cleanLabel, divisor, fromDisplay, parseRate, toDisplay, unitOf, ZERO_LABEL } from "./units";
 
 type Props = {
   setting: Setting;
@@ -70,7 +70,10 @@ function Control({ setting, value, error, disabled, onChange }: Props) {
     shown = String(+d.value.toFixed(4));
     unit = d.unit;
   } else if (rate) shown = "";
+  const zero = type === "int" ? ZERO_LABEL[key] : undefined;
+  if (zero && Number(shownRaw) === 0 && shownRaw !== "" && shownRaw !== null) shown = "";
   const edit = (txt: string) => {
+    if (zero && txt === "") return onChange(0);
     if (!numeric || txt === "") return onChange(numeric ? "" : txt);
     const num = Number(txt);
     if (Number.isNaN(num)) return;
@@ -88,7 +91,7 @@ function Control({ setting, value, error, disabled, onChange }: Props) {
         autoComplete={type === "secret" ? "new-password" : undefined}
         value={shown}
         disabled={disabled}
-        placeholder={type === "secret" ? (value === null ? "Will be cleared on save" : setting.is_set ? "Set - type to replace" : "Not set") : String(toDisplay(key, setting.default).value || setting.default || "")}
+        placeholder={zero ?? (type === "secret" ? (value === null ? "Will be cleared on save" : setting.is_set ? "Set - type to replace" : "Not set") : String(toDisplay(key, setting.default).value || setting.default || ""))}
         min={type === "int" && setting.min !== null ? setting.min / d : undefined}
         max={type === "int" && setting.max !== null ? setting.max / d : undefined}
         onChange={(e) => edit(e.target.value)}

@@ -98,7 +98,7 @@ function AdminRail({ forceCollapsed = false, onOpenAdmin, onWidthChange }: Props
         <div className="absolute left-0 top-16 flex flex-col items-center gap-4 text-[11px] text-muted-foreground" style={{ width: RAIL_MIN }}>
           <span className="grid justify-items-center gap-1">CPU {known(cpu) ? `${Math.round(cpu)}%` : "—"}</span>
           <span className="grid justify-items-center gap-1">{activeReady ? active.length : "—"} live</span>
-          {checkReady && (
+          {checkReady && check.length > 0 && (
             <span className="grid justify-items-center gap-1">
               <span className="grid h-5 min-w-5 place-items-center rounded-full bg-destructive px-1.5 text-[11px] font-bold text-white">{check.length}</span>
               to check

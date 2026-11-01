@@ -62,7 +62,7 @@ export function Header({ activeTab, onTabChange }: { activeTab: HeaderTab; onTab
       {user && (
         <div className="ml-auto flex items-center gap-2">
           <OpeningMenu username={user.username} />
-          <button onClick={() => logout()} className="inline-flex min-h-9 max-sm:min-h-11 items-center rounded-md px-1 text-sm underline underline-offset-2 hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">Log out</button>
+          <button onClick={() => logout()} className="inline-flex min-h-9 max-sm:min-h-11 items-center rounded-md px-2.5 text-sm text-muted-foreground hover:bg-secondary hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">Log out</button>
         </div>
       )}
       <ThemeToggle />

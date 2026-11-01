@@ -48,3 +48,9 @@ export function toDisplay(key: string, raw: unknown): { value: number; unit: str
 export function fromDisplay(key: string, value: number): number {
   return Math.round(value * divisor(key));
 }
+
+/** Int settings where 0 means "no value set"; the field shows this word instead of 0. */
+export const ZERO_LABEL: Record<string, string> = {
+  WORKSTATION_DEFAULT_BITRATE_KBPS: "Auto",
+  MAX_INSTANCES_PER_USER: "Unlimited",
+};

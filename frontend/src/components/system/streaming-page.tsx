@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api, type Setting, type SettingValue } from "@/api/client";
 import { SettingField, isChanged } from "@/components/settings/setting-field";
+import { saveSettings } from "@/lib/save-settings";
 import { SavePill } from "@/components/settings/save-pill";
 import { SectionHead } from "@/components/common/section-head";
 import { Seg } from "@/components/settings/seg";
@@ -40,7 +41,7 @@ export function StreamingPage() {
     mutationFn: async () => {
       const changes = Object.fromEntries(changed.map((s) => [s.key, edits[s.key] ?? ""])) as Record<string, number | boolean | string>;
       if (changed.length) {
-        await api.updateSystemSettings(changes);
+        await saveSettings(changes, all);
         setEdits({});
       }
       for (const [id, mine] of Object.entries(wsEdits)) {
@@ -88,7 +89,6 @@ export function StreamingPage() {
 
   return (
     <>
-      <SectionHead title="Streaming" note="Viewers can still adjust quality from the stream panel" as="h2" />
       <div className="groups">
         <fieldset className="grp">
           <legend>Defaults for every workstation</legend>
