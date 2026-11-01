@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-AGENT_VERSION = "0.9.31"
+AGENT_VERSION = "0.9.32"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -52,7 +52,7 @@ from agent_procs import (  # noqa: E402
 
 def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool,
                    seat_shell: str = "", seat_restarts: int = 0,
-                   degraded: bool = False) -> dict:
+                   degraded: bool = False, seat_x11: str = "") -> dict:
     return {
         "mode": cfg.get("mode", "mirror"),
         "engine": "pixelflux",
@@ -67,6 +67,7 @@ def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool,
         "seat_shell": seat_shell or cfg.get("mode", "mirror"),
         "seat_restarts": seat_restarts,
         "degraded": degraded,
+        "seat_x11": seat_x11,
         "update": agent_update.report(),
     }
 
@@ -167,6 +168,7 @@ def run(cfg: dict) -> int:
         size = refit.read_size(gseat.size_file) or (
             int(ss.get("seat_width") or 2560), int(ss.get("seat_height") or 1440))
         gseat.fps = parse_fps(ss.get("framerate"))
+        gseat.x11_mode = ss.get("seat_x11") or "auto"
         gseat.start(*refit.clamp(*size))
         if not gseat.ready():
             last_error = "GNOME seat failed to start — see logs/seat.log"
@@ -275,6 +277,8 @@ def run(cfg: dict) -> int:
                 last_error = apply_portal_restart(
                     gseat, cfg.get("stream_settings") or {}) or last_error
             apply_now = False
+        if gseat and gseat.x11_on and gseat.alive() and not gseat.healthy() and gseat.fell_back:
+            gseat.stop()   # main loop deadlocked (marker written): restart --no-x11
         if gseat and not gseat.alive():
             # Seat died: selkies (and the standby) are captured against a dead
             # portal session. The next branch restarts, seat first.
@@ -357,7 +361,8 @@ def run(cfg: dict) -> int:
                 "last_error": last_error,
                 "health": health_payload(
                     cfg, selkies_ok, gateway_ok, shell_kind,
-                    gseat.restarts if gseat else 0, degraded),
+                    gseat.restarts if gseat else 0, degraded,
+                    gseat.info()["x11"] if gseat else ""),
             })
             _write_state({"ts": time.time(), "ok": True, "state": hb["state"]})
             if hb["state"] == "revoked":

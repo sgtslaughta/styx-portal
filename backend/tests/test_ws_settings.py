@@ -16,6 +16,7 @@ def test_defaults_fill_and_overrides_win():
     assert eff["idle_timeout_s"] == 300            # override wins
     assert eff["idle_warn_lead_s"] == 60           # default fills
     assert eff["seat_shell"] == "gnome"
+    assert eff["seat_x11"] == "auto"
     assert (eff["seat_width"], eff["seat_height"]) == (2560, 1440)
     assert "cursor_workaround" not in eff
 
@@ -36,7 +37,7 @@ def test_new_video_key_beats_old_alias():
 def test_v1_agent_gets_todays_shape_only():
     eff = resolve_stream_settings({"h264_crf": 22}, SYS, "0.4.11")
     assert eff["h264_crf"] == 22
-    for k in ("seat_shell", "seat_width", "video_crf"):
+    for k in ("seat_shell", "seat_x11", "seat_width", "video_crf"):
         assert k not in eff
     assert eff["idle_timeout_s"] == 900
 
@@ -51,3 +52,8 @@ def test_removed_cursor_setting_row_is_ignored():
     sys_settings = {**SYS, "WORKSTATION_CURSOR_WORKAROUND": True}
     eff = resolve_stream_settings({}, sys_settings, "0.6.0")
     assert "cursor_workaround" not in eff
+
+
+def test_seat_x11_whitelist():
+    assert resolve_stream_settings({"seat_x11": "off"}, SYS, "0.5.0")["seat_x11"] == "off"
+    assert resolve_stream_settings({"seat_x11": "bogus"}, SYS, "0.5.0")["seat_x11"] == "auto"

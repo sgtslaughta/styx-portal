@@ -129,7 +129,8 @@ def drop_clients(procs: dict) -> None:
 # hosts trip it on legitimately cold starts.
 FRAME_START_TIMEOUT_S = 15
 
-SEAT_DEFAULTS = {"seat_shell": "gnome", "seat_width": 2560, "seat_height": 1440}
+SEAT_DEFAULTS = {"seat_shell": "gnome", "seat_width": 2560, "seat_height": 1440,
+                 "seat_x11": "auto"}
 
 
 def settings_restart_keys(old: dict, new: dict) -> tuple[str, ...]:

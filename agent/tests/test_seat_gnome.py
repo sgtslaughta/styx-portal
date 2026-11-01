@@ -51,7 +51,7 @@ def test_ready_needs_socket_and_bus(tmp_path, monkeypatch):
     monkeypatch.setattr(seat, "_start_helper", lambda w, h: True)
     seat.size = (2560, 1440)
     assert seat.ready(timeout=0.2) is True
-    assert seat.info() == {"socket": "wayland-70", "bus": "unix:path=/x"}
+    assert seat.info() == {"socket": "wayland-70", "bus": "unix:path=/x", "x11": "on"}
 
 
 class _Dead:
@@ -281,3 +281,106 @@ def test_restart_helper_failure_retries_old_fps(tmp_path, monkeypatch):
                         lambda w, h: calls.append(seat.fps) or len(calls) > 1)
     assert seat.restart_helper(120) is False
     assert calls == [120, 60] and seat.fps == 60
+
+
+def _seat_with_version(tmp_path, monkeypatch, ver="GNOME Shell 50.1"):
+    seat = seat_gnome.GnomeSeat(tmp_path, str(tmp_path), log=subprocess.DEVNULL)
+    monkeypatch.setattr(seat_gnome, "gnome_version", lambda: ver)
+    monkeypatch.setattr(seat_gnome.subprocess, "Popen", lambda cmd, **k: _Dead())
+    return seat
+
+
+def test_shell_probe_uses_main_loop_property_get(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(seat_gnome.subprocess, "run",
+                        lambda cmd, **k: calls.append((cmd, k)) or type("R", (), {"returncode": 0})())
+    seat = seat_gnome.GnomeSeat(tmp_path, str(tmp_path), log=subprocess.DEVNULL)
+    seat.bus = "unix:path=/x"
+    assert seat._shell_answers() is True
+    cmd, kw = calls[0]
+    assert cmd == ["gdbus", "call", "--session", "-d", "org.gnome.Shell", "-o",
+                   "/org/gnome/Shell", "-m", "org.freedesktop.DBus.Properties.Get",
+                   "org.gnome.Shell", "ShellVersion"]
+    assert kw["timeout"] == 5 and kw["env"]["DBUS_SESSION_BUS_ADDRESS"] == "unix:path=/x"
+
+
+def test_launch_script_no_x11_flag():
+    on = seat_gnome.build_launch_script("s", "/b", "/p")
+    off = seat_gnome.build_launch_script("s", "/b", "/p", x11=False)
+    exe_on = next(ln for ln in on.splitlines() if ln.startswith("exec gnome-shell"))
+    exe_off = next(ln for ln in off.splitlines() if ln.startswith("exec gnome-shell"))
+    assert "--no-x11" not in exe_on and "--no-x11" in exe_off
+    assert "export PULSE_CLIENTCONFIG=" in off
+
+
+def test_marker_with_current_version_turns_x11_off(tmp_path, monkeypatch):
+    seat = _seat_with_version(tmp_path, monkeypatch)
+    (tmp_path / "seat-no-x11").write_text("GNOME Shell 50.1\n")
+    seat.start(1920, 1080)
+    assert "--no-x11" in seat.script.read_text()
+    assert seat.info()["x11"] == "fallback"
+
+
+def test_marker_with_other_version_keeps_x11_on(tmp_path, monkeypatch):
+    seat = _seat_with_version(tmp_path, monkeypatch)
+    (tmp_path / "seat-no-x11").write_text("GNOME Shell 49.0\n")
+    seat.start(1920, 1080)
+    assert "--no-x11" not in seat.script.read_text()
+    assert seat.info()["x11"] == "on"
+
+
+def test_x11_mode_off_disables_without_marker(tmp_path, monkeypatch):
+    seat = _seat_with_version(tmp_path, monkeypatch)
+    seat.x11_mode = "off"
+    seat.start(1920, 1080)
+    assert "--no-x11" in seat.script.read_text()
+    assert seat.info()["x11"] == "off"
+    monkeypatch.setattr(seat, "alive", lambda: True)
+    monkeypatch.setattr(seat, "_shell_answers", lambda: False)
+    assert not seat.healthy()
+    assert not (tmp_path / "seat-no-x11").exists()
+
+
+def test_unhealthy_while_alive_with_x11_writes_marker(tmp_path, monkeypatch, capsys):
+    seat = _seat_with_version(tmp_path, monkeypatch)
+    seat.start(1920, 1080)
+    assert seat.info()["x11"] == "on" and seat.x11_on
+    monkeypatch.setattr(seat, "alive", lambda: True)
+    monkeypatch.setattr(seat, "_shell_answers", lambda: False)
+    for _ in range(seat_gnome.STRIKES - 1):        # a busy shell: not yet a deadlock
+        assert not seat.healthy()
+        assert not (tmp_path / "seat-no-x11").exists() and not seat.fell_back
+    assert not seat.healthy()
+    assert seat.fell_back
+    assert (tmp_path / "seat-no-x11").read_text().strip() == "GNOME Shell 50.1"
+    assert seat.info()["x11"] == "fallback"
+    assert "falling back to --no-x11" in capsys.readouterr().out
+
+
+def test_ready_timeout_with_x11_writes_marker(tmp_path, monkeypatch):
+    seat = _seat_with_version(tmp_path, monkeypatch)
+    seat.start(1920, 1080)
+    seat._proc = type("P", (), {"poll": lambda self: None})()
+    seat._helper = None
+    assert seat.ready(timeout=0.2) is False          # slow start: no bus/socket yet
+    assert not (tmp_path / "seat-no-x11").exists()
+    seat.bus_file.write_text("unix:path=/x")         # up, but main loop never answers
+    (tmp_path / seat_gnome.SOCKET).touch()
+    monkeypatch.setattr(seat, "_shell_answers", lambda: False)
+    assert seat.ready(timeout=0.2) is False
+    assert (tmp_path / "seat-no-x11").exists()
+
+
+def test_stop_escalates_to_sigkill_within_seconds(tmp_path, monkeypatch):
+    waits = []
+    seat = seat_gnome.GnomeSeat(tmp_path, str(tmp_path), log=subprocess.DEVNULL)
+    monkeypatch.setattr(seat_gnome.os, "killpg", lambda *a: None)
+
+    class P(_P):
+        def wait(self, timeout=None):
+            waits.append(timeout)
+            if timeout is not None:
+                raise subprocess.TimeoutExpired("x", timeout)
+    seat._proc = P()
+    seat.stop()
+    assert waits[0] <= 5

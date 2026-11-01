@@ -160,4 +160,18 @@ describe("workstation transport", () => {
     await waitFor(() => expect(updateWorkstation).toHaveBeenCalled());
     expect(updateWorkstation.mock.calls[0]![1].stream_settings.transport).toBe("webrtc");
   });
+
+  test("saves X11 apps (Xwayland) choice", async () => {
+    updateWorkstation.mockResolvedValue({});
+    const ws = { id: "w1", stream_settings: {} } as unknown as Workstation;
+    render(<WorkstationStreamSettings ws={ws} onSaved={() => {}} />);
+    fireEvent.click(screen.getByText("Stream settings"));
+    const sel = screen.getByLabelText("X11 apps (Xwayland)") as HTMLSelectElement;
+    expect(sel.value).toBe("auto");
+    expect(screen.getByText(/Lets X11-only apps such as Steam run/)).toBeTruthy();
+    fireEvent.change(sel, { target: { value: "off" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(updateWorkstation).toHaveBeenCalled());
+    expect(updateWorkstation.mock.calls[0]![1].stream_settings.seat_x11).toBe("off");
+  });
 });
