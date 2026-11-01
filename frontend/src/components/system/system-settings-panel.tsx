@@ -13,12 +13,13 @@ import { TurnSetupCheck } from "./turn-setup-check";
 import { TurnSetupGuide } from "./turn-setup-guide";
 import { isSettingVisible } from "./webrtc-fields";
 
-export function SystemSettingsPanel() {
+export function SystemSettingsPanel({ groups: only }: { groups?: string[] } = {}) {
   const qc = useQueryClient();
-  const { data: groups = [], isLoading } = useQuery({
+  const { data: all = [], isLoading } = useQuery({
     queryKey: ["system-settings"],
     queryFn: api.getSystemSettings,
   });
+  const groups = only ? all.filter((g) => only.includes(g.group)) : all;
 
   const [localState, setLocalState] = useState<Record<string, SettingValue>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});

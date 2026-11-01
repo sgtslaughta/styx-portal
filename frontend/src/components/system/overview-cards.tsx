@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Cpu } from "lucide-react";
 import { CATEGORIES } from "@/components/settings/nav-config";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +14,7 @@ const LEVEL = {
 export const SECTION_EVENT = "styx:settings-section";
 
 function sectionMeta(id: string) {
+  if (id === "resources") return { label: "Resources", icon: Cpu }; // folded into Overview in the nav
   for (const c of CATEGORIES) {
     const s = c.sections.find((x) => x.id === id);
     if (s) return s;
