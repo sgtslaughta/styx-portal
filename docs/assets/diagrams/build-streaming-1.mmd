@@ -1,0 +1,22 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 70
+    rankSpacing: 90
+    padding: 16
+---
+flowchart TD
+    seat("Seat<br/>GNOME / labwc / X11"):::run -->|"capture: portal PipeWire,<br/>Wayland or XShm"| pf("pixelflux<br/>Rust capture and encode"):::core
+    pf -->|"AV1 / HEVC / H.264<br/>VA-API or NVENC"| sk("selkies 2.1<br/>stream server"):::core
+    pcm("pcmflux<br/>audio capture"):::core --> sk
+    sk -->|loopback| gw("Styx gateway"):::run
+    gw --> tr("Traefik or tunnel"):::gate
+    tr --> br("Browser<br/>WebCodecs decode, canvas"):::ext
+    br -->|"input, acks, resize"| sk
+    classDef ext fill:#66797F,stroke:#3F5157
+    classDef core fill:#2A8C94,stroke:#1B5F65
+    classDef gate fill:#A67828,stroke:#6E4F14
+    classDef run fill:#3C9060,stroke:#285F3F

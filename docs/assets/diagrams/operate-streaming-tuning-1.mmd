@@ -1,0 +1,24 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 70
+    rankSpacing: 90
+    padding: 16
+---
+flowchart TD
+    start("Agent starts or restarts"):::core --> probe{{"Render node and<br/>GPU tools present?"}}
+    probe -->|no| cpu("Offer H.264 only<br/>CPU x264"):::run
+    probe -->|"AMD / Intel"| va("vainfo must list an<br/>encode entrypoint for AV1 / HEVC<br/>decode-only does not count"):::core
+    probe -->|NVIDIA| nv("nvidia-smi compute capability<br/>AV1 8.9+, HEVC 5.2+"):::core
+    va --> list
+    nv --> list("Ordered list: supported codecs<br/>AV1, HEVC, then H.264 last"):::core
+    list --> dec{{"Can the browser decode<br/>the first codec?"}}
+    dec -->|yes| use("Stream with that codec"):::run
+    dec -->|no| step("Step down to the next codec"):::gate
+    step --> dec
+    classDef core fill:#2A8C94,stroke:#1B5F65
+    classDef gate fill:#A67828,stroke:#6E4F14
+    classDef run fill:#3C9060,stroke:#285F3F

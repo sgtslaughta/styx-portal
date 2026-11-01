@@ -1,0 +1,32 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 70
+    rankSpacing: 90
+    padding: 16
+---
+sequenceDiagram
+    participant A as Agent supervisor
+    participant G as Gateway
+    participant B as Backend /api/agent
+    loop every heartbeat interval (30 s)
+        A->>G: read gw_state.json (connections, last input)
+        A->>B: POST /heartbeat (Bearer token)<br/>status, lan_ip, last_error, health
+        alt workstation revoked
+            B-->>A: state revoked
+            A->>A: stop and print the uninstall hint
+        else
+            B->>B: mark online, store agent_version,<br/>update occupancy, idle backstop
+            B-->>A: state ok, effective stream_settings,<br/>heartbeat_interval_s, disconnect_clients, icon_etag
+            opt stream_settings changed
+                A->>A: save config, defer restart until the last viewer leaves
+            end
+            opt disconnect_clients set (logout or idle)
+                A->>G: restart the gateway, dropping viewer sockets
+            end
+        end
+    end
+    Note over A,B: heartbeat failure: log it, retry with backoff

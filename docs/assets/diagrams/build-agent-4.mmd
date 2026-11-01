@@ -1,0 +1,19 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 70
+    rankSpacing: 90
+    padding: 16
+---
+flowchart TD
+    b("browser"):::ext --- sk("selkies 2.1 and pixelflux"):::run
+    sk --- p("xdg-desktop-portal<br/>ScreenCast / RemoteDesktop"):::core
+    p --- sp("seat_portal.py backend<br/>Mutter D-Bus APIs"):::core
+    sp --- gs("headless gnome-shell<br/>wayland-70, private D-Bus"):::run
+    gs --- apps("Wayland apps"):::run
+    classDef ext fill:#66797F,stroke:#3F5157
+    classDef core fill:#2A8C94,stroke:#1B5F65
+    classDef run fill:#3C9060,stroke:#285F3F

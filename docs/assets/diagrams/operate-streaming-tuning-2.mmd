@@ -1,0 +1,19 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 70
+    rankSpacing: 90
+    padding: 16
+---
+flowchart TD
+    enc("Encoder<br/>CBR at the target rate"):::core -->|frames| net("Network path"):::ext
+    net --> br("Browser<br/>decode and acknowledge"):::ext
+    br -->|"acks, queue, RTT"| cc("selkies congestion control<br/>estimates capacity"):::core
+    cc -->|"new target rate"| enc
+    cap("Admin bitrate is the ceiling<br/>viewers may lower it, floor 1000 kbps"):::gate -.-> cc
+    classDef ext fill:#66797F,stroke:#3F5157
+    classDef core fill:#2A8C94,stroke:#1B5F65
+    classDef gate fill:#A67828,stroke:#6E4F14

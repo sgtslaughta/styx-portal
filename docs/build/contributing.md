@@ -66,13 +66,12 @@ Significant changes to CI/CD or architecture get a short ADR in
 
 ## Diagram style
 
-Diagrams are Mermaid fences (` ```mermaid `), rendered by Zensical on the site and natively by GitHub in the README. They share one look:
+Diagrams are Excalidraw drawings rendered to SVG, one light and one dark variant each, in `docs/assets/diagrams/`. They are born from Mermaid, which stays the quickest way to draft one.
 
-- **Header:** every flowchart starts with the same front-matter block (`themeVariables.fontSize: 15px`, `flowchart.curve: basis`, spacing and padding). Copy it from any existing diagram.
-- **Roles, not colours:** end the diagram with `classDef` lines for the roles you use and tag nodes with `:::role`. Roles: `ext` (browser, outside world), `core` (Styx services), `gate` (Traefik, tunnel, proxies), `run` (workloads, desktops, apps), `store` (databases, volumes, registries), `bad` (deny, error), `chk` (a check step, outlined only). Fill and stroke values are the same in every diagram; copy them from an existing one.
-- **Shapes:** rounded nodes `("text")` by default, `[("text")]` for stores, `{{"text"}}` for decisions (hexagons stay short in vertical charts). Quote every label.
-- **Zones:** use `subgraph` for trust zones (edge, portal, cluster, workstation).
-- **Size:** prefer `flowchart TD` for more than about six nodes; wide `LR` charts shrink to unreadable on a laptop.
-- **Theming:** `docs/stylesheets/extra.css` maps the `--md-mermaid-*` variables to the Styx palette for the light and dark schemes (node, edge, label and sequence colours). `classDef` cannot use `var()`, so role fills are static mid-tones that stay readable under both label colours.
-- **No icons:** Font Awesome icons (`fa:`) are not loaded by the site; skip them.
-- **Check:** run `scripts/build-docs.sh`-style build and view the page in both schemes; the site loads Mermaid 11 from unpkg at view time.
+- **Sources:** `<page-slug>-<n>.mmd` (Mermaid) and `<page-slug>-<n>.excalidraw` (scene JSON, the editable master). The SVGs `<name>-light.svg` and `<name>-dark.svg` are generated; commit them.
+- **New diagram:** write a fenced Mermaid block in the page, then run `scripts/diagrams/from-mermaid.sh`. It extracts each block to a `.mmd`, converts it with `@excalidraw/mermaid-to-excalidraw`, renders both SVGs and swaps the block for image links. Replace the `TODO alt` text with a short description. To redo one diagram from its `.mmd`, pass its name: `scripts/diagrams/from-mermaid.sh operate-webrtc-turn-1`. This overwrites its `.excalidraw`.
+- **Hand edits:** open the `.excalidraw` file on excalidraw.com, edit, save it back, then run `scripts/diagrams/render.sh [name...]`. The `.mmd` is then only the first draft.
+- **Links:** docs pages use two images, `![alt](../assets/diagrams/<name>-light.svg#only-light)` and the `-dark.svg#only-dark` twin. The README uses a `<picture>` element with a `prefers-color-scheme: dark` source.
+- **Roles, not colours:** tag Mermaid nodes with `:::role` and end with the `classDef` lines. Roles: `ext` (browser, outside world), `core` (Styx services), `gate` (Traefik, tunnel, proxies), `run` (workloads, desktops, apps), `store` (databases, volumes, registries), `bad` (deny, error), `chk` (a check step, outlined only). Copy the fill and stroke values from an existing `.mmd`; the converter applies them, and the dark render pre-compensates Excalidraw's dark filter so they keep the brand look.
+- **Shapes and size:** quote every label, use `subgraph` for trust zones and prefer `flowchart TD` for more than about six nodes.
+- **Tooling:** Node and Chromium run only inside the Playwright Docker image, never on the host; the first run installs the pinned packages from `scripts/diagrams/package.json`.

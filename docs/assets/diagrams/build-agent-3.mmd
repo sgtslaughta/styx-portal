@@ -1,0 +1,28 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 70
+    rankSpacing: 90
+    padding: 16
+---
+flowchart TD
+    req("Request from Traefik<br/>with injected Basic auth"):::ext --> auth{{"Basic auth valid?"}}
+    auth -->|no| u("401"):::bad
+    auth -->|yes| route{{"Route"}}
+    route -->|"/api/websockets, /websockets, /websocket"| ws{{"WebSocket upgrade?"}}
+    ws -->|"no (2.0 client probe)"| fwd
+    ws -->|yes| rf("Wait while a refit is pending"):::gate
+    rf --> busy{{"Controller tab and another<br/>tab had recent input?"}}
+    busy -->|yes| b4("Close 4003, upstream untouched"):::bad
+    busy -->|no| pump("Connect to selkies on loopback<br/>pump both ways, track input,<br/>idle closer 4001, refit on resize"):::run
+    route -->|"/ and /styx-favicon"| idx("Patched index page<br/>shims injected"):::core
+    route -->|"/files, /files/..."| files("Directory listing of the<br/>downloads folder, path-checked"):::core
+    route -->|"anything else"| fwd("HTTP proxy to selkies as-is<br/>client assets, /api REST"):::run
+    classDef ext fill:#66797F,stroke:#3F5157
+    classDef core fill:#2A8C94,stroke:#1B5F65
+    classDef gate fill:#A67828,stroke:#6E4F14
+    classDef run fill:#3C9060,stroke:#285F3F
+    classDef bad fill:#CC563A,stroke:#8E3420

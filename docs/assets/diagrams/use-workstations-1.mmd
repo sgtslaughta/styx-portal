@@ -1,0 +1,30 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 70
+    rankSpacing: 90
+    padding: 16
+---
+sequenceDiagram
+    autonumber
+    actor U as You (browser)
+    participant T as Traefik
+    participant B as Portal backend
+    participant G as Agent gateway
+    participant S as Selkies and seat
+    U->>T: open /w/studio-pc/
+    T->>B: forwardAuth auth-check (styx_proxy cookie)
+    alt not signed in or not assigned
+        B-->>U: 401 sign-in redirect or 403
+    else allowed
+        B-->>T: 200 + gateway Basic credentials
+        Note over T,B: injected server-side,<br/>never sent to the browser
+    end
+    T->>G: request over the LAN (port 8443)
+    G->>G: check Basic auth and busy gate
+    G->>S: websocket to selkies on loopback
+    S-->>U: video and audio frames
+    U->>S: keyboard, mouse, clipboard, resize

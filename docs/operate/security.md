@@ -14,38 +14,8 @@ Layers, outermost first:
 3. **Per-account lockout:** `LOCKOUT_THRESHOLD` failed logins per username (default 10) lock the account for `LOCKOUT_DURATION` seconds (default 900). Admins can **Unlock** early.
 4. **Per-IP ban:** `BAN_FAIL_THRESHOLD` failures per IP within `BAN_FAIL_WINDOW` (default 20 in 600 s) ban the IP for `BAN_DURATION` (default 3600 s). Traefik's `ip-ban-gate` calls `/ban-check` on every request, including proxied services and workstations.
 
-```mermaid
----
-config:
-  themeVariables:
-    fontSize: 15px
-  flowchart:
-    curve: basis
-    nodeSpacing: 30
-    rankSpacing: 40
-    padding: 10
----
-flowchart TD
-    try("Sign-in attempt"):::ext --> l1("1. Traefik rate limit<br/>per IP, average and burst"):::chk
-    l1 --> l2("2. IP ban gate<br/>/api/auth/ban-check"):::chk
-    l2 --> l3("3. App rate limit<br/>RATE_LIMIT_AUTH 5/60"):::chk
-    l3 --> l4("4. Account lockout<br/>10 failures, 15 min"):::chk
-    l4 --> pw("Password check"):::chk
-    pw --> two("5. Sign-in card, if enabled<br/>3 random cells"):::chk
-    two --> ok("Session issued"):::run
-    l1 -.->|"over the limit"| rej("Rejected: 429, refused,<br/>or 401 that looks like a wrong password"):::bad
-    l2 -.->|banned| rej
-    l3 -.->|"over the limit"| rej
-    l4 -.->|locked| rej
-    pw -.->|wrong| cnt("Failure counted per user and per IP"):::gate
-    two -.->|wrong| cnt
-    cnt -.->|"20 failures in 10 min"| ban("IP banned for 1 h"):::bad
-    classDef ext fill:#66797F,stroke:#3F5157
-    classDef gate fill:#A67828,stroke:#6E4F14
-    classDef run fill:#3C9060,stroke:#285F3F
-    classDef bad fill:#CC563A,stroke:#8E3420
-    classDef chk stroke:#2A8C94,stroke-width:1.5px
-```
+![Sign-in defence layers: rate limit, IP ban gate, app rate limit, account lockout, password check and sign-in card](../assets/diagrams/operate-security-1-light.svg#only-light)
+![Sign-in defence layers: rate limit, IP ban gate, app rate limit, account lockout, password check and sign-in card](../assets/diagrams/operate-security-1-dark.svg#only-dark)
 
 A wrong current password on **Change password** counts as a failed sign-in.
 

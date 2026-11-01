@@ -1,0 +1,23 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 70
+    rankSpacing: 90
+    padding: 16
+---
+flowchart TD
+    H("Agent heartbeat"):::core --> M{"Cloudflare analytics<br/>configured?"}:::chk
+    M -- yes --> C[("Cloudflare egress,<br/>month to date")]:::store
+    M -- no --> S[("Styx metered<br/>relay bytes")]:::store
+    C --> X{"used ≥ budget?"}:::chk
+    S --> X
+    X -- yes --> WS("Hand out WebSockets, no TURN"):::bad
+    X -- no --> RTC("Hand out WebRTC + TURN as configured"):::run
+    classDef core fill:#2A8C94,stroke:#1B5F65
+    classDef store fill:#4B7DB3,stroke:#2D5280
+    classDef run fill:#3C9060,stroke:#285F3F
+    classDef bad fill:#CC563A,stroke:#8E3420
+    classDef chk stroke:#2A8C94,stroke-width:1.5px

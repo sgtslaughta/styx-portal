@@ -1,0 +1,25 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 70
+    rankSpacing: 90
+    padding: 16
+---
+sequenceDiagram
+    participant B as Browser tab (controller)
+    participant G as Gateway
+    participant A as Agent supervisor
+    participant S as Seat and selkies
+    B->>G: r,WxH resize messages
+    G->>G: clamp 640x480 to 4096x2304,<br/>wait until the size settles
+    G->>A: write refit-request, abort client sockets (1006)
+    A->>S: kill selkies, resize_live or rebuild the monitor
+    Note over A,S: HiDPI scale (1, 1.5, 2, 3) is shared by<br/>GNOME DisplayConfig and selkies DPI
+    A->>S: promote the standby selkies
+    A->>G: clear refit-request, publish selkies-port
+    B->>G: reconnect (held while the refit is pending)
+    G->>S: new stream socket
+    S-->>B: video at the new size

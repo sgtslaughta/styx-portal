@@ -1,0 +1,30 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 70
+    rankSpacing: 90
+    padding: 16
+---
+flowchart TD
+    b("Browser"):::ext --> cf("Cloudflare tunnel<br/>or direct TLS"):::gate
+    cf --> t("Traefik"):::gate
+    t -->|"/ (SPA)"| fe("frontend<br/>nginx static"):::core
+    t -->|"/api"| be("backend<br/>FastAPI and SQLite"):::core
+    t -->|"/i/slug (forwardAuth)"| inst("Desktop instances<br/>Docker or k8s pods"):::run
+    t -->|"/w/... (forwardAuth)"| gw("Agent gateway<br/>on the workstation"):::run
+    t -->|"proxied services"| svc("Proxied apps<br/>URL or container"):::run
+    be -.->|"writes dynamic config"| t
+    be --> rt{{"Runtime"}}
+    rt -->|compose| d("Docker socket proxy"):::store
+    rt -->|k8s| k("Kubernetes API"):::store
+    d --> inst
+    k --> inst
+    ag("Agent daemon"):::run -.->|"heartbeat (Bearer token)"| be
+    classDef ext fill:#66797F,stroke:#3F5157
+    classDef core fill:#2A8C94,stroke:#1B5F65
+    classDef gate fill:#A67828,stroke:#6E4F14
+    classDef run fill:#3C9060,stroke:#285F3F
+    classDef store fill:#4B7DB3,stroke:#2D5280

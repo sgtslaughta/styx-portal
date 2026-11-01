@@ -6,30 +6,8 @@ The streaming engine is the [Selkies Project](../acknowledgements.md) (selkies, 
 
 ## Pipeline
 
-```mermaid
----
-config:
-  themeVariables:
-    fontSize: 15px
-  flowchart:
-    curve: basis
-    nodeSpacing: 30
-    rankSpacing: 40
-    padding: 10
----
-flowchart TD
-    seat("Seat<br/>GNOME / labwc / X11"):::run -->|"capture: portal PipeWire,<br/>Wayland or XShm"| pf("pixelflux<br/>Rust capture and encode"):::core
-    pf -->|"AV1 / HEVC / H.264<br/>VA-API or NVENC"| sk("selkies 2.1<br/>stream server"):::core
-    pcm("pcmflux<br/>audio capture"):::core --> sk
-    sk -->|loopback| gw("Styx gateway"):::run
-    gw --> tr("Traefik or tunnel"):::gate
-    tr --> br("Browser<br/>WebCodecs decode, canvas"):::ext
-    br -->|"input, acks, resize"| sk
-    classDef ext fill:#66797F,stroke:#3F5157
-    classDef core fill:#2A8C94,stroke:#1B5F65
-    classDef gate fill:#A67828,stroke:#6E4F14
-    classDef run fill:#3C9060,stroke:#285F3F
-```
+![Streaming pipeline from seat capture through pixelflux and selkies to the gateway, Traefik and the browser](../assets/diagrams/build-streaming-1-light.svg#only-light)
+![Streaming pipeline from seat capture through pixelflux and selkies to the gateway, Traefik and the browser](../assets/diagrams/build-streaming-1-dark.svg#only-dark)
 
 | Component | What it does |
 |-----------|--------------|
@@ -83,33 +61,8 @@ address behaviour we measured on jittery links:
 * **Still-screen raise cap** (`cap_still_raise`): selkies raised the CBR target 15% per second on every clean tick, including a still screen's trickle, so after a backoff it climbed to the ceiling without testing the path and the next burst built a queue (the "poor connection" sawtooth). The patch remembers the last measured capacity and only lets motion raise past it. Tracked upstream as selkies#489.
 * **Tracing**: `STYX-CC` lines in `selkies.log` (queue, RTT floor, delivered rate, target rate) feed `docs/spikes/2026-10-30-shallow-pipe/cc_report.py`.
 
-```mermaid
----
-config:
-  themeVariables:
-    fontSize: 15px
-  flowchart:
-    curve: basis
-    nodeSpacing: 30
-    rankSpacing: 40
-    padding: 10
----
-flowchart TD
-    enc("Encoder<br/>CBR at target rate"):::core -->|frames| own{{"Owner page<br/>lagging over 100 ms?"}}
-    own -->|yes| skip("Skip delta frames,<br/>recover with reference invalidation"):::gate
-    own -->|no| link("Network path"):::ext
-    skip --> link
-    link --> br("Browser<br/>decode and ack"):::ext
-    br -->|"acks, queue above RTT floor"| cc("selkies congestion control<br/>capacity estimate"):::core
-    cc --> still{{"Still screen<br/>trying to raise?"}}
-    still -->|"above last measured capacity"| hold("Raise only on motion<br/>(cap_still_raise)"):::gate
-    still -->|otherwise| tgt
-    hold --> tgt("New target rate<br/>up to the admin ceiling"):::core
-    tgt --> enc
-    classDef ext fill:#66797F,stroke:#3F5157
-    classDef core fill:#2A8C94,stroke:#1B5F65
-    classDef gate fill:#A67828,stroke:#6E4F14
-```
+![Congestion control loop: encoder, network, browser acknowledgements and selkies adjusting the target bitrate](../assets/diagrams/build-streaming-2-light.svg#only-light)
+![Congestion control loop: encoder, network, browser acknowledgements and selkies adjusting the target bitrate](../assets/diagrams/build-streaming-2-dark.svg#only-dark)
 
 Both are marked `ponytail:` in code as temporary: drop them when upstream fixes land.
 

@@ -32,32 +32,8 @@ Why AV1 first: the 2026-10-30 harness run on a Radeon 780M measured settled text
 
 ### Codec selection flow
 
-```mermaid
----
-config:
-  themeVariables:
-    fontSize: 15px
-  flowchart:
-    curve: basis
-    nodeSpacing: 30
-    rankSpacing: 40
-    padding: 10
----
-flowchart TD
-    start("Agent starts or restarts"):::core --> probe{{"Render node and<br/>GPU tools present?"}}
-    probe -->|no| cpu("Offer H.264 only<br/>CPU x264"):::run
-    probe -->|"AMD / Intel"| va("vainfo must list an<br/>encode entrypoint for AV1 / HEVC<br/>decode-only does not count"):::core
-    probe -->|NVIDIA| nv("nvidia-smi compute capability<br/>AV1 8.9+, HEVC 5.2+"):::core
-    va --> list
-    nv --> list("Ordered list: supported codecs<br/>AV1, HEVC, then H.264 last"):::core
-    list --> dec{{"Can the browser decode<br/>the first codec?"}}
-    dec -->|yes| use("Stream with that codec"):::run
-    dec -->|no| step("Step down to the next codec"):::gate
-    step --> dec
-    classDef core fill:#2A8C94,stroke:#1B5F65
-    classDef gate fill:#A67828,stroke:#6E4F14
-    classDef run fill:#3C9060,stroke:#285F3F
-```
+![Codec selection at agent start: probe GPU and encoders, then offer AV1, HEVC and H.264 in order](../assets/diagrams/operate-streaming-tuning-1-light.svg#only-light)
+![Codec selection at agent start: probe GPU and encoders, then offer AV1, HEVC and H.264 in order](../assets/diagrams/operate-streaming-tuning-1-dark.svg#only-dark)
 
 ### When to prefer HEVC
 
@@ -101,27 +77,8 @@ The bitrate field shows 16000 only as a hint. Leave it empty and the agent uses 
 
 ### How the bitrate adapts
 
-```mermaid
----
-config:
-  themeVariables:
-    fontSize: 15px
-  flowchart:
-    curve: basis
-    nodeSpacing: 30
-    rankSpacing: 40
-    padding: 10
----
-flowchart TD
-    enc("Encoder<br/>CBR at the target rate"):::core -->|frames| net("Network path"):::ext
-    net --> br("Browser<br/>decode and acknowledge"):::ext
-    br -->|"acks, queue, RTT"| cc("selkies congestion control<br/>estimates capacity"):::core
-    cc -->|"new target rate"| enc
-    cap("Admin bitrate is the ceiling<br/>viewers may lower it, floor 1000 kbps"):::gate -.-> cc
-    classDef ext fill:#66797F,stroke:#3F5157
-    classDef core fill:#2A8C94,stroke:#1B5F65
-    classDef gate fill:#A67828,stroke:#6E4F14
-```
+![Bitrate control loop with the admin bitrate as a ceiling for selkies congestion control](../assets/diagrams/operate-streaming-tuning-2-light.svg#only-light)
+![Bitrate control loop with the admin bitrate as a ceiling for selkies congestion control](../assets/diagrams/operate-streaming-tuning-2-dark.svg#only-dark)
 
 ## Resolution and scaling
 

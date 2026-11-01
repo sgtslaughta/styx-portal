@@ -6,6 +6,14 @@ hide:
 
 # Styx Portal
 
+!!! quote "Built on Selkies"
+    [![Selkies](https://raw.githubusercontent.com/selkies-project/selkies/main/docs/assets/logo/selkies.svg){ width="48" align=left }](https://github.com/selkies-project)
+    Streaming in Styx is powered by the [Selkies Project](https://github.com/selkies-project):
+    [selkies](https://github.com/selkies-project/selkies), [pixelflux](https://github.com/selkies-project/pixelflux)
+    and [pcmflux](https://github.com/selkies-project/pcmflux), with desktop images from
+    [LinuxServer.io](https://www.linuxserver.io/). We could not have built this without them; please
+    [star and support Selkies](https://github.com/selkies-project/selkies). See [Acknowledgements](acknowledgements.md).
+
 **Your machines and your apps, in a browser tab.** Launch containerized Linux desktops, stream physical workstations at low latency, and put your home-lab apps behind one sign-in.
 
 ![Styx Portal dashboard](assets/screens/hero-dashboard.png)
@@ -57,38 +65,8 @@ hide:
 
 ## How it fits together
 
-```mermaid
----
-config:
-  themeVariables:
-    fontSize: 15px
-  flowchart:
-    curve: basis
-    nodeSpacing: 30
-    rankSpacing: 40
-    padding: 10
----
-flowchart TD
-    you("You<br/>any browser"):::ext
-    adm("Admin"):::ext
-    subgraph portal ["Styx portal"]
-        auth("Sign-in<br/>password · sign-in card · SSO"):::core
-        home("Home<br/>Workspaces and Apps"):::core
-        auth --> home
-    end
-    d("Desktops<br/>containers from templates"):::run
-    w("Workstations<br/>your enrolled Linux machines"):::run
-    a("Apps<br/>Jellyfin, Sonarr, Home Assistant"):::run
-    you --> auth
-    home --> d
-    home --> w
-    home --> a
-    adm -->|"invites, groups, tokens, settings"| portal
-    adm -.->|"one-line enroll"| w
-    classDef ext fill:#66797F,stroke:#3F5157
-    classDef core fill:#2A8C94,stroke:#1B5F65
-    classDef run fill:#3C9060,stroke:#285F3F
-```
+![Overview of the Styx portal: sign-in, home with workspaces and apps, and the admin area](assets/diagrams/index-1-light.svg#only-light)
+![Overview of the Styx portal: sign-in, home with workspaces and apps, and the admin area](assets/diagrams/index-1-dark.svg#only-dark)
 
 ## Choose your path
 
@@ -113,9 +91,6 @@ flowchart TD
     [:octicons-arrow-right-24: Start with architecture](build/architecture.md)
 
 </div>
-
-!!! quote "Built on Selkies"
-    Streaming in Styx is powered by the [Selkies Project](https://github.com/selkies-project) — selkies, pixelflux and pcmflux — with desktop images from [LinuxServer.io](https://www.linuxserver.io/). We could not have built this without them; see [Acknowledgements](acknowledgements.md).
 
 ## Quick links
 

@@ -1,0 +1,30 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 70
+    rankSpacing: 90
+    padding: 16
+---
+flowchart TD
+    you("You<br/>any browser"):::ext
+    adm("Admin"):::ext
+    subgraph portal ["Styx portal"]
+        auth("Sign-in<br/>password · sign-in card · SSO"):::core
+        home("Home<br/>Workspaces and Apps"):::core
+        auth --> home
+    end
+    d("Desktops<br/>containers from templates"):::run
+    w("Workstations<br/>your enrolled Linux machines"):::run
+    a("Apps<br/>Jellyfin, Sonarr, Home Assistant"):::run
+    you --> auth
+    home --> d
+    home --> w
+    home --> a
+    adm -->|"invites, groups, tokens, settings"| portal
+    adm -.->|"one-line enroll"| w
+    classDef ext fill:#66797F,stroke:#3F5157
+    classDef core fill:#2A8C94,stroke:#1B5F65
+    classDef run fill:#3C9060,stroke:#285F3F
