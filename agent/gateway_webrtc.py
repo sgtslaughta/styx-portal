@@ -157,6 +157,11 @@ class WebRTCGateway:
             return web.Response(status=426, text="websocket upgrade required")
         if not same_origin(request):
             return web.Response(status=403, text="forbidden origin")
+        if self.transport != "webrtc":
+            # The selkies sidebar can flip the client to WebRTC by itself, which would
+            # skip refit, idle/max-session cuts and the TURN budget: the portal decides.
+            self.log("webrtc refused: transport is websockets (set by the portal)")
+            return web.Response(status=403, text="WebRTC is not enabled for this workstation")
         qs, sid = split_vid(request.rel_url.raw_query_string, f"wr{uuid.uuid4().hex}")
         now = time.time()
         self._purge(now)

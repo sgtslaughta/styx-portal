@@ -245,3 +245,20 @@ def test_relay_credit_capped_by_elapsed_time():
     before = g.turn_bytes
     g.credit(s, 10**12 + 5_000_000, now=1011.0)  # honest 5 MB over 10 s counts fully
     assert g.turn_bytes - before == 5_000_000
+
+
+@pytest.mark.asyncio
+async def test_signaling_refused_when_admin_chose_websockets(tmp_path):
+    # The selkies sidebar can switch the client to WebRTC on its own; that would
+    # skip refit, idle/max-session cuts and the TURN budget. Only the portal decides.
+    up, client, seen = await _pair(tmp_path, transport="websockets")
+    try:
+        r = await client.get("/api/webrtc/signaling/?x=1", headers={
+            **HDR, "Upgrade": "websocket", "Connection": "Upgrade",
+            "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==", "Sec-WebSocket-Version": "13"})
+        assert r.status == 403
+        assert "WebRTC is not enabled" in await r.text()
+        assert seen == []
+    finally:
+        await client.close()
+        await up.close()
