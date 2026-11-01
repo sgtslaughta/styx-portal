@@ -23,6 +23,7 @@ from pathlib import Path
 import aiohttp
 import favicon
 import refit
+from codecpref import inject_codecpref
 from gamemode import GameMode
 import seat_scale
 import yarl
@@ -490,6 +491,7 @@ def create_app(user: str, password: str,
         html = inject_idle_watchdog(html, idle_timeout_s, idle_lead_s, idle_enabled)
         html = inject_webrtc(html, True)   # sidebar may pick WebRTC: shim arms on signaling open
         html = inject_gamemode(html)
+        html = inject_codecpref(html)
         html = inject_cursor_hide(html, bool(seat_dir))
         html = inject_touch_scroll(html)
         html = refit.inject_reload(html, bool(seat_dir))
