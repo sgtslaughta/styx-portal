@@ -7,6 +7,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.config import Settings
 from app.models import SystemSetting
+from app.security.crypto import decrypt_secret, encrypt_secret
 
 _settings = Settings()
 _RATE_RE = re.compile(r"^\d+/\d+$")
@@ -23,6 +24,8 @@ class SettingSpec:
     default: Any = None
     min: int | None = None
     max: int | None = None
+    choices: tuple[str, ...] | None = None
+    pattern: str | None = None
 
 
 def _spec(*a, **k) -> SettingSpec:
@@ -103,6 +106,36 @@ _SPECS: list[SettingSpec] = [
           "Require at least one digit.", "bool", "PASSWORD_REQUIRE_DIGIT"),
     _spec("PASSWORD_REQUIRE_SYMBOL", "password_policy", "Require symbol",
           "Require at least one non-alphanumeric symbol.", "bool", "PASSWORD_REQUIRE_SYMBOL"),
+    _spec("WORKSTATION_TRANSPORT", "webrtc", "Default stream transport",
+          "Transport for workstation streams unless a workstation overrides it.", "enum",
+          default="websockets", choices=("websockets", "webrtc")),
+    _spec("WEBRTC_TURN_PROVIDER", "webrtc", "TURN provider",
+          "Relay used by WebRTC streams.", "enum",
+          default="none", choices=("none", "cloudflare", "generic")),
+    _spec("CLOUDFLARE_TURN_TOKEN_ID", "webrtc", "Cloudflare TURN token ID",
+          "Cloudflare Calls TURN key ID.", "secret"),
+    _spec("CLOUDFLARE_TURN_API_TOKEN", "webrtc", "Cloudflare TURN API token",
+          "Cloudflare Calls TURN API token.", "secret"),
+    _spec("TURN_HOST", "webrtc", "TURN host", "Generic TURN server host.", "str", default=""),
+    _spec("TURN_PORT", "webrtc", "TURN port", "Generic TURN server port.", "int",
+          default=3478, min=1, max=65535),
+    _spec("TURN_PROTOCOL", "webrtc", "TURN protocol", "Generic TURN transport.", "enum",
+          default="udp", choices=("udp", "tcp")),
+    _spec("TURN_TLS", "webrtc", "TURN over TLS", "Use TLS to the generic TURN server.",
+          "bool", default=False),
+    _spec("TURN_SHARED_SECRET", "webrtc", "TURN shared secret",
+          "coturn use-auth-secret HMAC secret (alternative to username/password).", "secret"),
+    _spec("TURN_USERNAME", "webrtc", "TURN username", "Static TURN username.", "str", default=""),
+    _spec("TURN_PASSWORD", "webrtc", "TURN password", "Static TURN password.", "secret"),
+    _spec("WEBRTC_MAX_SESSION_H", "webrtc", "WebRTC max session (h)",
+          "Hard cap on a WebRTC session regardless of input; 0 = off.", "int",
+          default=8, min=0, max=72),
+    _spec("TURN_FREE_GB_MONTH", "webrtc", "TURN free GB / month",
+          "Monthly free relay allowance used by the cost estimate.", "int",
+          default=1000, min=0, max=1000000),
+    _spec("TURN_USD_PER_GB", "webrtc", "TURN price (USD/GB)",
+          "Price per GB beyond the free allowance, e.g. 0.05.", "str",
+          default="0.05", pattern=r"^\d+(\.\d+)?$"),
 ]
 
 SCHEMA: dict[str, SettingSpec] = {s.key: s for s in _SPECS}
@@ -115,6 +148,7 @@ _GROUP_LABELS = {
     "workstation_features": "Workstation features",
     "quota": "Quotas",
     "password_policy": "Password policy",
+    "webrtc": "WebRTC / TURN",
 }
 
 _TRAEFIK_KEYS = {"TRAEFIK_RATELIMIT_AVERAGE", "TRAEFIK_RATELIMIT_BURST"}
@@ -131,9 +165,10 @@ class SettingsService:
         spec = SCHEMA[key]
         if spec.config_attr is not None:
             return getattr(_settings, spec.config_attr)
-        return spec.default
+        return "" if spec.type == "secret" else spec.default
 
     def get(self, key: str) -> Any:
+        """Effective value; secrets come back as decrypted plaintext ("" if unset)."""
         if key not in SCHEMA:
             raise KeyError(key)
         return self._overrides.get(key, self._seed(key))
@@ -152,21 +187,33 @@ class SettingsService:
         elif spec.type == "rate":
             if not isinstance(value, str) or not _RATE_RE.fullmatch(value):
                 raise ValueError(f"{spec.key} must look like '5/60'")
+        elif spec.type == "enum":
+            if value not in (spec.choices or ()):
+                raise ValueError(f"{spec.key} must be one of {', '.join(spec.choices or ())}")
+        elif spec.type in ("str", "secret"):
+            if not isinstance(value, str) or len(value) > 512:
+                raise ValueError(f"{spec.key} must be a string of at most 512 characters")
+            if spec.pattern and not re.fullmatch(spec.pattern, value):
+                raise ValueError(f"{spec.key} has an invalid format")
 
     async def set(self, session: AsyncSession, key: str, value: Any, actor_id: str | None) -> None:
         if key not in SCHEMA:
             raise KeyError(key)
-        self._validate(SCHEMA[key], value)
+        spec = SCHEMA[key]
+        self._validate(spec, value)
+        if spec.type == "secret" and value == "":
+            return await self.reset(session, key, actor_id)
+        stored = encrypt_secret(value) if spec.type == "secret" else value
         from app.models import SystemSetting
         from datetime import datetime, timezone
         row = await session.get(SystemSetting, key)
         if row:
-            row.value = value
+            row.value = stored
             row.updated_by = actor_id
             row.updated_at = datetime.now(timezone.utc)
             session.add(row)
         else:
-            session.add(SystemSetting(key=key, value=value, updated_by=actor_id))
+            session.add(SystemSetting(key=key, value=stored, updated_by=actor_id))
         self._overrides[key] = value
         if key in _TRAEFIK_KEYS:
             from app.services.route_writer import refresh_routes_from_db
@@ -186,17 +233,32 @@ class SettingsService:
 
     async def reload(self, session: AsyncSession) -> None:
         result = await session.exec(select(SystemSetting))
-        self._overrides = {r.key: r.value for r in result.all() if r.key in SCHEMA}
+        self._overrides = {}
+        for r in result.all():
+            if r.key not in SCHEMA:
+                continue
+            if SCHEMA[r.key].type == "secret":
+                try:
+                    self._overrides[r.key] = decrypt_secret(r.value)
+                except Exception:  # undecryptable (JWT_SECRET changed) -> treat as unset
+                    continue
+            else:
+                self._overrides[r.key] = r.value
 
     def effective(self) -> list[dict]:
         groups: dict[str, list[dict]] = {}
         for spec in _SPECS:
-            groups.setdefault(spec.group, []).append({
+            row = {
                 "key": spec.key, "label": spec.label, "help": spec.help,
                 "type": spec.type, "value": self.get(spec.key),
                 "default": self._seed(spec.key),
                 "min": spec.min, "max": spec.max,
-            })
+            }
+            if spec.type == "secret":   # plaintext never leaves the service
+                row.update(value=None, default=None, is_set=bool(self.get(spec.key)))
+            elif spec.type == "enum":
+                row["choices"] = list(spec.choices or ())
+            groups.setdefault(spec.group, []).append(row)
         return [{"group": g, "label": _GROUP_LABELS.get(g, g), "settings": rows}
                 for g, rows in groups.items()]
 
