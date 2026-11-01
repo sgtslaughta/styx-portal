@@ -44,7 +44,7 @@ class Session:
 class WebRTCGateway:
     def __init__(self, *, transport: str, idle_s: int, idle_enabled: bool, max_session_s: int,
                  hold_s: float, viewers, seat: bool, live_port, write_state, touch, kill_path,
-                 attach, detach, submit_size, log=print):
+                 attach, detach, submit_size, log=print, webrtc_off: bool = False):
         self.transport = transport if transport == "webrtc" else "websockets"
         self.idle_s = idle_s if idle_enabled and idle_s > 0 else 0
         self.max_s, self.hold_s = max_session_s, hold_s
@@ -54,6 +54,7 @@ class WebRTCGateway:
         self.live_port, self.write_state, self.touch, self.kill_path = live_port, write_state, touch, kill_path
         self.attach, self.detach, self.submit_size, self.log = attach, detach, submit_size, log
         self.gamemode = None
+        self.webrtc_off = webrtc_off   # TURN budget reached: no WebRTC at all
 
     @property
     def n(self) -> int:
@@ -158,11 +159,11 @@ class WebRTCGateway:
             return web.Response(status=426, text="websocket upgrade required")
         if not same_origin(request):
             return web.Response(status=403, text="forbidden origin")
-        if self.transport != "webrtc":
-            # The selkies sidebar can flip the client to WebRTC by itself, which would
-            # skip refit, idle/max-session cuts and the TURN budget: the portal decides.
-            self.log("webrtc refused: transport is websockets (set by the portal)")
-            return web.Response(status=403, text="WebRTC is not enabled for this workstation")
+        if self.webrtc_off:
+            # 409 = selkies' own "server serves WebSockets": the client flips its stored
+            # mode back once instead of retrying (a 403 made it reload in a loop).
+            self.log("webrtc refused: TURN budget reached, WebSockets only")
+            return web.Response(status=409, text="WebRTC is paused (TURN budget reached)")
         qs, sid = split_vid(request.rel_url.raw_query_string, f"wr{uuid.uuid4().hex}")
         now = time.time()
         self._purge(now)

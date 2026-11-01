@@ -102,7 +102,8 @@ def create_app(user: str, password: str,
                state_file: str = "", idle_timeout_s: int = 0,
                idle_lead_s: int = 60, idle_enabled: bool = False,
                seat_dir: str = "", icon_dir: str = "",
-               transport: str = "", max_session_s: int = 0) -> web.Application:
+               transport: str = "", max_session_s: int = 0,
+               webrtc_off: bool = False) -> web.Application:
     # The supervisor can promote a warm standby selkies on a refit: the live
     # port is then in <seat_dir>/selkies-port, re-read per request.
     port_file = os.path.join(seat_dir, "selkies-port") if seat_dir else ""
@@ -487,7 +488,7 @@ def create_app(user: str, password: str,
         if icon:
             html = inject_favicon(html, icon[2])
         html = inject_idle_watchdog(html, idle_timeout_s, idle_lead_s, idle_enabled)
-        html = inject_webrtc(html, wrtc.transport == "webrtc")
+        html = inject_webrtc(html, True)   # sidebar may pick WebRTC: shim arms on signaling open
         html = inject_gamemode(html)
         html = inject_cursor_hide(html, bool(seat_dir))
         html = inject_touch_scroll(html)
@@ -588,7 +589,7 @@ def create_app(user: str, password: str,
 
     wrtc = WebRTCGateway(
         transport=transport, idle_s=idle_timeout_s, idle_enabled=idle_enabled,
-        max_session_s=max_session_s,
+        max_session_s=max_session_s, webrtc_off=webrtc_off,
         hold_s=idle_timeout_s if idle_enabled and idle_timeout_s > 0 else BUSY_HOLD_S,
         viewers=viewers, seat=bool(seat_dir), live_port=live_port,
         write_state=_write_state, touch=lambda ts: last_input.update(ts=ts),
@@ -624,11 +625,13 @@ def main() -> None:
     icon_dir = os.environ.get("STYX_GW_ICON_DIR", "")
     transport = os.environ.get("STYX_GW_TRANSPORT", "")
     max_session_s = int(os.environ.get("STYX_GW_MAX_SESSION_S", "0") or "0")
+    webrtc_off = os.environ.get("STYX_GW_WEBRTC_OFF", "") == "1"
     web.run_app(create_app(user, password, upstream_port, files_dir,
                            state_file=state_file, idle_timeout_s=idle_timeout_s,
                            idle_lead_s=idle_lead_s, idle_enabled=idle_enabled,
                            seat_dir=seat_dir, icon_dir=icon_dir,
-                           transport=transport, max_session_s=max_session_s),
+                           transport=transport, max_session_s=max_session_s,
+                           webrtc_off=webrtc_off),
                 host="0.0.0.0", port=listen_port)
 
 

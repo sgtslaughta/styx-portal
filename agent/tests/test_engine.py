@@ -419,7 +419,9 @@ def test_transport_defaults_to_websockets(tmp_path, monkeypatch):
     _stub(monkeypatch)
     cmd, env = engine.build_selkies_cmd(_cfg(tmp_path), 1)
     assert "--mode=websockets" in cmd
-    assert not any(k.startswith(("SELKIES_TURN", "SELKIES_CLOUDFLARE")) for k in env)
+    # no TURN configured: only the demo-relay blanks, never a relay
+    assert env["SELKIES_TURN_HOST"] == "" and env["SELKIES_TURN_SHARED_SECRET"] == ""
+    assert not any(k.startswith("SELKIES_CLOUDFLARE") for k in env)
 
 
 def test_webrtc_transport_switches_mode(tmp_path, monkeypatch):
@@ -467,10 +469,13 @@ def test_generic_turn_username_password(tmp_path, monkeypatch):
     assert not any("PW-SECRET" in a for a in cmd)
 
 
-def test_turn_ignored_on_websockets(tmp_path, monkeypatch):
+def test_turn_applied_on_websockets_for_sidebar_webrtc(tmp_path, monkeypatch):
+    # The selkies sidebar can switch a viewer to WebRTC on a WebSockets default.
     _stub(monkeypatch)
-    _, env = engine.build_selkies_cmd(_cfg(tmp_path, **_ss(turn=CF)), 1)
-    assert "SELKIES_CLOUDFLARE_TURN_API_TOKEN" not in env
+    cmd, env = engine.build_selkies_cmd(_cfg(tmp_path, **_ss(turn=CF)), 1)
+    assert "--mode=websockets" in cmd
+    assert env["SELKIES_CLOUDFLARE_TURN_API_TOKEN"] == CF["api_token"]
+    assert env["SELKIES_TURN_HOST"] == ""             # demo relay still blanked
 
 
 def test_turn_env_never_falls_back_to_public_demo_relay():

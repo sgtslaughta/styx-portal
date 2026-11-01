@@ -73,7 +73,10 @@ def test_old_agent_unchanged():
 
 def test_transport_resolution_and_turn():
     eff = resolve_stream_settings(None, CF, "0.9.30")
-    assert eff["transport"] == "websockets" and "turn" not in eff
+    # WebSockets is only the default: a viewer's sidebar may pick WebRTC, so TURN still ships
+    assert eff["transport"] == "websockets" and eff["turn"]["provider"] == "cloudflare"
+    paused = resolve_stream_settings(None, {**CF, "TURN_OVER_BUDGET": True}, "0.9.30")
+    assert paused["turn_budget_paused"] is True and "turn" not in paused
     assert eff["max_session_s"] == 8 * 3600
     eff = resolve_stream_settings({"transport": "inherit"}, {**CF, "WORKSTATION_TRANSPORT": "webrtc"}, "0.9.30")
     assert eff["transport"] == "webrtc"
