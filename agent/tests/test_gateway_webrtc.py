@@ -245,3 +245,80 @@ def test_relay_credit_capped_by_elapsed_time():
     before = g.turn_bytes
     g.credit(s, 10**12 + 5_000_000, now=1011.0)  # honest 5 MB over 10 s counts fully
     assert g.turn_bytes - before == 5_000_000
+
+
+@pytest.mark.asyncio
+async def test_signaling_refused_when_admin_chose_websockets(tmp_path):
+    # The selkies sidebar can switch the client to WebRTC on its own; that would
+    # skip refit, idle/max-session cuts and the TURN budget. Only the portal decides.
+    up, client, seen = await _pair(tmp_path, transport="websockets")
+    try:
+        r = await client.get("/api/webrtc/signaling/?x=1", headers={
+            **HDR, "Upgrade": "websocket", "Connection": "Upgrade",
+            "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==", "Sec-WebSocket-Version": "13"})
+        assert r.status == 403
+        assert "WebRTC is not enabled" in await r.text()
+        assert seen == []
+    finally:
+        await client.close()
+        await up.close()
+
+
+async def _gm(client, **body):
+    return await client.post("/styx/gamemode", json=body, headers=HDR)
+
+
+@pytest.mark.asyncio
+async def test_webrtc_refit_swallowed_while_gamemode_pinned(tmp_path):
+    (tmp_path / "seat-size").write_text("1920x1080")
+    up, client, _ = await _pair(tmp_path, seat_dir=str(tmp_path))
+    try:
+        await _sig(client, "A")
+        assert (await _gm(client, active=True, w=2560, h=1440, dpr=1)).status == 204
+        await _until(lambda: (tmp_path / "refit-request").read_text() == "2560x1440"
+                     if (tmp_path / "refit-request").exists() else False)
+        (tmp_path / "refit-request").unlink()
+        r = await client.post("/styx/refit", json={"sid": "A", "w": 1280, "h": 647}, headers=HDR)
+        assert r.status == 204
+        await asyncio.sleep(0.5)
+        assert not (tmp_path / "refit-request").exists()
+        assert (await _gm(client, active=False, w=1280, h=647, dpr=1)).status == 204
+        await _until(lambda: (tmp_path / "refit-request").exists())
+        assert (tmp_path / "refit-request").read_text() == "1280x646"
+    finally:
+        await client.close()
+        await up.close()
+
+
+@pytest.mark.asyncio
+async def test_gamemode_validation_and_origin(tmp_path):
+    up, client, _ = await _pair(tmp_path, seat_dir=str(tmp_path))
+    try:
+        assert (await _gm(client, active=True, w="x", h=1)).status == 400
+        assert (await _gm(client, active=True, w=0, h=1)).status == 400
+        assert (await _gm(client, active=True, w=99999, h=1)).status == 400
+        r = await client.post("/styx/gamemode", json={"active": True, "w": 1, "h": 1},
+                              headers={**HDR, "Origin": "https://evil.example"})
+        assert r.status == 403
+    finally:
+        await client.close()
+        await up.close()
+
+
+@pytest.mark.asyncio
+async def test_gamemode_shim_injected_in_both_transports(tmp_path):
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+    app = web.Application()
+    app.router.add_get("/", lambda r: web.Response(text="<html><head></head><body></body></html>",
+                                                    content_type="text/html"))
+    up = TestClient(TestServer(app))
+    await up.start_server()
+    for tr in ("webrtc", "websockets"):
+        c = TestClient(TestServer(gateway.create_app("styx", "pw", upstream_port=up.server.port,
+                                                     transport=tr)))
+        await c.start_server()
+        html = await (await c.get("/", headers=HDR)).text()
+        await c.close()
+        assert "gamingModeUpdate" in html and "requestFullscreen" in html and "styx/gamemode" in html
+    await up.close()

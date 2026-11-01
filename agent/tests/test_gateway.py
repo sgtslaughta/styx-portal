@@ -945,7 +945,7 @@ async def test_webrtc_signaling_passes_through_as_websocket():
     upa.router.add_get("/api/webrtc/signaling/", echo)
     up = TestClient(TestServer(upa))
     await up.start_server()
-    c = TestClient(TestServer(gateway.create_app("styx", "pw", upstream_port=up.server.port)))
+    c = TestClient(TestServer(gateway.create_app("styx", "pw", upstream_port=up.server.port, transport="webrtc")))
     await c.start_server()
     h = {"Authorization": _basic("styx", "pw")}
     try:

@@ -53,6 +53,7 @@ class WebRTCGateway:
         self.viewers, self.seat = viewers, seat
         self.live_port, self.write_state, self.touch, self.kill_path = live_port, write_state, touch, kill_path
         self.attach, self.detach, self.submit_size, self.log = attach, detach, submit_size, log
+        self.gamemode = None
 
     @property
     def n(self) -> int:
@@ -147,7 +148,7 @@ class WebRTCGateway:
         rec = self.viewers.by_vid.get(sid) if sid else None
         if rec is None:
             rec = self.viewers.by_vid.get(self.viewers.newest())
-        if rec is not None and self.seat:
+        if rec is not None and self.seat and not (self.gamemode and self.gamemode.pin):
             self.submit_size(rec, req)
         return web.Response(status=204)
 
@@ -157,6 +158,11 @@ class WebRTCGateway:
             return web.Response(status=426, text="websocket upgrade required")
         if not same_origin(request):
             return web.Response(status=403, text="forbidden origin")
+        if self.transport != "webrtc":
+            # The selkies sidebar can flip the client to WebRTC by itself, which would
+            # skip refit, idle/max-session cuts and the TURN budget: the portal decides.
+            self.log("webrtc refused: transport is websockets (set by the portal)")
+            return web.Response(status=403, text="WebRTC is not enabled for this workstation")
         qs, sid = split_vid(request.rel_url.raw_query_string, f"wr{uuid.uuid4().hex}")
         now = time.time()
         self._purge(now)

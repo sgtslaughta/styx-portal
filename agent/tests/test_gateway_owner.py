@@ -1,3 +1,4 @@
+import asyncio
 import sys
 from pathlib import Path
 
@@ -254,3 +255,78 @@ async def test_seat_scale_change_restarts_selkies_at_same_size(tmp_path):
 async def asyncio_sleep(t):
     import asyncio
     await asyncio.sleep(t)
+
+
+@pytest.mark.asyncio
+async def test_gamemode_pins_seat_size_over_websocket(tmp_path):
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+    (tmp_path / "seat-size").write_text("1920x1080")
+
+    async def upstream_ws(request):
+        ws = web.WebSocketResponse()
+        await ws.prepare(request)
+        async for _ in ws:
+            pass
+        return ws
+    app = web.Application()
+    app.router.add_get("/api/websockets", upstream_ws)
+    up = TestClient(TestServer(app))
+    await up.start_server()
+    client = TestClient(TestServer(gateway.create_app(
+        "styx", "pw", upstream_port=up.server.port, seat_dir=str(tmp_path))))
+    await client.start_server()
+    hdr = {"Authorization": _basic("styx", "pw")}
+    req = tmp_path / "refit-request"
+    try:
+        a = await _vid_ws(client, "A", hdr)
+        r = await client.post("/styx/gamemode", json={"active": True, "w": 2560, "h": 1440}, headers=hdr)
+        assert r.status == 204
+        await _until(req.exists)
+        assert req.read_text() == "2560x1440"
+        req.unlink()
+        a = await _vid_ws(client, "A", hdr)          # the refit dropped the old socket
+        await a.send_str("r,1280x720,primary")
+        await asyncio.sleep(0.6)
+        assert not req.exists()
+        r = await client.post("/styx/gamemode", json={"active": False, "w": 1280, "h": 720}, headers=hdr)
+        assert r.status == 204
+        await _until(req.exists)
+        assert req.read_text() == "1280x720"
+        req.unlink()
+        (tmp_path / "seat-size").write_text("1280x720")
+        a = await _vid_ws(client, "A", hdr)
+        await a.send_str("r,1000x600,primary")
+        await _until(req.exists)
+        assert req.read_text() == "1000x600"
+    finally:
+        await client.close()
+        await up.close()
+
+
+@pytest.mark.asyncio
+async def test_gamemode_pin_cleared_when_last_viewer_leaves(tmp_path, monkeypatch):
+    # A tab closed in game mode must not leave every later session's resizes swallowed.
+    monkeypatch.setattr(gateway, "BUSY_HOLD_S", 0)
+    monkeypatch.setattr(gateway, "OWNER_GRACE_S", 0.3)
+    monkeypatch.setattr(gateway, "REFIT_HOLD_S", 0)
+    (tmp_path / "seat-size").write_text("1920x1080")
+    up, client = await _refit_pair(tmp_path, [], str(tmp_path))
+    hdr = {"Authorization": _basic("styx", "pw")}
+    req = tmp_path / "refit-request"
+    try:
+        a = await _vid_ws(client, "A", hdr)
+        r = await client.post("/styx/gamemode", json={"active": True, "w": 2560, "h": 1440}, headers=hdr)
+        assert r.status == 204
+        await _until(req.exists)
+        req.unlink()
+        await a.close()                                  # tab closed while pinned
+        await asyncio.sleep(0.8)                         # grace over -> viewer expired
+        (tmp_path / "seat-size").write_text("2560x1440")
+        b = await _vid_ws(client, "B", hdr)
+        await b.send_str("r,1280x720,primary")
+        await _until(req.exists)                         # resizes work again
+        assert req.read_text() == "1280x720"
+    finally:
+        await client.close()
+        await up.close()

@@ -23,6 +23,7 @@ from pathlib import Path
 import aiohttp
 import favicon
 import refit
+from gamemode import GameMode
 import seat_scale
 import yarl
 from aiohttp import web
@@ -37,6 +38,7 @@ from gateway_html import (  # noqa: F401  (re-exported for tests)
     inject_touch_scroll,
     inject_idle_watchdog,
     inject_webrtc,
+    inject_gamemode,
     inject_title,
     inject_favicon,
     is_activity,
@@ -220,6 +222,9 @@ def create_app(user: str, password: str,
             rec.gone = asyncio.get_running_loop().call_later(OWNER_GRACE_S, expire, vid)
             return
         viewers.drop(vid)
+        if not viewers.by_vid and gm.pin:       # last viewer gone: no stale game-mode pin
+            gm.pin = None
+            log("gamemode off: last viewer left")
         if size_owner.owner == vid:
             size_owner.release(vid)
             nxt = viewers.newest()
@@ -432,6 +437,8 @@ def create_app(user: str, password: str,
                     req = refit.parse_resize(data)
                     if not req:
                         return False
+                    if gm.pin:
+                        return True         # game mode: seat size pinned
                     submit_size(rec, req)
                     return True
 
@@ -481,6 +488,7 @@ def create_app(user: str, password: str,
             html = inject_favicon(html, icon[2])
         html = inject_idle_watchdog(html, idle_timeout_s, idle_lead_s, idle_enabled)
         html = inject_webrtc(html, wrtc.transport == "webrtc")
+        html = inject_gamemode(html)
         html = inject_cursor_hide(html, bool(seat_dir))
         html = inject_touch_scroll(html)
         html = refit.inject_reload(html, bool(seat_dir))
@@ -585,12 +593,14 @@ def create_app(user: str, password: str,
         viewers=viewers, seat=bool(seat_dir), live_port=live_port,
         write_state=_write_state, touch=lambda ts: last_input.update(ts=ts),
         kill_path=state_file and state_file + KILL_SUFFIX, attach=attach, detach=detach, submit_size=submit_size, log=log)
+    gm = wrtc.gamemode = GameMode(viewers, size_owner, submit_size, bool(seat_dir), log)
     _write_state()   # reset any stale count from a previous gateway run
 
     app = web.Application(middlewares=[auth_mw], client_max_size=0)
     for path in ("/api/websockets", "/websockets", "/websocket"):
         app.router.add_get(path, ws_proxy)
     wrtc.install(app)
+    app.router.add_post("/styx/gamemode", gm.handle)
     app.router.add_get("/", index)
     app.router.add_get("/styx-favicon", styx_favicon)
     if files_dir and os.path.isdir(files_dir):
