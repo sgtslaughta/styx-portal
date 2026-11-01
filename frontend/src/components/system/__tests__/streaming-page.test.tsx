@@ -6,11 +6,13 @@ const getSystemSettings = vi.fn();
 const updateSystemSettings = vi.fn();
 const updateWorkstation = vi.fn();
 const listWorkstations = vi.fn();
+const resetSystemSetting = vi.fn().mockResolvedValue({});
 vi.mock("@/api/client", () => ({
   api: {
     getSystemSettings: (...a: unknown[]) => getSystemSettings(...a),
     updateSystemSettings: (...a: unknown[]) => updateSystemSettings(...a),
     updateWorkstation: (...a: unknown[]) => updateWorkstation(...a),
+    resetSystemSetting: (...a: unknown[]) => resetSystemSetting(...a),
     listWorkstations: (...a: unknown[]) => listWorkstations(...a),
     getTurnUsage: () => Promise.resolve({ month: "2026-11", free_gb: 1000, usd_per_gb: "0.05", total_bytes: 12.4e9, est_usd: 0, projected_bytes: 31e9, projected_usd: 0, by_workstation: [], by_user: [] }),
     getTurnCheck: () => Promise.resolve({ provider: "cloudflare", checked_at: "2026-11-01T00:00:00Z", checks: [] }),
@@ -156,6 +158,8 @@ describe("reset to default", () => {
     expect(updateSystemSettings).not.toHaveBeenCalled();
     expect(screen.getByTestId("count").textContent).toBe("1");
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-    await waitFor(() => expect(updateSystemSettings).toHaveBeenCalledWith({ WORKSTATION_DEFAULT_CRF: 25 }));
+    // Back to default = drop the override (so later default changes still apply), not write 25.
+    await waitFor(() => expect(resetSystemSetting).toHaveBeenCalledWith("WORKSTATION_DEFAULT_CRF"));
+    expect(updateSystemSettings).not.toHaveBeenCalled();
   });
 });

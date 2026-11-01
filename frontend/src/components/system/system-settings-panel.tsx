@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api, type Setting, type SettingGroup, type SettingValue } from "@/api/client";
 import { SettingField, isChanged } from "@/components/settings/setting-field";
+import { saveSettings } from "@/lib/save-settings";
 import { SavePill } from "@/components/settings/save-pill";
 import { useUnsaved } from "@/components/settings/unsaved-context";
 
@@ -40,8 +41,7 @@ export function SystemSettingsPanel({ groups: only }: { groups?: string[] } = {}
   useEffect(() => () => setCount(0), [setCount]);
 
   const updateMutation = useMutation({
-    mutationFn: (changes: Record<string, number | boolean | string>) =>
-      api.updateSystemSettings(changes),
+    mutationFn: (changes: Record<string, number | boolean | string>) => saveSettings(changes, all_),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["system-settings"] });
       setEdits({});
