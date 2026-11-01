@@ -1,0 +1,22 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 30
+    rankSpacing: 40
+    padding: 10
+---
+sequenceDiagram
+    participant B as Browser
+    participant T as Traefik
+    participant API as backend /api
+    B->>API: POST /api/auth/login
+    API-->>B: Set-Cookie access_token (Path=/api), refresh_token (Path=/api/auth),<br/>styx_proxy (Path=/), csrf_token
+    B->>API: POST /api/... + X-CSRF-Token
+    Note over B,API: CSRF middleware compares cookie and header
+    B->>T: GET /i/dev (cookie styx_proxy)
+    T->>API: forwardAuth (internal, styx_proxy only)
+    API-->>T: 200 + cleaned Cookie header
+    T->>B: proxied desktop

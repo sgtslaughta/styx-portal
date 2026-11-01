@@ -4,6 +4,22 @@
   <img src="docs/assets/screens/hero-dashboard.png" alt="Styx Portal dashboard with running desktops and workstations" width="900">
 </p>
 
+<p align="center">
+  <a href="https://github.com/selkies-project"><img src="https://raw.githubusercontent.com/selkies-project/selkies/main/docs/assets/logo/selkies.svg" alt="Selkies" height="64"></a>
+</p>
+<p align="center">
+  <b>Streaming powered by the <a href="https://github.com/selkies-project">Selkies Project</a></b><br>
+  <a href="https://github.com/selkies-project/selkies"><img src="https://img.shields.io/github/stars/selkies-project/selkies?style=social&label=selkies" alt="selkies on GitHub"></a>
+  <a href="https://github.com/selkies-project/pixelflux"><img src="https://img.shields.io/github/stars/selkies-project/pixelflux?style=social&label=pixelflux" alt="pixelflux on GitHub"></a>
+  <a href="https://github.com/selkies-project/pcmflux"><img src="https://img.shields.io/github/stars/selkies-project/pcmflux?style=social&label=pcmflux" alt="pcmflux on GitHub"></a>
+</p>
+<p align="center"><sub>
+  selkies, pixelflux and pcmflux do the hard part: capture, hardware encoding, the WebSocket/WebRTC
+  transports and the browser client. Their maintainers answered our bug reports with root-cause fixes
+  and reviewed our patches with real care. If Styx is useful to you, please
+  <a href="https://github.com/selkies-project/selkies">star and support Selkies</a>.
+</sub></p>
+
 
 <!-- Status -->
 [![CI](https://github.com/sgtslaughta/styx-portal/actions/workflows/ci.yml/badge.svg)](https://github.com/sgtslaughta/styx-portal/actions/workflows/ci.yml)
@@ -25,7 +41,7 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
 
-> **Your machines and your apps, in a browser tab.** Styx Portal is a self-hosted platform that launches containerized Linux desktops, streams your physical workstations at low latency, and puts your home-lab apps behind one sign-in. Streaming is powered by the excellent [Selkies Project](https://github.com/selkies-project) — [selkies](https://github.com/selkies-project/selkies), [pixelflux](https://github.com/selkies-project/pixelflux) and [pcmflux](https://github.com/selkies-project/pcmflux).
+> **Your machines and your apps, in a browser tab.** Styx Portal is a self-hosted platform that launches containerized Linux desktops, streams your physical workstations at low latency, and puts your home-lab apps behind one sign-in.
 
 ## Why Styx
 
@@ -38,8 +54,6 @@ The spark was [LinuxServer.io](https://www.linuxserver.io/) moving from Kasm Wor
 ### Stream a real workstation
 
 Enroll a Linux machine with one command and open its desktop in the browser. A private GNOME seat runs beside your login session (the physical screen is untouched), encoded on the GPU with AV1, HEVC or H.264, with audio, two-way clipboard and file transfer.
-
-![A streamed desktop with the side panel open](docs/assets/screens/hero-workstation-stream.png)
 
 ### Launch disposable desktops
 
@@ -83,54 +97,7 @@ Open `https://<your domain>`, enter the setup code from `docker compose logs bac
 
 Browser, Traefik (TLS, rate limits, forwardAuth), FastAPI backend and React frontend, then Docker (or Kubernetes) for desktops and proxied apps, and a small agent on each enrolled workstation running Selkies behind an authenticated gateway. Details: [architecture](https://sgtslaughta.github.io/styx-portal/build/architecture/).
 
-```mermaid
----
-config:
-  themeVariables:
-    fontSize: 15px
-  flowchart:
-    curve: basis
-    nodeSpacing: 30
-    rankSpacing: 40
-    padding: 10
----
-flowchart TD
-    you("Browser<br/>any device"):::ext
-    subgraph edge ["Edge"]
-        tun("Cloudflare Tunnel<br/>or direct TLS"):::gate
-        tr("Traefik<br/>rate limit · ban gate · forwardAuth"):::gate
-    end
-    subgraph portal ["Styx portal"]
-        fe("Frontend<br/>React SPA"):::core
-        be("Backend<br/>FastAPI"):::core
-        db[("SQLite<br/>db-data volume")]:::store
-    end
-    subgraph rt ["Docker or Kubernetes"]
-        inst("Disposable desktops<br/>from templates"):::run
-        apps("Proxied apps<br/>Jellyfin, Sonarr, ..."):::run
-    end
-    subgraph ws ["Your workstation"]
-        gw("Agent gateway<br/>Basic auth, idle, busy gate"):::run
-        sk("Selkies stream<br/>headless GNOME seat"):::run
-        ag("Styx agent<br/>supervisor"):::run
-    end
-    you -->|HTTPS| tun --> tr
-    tr -->|"/"| fe
-    tr -->|"/api"| be
-    be --- db
-    tr -->|"/i/name"| inst
-    tr -->|"/app-slug"| apps
-    tr -->|"/w/name over LAN"| gw --> sk
-    ag -.->|"heartbeat every 30 s"| be
-    ag -.->|supervises| gw
-    be -.->|"creates and stops"| inst
-    be -.->|"writes routes"| tr
-    classDef ext fill:#66797F,stroke:#3F5157
-    classDef core fill:#2A8C94,stroke:#1B5F65
-    classDef gate fill:#A67828,stroke:#6E4F14
-    classDef run fill:#3C9060,stroke:#285F3F
-    classDef store fill:#4B7DB3,stroke:#2D5280
-```
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/diagrams/readme-1-dark.svg"><img src="docs/assets/diagrams/readme-1-light.svg" alt="Styx architecture: browser, edge with Traefik, portal and workstations"></picture>
 
 ## Documentation
 
@@ -159,10 +126,7 @@ Start with [CLAUDE.md](CLAUDE.md) for the project layout and commands, and the [
 
 Styx is glue around other people's outstanding work, and it could not exist without them.
 
-- **[The Selkies Project](https://github.com/selkies-project)** — selkies, pixelflux and pcmflux do the
-  hard part: capture, hardware encoding, the WebSocket/WebRTC transports and the browser client. Its
-  maintainers answered our bug reports with root-cause fixes and reviewed our patches with real care.
-  If Styx is useful to you, please [star and support Selkies](https://github.com/selkies-project/selkies).
+- **[The Selkies Project](https://github.com/selkies-project)**: see the top of this page.
 - **[LinuxServer.io](https://www.linuxserver.io/)** — the `baseimage-selkies` desktop images (and the move
   to Selkies that inspired this project).
 - **GNOME/Mutter, PipeWire, Traefik, FastAPI, React** and many more — see

@@ -1,0 +1,46 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 30
+    rankSpacing: 40
+    padding: 10
+---
+flowchart TD
+    you("Browser<br/>any device"):::ext
+    subgraph edge ["Edge"]
+        tun("Cloudflare Tunnel<br/>or direct TLS"):::gate
+        tr("Traefik<br/>rate limit · ban gate · forwardAuth"):::gate
+    end
+    subgraph portal ["Styx portal"]
+        fe("Frontend<br/>React SPA"):::core
+        be("Backend<br/>FastAPI"):::core
+        db[("SQLite<br/>db-data volume")]:::store
+    end
+    subgraph rt ["Docker or Kubernetes"]
+        inst("Disposable desktops<br/>from templates"):::run
+        apps("Proxied apps<br/>Jellyfin, Sonarr, ..."):::run
+    end
+    subgraph ws ["Your workstation"]
+        gw("Agent gateway<br/>Basic auth, idle, busy gate"):::run
+        sk("Selkies stream<br/>headless GNOME seat"):::run
+        ag("Styx agent<br/>supervisor"):::run
+    end
+    you -->|HTTPS| tun --> tr
+    tr -->|"/"| fe
+    tr -->|"/api"| be
+    be --- db
+    tr -->|"/i/name"| inst
+    tr -->|"/app-slug"| apps
+    tr -->|"/w/name over LAN"| gw --> sk
+    ag -.->|"heartbeat every 30 s"| be
+    ag -.->|supervises| gw
+    be -.->|"creates and stops"| inst
+    be -.->|"writes routes"| tr
+    classDef ext fill:#66797F,stroke:#3F5157
+    classDef core fill:#2A8C94,stroke:#1B5F65
+    classDef gate fill:#A67828,stroke:#6E4F14
+    classDef run fill:#3C9060,stroke:#285F3F
+    classDef store fill:#4B7DB3,stroke:#2D5280

@@ -41,38 +41,8 @@ The enrollment script will:
 
 ### What the script does
 
-```mermaid
----
-config:
-  themeVariables:
-    fontSize: 15px
-  flowchart:
-    curve: basis
-    nodeSpacing: 30
-    rankSpacing: 40
-    padding: 10
----
-flowchart TD
-    tok("Admin: Enroll workstation<br/>single-use token, valid 1 h"):::core --> run("Run the one-liner<br/>on the workstation"):::ext
-    run --> p1
-    subgraph pre ["Preflight (enroll.sh steps 1 to 6)"]
-        p1("E01 tools, Python 3.10+,<br/>glibc 2.34+, 2 GB free"):::chk --> p2("E02 capture mode<br/>mirror needs an X display"):::chk
-        p2 --> p3("E05 / E06 portal reachable,<br/>TLS pin matches"):::chk
-        p3 --> p4("E04 PipeWire<br/>or PulseAudio"):::chk
-        p4 --> p5("E03 install seat and GPU<br/>packages, one by one"):::chk
-        p5 --> p6("E07 port free<br/>E08 systemd --user"):::chk
-    end
-    pre -.->|"any check fails"| fail("Prints its Exx code and stops<br/>an upgrade restores the old install"):::bad
-    p6 -->|ok| inst("Step 7: download agent and wheelhouse,<br/>create venv, install wheels"):::core
-    inst --> reg("Step 8: register with the token<br/>hardware report in, agent token out"):::core
-    reg --> svc("Write config, install the<br/>systemd user unit, start"):::run
-    svc --> hb("Heartbeat every 30 s<br/>workstation shows Online"):::run
-    classDef ext fill:#66797F,stroke:#3F5157
-    classDef core fill:#2A8C94,stroke:#1B5F65
-    classDef run fill:#3C9060,stroke:#285F3F
-    classDef bad fill:#CC563A,stroke:#8E3420
-    classDef chk stroke:#2A8C94,stroke-width:1.5px
-```
+![Enrollment flow: mint a token, run the one-liner, pass preflight checks and register the workstation](../assets/diagrams/operate-workstations-enroll-1-light.svg#only-light)
+![Enrollment flow: mint a token, run the one-liner, pass preflight checks and register the workstation](../assets/diagrams/operate-workstations-enroll-1-dark.svg#only-dark)
 
 ### Requirements
 
@@ -330,33 +300,8 @@ curl -fsSL https://<portal>/api/enroll/script | bash -s -- --upgrade --server ht
 
 **Update flow**
 
-```mermaid
----
-config:
-  themeVariables:
-    fontSize: 15px
-  flowchart:
-    curve: basis
-    nodeSpacing: 30
-    rankSpacing: 40
-    padding: 10
----
-flowchart TD
-    hb("Agent heartbeat<br/>reports agent_version"):::run --> cmp{{"Older than the<br/>portal's AGENT_VERSION?"}}
-    cmp -->|no| cur("Up to date"):::run
-    cmp -->|yes| badge("Admin panel shows<br/>update available"):::core
-    badge --> up("On the workstation, run the<br/>enroll script with --upgrade"):::ext
-    up --> mv("Old install moves to<br/>styx-agent.prev, config and<br/>TLS pin are kept"):::core
-    mv --> ok{{"New install<br/>starts OK?"}}
-    ok -->|yes| new("Heartbeats with the<br/>new version"):::run
-    ok -->|no| rb("Previous install restored<br/>automatically"):::bad
-    new -.->|"later, if needed"| rbk("styx_agent.py rollback<br/>swaps the two directories"):::gate
-    classDef ext fill:#66797F,stroke:#3F5157
-    classDef core fill:#2A8C94,stroke:#1B5F65
-    classDef gate fill:#A67828,stroke:#6E4F14
-    classDef run fill:#3C9060,stroke:#285F3F
-    classDef bad fill:#CC563A,stroke:#8E3420
-```
+![Agent upgrade flow: version check, update badge, rerun enroll with upgrade, and rollback on failure](../assets/diagrams/operate-workstations-enroll-2-light.svg#only-light)
+![Agent upgrade flow: version check, update badge, rerun enroll with upgrade, and rollback on failure](../assets/diagrams/operate-workstations-enroll-2-dark.svg#only-dark)
 
 Upgrade may ask for sudo only to enable user lingering if it is off. The old install moves to `~/.local/share/styx-agent.prev`; a failed upgrade restores it automatically.
 

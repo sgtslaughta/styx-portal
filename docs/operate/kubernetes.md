@@ -21,49 +21,8 @@ After boot, check `kubectl -n styx get ingressroutes` (expect the Styx base rout
 
 ## Topology
 
-```mermaid
----
-config:
-  themeVariables:
-    fontSize: 15px
-  flowchart:
-    curve: basis
-    nodeSpacing: 30
-    rankSpacing: 40
-    padding: 10
----
-flowchart TD
-    inet("Internet"):::ext --> tun
-    lan("LAN workstations"):::ext --> tr
-    subgraph cfns ["namespace: cloudflared"]
-        tun("Edge tunnel pods"):::gate
-    end
-    subgraph tns ["namespace: traefik"]
-        tr("Traefik<br/>IngressRoutes, Middlewares"):::gate
-    end
-    subgraph sns ["namespace: styx (default-deny ingress)"]
-        fe("frontend<br/>Deployment"):::core
-        be("backend<br/>Deployment, ROUTE_BACKEND=k8s"):::core
-        pvc[("styx-data<br/>PVC")]:::store
-        bk("backup<br/>CronJob"):::store
-    end
-    subgraph ins ["namespace: styx-instances"]
-        pods("Desktop instances<br/>Deployment, Service, PVC each"):::run
-    end
-    tun --> tr
-    tr --> fe
-    tr -->|"/api"| be
-    tr --> pods
-    be --- pvc
-    bk -.-> pvc
-    be -->|"Role in styx-instances"| pods
-    be -.->|"writes routes as CRDs"| tr
-    classDef ext fill:#66797F,stroke:#3F5157
-    classDef core fill:#2A8C94,stroke:#1B5F65
-    classDef gate fill:#A67828,stroke:#6E4F14
-    classDef run fill:#3C9060,stroke:#285F3F
-    classDef store fill:#4B7DB3,stroke:#2D5280
-```
+![Kubernetes deployment layout by namespace: edge tunnel, Traefik, portal and instances](../assets/diagrams/operate-kubernetes-1-light.svg#only-light)
+![Kubernetes deployment layout by namespace: edge tunnel, Traefik, portal and instances](../assets/diagrams/operate-kubernetes-1-dark.svg#only-dark)
 
 ## Install
 

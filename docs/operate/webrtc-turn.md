@@ -18,26 +18,8 @@ inside its free tier.
 Measured on a LAN with an RTX 4090 seat, input-to-screen p95 was 42 / 45 / 33 ms
 (key / click / motion) over WebRTC, against 113 / 59 / 98 ms over WebSockets.
 
-```mermaid
----
-config:
-  themeVariables:
-    fontSize: 15px
-  flowchart:
-    curve: basis
-    nodeSpacing: 30
-    rankSpacing: 40
-    padding: 10
----
-flowchart LR
-    B("Browser"):::ext -- "signaling over HTTPS/WSS" --> P("Portal"):::core --> G("Workstation gateway"):::run
-    B -. "UDP direct (open networks)" .-> W("Workstation"):::run
-    B -- "UDP via TURN (restrictive networks)" --> T[("TURN relay")]:::gate --> W
-    classDef ext fill:#66797F,stroke:#3F5157
-    classDef core fill:#2A8C94,stroke:#1B5F65
-    classDef run fill:#3C9060,stroke:#285F3F
-    classDef gate fill:#A67828,stroke:#6E4F14
-```
+![WebRTC connection paths: signaling via the portal, direct UDP on open networks, or UDP via a TURN relay](../assets/diagrams/operate-webrtc-turn-1-light.svg#only-light)
+![WebRTC connection paths: signaling via the portal, direct UDP on open networks, or UDP via a TURN relay](../assets/diagrams/operate-webrtc-turn-1-dark.svg#only-dark)
 
 !!! warning "Corporate networks"
     Many corporate firewalls let UDP out to STUN servers but drop peer-to-peer replies.
@@ -94,31 +76,8 @@ Three guards keep the cost bounded:
   input. A closed, hidden or crashed tab sends no activity, so it is cut too.
 - **WebRTC max session (h)**, default 8. A hard cap on any single session.
 
-```mermaid
----
-config:
-  themeVariables:
-    fontSize: 15px
-  flowchart:
-    curve: basis
-    nodeSpacing: 30
-    rankSpacing: 40
-    padding: 10
----
-flowchart TD
-    H("Agent heartbeat"):::core --> M{"Cloudflare analytics<br/>configured?"}:::chk
-    M -- yes --> C[("Cloudflare egress,<br/>month to date")]:::store
-    M -- no --> S[("Styx metered<br/>relay bytes")]:::store
-    C --> X{"used ≥ budget?"}:::chk
-    S --> X
-    X -- yes --> WS("Hand out WebSockets, no TURN"):::bad
-    X -- no --> RTC("Hand out WebRTC + TURN as configured"):::run
-    classDef core fill:#2A8C94,stroke:#1B5F65
-    classDef store fill:#4B7DB3,stroke:#2D5280
-    classDef run fill:#3C9060,stroke:#285F3F
-    classDef bad fill:#CC563A,stroke:#8E3420
-    classDef chk stroke:#2A8C94,stroke-width:1.5px
-```
+![TURN budget decision: choose the usage source, compare to the budget, then hand out TURN or WebSockets](../assets/diagrams/operate-webrtc-turn-2-light.svg#only-light)
+![TURN budget decision: choose the usage source, compare to the budget, then hand out TURN or WebSockets](../assets/diagrams/operate-webrtc-turn-2-dark.svg#only-dark)
 
 ## Option B — your own TURN server (coturn)
 

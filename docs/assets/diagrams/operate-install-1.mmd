@@ -1,0 +1,38 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 30
+    rankSpacing: 40
+    padding: 10
+---
+flowchart TD
+    inet("Internet<br/>browsers"):::ext
+    lan("LAN<br/>workstation agents"):::ext
+    subgraph host ["Docker host (docker compose)"]
+        cf("cloudflared<br/>profile: tunnel"):::gate
+        tr("Traefik<br/>traefik-direct in direct mode"):::gate
+        fe("frontend"):::core
+        be("backend"):::core
+        vol[("db-data volume<br/>SQLite and secrets.json")]:::store
+        dp("docker-proxy<br/>filtered socket"):::store
+        inst("Desktop instances<br/>per-user networks"):::run
+        app("Proxied containers<br/>styx-services network"):::run
+    end
+    inet -->|HTTPS| cf -->|"styx-tunnel network"| tr
+    inet -.->|"direct mode: 443 + Let's Encrypt"| tr
+    lan -->|"80 / 443"| tr
+    tr --> fe
+    tr -->|"/api"| be
+    tr --> inst
+    tr --> app
+    be --- vol
+    be -->|"styx-docker (internal)"| dp --> inst
+    be -.->|"dynamic route file"| tr
+    classDef ext fill:#66797F,stroke:#3F5157
+    classDef core fill:#2A8C94,stroke:#1B5F65
+    classDef gate fill:#A67828,stroke:#6E4F14
+    classDef run fill:#3C9060,stroke:#285F3F
+    classDef store fill:#4B7DB3,stroke:#2D5280

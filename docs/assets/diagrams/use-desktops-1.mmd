@@ -1,0 +1,34 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 30
+    rankSpacing: 40
+    padding: 10
+---
+stateDiagram-v2
+    [*] --> pulling: launch, image missing
+    [*] --> starting: launch, image cached
+    pulling --> starting: image pulled
+    starting --> running: container up
+    starting --> error: start failed
+    running --> idle: no activity past idle timeout
+    idle --> running: I'm here or any activity
+    idle --> stopped: grace period over
+    running --> paused: pause
+    idle --> paused: pause
+    paused --> running: unpause
+    running --> stopped: stop
+    stopped --> running: start or restart
+    stopped --> [*]: delete
+    error --> [*]: delete
+    class running run
+    class idle gate
+    class error bad
+    class paused ext
+    classDef ext fill:#66797F,stroke:#3F5157
+    classDef gate fill:#A67828,stroke:#6E4F14
+    classDef run fill:#3C9060,stroke:#285F3F
+    classDef bad fill:#CC563A,stroke:#8E3420

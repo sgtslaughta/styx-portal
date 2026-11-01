@@ -1,0 +1,26 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 30
+    rankSpacing: 40
+    padding: 10
+---
+flowchart TD
+    push("Push or PR / MR"):::ext --> q
+    subgraph gates ["Gates (same on GitHub and GitLab)"]
+        q("quality<br/>ruff, mypy (advisory), tsc -b, commitlint"):::core --> t("test<br/>pytest, vitest, plugin test"):::core --> s("security<br/>bandit, Trivy fs"):::core
+    end
+    s -->|"default branch"| r("semantic-release<br/>next version, tag vX.Y.Z"):::gate
+    s -->|"default branch"| d("docs<br/>scripts/build-docs.sh to Pages"):::run
+    r -->|"GitHub: same workflow"| b("build images<br/>backend, frontend, desktop"):::run
+    r -->|"GitLab: tag pipeline"| b
+    b --> sc("Trivy image scan"):::core
+    b --> reg[("GHCR and<br/>GitLab registry")]:::store
+    classDef ext fill:#66797F,stroke:#3F5157
+    classDef core fill:#2A8C94,stroke:#1B5F65
+    classDef gate fill:#A67828,stroke:#6E4F14
+    classDef run fill:#3C9060,stroke:#285F3F
+    classDef store fill:#4B7DB3,stroke:#2D5280

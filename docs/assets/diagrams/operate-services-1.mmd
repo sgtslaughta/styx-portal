@@ -1,0 +1,28 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 30
+    rankSpacing: 40
+    padding: 10
+---
+flowchart TD
+    req("Request for an app<br/>at /slug or at / with styx_svc"):::ext --> tr("Traefik per-service forwardAuth"):::gate
+    tr --> mode{{"auth_mode"}}
+    mode -->|app-native| nat("Styx cookies stripped, forwarded<br/>the app enforces its own login"):::run
+    mode -->|"sso-with-bypass"| byp{{"Path matches a bypass rule<br/>on a segment boundary and<br/>the required header is present?"}}
+    mode -->|sso| sess
+    byp -->|yes| bp("Styx cookies stripped, forwarded<br/>the app's API key protects it"):::run
+    byp -->|no| sess{{"Valid styx_proxy<br/>session?"}}
+    sess -->|no| login("Navigation: redirect to<br/>/login?next=...<br/>other requests: 401"):::bad
+    sess -->|yes| grp{{"Admin, no group list set,<br/>or user in an allowed group?"}}
+    grp -->|no| deny("403 no access"):::bad
+    grp -->|yes| mt{{"mount_mode"}}
+    mt -->|"path"| pth("Forward to the upstream<br/>the app serves under /slug"):::run
+    mt -->|"cookie-root (Focus)"| foc("Top-level page loads are wrapped<br/>in the Styx shell, then forwarded"):::run
+    classDef ext fill:#66797F,stroke:#3F5157
+    classDef gate fill:#A67828,stroke:#6E4F14
+    classDef run fill:#3C9060,stroke:#285F3F
+    classDef bad fill:#CC563A,stroke:#8E3420

@@ -6,7 +6,6 @@ import { resolve } from "node:path";
 import { apiCall } from "./helpers";
 import { seed, render, type SeedOut } from "../docs-shots/seed";
 import { composeHero } from "../docs-shots/hero";
-import { viewerHtml } from "../docs-shots/viewer";
 import type { Scene } from "../docs-shots/scenes";
 
 const OUT = resolve(__dirname, "../../docs/assets/screens");
@@ -205,25 +204,6 @@ test("admin", async ({ browser }) => {
     await shot(p, browser, "ui-templates");
   });
   await p.close();
-});
-
-test("viewer mocks", async ({ browser }) => {
-  const tpls = (await apiCall(admin, "GET", "/api/templates")) as { id: string }[];
-  for (const [name, status, panel, hero] of [["ui-viewer", "running", true, "hero-workstation-stream"], ["ui-idle-banner", "idle", false, undefined]] as const) {
-    await step(name, async () => {
-      const p = await themed(browser, "dark");
-      await p.route((u) => u.pathname === "/api/instances", (r) => r.fulfill({ json: [inst(1, "studio-pc", tpls[0].id, status)] }));
-      await p.route((u) => u.pathname.startsWith("/i/demo1"), (r) => r.fulfill({ contentType: "text/html", body: viewerHtml("code", panel) }));
-      await p.goto("/desktop/demo1");
-      await p.locator("iframe").waitFor();
-      await p.waitForTimeout(1800);
-      // Workaround for a stray literal `return (` text node DesktopPage renders next to the iframe (app bug, reported).
-      await p.evaluate(() => { for (const n of [...document.body.querySelectorAll("*")].flatMap((e) => [...e.childNodes]))
-        if (n.nodeType === 3 && /^\s*return \(\s*$/.test(n.textContent ?? "")) n.textContent = ""; });
-      await shot(p, browser, name, hero);
-      await p.close();
-    });
-  }
 });
 
 test.afterAll(() => { if (failures.length) console.log("FAILURES:\n" + failures.join("\n")); });

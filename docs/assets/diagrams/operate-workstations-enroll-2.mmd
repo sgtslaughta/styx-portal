@@ -1,0 +1,25 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 30
+    rankSpacing: 40
+    padding: 10
+---
+flowchart TD
+    hb("Agent heartbeat<br/>reports agent_version"):::run --> cmp{{"Older than the<br/>portal's AGENT_VERSION?"}}
+    cmp -->|no| cur("Up to date"):::run
+    cmp -->|yes| badge("Admin panel shows<br/>update available"):::core
+    badge --> up("On the workstation, run the<br/>enroll script with --upgrade"):::ext
+    up --> mv("Old install moves to<br/>styx-agent.prev, config and<br/>TLS pin are kept"):::core
+    mv --> ok{{"New install<br/>starts OK?"}}
+    ok -->|yes| new("Heartbeats with the<br/>new version"):::run
+    ok -->|no| rb("Previous install restored<br/>automatically"):::bad
+    new -.->|"later, if needed"| rbk("styx_agent.py rollback<br/>swaps the two directories"):::gate
+    classDef ext fill:#66797F,stroke:#3F5157
+    classDef core fill:#2A8C94,stroke:#1B5F65
+    classDef gate fill:#A67828,stroke:#6E4F14
+    classDef run fill:#3C9060,stroke:#285F3F
+    classDef bad fill:#CC563A,stroke:#8E3420

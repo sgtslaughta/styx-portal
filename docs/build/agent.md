@@ -74,35 +74,8 @@ from the repo release; the backend compares it to enrolled agents to show an
 
 ## Supervision loop (`styx_agent.run`)
 
-```mermaid
----
-config:
-  themeVariables:
-    fontSize: 15px
-  flowchart:
-    curve: basis
-    nodeSpacing: 30
-    rankSpacing: 40
-    padding: 10
----
-flowchart TD
-    s("Start"):::core --> p("Pick seat shell<br/>gnome or labwc"):::core
-    p --> k("Ensure seat alive, start selkies,<br/>publish selkies-port"):::run
-    k --> g("Ensure gateway alive"):::run
-    g --> w{{"Viewer connected but<br/>frameless for over 15 s?"}}
-    w -->|yes| r("Restart selkies<br/>3 in 10 min restarts the seat if unhealthy"):::bad
-    w -->|no| h("Heartbeat to the portal"):::core
-    r --> k
-    h -->|"new stream_settings"| d("Defer restart until the last viewer leaves<br/>unless a security key"):::gate
-    h --> z("Wait for a refit request or the interval"):::ext
-    d --> z
-    z --> k
-    classDef ext fill:#66797F,stroke:#3F5157
-    classDef core fill:#2A8C94,stroke:#1B5F65
-    classDef gate fill:#A67828,stroke:#6E4F14
-    classDef run fill:#3C9060,stroke:#285F3F
-    classDef bad fill:#CC563A,stroke:#8E3420
-```
+![Agent supervisor loop: start the seat, selkies and gateway, restart selkies when a viewer sees no frames, then heartbeat to the portal](../assets/diagrams/build-agent-1-light.svg#only-light)
+![Agent supervisor loop: start the seat, selkies and gateway, restart selkies when a viewer sees no frames, then heartbeat to the portal](../assets/diagrams/build-agent-1-dark.svg#only-dark)
 
 Key behaviours:
 
@@ -116,40 +89,8 @@ Key behaviours:
 
 ### Heartbeat exchange
 
-```mermaid
----
-config:
-  themeVariables:
-    fontSize: 15px
-  flowchart:
-    curve: basis
-    nodeSpacing: 30
-    rankSpacing: 40
-    padding: 10
----
-sequenceDiagram
-    participant A as Agent supervisor
-    participant G as Gateway
-    participant B as Backend /api/agent
-    loop every heartbeat interval (30 s)
-        A->>G: read gw_state.json (connections, last input)
-        A->>B: POST /heartbeat (Bearer token)<br/>status, lan_ip, last_error, health
-        alt workstation revoked
-            B-->>A: state revoked
-            A->>A: stop and print the uninstall hint
-        else
-            B->>B: mark online, store agent_version,<br/>update occupancy, idle backstop
-            B-->>A: state ok, effective stream_settings,<br/>heartbeat_interval_s, disconnect_clients, icon_etag
-            opt stream_settings changed
-                A->>A: save config, defer restart until the last viewer leaves
-            end
-            opt disconnect_clients set (logout or idle)
-                A->>G: restart the gateway, dropping viewer sockets
-            end
-        end
-    end
-    Note over A,B: heartbeat failure: log it, retry with backoff
-```
+![Sequence: the agent supervisor reads gateway state and posts heartbeats to the backend every 30 seconds](../assets/diagrams/build-agent-2-light.svg#only-light)
+![Sequence: the agent supervisor reads gateway state and posts heartbeats to the backend every 30 seconds](../assets/diagrams/build-agent-2-dark.svg#only-dark)
 
 ## Gateway (`gateway.py`)
 
@@ -168,36 +109,8 @@ An aiohttp reverse proxy bound to the LAN port, forwarding to selkies on loopbac
 
 ### Request routing
 
-```mermaid
----
-config:
-  themeVariables:
-    fontSize: 15px
-  flowchart:
-    curve: basis
-    nodeSpacing: 30
-    rankSpacing: 40
-    padding: 10
----
-flowchart TD
-    req("Request from Traefik<br/>with injected Basic auth"):::ext --> auth{{"Basic auth valid?"}}
-    auth -->|no| u("401"):::bad
-    auth -->|yes| route{{"Route"}}
-    route -->|"/api/websockets, /websockets, /websocket"| ws{{"WebSocket upgrade?"}}
-    ws -->|"no (2.0 client probe)"| fwd
-    ws -->|yes| rf("Wait while a refit is pending"):::gate
-    rf --> busy{{"Controller tab and another<br/>tab had recent input?"}}
-    busy -->|yes| b4("Close 4003, upstream untouched"):::bad
-    busy -->|no| pump("Connect to selkies on loopback<br/>pump both ways, track input,<br/>idle closer 4001, refit on resize"):::run
-    route -->|"/ and /styx-favicon"| idx("Patched index page<br/>shims injected"):::core
-    route -->|"/files, /files/..."| files("Directory listing of the<br/>downloads folder, path-checked"):::core
-    route -->|"anything else"| fwd("HTTP proxy to selkies as-is<br/>client assets, /api REST"):::run
-    classDef ext fill:#66797F,stroke:#3F5157
-    classDef core fill:#2A8C94,stroke:#1B5F65
-    classDef gate fill:#A67828,stroke:#6E4F14
-    classDef run fill:#3C9060,stroke:#285F3F
-    classDef bad fill:#CC563A,stroke:#8E3420
-```
+![Gateway request flow: Basic auth check, routing, WebSocket upgrade handling and forwarding to selkies](../assets/diagrams/build-agent-3-light.svg#only-light)
+![Gateway request flow: Basic auth check, routing, WebSocket upgrade handling and forwarding to selkies](../assets/diagrams/build-agent-3-dark.svg#only-dark)
 
 ### Injected shims (`gateway_html.py`)
 
@@ -228,27 +141,8 @@ by env, never argv. Highlights:
 
 ### GNOME seat (default)
 
-```mermaid
----
-config:
-  themeVariables:
-    fontSize: 15px
-  flowchart:
-    curve: basis
-    nodeSpacing: 30
-    rankSpacing: 40
-    padding: 10
----
-flowchart TD
-    b("browser"):::ext --- sk("selkies 2.1 and pixelflux"):::run
-    sk --- p("xdg-desktop-portal<br/>ScreenCast / RemoteDesktop"):::core
-    p --- sp("seat_portal.py backend<br/>Mutter D-Bus APIs"):::core
-    sp --- gs("headless gnome-shell<br/>wayland-70, private D-Bus"):::run
-    gs --- apps("Wayland apps"):::run
-    classDef ext fill:#66797F,stroke:#3F5157
-    classDef core fill:#2A8C94,stroke:#1B5F65
-    classDef run fill:#3C9060,stroke:#285F3F
-```
+![Seat stack from browser through selkies, xdg-desktop-portal and Mutter to headless GNOME and Wayland apps](../assets/diagrams/build-agent-4-light.svg#only-light)
+![Seat stack from browser through selkies, xdg-desktop-portal and Mutter to headless GNOME and Wayland apps](../assets/diagrams/build-agent-4-dark.svg#only-dark)
 
 * `seat_gnome.GnomeSeat` runs `dbus-run-session -- gnome-seat.sh`, starting `gnome-shell --headless` on socket `wayland-70` (snap AppArmor only allows `wayland-[0-9]*`) with a private session bus. `ready()` waits for the bus file, the socket and a D-Bus Ping.
 * `seat_portal.py` runs under the **system** python (needs dbus-python, PyGObject, GStreamer `pipewiresrc`). It implements a portal backend `org.freedesktop.impl.portal.desktop.styx` for ScreenCast and RemoteDesktop on Mutter's own APIs, so **no consent dialog** appears. The cursor travels as metadata and the browser draws it. It also holds the seat's virtual monitor at WxH; a new size means a new helper process (renegotiating caps in place stalls frames).
@@ -302,33 +196,8 @@ follows the controlling tab:
 3. selkies 2.1 reconnects in place; a full page reload is covered by a hold page.
 4. **Scale** (`seat_scale.py`): HiDPI browsers send device pixels, and DPI maps to a shared scale from `SCALES = (1.0, 1.5, 2.0, 3.0)` (ties round up). The scale is applied to GNOME through Mutter DisplayConfig (`apply_scale`), and selkies uses the same value so pointer mapping (`_abs` x scale) agrees. On a scaled seat the portal refuses `ConnectToEIS` so input falls back to portal `Notify*` calls (libei regions are logical, pixelflux sends physical pixels). A scale change restarts selkies once panel clicks settle (`SCALE_SETTLE_S`).
 
-```mermaid
----
-config:
-  themeVariables:
-    fontSize: 15px
-  flowchart:
-    curve: basis
-    nodeSpacing: 30
-    rankSpacing: 40
-    padding: 10
----
-sequenceDiagram
-    participant B as Browser tab (controller)
-    participant G as Gateway
-    participant A as Agent supervisor
-    participant S as Seat and selkies
-    B->>G: r,WxH resize messages
-    G->>G: clamp 640x480 to 4096x2304,<br/>wait until the size settles
-    G->>A: write refit-request, abort client sockets (1006)
-    A->>S: kill selkies, resize_live or rebuild the monitor
-    Note over A,S: HiDPI scale (1, 1.5, 2, 3) is shared by<br/>GNOME DisplayConfig and selkies DPI
-    A->>S: promote the standby selkies
-    A->>G: clear refit-request, publish selkies-port
-    B->>G: reconnect (held while the refit is pending)
-    G->>S: new stream socket
-    S-->>B: video at the new size
-```
+![Sequence: a browser tab resize request flows through the gateway and agent to the seat and selkies](../assets/diagrams/build-agent-5-light.svg#only-light)
+![Sequence: a browser tab resize request flows through the gateway and agent to the seat and selkies](../assets/diagrams/build-agent-5-dark.svg#only-dark)
 
 !!! tip "Controller handoff"
     selkies keeps one controller and kills the previous one on a new connect.

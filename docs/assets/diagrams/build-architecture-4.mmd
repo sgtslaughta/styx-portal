@@ -1,0 +1,53 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 30
+    rankSpacing: 40
+    padding: 10
+---
+erDiagram
+    users ||--o{ service_templates : "owns"
+    users ||--o{ instances : "owns"
+    users ||--o{ user_groups : "member of"
+    groups ||--o{ user_groups : "has"
+    users ||--o{ workstation_access : "granted"
+    workstations ||--o{ workstation_access : "grants"
+    service_templates ||--o{ instances : "launched from"
+    instances ||--o{ session_events : "logs"
+    proxied_services }o--o{ groups : "allowed_groups (JSON names)"
+    proxied_services ||--o{ mount_jobs : "service_id (no FK)"
+    users {
+        string id PK
+        string username UK
+        string role "admin or user"
+        int token_version "bump revokes JWTs"
+    }
+    instances {
+        string id PK
+        string subdomain UK
+        string status "pulling to stopped"
+        string container_id
+        json session_config
+    }
+    workstations {
+        string id PK
+        string subdomain UK
+        string status "pending online offline revoked"
+        string agent_token_hash
+        json stream_settings
+    }
+    proxied_services {
+        string id PK
+        string slug UK
+        string mount_mode "path or cookie-root"
+        string auth_mode "sso, sso-with-bypass, app-native"
+        json bypass_rules
+    }
+    mount_jobs {
+        string id PK
+        string state "pending to done"
+        json steps
+    }

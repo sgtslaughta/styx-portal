@@ -1,0 +1,18 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 30
+    rankSpacing: 40
+    padding: 10
+---
+flowchart LR
+    B("Browser"):::ext -- "signaling over HTTPS/WSS" --> P("Portal"):::core --> G("Workstation gateway"):::run
+    B -. "UDP direct (open networks)" .-> W("Workstation"):::run
+    B -- "UDP via TURN (restrictive networks)" --> T[("TURN relay")]:::gate --> W
+    classDef ext fill:#66797F,stroke:#3F5157
+    classDef core fill:#2A8C94,stroke:#1B5F65
+    classDef run fill:#3C9060,stroke:#285F3F
+    classDef gate fill:#A67828,stroke:#6E4F14

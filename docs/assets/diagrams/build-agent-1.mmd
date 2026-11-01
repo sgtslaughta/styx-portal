@@ -1,0 +1,27 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 30
+    rankSpacing: 40
+    padding: 10
+---
+flowchart TD
+    s("Start"):::core --> p("Pick seat shell<br/>gnome or labwc"):::core
+    p --> k("Ensure seat alive, start selkies,<br/>publish selkies-port"):::run
+    k --> g("Ensure gateway alive"):::run
+    g --> w{{"Viewer connected but<br/>frameless for over 15 s?"}}
+    w -->|yes| r("Restart selkies<br/>3 in 10 min restarts the seat if unhealthy"):::bad
+    w -->|no| h("Heartbeat to the portal"):::core
+    r --> k
+    h -->|"new stream_settings"| d("Defer restart until the last viewer leaves<br/>unless a security key"):::gate
+    h --> z("Wait for a refit request or the interval"):::ext
+    d --> z
+    z --> k
+    classDef ext fill:#66797F,stroke:#3F5157
+    classDef core fill:#2A8C94,stroke:#1B5F65
+    classDef gate fill:#A67828,stroke:#6E4F14
+    classDef run fill:#3C9060,stroke:#285F3F
+    classDef bad fill:#CC563A,stroke:#8E3420

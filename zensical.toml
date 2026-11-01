@@ -5,7 +5,6 @@ site_name = "Styx Portal"
 site_description = "Self-hosted remote-desktop platform"
 docs_dir = "docs"
 site_dir = "site"
-extra_css = ["stylesheets/extra.css"]
 
 # Navigation structure
 nav = [

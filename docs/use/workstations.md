@@ -17,42 +17,10 @@ A **workstation** is a physical (or virtual) Linux machine that an admin enrolle
 
 ### What happens when you connect
 
-```mermaid
----
-config:
-  themeVariables:
-    fontSize: 15px
-  flowchart:
-    curve: basis
-    nodeSpacing: 30
-    rankSpacing: 40
-    padding: 10
----
-sequenceDiagram
-    autonumber
-    actor U as You (browser)
-    participant T as Traefik
-    participant B as Portal backend
-    participant G as Agent gateway
-    participant S as Selkies and seat
-    U->>T: open /w/studio-pc/
-    T->>B: forwardAuth auth-check (styx_proxy cookie)
-    alt not signed in or not assigned
-        B-->>U: 401 sign-in redirect or 403
-    else allowed
-        B-->>T: 200 + gateway Basic credentials
-        Note over T,B: injected server-side,<br/>never sent to the browser
-    end
-    T->>G: request over the LAN (port 8443)
-    G->>G: check Basic auth and busy gate
-    G->>S: websocket to selkies on loopback
-    S-->>U: video and audio frames
-    U->>S: keyboard, mouse, clipboard, resize
-```
+![Sequence: opening a workstation from the portal through Traefik, backend and gateway to the stream](../assets/diagrams/use-workstations-1-light.svg#only-light)
+![Sequence: opening a workstation from the portal through Traefik, backend and gateway to the stream](../assets/diagrams/use-workstations-1-dark.svg#only-dark)
 
 ## The stream panel
-
-![Viewer with the side panel](../assets/screens/ui-viewer.png)
 
 The Selkies sidebar controls the stream:
 
@@ -92,36 +60,8 @@ Workstation streams disconnect after a period without input (admins set it; defa
 
 What the stream does when you go idle, open it on a second device, or resize the window.
 
-```mermaid
----
-config:
-  themeVariables:
-    fontSize: 15px
-  flowchart:
-    curve: basis
-    nodeSpacing: 30
-    rankSpacing: 40
-    padding: 10
----
-flowchart TD
-    open("Tab opens the stream socket"):::ext --> busy{{"Another tab had input<br/>within the idle timeout?"}}
-    busy -->|"yes (not a shared viewer link)"| b("Refused with close code 4003<br/>in use on another device"):::bad
-    busy -->|no| live("Streaming"):::run
-    live --> idle{{"No input in<br/>this tab?"}}
-    idle -->|"timeout minus warn lead"| warn("Banner: Disconnecting in Ns<br/>any input cancels it"):::gate
-    warn --> idle
-    idle -->|"idle timeout reached"| c("Gateway closes the socket, 4001<br/>Reconnect button shown"):::bad
-    live --> rs{{"Window size changed<br/>and settled?"}}
-    rs -->|yes| refit("Seat refit: sockets drop (1006),<br/>standby selkies promoted,<br/>tab reconnects"):::core
-    refit --> live
-    c -->|Reconnect| open
-    b -->|"close the other tab, retry"| open
-    classDef ext fill:#66797F,stroke:#3F5157
-    classDef core fill:#2A8C94,stroke:#1B5F65
-    classDef gate fill:#A67828,stroke:#6E4F14
-    classDef run fill:#3C9060,stroke:#285F3F
-    classDef bad fill:#CC563A,stroke:#8E3420
-```
+![Viewer tab lifecycle: input ownership, idle warning and disconnect](../assets/diagrams/use-workstations-2-light.svg#only-light)
+![Viewer tab lifecycle: input ownership, idle warning and disconnect](../assets/diagrams/use-workstations-2-dark.svg#only-dark)
 
 ## Stream behaviour to know
 

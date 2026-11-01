@@ -1,0 +1,25 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 30
+    rankSpacing: 40
+    padding: 10
+---
+flowchart TD
+    enc("Encoder<br/>CBR at target rate"):::core -->|frames| own{{"Owner page<br/>lagging over 100 ms?"}}
+    own -->|yes| skip("Skip delta frames,<br/>recover with reference invalidation"):::gate
+    own -->|no| link("Network path"):::ext
+    skip --> link
+    link --> br("Browser<br/>decode and ack"):::ext
+    br -->|"acks, queue above RTT floor"| cc("selkies congestion control<br/>capacity estimate"):::core
+    cc --> still{{"Still screen<br/>trying to raise?"}}
+    still -->|"above last measured capacity"| hold("Raise only on motion<br/>(cap_still_raise)"):::gate
+    still -->|otherwise| tgt
+    hold --> tgt("New target rate<br/>up to the admin ceiling"):::core
+    tgt --> enc
+    classDef ext fill:#66797F,stroke:#3F5157
+    classDef core fill:#2A8C94,stroke:#1B5F65
+    classDef gate fill:#A67828,stroke:#6E4F14

@@ -6,37 +6,8 @@ You will sign in, optionally add a second factor, and find your way around the p
 
 ## The ways in
 
-```mermaid
----
-config:
-  themeVariables:
-    fontSize: 15px
-  flowchart:
-    curve: basis
-    nodeSpacing: 30
-    rankSpacing: 40
-    padding: 10
----
-flowchart TD
-    open("Open the portal"):::ext --> has{{"How do you get in?"}}
-    has -->|"invite link"| inv("Choose username<br/>and password"):::core
-    has -->|"password"| pw("Username and password"):::core
-    has -->|"SSO button"| sso("Provider sign-in<br/>verified email must match<br/>an account or open invite"):::core
-    inv --> dash
-    pw --> chk{{"Correct and<br/>not locked?"}}
-    chk -->|no| fail("401 Invalid credentials<br/>repeated failures lock the account<br/>or ban the address"):::bad
-    chk -->|yes| card{{"Sign-in card<br/>enabled?"}}
-    card -->|no| dash
-    card -->|yes| cells("Enter the 3 cells asked<br/>for, such as C7"):::core
-    cells --> ok{{"Correct?"}}
-    ok -->|"yes: session-only login"| dash
-    ok -->|no| fail
-    sso --> dash("Dashboard"):::run
-    classDef ext fill:#66797F,stroke:#3F5157
-    classDef core fill:#2A8C94,stroke:#1B5F65
-    classDef run fill:#3C9060,stroke:#285F3F
-    classDef bad fill:#CC563A,stroke:#8E3420
-```
+![Sign-in options: invite link, password or SSO, then the dashboard](../assets/diagrams/use-getting-started-1-light.svg#only-light)
+![Sign-in options: invite link, password or SSO, then the dashboard](../assets/diagrams/use-getting-started-1-dark.svg#only-dark)
 
 ## Accept an invite
 

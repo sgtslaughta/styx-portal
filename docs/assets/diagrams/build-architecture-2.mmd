@@ -1,0 +1,27 @@
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 30
+    rankSpacing: 40
+    padding: 10
+---
+flowchart TD
+    b("Browser"):::ext --> t("Traefik"):::gate
+    t -->|"forwardAuth: /internal/workstations/id/auth-check"| be("backend"):::core
+    be -->|"200 + Authorization: Basic"| t
+    t --> gw("gateway.py<br/>aiohttp, LAN port"):::run
+    gw -->|loopback| sk("selkies 2.1<br/>pixelflux"):::run
+    sk --> seat{{"Seat"}}
+    seat -->|default| g("headless GNOME Shell<br/>via xdg-desktop-portal"):::run
+    seat -->|fallback| l("labwc nested on<br/>pixelflux compositor"):::run
+    seat -->|"mirror (X11 only)"| x("live X display (XShm)"):::run
+    ag("styx_agent.py"):::core -.->|supervises| gw
+    ag -.->|supervises| sk
+    ag -.->|supervises| seat
+    classDef ext fill:#66797F,stroke:#3F5157
+    classDef core fill:#2A8C94,stroke:#1B5F65
+    classDef gate fill:#A67828,stroke:#6E4F14
+    classDef run fill:#3C9060,stroke:#285F3F
