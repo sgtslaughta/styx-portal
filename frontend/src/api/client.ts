@@ -420,7 +420,8 @@ export const api = {
   acceptInvite: (data: { token: string; username: string; password: string }) =>
     request<{ id: string; username: string; role: string }>("/auth/accept-invite", {
       method: "POST", body: JSON.stringify(data) }),
-  listUsers: () => request<{ id: string; username: string; email: string | null; role: string; is_active: boolean; last_login: string | null; locked_until: string | null; failed_count: number; has_matrix_card?: boolean }[]>("/users"),
+  listUsers: () => request<{ id: string; username: string; email: string | null; role: string; is_active: boolean; last_login: string | null; locked_until: string | null; failed_count: number; has_matrix_card?: boolean; groups?: string[] }[]>("/users"),
+  listInvites: () => request<{ id: string; email: string | null; role: string; created_at: string; expires_at: string | null }[]>("/users/invites"),
   createInvite: (data: { email?: string; role: string }) =>
     request<{ token: string; expires_at: string | null }>("/users/invites", {
       method: "POST", body: JSON.stringify(data) }),

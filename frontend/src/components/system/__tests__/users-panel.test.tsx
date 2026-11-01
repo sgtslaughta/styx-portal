@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
@@ -6,14 +6,15 @@ const listUsers = vi.fn();
 const adminResetMatrix = vi.fn();
 const unlockUser = vi.fn();
 const changeRole = vi.fn();
+const deleteUser = vi.fn();
 vi.mock("@/api/client", () => ({
   api: {
     listUsers: (...a: unknown[]) => listUsers(...a),
     adminResetMatrix: (...a: unknown[]) => adminResetMatrix(...a),
     unlockUser: (...a: unknown[]) => unlockUser(...a),
     changeRole: (...a: unknown[]) => changeRole(...a),
-    getUserGroups: () => Promise.resolve([]),
-    listGroups: () => Promise.resolve([]),
+    listInvites: () => Promise.resolve([{ id: "i1", email: "sam@x.io", role: "user", created_at: "2026-10-30T00:00:00Z", expires_at: null }]),
+    deleteUser: (...a: unknown[]) => deleteUser(...a),
   },
   ApiError: class extends Error {},
 }));
@@ -35,6 +36,39 @@ async function openMenu(name: string) {
 }
 
 beforeEach(() => vi.clearAllMocks());
+
+describe("UsersPanel bulk and invites", () => {
+  const two = () => listUsers.mockResolvedValue([
+    user({ id: "u1", username: "pat", locked_until: "2999-01-01T00:00:00Z" }),
+    user({ id: "u2", username: "kim", locked_until: "2999-01-01T00:00:00Z", groups: ["media"] }),
+  ]);
+  test("select two rows, bulk Unlock calls unlock twice", async () => {
+    two(); unlockUser.mockResolvedValue({});
+    renderPanel();
+    await screen.findByRole("checkbox", { name: "Select kim" });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select all users" }));
+    expect(screen.getByText("2 selected")).toBeTruthy();
+    expect(screen.getByText("media")).toBeTruthy();
+    fireEvent.click(within(screen.getByRole("region", { name: "Bulk actions" })).getByRole("button", { name: "Unlock" }));
+    await waitFor(() => expect(unlockUser).toHaveBeenCalledTimes(2));
+  });
+  test("bulk Delete asks for confirmation first", async () => {
+    two(); deleteUser.mockResolvedValue({});
+    renderPanel();
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select pat" }));
+    fireEvent.click(within(screen.getByRole("region", { name: "Bulk actions" })).getByRole("button", { name: "Delete" }));
+    expect(await screen.findByText(/Delete 1 user permanently/)).toBeTruthy();
+    expect(deleteUser).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(deleteUser).toHaveBeenCalledWith("u1"));
+  });
+  test("Invites segment lists API invites", async () => {
+    two();
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: "Invites 1" }));
+    expect(screen.getByText("sam@x.io")).toBeTruthy();
+  });
+});
 
 describe("UsersPanel table", () => {
   test("Locked filter shows only locked rows and Unlock calls the API", async () => {

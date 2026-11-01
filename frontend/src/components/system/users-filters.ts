@@ -1,7 +1,8 @@
 export type UserRow = {
   id: string; username: string; email: string | null; role: string; is_active: boolean;
-  last_login: string | null; locked_until: string | null; failed_count: number; has_matrix_card?: boolean;
+  last_login: string | null; locked_until: string | null; failed_count: number; has_matrix_card?: boolean; groups?: string[];
 };
+export type InviteRow = { id: string; email: string | null; role: string; created_at: string; expires_at: string | null };
 export type UserFilter = "all" | "admins" | "locked" | "invites";
 
 export function formatRelativeTime(iso: string | null): string {

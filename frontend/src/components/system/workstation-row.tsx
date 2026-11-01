@@ -19,7 +19,7 @@ function statusLine(ws: Workstation) {
   const v = ws.agent_version ? `, agent ${ws.agent_version}` : "";
   if (ws.in_use) return { dot: "use", text: `${ws.in_use_by ?? "Someone"} connected${v}` };
   if (ws.status === "online") return { dot: "ok", text: `Online${v}` };
-  return { dot: "", text: `${ws.status.charAt(0).toUpperCase()}${ws.status.slice(1)}${v}` };
+  return { dot: ws.status === "revoked" ? "bad" : "", text: `${ws.status.charAt(0).toUpperCase()}${ws.status.slice(1)}${v}` };
 }
 
 type Props = {
@@ -40,14 +40,8 @@ export function WorkstationRow({ ws, onManage, onUpdate, onManual }: Props) {
         <small><span className={`sdot ${st.dot}`} />{st.text}</small>
         <AgentUpdateChip state={ws.update_state} error={ws.update_error} />
       </div>
-      {live ? (
-        <>
-          <Meter label="GPU" pct={num(ws.gpu_info.utilization ?? ws.gpu_info.util_pct)} />
-          <Meter label="Memory" pct={num(ws.os_info.mem_used_pct)} />
-        </>
-      ) : (
-        <div className="text-[13px] text-muted-foreground">No data while {ws.status}</div>
-      )}
+      <Meter label="GPU" pct={live ? num(ws.gpu_info.utilization ?? ws.gpu_info.util_pct) : null} />
+      <Meter label="Memory" pct={live ? num(ws.os_info.mem_used_pct) : null} />
       <div className="flex gap-2">
         {ws.agent_outdated && !["requested", "updating"].includes(ws.update_state ?? "") && (
           <Button onClick={onUpdate} size="sm">Update agent</Button>

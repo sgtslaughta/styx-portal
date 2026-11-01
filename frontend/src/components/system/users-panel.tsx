@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useContext, useState } from "react";
+import { AuthContext } from "@/auth/AuthContext";
 import { toast } from "sonner";
 import "@/styles/admin-table.css";
 import { api } from "@/api/client";
@@ -8,6 +9,7 @@ import { UserProfilesDialog } from "@/components/system/user-profiles-dialog";
 import { UserGroupsDialog } from "@/components/system/user-groups-dialog";
 import { ResetMatrixDialog } from "@/components/system/reset-matrix-dialog";
 import { DeleteUserDialog, TempPasswordDialog } from "@/components/system/user-dialogs";
+import { UsersBulkBar } from "@/components/system/users-bulk-bar";
 import { UsersTable } from "@/components/system/users-table";
 import { filterUsers, isUserLocked, type UserFilter } from "@/components/system/users-filters";
 import type { UserActions } from "@/components/system/user-row-actions";
@@ -26,9 +28,12 @@ function useAction<T>(fn: (id: string) => Promise<T>, msg?: string) {
 export function UsersPanel() {
   const qc = useQueryClient();
   const { data: users = [] } = useQuery({ queryKey: ["users"], queryFn: api.listUsers });
+  const selfId = useContext(AuthContext)?.user?.id;
+  const { data: invites = [] } = useQuery({ queryKey: ["invites"], queryFn: api.listInvites });
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<UserFilter>("all");
   const [query, setQuery] = useState("");
-  const [invites, setInvites] = useState<string[]>([]);
+  const [newLink, setNewLink] = useState<string | null>(null);
   const [tempPw, setTempPw] = useState<string | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [groupsFor, setGroupsFor] = useState<Target>(null);
@@ -41,7 +46,11 @@ export function UsersPanel() {
   const invite = useMutation({
     mutationFn: () => api.createInvite({ role: "user" }),
     onSuccess: (r) => {
-      setInvites((l) => [`${location.origin}/accept-invite/${r.token}`, ...l]);
+      const url = `${location.origin}/accept-invite/${r.token}`;
+      void navigator.clipboard.writeText(url);
+      setNewLink(url);
+      toast.success("Invite link copied");
+      void qc.invalidateQueries({ queryKey: ["invites"] });
       setFilter("invites");
     },
     onError,
@@ -67,7 +76,16 @@ export function UsersPanel() {
     askDelete: (u) => setDeleteId(u.id), groups: (u) => setGroupsFor(u),
     profiles: (u) => setProfilesFor(u), matrix: (u) => setMatrixFor(u),
   };
-  const copyInvite = (url: string) => { void navigator.clipboard.writeText(url); toast.success("Invite link copied"); };
+  const toggle = (id: string) => setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const toggleAll = (ids: string[]) => setSelected((s) => ids.every((i) => s.has(i)) ? new Set() : new Set(ids));
+  const bulk = async (ids: string[], fn: (id: string) => Promise<unknown>, done: string) => {
+    const res = await Promise.allSettled(ids.map((i) => fn(i)));
+    const failed = res.filter((r) => r.status === "rejected").length;
+    if (failed) toast.error(`${failed} of ${ids.length} failed`); else toast.success(done);
+    setSelected(new Set());
+    void qc.invalidateQueries({ queryKey: ["users"] });
+  };
+  const ids = [...selected];
 
   const segs: [UserFilter, string, number][] = [
     ["all", "All", users.length],
@@ -92,8 +110,16 @@ export function UsersPanel() {
           ))}
         </div>
       </div>
+      {newLink && filter === "invites" && (
+        <p className="mb-2 text-xs text-muted-foreground">
+          Link copied (single use, 72 hours): <code className="break-all">{newLink}</code>
+        </p>
+      )}
+      <UsersBulkBar count={ids.length} onClear={() => setSelected(new Set())}
+        onUnlock={() => void bulk(ids, api.unlockUser, "Users unlocked")}
+        onDelete={() => void bulk(ids.filter((i) => i !== selfId), api.deleteUser, "Users deleted")} />
       <UsersTable users={filterUsers(users, filter, query)} invites={invites} showInvites={filter === "invites"}
-                  actions={actions} copyInvite={copyInvite}
+                  actions={actions} selfId={selfId} selected={selected} toggle={toggle} toggleAll={toggleAll}
                   setRole={(id, role) => setRole.mutate({ id, role })} />
 
       <UserGroupsDialog open={groupsFor !== null} userId={groupsFor?.id ?? ""} username={groupsFor?.username ?? ""}

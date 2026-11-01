@@ -17,7 +17,7 @@ export type UserActions = {
 };
 
 /** Hover actions (Unlock, Reset password) plus the "⋯" menu for everything else. */
-export function UserRowActions({ u, locked, a }: { u: UserRow; locked: boolean; a: UserActions }) {
+export function UserRowActions({ u, locked, a, self }: { u: UserRow; locked: boolean; a: UserActions; self?: boolean }) {
   return (
     <>
       {locked && <Button variant="ghost" size="sm" className="text-primary" onClick={() => a.unlock(u)}>Unlock</Button>}
@@ -38,8 +38,8 @@ export function UserRowActions({ u, locked, a }: { u: UserRow; locked: boolean; 
             <DropdownMenuItem onClick={() => a.matrix(u)}><KeyRound className="mr-2 h-4 w-4" />Reset sign-in card</DropdownMenuItem>
           )}
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => a.disable(u)}><Trash2 className="mr-2 h-4 w-4" />Disable</DropdownMenuItem>
-          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => a.askDelete(u)}>
+          <DropdownMenuItem disabled={self} onClick={() => a.disable(u)}><Trash2 className="mr-2 h-4 w-4" />Disable</DropdownMenuItem>
+          <DropdownMenuItem disabled={self} className="text-destructive focus:text-destructive" onClick={() => a.askDelete(u)}>
             <Trash2 className="mr-2 h-4 w-4" />Delete permanently
           </DropdownMenuItem>
         </DropdownMenuContent>

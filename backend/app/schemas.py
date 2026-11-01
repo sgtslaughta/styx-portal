@@ -217,6 +217,7 @@ class UserOut(BaseModel):
     must_change_pw: bool = False
     has_matrix_card: bool = False
     can_use_gpu: bool = False
+    groups: list[str] = []
 
 
 OpenMode = Literal["new_tab", "same_tab"]
@@ -236,6 +237,14 @@ class CreateInviteRequest(BaseModel):
 
 class InviteOut(BaseModel):
     token: str
+    expires_at: str | None
+
+
+class PendingInviteOut(BaseModel):
+    id: str
+    email: str | None
+    role: str
+    created_at: str
     expires_at: str | None
 
 

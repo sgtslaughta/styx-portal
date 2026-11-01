@@ -16,7 +16,7 @@ table.dense tr:hover .acts button, table.dense .acts button:focus-visible { opac
 .seg-s button { border: 0; background: none; padding: 5px 12px; border-radius: 7px; font-size: 13px; color: var(--muted-foreground); }
 .seg-s button[aria-pressed="true"] { background: var(--card); color: var(--foreground); box-shadow: 0 1px 2px rgba(0,0,0,.25); }
 .sdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted-foreground); }
-.sdot.ok { background: #4ade80; } .sdot.use { background: var(--primary); } .sdot.bad { background: var(--destructive); }
+.sdot.ok { background: var(--success); } .sdot.use { background: var(--primary); } .sdot.bad { background: var(--destructive); }
 .track { display: block; height: 6px; border-radius: 6px; background: var(--muted); overflow: hidden; }
 .track i { display: block; height: 100%; border-radius: 6px; background: var(--primary); }
 .wsrow { display: grid; grid-template-columns: 120px 1fr 1fr 1fr auto; gap: 20px; align-items: center; padding: 14px 0; border-top: 1px solid var(--border); }
