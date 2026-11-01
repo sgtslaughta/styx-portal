@@ -141,7 +141,7 @@ export type Setting = {
   key: string;
   label: string;
   help: string;
-  type: "int" | "bool" | "rate" | "secret" | "enum" | "str";
+  type: "int" | "bool" | "rate" | "secret" | "enum" | "str" | "json";
   value: SettingValue;
   default: SettingValue;
   min: number | null;

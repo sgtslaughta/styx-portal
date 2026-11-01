@@ -1,13 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { useSearchParams } from "react-router";
+import { Fragment, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api, type Setting, type SettingGroup, type SettingValue } from "@/api/client";
-import { SlidersHorizontal } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { SettingsGroupNav } from "./settings-group-nav";
-import { SettingRow } from "./setting-row";
+import { SettingField, isChanged } from "@/components/settings/setting-field";
+import { SavePill } from "@/components/settings/save-pill";
+import { useUnsaved } from "@/components/settings/unsaved-context";
 import { TurnCostCard } from "./turn-cost-card";
 import { TurnSetupCheck } from "./turn-setup-check";
 import { TurnSetupGuide } from "./turn-setup-guide";
@@ -21,23 +18,14 @@ export function SystemSettingsPanel({ groups: only }: { groups?: string[] } = {}
   });
   const groups = only ? all.filter((g) => only.includes(g.group)) : all;
 
-  const [localState, setLocalState] = useState<Record<string, SettingValue>>({});
+  // Only edits live here; untouched rows read the server value.
+  const [edits, setEdits] = useState<Record<string, SettingValue>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [params, setParams] = useSearchParams();
-
-  // Initialize local state when data loads
-  if (groups.length > 0 && Object.keys(localState).length === 0) {
-    const initial: Record<string, SettingValue> = {};
-    groups.forEach((g) => {
-      g.settings.forEach((s) => {
-        if (s.type !== "secret") initial[s.key] = s.value;
-      });
-    });
-    setLocalState(initial);
-  }
+  const { setCount } = useUnsaved();
 
   const validate = (setting: Setting, value: SettingValue): string | null => {
     if (setting.type === "int") {
+      if (value === "" || value === null) return "Required";
       const num = Number(value);
       if (isNaN(num)) return "Must be a number";
       if (setting.min !== null && num < setting.min) return `Minimum: ${setting.min}`;
@@ -48,18 +36,21 @@ export function SystemSettingsPanel({ groups: only }: { groups?: string[] } = {}
     return null;
   };
 
+  const all_ = groups.flatMap((g) => g.settings);
+  const dirtyKeys = all_.filter((s) => isChanged(s, edits[s.key])).map((s) => s.key);
+  const dirty = dirtyKeys.length;
+
+  useEffect(() => setCount(dirty), [dirty, setCount]);
+  useEffect(() => () => setCount(0), [setCount]);
+
   const updateMutation = useMutation({
     mutationFn: (changes: Record<string, number | boolean | string>) =>
       api.updateSystemSettings(changes),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["system-settings"] });
-      setLocalState((prev) => {
-        const next = { ...prev };
-        groups.forEach((g) => g.settings.forEach((s) => s.type === "secret" && delete next[s.key]));
-        return next;
-      });
-      toast.success("Settings updated");
+      setEdits({});
       setErrors({});
+      toast.success("Settings updated");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -73,148 +64,84 @@ export function SystemSettingsPanel({ groups: only }: { groups?: string[] } = {}
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const providerRow = (g: SettingGroup) =>
-    g.settings.find((s) => s.key === "WEBRTC_TURN_PROVIDER")?.value;
+  const drop = (key: string) => {
+    setEdits((p) => { const n = { ...p }; delete n[key]; return n; });
+    setErrors((p) => { const n = { ...p }; delete n[key]; return n; });
+  };
 
   const handleChange = (key: string, value: SettingValue, setting: Setting) => {
-    const newValue = setting.type === "int" ? (value === "" ? "" : Number(value)) : value;
-    setLocalState((prev) => ({ ...prev, [key]: newValue }));
-
-    const err = validate(setting, newValue);
-    if (err) {
-      setErrors((prev) => ({ ...prev, [key]: err }));
-    } else {
-      setErrors((prev) => {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      });
-    }
+    const v = setting.type === "int" && value !== "" ? Number(value) : value;
+    setEdits((p) => ({ ...p, [key]: v }));
+    const err = validate(setting, v);
+    setErrors((p) => {
+      const n = { ...p };
+      if (err) n[key] = err; else delete n[key];
+      return n;
+    });
   };
 
-  const handleSaveGroup = (group: SettingGroup) => {
+  const handleSave = () => {
     const changes: Record<string, number | boolean | string> = {};
-    let hasErrors = false;
-
-    group.settings.forEach((s) => {
-      const currentValue = localState[s.key] ?? s.value;
-      if (currentValue !== s.value) {
-        const err = validate(s, currentValue);
-        if (err) {
-          hasErrors = true;
-        } else {
-          changes[s.key] = currentValue as number | boolean | string;
-        }
-      }
+    let bad = false;
+    all_.forEach((s) => {
+      if (!isChanged(s, edits[s.key])) return;
+      if (validate(s, edits[s.key] ?? null)) bad = true;
+      else changes[s.key] = edits[s.key] as number | boolean | string;
     });
-
-    if (hasErrors) {
-      toast.error("Please fix validation errors before saving");
-      return;
-    }
-
-    if (Object.keys(changes).length > 0) {
-      updateMutation.mutate(changes);
-    }
+    if (bad) return void toast.error("Please fix validation errors before saving");
+    if (Object.keys(changes).length > 0) updateMutation.mutate(changes);
   };
-
-  const clearSecret = (key: string) => updateMutation.mutate({ [key]: "" });
-
-  const handleReset = (key: string) => {
-    resetMutation.mutate(key);
-  };
-
-  const isDirty = (g: SettingGroup) =>
-    g.settings.some((s) => {
-      const v = localState[s.key];
-      if (s.type === "secret") return v !== undefined && v !== "";
-      return (v !== undefined && v !== s.value) || s.key in errors;
-    });
 
   if (isLoading) {
     return <div className="text-sm text-muted-foreground">Loading settings...</div>;
   }
 
-  const wanted = params.get("group");
-  const active = groups.find((g) => g.group === wanted) ?? groups[0];
+  const provider = (g: SettingGroup) =>
+    edits.WEBRTC_TURN_PROVIDER ?? g.settings.find((s) => s.key === "WEBRTC_TURN_PROVIDER")?.value;
+  const busy = updateMutation.isPending || resetMutation.isPending;
 
   return (
-    <div className="flex flex-col gap-4 md:flex-row md:gap-6">
-      <SettingsGroupNav
-        items={groups.map((g) => ({ id: g.group, label: g.label, dirty: isDirty(g) }))}
-        activeId={active?.group ?? ""}
-        onSelect={(id) => setParams((p) => { p.set("group", id); return p; })}
-      />
-      <div className="min-w-0 flex-1 space-y-6">
-      {(active ? [active] : []).map((group: SettingGroup) => (
-        <div key={group.group} className="space-y-6">
-        <Card className="styx-card">
-          <CardHeader className="pb-4">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-primary/10 p-2">
-                  <SlidersHorizontal className="h-5 w-5 text-primary" />
-                </div>
-                <div>
-                  <CardTitle>{group.label}</CardTitle>
-                </div>
-              </div>
-              <Button
-                onClick={() => handleSaveGroup(group)}
-                disabled={
-                  updateMutation.isPending ||
-                  Object.keys(errors).some((k) => group.settings.some((s) => s.key === k))
-                }
-                size="sm"
-              >
-                {updateMutation.isPending ? "Saving..." : "Save"}
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div data-testid="settings-grid" className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-              {group.group === "webrtc" && (
+    <>
+      <div data-testid="settings-grid" className="groups">
+        {groups.map((group: SettingGroup) => {
+          const web = group.group === "webrtc";
+          return (
+            <Fragment key={group.group}>
+              {web && (
                 <div data-testid="turn-guide-wrap" className="col-span-full">
-                  <TurnSetupGuide provider={localState.WEBRTC_TURN_PROVIDER ?? providerRow(group)} />
+                  <TurnSetupGuide provider={provider(group)} />
                 </div>
               )}
-              {group.settings
-                .filter((s) =>
-                  group.group !== "webrtc" ||
-                  isSettingVisible(s.key, localState.WEBRTC_TURN_PROVIDER ?? providerRow(group))
-                )
-                .map((setting: Setting) => (
-                  <SettingRow
-                    key={setting.key}
-                    setting={setting}
-                    value={localState[setting.key]}
-                    error={errors[setting.key]}
-                    disabled={updateMutation.isPending || resetMutation.isPending}
-                    onChange={(v) => handleChange(setting.key, v, setting)}
-                    onClear={() => clearSecret(setting.key)}
-                    onReset={() => {
-                      setLocalState((prev) => ({ ...prev, [setting.key]: setting.default }));
-                      setErrors((prev) => {
-                        const next = { ...prev };
-                        delete next[setting.key];
-                        return next;
-                      });
-                      handleReset(setting.key);
-                    }}
-                  />
-                ))}
-            </div>
-          </CardContent>
-        </Card>
-        {group.group === "webrtc" && (
-          <div className="col-span-full"><TurnSetupCheck provider={String(providerRow(group) ?? "none")} /></div>
-        )}
-        {group.group === "webrtc" && (
-          <div data-testid="turn-cost-wrap" className="col-span-full"><TurnCostCard /></div>
-        )}
-        </div>
-      ))}
+              <fieldset className="grp">
+                <legend>{group.label}</legend>
+                {group.settings
+                  .filter((s) => !web || isSettingVisible(s.key, provider(group)))
+                  .map((setting: Setting) => (
+                    <SettingField
+                      key={setting.key}
+                      setting={setting}
+                      value={edits[setting.key]}
+                      error={errors[setting.key]}
+                      disabled={busy}
+                      onChange={(v) => handleChange(setting.key, v, setting)}
+                      onRestore={() => drop(setting.key)}
+                      onClear={() => updateMutation.mutate({ [setting.key]: "" })}
+                      onResetDefault={() => { drop(setting.key); resetMutation.mutate(setting.key); }}
+                    />
+                  ))}
+              </fieldset>
+              {web && <div className="col-span-full"><TurnSetupCheck provider={String(provider(group) ?? "none")} /></div>}
+              {web && <div data-testid="turn-cost-wrap" className="col-span-full"><TurnCostCard /></div>}
+            </Fragment>
+          );
+        })}
       </div>
-    </div>
+      <SavePill
+        count={dirty}
+        saving={updateMutation.isPending}
+        onSave={handleSave}
+        onDiscard={() => { setEdits({}); setErrors({}); }}
+      />
+    </>
   );
 }

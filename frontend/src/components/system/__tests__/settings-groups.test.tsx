@@ -37,45 +37,31 @@ function wrap(url = "/") {
 
 beforeEach(() => getSystemSettings.mockResolvedValue(data));
 
-describe("settings group nav", () => {
-  test("lists groups, defaults to first, switches on click", async () => {
+describe("settings groups", () => {
+  test("renders every group as a card in one grid", async () => {
     wrap();
-    const nav = await screen.findByRole("navigation", { name: "Setting groups" });
-    expect(nav.querySelectorAll("button").length).toBe(2);
-    expect(screen.getByLabelText("GEN_NAME")).toBeTruthy();
-    expect(screen.queryByLabelText("SEC_PORT")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /Security/ }));
+    expect(await screen.findByLabelText("GEN_NAME")).toBeTruthy();
     expect(screen.getByLabelText("SEC_PORT")).toBeTruthy();
-    expect(screen.queryByLabelText("GEN_NAME")).toBeNull();
-    expect(screen.getByRole("button", { name: /Security/ }).getAttribute("aria-current")).toBe("page");
+    expect(document.querySelectorAll("fieldset.grp").length).toBe(2);
   });
 
-  test("honours ?group= param", async () => {
-    wrap("/?group=security");
-    expect(await screen.findByLabelText("SEC_PORT")).toBeTruthy();
-    expect(screen.queryByLabelText("GEN_NAME")).toBeNull();
-  });
-
-  test("dirty dot appears after editing", async () => {
+  test("editing shows the save pill; Discard clears it", async () => {
     wrap();
-    const input = await screen.findByLabelText("GEN_NAME");
-    expect(screen.queryByTestId("dirty-general")).toBeNull();
-    fireEvent.change(input, { target: { value: "b" } });
-    expect(screen.getByTestId("dirty-general")).toBeTruthy();
-    expect(screen.queryByTestId("dirty-security")).toBeNull();
+    fireEvent.change(await screen.findByLabelText("GEN_NAME"), { target: { value: "b" } });
+    expect(screen.getByText(/unsaved change$/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+    expect(screen.queryByTestId("save-pill")).toBeNull();
   });
 });
 
 describe("settings grid", () => {
-  test("rows sit in a responsive grid; guide and cost span all columns", async () => {
+  test("groups sit in the auto-fill grid; guide and cost span all columns", async () => {
     getSystemSettings.mockResolvedValue([
       { group: "webrtc", label: "WebRTC", settings: [row("WEBRTC_TURN_PROVIDER", "str", "none")] },
     ]);
     wrap();
     const grid = await screen.findByTestId("settings-grid");
-    expect(grid.className).toMatch(/grid-cols-1/);
-    expect(grid.className).toMatch(/lg:grid-cols-2/);
-    expect(grid.className).toMatch(/2xl:grid-cols-3/);
+    expect(grid.className).toMatch(/groups/);
     expect(screen.getByTestId("turn-guide-wrap").className).toMatch(/col-span-full/);
     expect(screen.getByTestId("turn-cost-wrap").className).toMatch(/col-span-full/);
   });

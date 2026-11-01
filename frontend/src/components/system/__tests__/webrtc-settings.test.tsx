@@ -81,7 +81,7 @@ describe("secret rows", () => {
     wrap(<SystemSettingsPanel />);
     const input = await screen.findByLabelText("CLOUDFLARE_TURN_API_TOKEN");
     fireEvent.change(input, { target: { value: "abc" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() =>
       expect(updateSystemSettings).toHaveBeenCalledWith({ CLOUDFLARE_TURN_API_TOKEN: "abc" })
     );
