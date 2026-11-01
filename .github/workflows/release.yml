@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: homelab
     outputs:
       version: ${{ steps.resolve.outputs.version }}
       publish: ${{ steps.resolve.outputs.publish }}
@@ -50,7 +50,7 @@ jobs:
   build:
     needs: release
     if: needs.release.outputs.publish == 'true'
-    runs-on: ubuntu-latest
+    runs-on: homelab
     strategy:
       fail-fast: false
       matrix:
@@ -95,7 +95,7 @@ jobs:
   build-desktop:
     needs: release
     if: needs.release.outputs.publish == 'true'
-    runs-on: ubuntu-latest
+    runs-on: homelab
     # Isolated/non-blocking: the ~4.5GB desktop image always carries CVEs and may
     # exhaust hosted-runner disk; it must not block backend/frontend release.
     # Mirrors GitLab's `allow_failure: true` on build-desktop/scan-desktop.
