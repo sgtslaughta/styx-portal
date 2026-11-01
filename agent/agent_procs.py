@@ -5,7 +5,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from health import gw_state_path
+from health import gw_state_path, read_stream_mode, stream_mode_path  # noqa: F401
 
 
 def parse_fps(v) -> int:
@@ -195,3 +195,24 @@ def merge_pending(pending: dict | None, old_ss: dict, new_ss: dict) -> dict:
 def _check(label: str, ok: bool, detail: str = "") -> bool:
     print(f"  [{'OK' if ok else 'FAIL'}] {label}" + (f" — {detail}" if detail else ""))
     return ok
+
+
+def sync_stream_mode(state_path, procs: dict, last: str | None) -> str | None:
+    """Respawn the warm standby when the viewer's transport pick changed, so a
+    promotion keeps it. The live selkies already switched in place: untouched."""
+    mode = read_stream_mode(state_path)
+    if mode != last:
+        _terminate(procs.get("standby"), timeout=0)
+        procs["standby"] = None
+    return mode
+
+
+def clear_stream_mode_on_portal_change(state_path, old_ss: dict, new_ss: dict) -> bool:
+    """A portal transport change resets the viewer's pick to the portal default."""
+    if old_ss.get("transport") == new_ss.get("transport"):
+        return False
+    try:
+        stream_mode_path(state_path).unlink()
+    except OSError:
+        return False
+    return True

@@ -552,7 +552,24 @@ def create_app(user: str, password: str,
 
     async def http_proxy(request):
         """Everything else (client assets, /api/* REST) goes to selkies as-is."""
-        return await forward(request, request.rel_url.raw_path_qs)
+        resp = await forward(request, request.rel_url.raw_path_qs)
+        if request.method == "POST" and request.path.endswith("/api/switch") and 200 <= resp.status < 300:
+            await _remember_mode(request)
+        return resp
+
+    async def _remember_mode(request):
+        """Keep the sidebar's transport pick so a restarted/promoted selkies starts in it."""
+        try:
+            mode = (await request.json()).get("mode")
+        except Exception:
+            return
+        if mode not in ("webrtc", "websockets") or not state_file:
+            return
+        path = os.path.join(os.path.dirname(state_file), "stream-mode")  # = health.STREAM_MODE_NAME
+        with open(path + ".tmp", "w") as f:
+            f.write(mode)
+        os.replace(path + ".tmp", path)
+        log(f"viewer switched transport to {mode} (kept for restarts)")
 
     async def files(request):
         # Hand-rolled index: aiohttp's show_index emits ABSOLUTE hrefs

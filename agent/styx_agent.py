@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-AGENT_VERSION = "0.9.35"
+AGENT_VERSION = "0.9.36"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -47,7 +47,8 @@ from agent_procs import (  # noqa: E402
     FRAME_START_TIMEOUT_S, _restart_engine, _terminate,
     _check, build_gateway_cmd, drop_clients, settings_restart_keys,  # noqa: F401
     viewers_connected, merge_pending, must_apply_now, restart_plan,
-    cut_stream, kill_requested, sleep_or_kill)
+    cut_stream, kill_requested, sleep_or_kill,
+    sync_stream_mode, clear_stream_mode_on_portal_change)
 
 
 def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool,
@@ -254,6 +255,7 @@ def run(cfg: dict) -> int:
                           "manager. Install: sudo apt install labwc")
         return proc
 
+    stream_mode = None   # viewer's transport pick (see sync_stream_mode)
     pending = None       # deferred settings-push restart (see merge_pending)
     pending_exit = False
     apply_now = False    # security setting changed: restart even with viewers
@@ -298,6 +300,7 @@ def run(cfg: dict) -> int:
             publish_port("selkies started")
         elif gseat:
             publish_port("heal")
+        stream_mode = sync_stream_mode(gw_state_path(cfg), procs, stream_mode)
         if gseat and procs["selkies"] is not None and (
                 procs["standby"] is None or procs["standby"].poll() is not None):
             procs["standby"] = spawn_standby()
@@ -381,6 +384,7 @@ def run(cfg: dict) -> int:
             if hb["stream_settings"] != cfg["stream_settings"]:
                 old_ss = cfg["stream_settings"]
                 cfg["stream_settings"] = hb["stream_settings"]
+                clear_stream_mode_on_portal_change(gw_state_path(cfg), old_ss, hb["stream_settings"])
                 CONFIG_PATH.write_text(json.dumps(cfg, indent=2))
                 if pick_seat_shell(cfg) != shell_kind:
                     pending_exit = True
