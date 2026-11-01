@@ -1,6 +1,8 @@
 import "@/styles/settings-grid.css";
 import type { Setting, SettingValue } from "@/api/client";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { useState } from "react";
+import { SizePresetsDialog, type Preset } from "./size-presets-dialog";
 import { cleanLabel, divisor, fromDisplay, parseRate, toDisplay, unitOf } from "./units";
 
 type Props = {
@@ -16,11 +18,23 @@ type Props = {
   onClear: () => void;
 };
 
-const same = (a: SettingValue | undefined, b: SettingValue) => a === b || String(a) === String(b);
+const same = (a: SettingValue | undefined, b: SettingValue) =>
+  a === b || (typeof a === "object" && typeof b === "object" ? JSON.stringify(a) === JSON.stringify(b) : String(a) === String(b));
 
 export function isChanged(s: Setting, v: SettingValue | undefined): boolean {
   if (v === undefined) return false;
   return s.type === "secret" ? v !== "" : !same(v, s.value);
+}
+
+function PresetsControl({ cur, disabled, onChange }: { cur: SettingValue | undefined; disabled: boolean; onChange: (v: SettingValue) => void }) {
+  const [open, setOpen] = useState(false);
+  const list = (Array.isArray(cur) ? cur : []) as unknown as Preset[];
+  return (
+    <>
+      <button type="button" className="linkbtn" disabled={disabled} onClick={() => setOpen(true)}>Edit {list.length} sizes</button>
+      <SizePresetsDialog open={open} presets={list} onOpenChange={setOpen} onApply={(p) => onChange(p as unknown as SettingValue)} />
+    </>
+  );
 }
 
 function Control({ setting, value, error, disabled, onChange }: Props) {
@@ -33,14 +47,7 @@ function Control({ setting, value, error, disabled, onChange }: Props) {
         onChange={(e) => onChange(e.target.checked)} />
     );
   }
-  if (type === "json") {
-    const n = Array.isArray(cur) ? cur.length : 0;
-    return (
-      <button type="button" className="save-pill-ghost" disabled title="Editing sizes inline is not available yet">
-        Edit {n} sizes
-      </button>
-    );
-  }
+  if (type === "json") return <PresetsControl cur={cur} disabled={disabled} onChange={onChange} />;
   if (type === "enum") {
     return (
       <div className="in">

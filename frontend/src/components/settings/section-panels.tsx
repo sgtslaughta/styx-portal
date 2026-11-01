@@ -3,6 +3,7 @@ import { MetricsResources } from "@/components/system/metrics-resources";
 import { UsersPanel } from "@/components/system/users-panel";
 import { GroupsPanel } from "@/components/system/groups-panel";
 import { SystemSettingsPanel } from "@/components/system/system-settings-panel";
+import { StreamingPage } from "@/components/system/streaming-page";
 
 // Composite panes; Tasks 10/11 replace these with the merged designs.
 export const OverviewPane = () => (
@@ -17,4 +18,4 @@ export const SecurityPane = () => (
 export const TimeoutsPane = () => (
   <SystemSettingsPanel groups={["sessions", "timeouts", "workstation_features"]} />
 );
-export const StreamingPane = () => <SystemSettingsPanel groups={["webrtc"]} />;
+export const StreamingPane = () => <StreamingPage />;

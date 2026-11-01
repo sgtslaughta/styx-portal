@@ -1,0 +1,20 @@
+/* Glance Streaming page: status line, usage meter, per-workstation overrides. */
+.row .linkbtn { height: 32px; border: 1px solid var(--border); border-radius: 8px; background: var(--background); font-size: 13px; color: var(--foreground); cursor: pointer; }
+.row .linkbtn:hover { border-color: var(--muted-foreground); }
+.row.wide > .seg-s { grid-column: 2 / 4; justify-self: end; }
+.status-line { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted-foreground); margin: 8px 0 4px; }
+.status-line > span:nth-child(2) { flex: 1; }
+.usage { margin-top: 10px; padding: 12px; border-radius: 10px; background: var(--background); border: 1px solid var(--border); display: grid; gap: 8px; font-size: 13px; color: var(--muted-foreground); }
+.u-head { display: flex; align-items: baseline; gap: 8px; }
+.u-head span:first-child { flex: 1; }
+.u-head b { font-size: 18px; color: var(--foreground); font-weight: 600; }
+.u-foot { display: flex; gap: 18px; flex-wrap: wrap; }
+.u-foot b { color: var(--foreground); font-weight: 600; }
+.usage .track i { background: var(--obol, var(--primary)); }
+.ws-table select { width: 100%; max-width: 170px; }
+.ws-table select.override, .ws-table .in.sm.override { border-color: color-mix(in srgb, #C9A04E 70%, var(--border)); color: var(--gold-text); }
+.in.sm { width: 120px; height: 30px; }
+.in.sm input::placeholder { color: var(--muted-foreground); }
+.preset-rows { display: grid; gap: 8px; margin: 8px 0; }
+.preset-row { display: grid; grid-template-columns: 1fr 70px 70px auto auto; gap: 8px; align-items: center; font-size: 13px; }
+.preset-row input[type=text], .preset-row input[type=number] { height: 32px; border: 1px solid var(--border); border-radius: 8px; background: var(--background); padding: 0 8px; min-width: 0; }
