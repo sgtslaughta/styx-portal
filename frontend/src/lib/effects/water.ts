@@ -64,33 +64,59 @@ export function createWater(canvas: HTMLCanvasElement, opts: WaterOptions = {}):
   let last: [number, number] | null = null;
   let draw: () => void = () => {};
 
+  let uploadSource: (() => void) | null = null; // re-upload texture 0 only
+  let releaseGl: (() => void) | null = null;
+
   function glRenderer(): () => void {
+    releaseGl?.(); releaseGl = uploadSource = null;
     const gl = canvas.getContext("webgl2", { premultipliedAlpha: false }) as WebGL2RenderingContext | null;
     if (!gl) {
       const c = canvas.getContext("2d");
       return () => { if (c && source) c.drawImage(source as CanvasImageSource, 0, 0, canvas.width, canvas.height); };
     }
+    const shaders: WebGLShader[] = [];
     const sh = (type: number, src: string) => {
       const s = gl.createShader(type)!;
       gl.shaderSource(s, src); gl.compileShader(s);
+      shaders.push(s);
       return s;
     };
     const pr = gl.createProgram()!;
-    gl.attachShader(pr, sh(gl.VERTEX_SHADER, VS));
-    gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, FS));
-    gl.linkProgram(pr); gl.useProgram(pr);
-    gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+    for (const s of [sh(gl.VERTEX_SHADER, VS), sh(gl.FRAGMENT_SHADER, FS)]) gl.attachShader(pr, s);
+    gl.linkProgram(pr);
+    const buf = gl.createBuffer();
+    const texs: WebGLTexture[] = [];
+    releaseGl = () => {
+      for (const t of texs) gl.deleteTexture(t);
+      if (buf) gl.deleteBuffer(buf);
+      for (const s of shaders) gl.deleteShader(s);
+      gl.deleteProgram(pr);
+    };
+    if (!gl.getProgramParameter(pr, gl.LINK_STATUS) || shaders.some((s) => !gl.getShaderParameter(s, gl.COMPILE_STATUS))) {
+      // A 2D context can't be taken from a webgl canvas: hide it so the underlying image shows, unrefracted.
+      releaseGl(); releaseGl = null;
+      canvas.style.visibility = "hidden";
+      return () => {};
+    }
+    gl.useProgram(pr);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
     const loc = gl.getAttribLocation(pr, "p");
     gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
     const tex = (unit: number) => {
       const t = gl.createTexture();
+      if (t) texs.push(t);
       gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t);
       for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR],
         [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]] as [number, number][]) gl.texParameteri(gl.TEXTURE_2D, k, v);
     };
-    tex(0);
-    if (source) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source as TexImageSource);
+    uploadSource = () => {
+      if (!source) return;
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, texs[0]!);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source as TexImageSource);
+    };
+    tex(0); uploadSource();
     tex(1); gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     gl.uniform1i(gl.getUniformLocation(pr, "img"), 0);
     gl.uniform1i(gl.getUniformLocation(pr, "hgt"), 1);
@@ -100,6 +126,8 @@ export function createWater(canvas: HTMLCanvasElement, opts: WaterOptions = {}):
     gl.uniform1f(gl.getUniformLocation(pr, "light"), light);
     gl.viewport(0, 0, canvas.width, canvas.height);
     return () => {
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, texs[1]!);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.R16F, w, h, 0, gl.RED, gl.FLOAT, cur);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     };
@@ -203,7 +231,9 @@ export function createWater(canvas: HTMLCanvasElement, opts: WaterOptions = {}):
 
   function setSource(img: CanvasImageSource) {
     source = img;
-    if (w) { draw = makeRenderer(); draw(); }
+    if (!w) return;
+    if (uploadSource) uploadSource(); else draw = makeRenderer();
+    draw();
   }
 
   const ro = typeof ResizeObserver === "function"
@@ -222,6 +252,7 @@ export function createWater(canvas: HTMLCanvasElement, opts: WaterOptions = {}):
       if (raf) cancelAnimationFrame(raf);
       clearTimeout(idleTimer);
       ro?.disconnect();
+      releaseGl?.(); releaseGl = uploadSource = null;
     },
   };
 }

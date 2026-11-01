@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { createWater } from "@/lib/effects/water";
+import { createWater, type Water } from "@/lib/effects/water";
 import { useCanvasEffect } from "@/hooks/use-canvas-effect";
 import { GlassButton } from "@/components/ui/glass-button";
 import { statusMeta } from "@/lib/status";
@@ -16,7 +16,14 @@ function Shot({ item }: { item: RecentItem }) {
     const t = setInterval(() => setTick((n) => n + 1), 60000);
     return () => clearInterval(t);
   }, [item.thumbUrl]);
-  useCanvasEffect(cv, (c) => (img.current ? createWater(c, { mode: "image", source: img.current }) : null), [loaded]);
+  const water = useRef<Water | null>(null);
+  const shown = loaded > 0;
+  // Create once per canvas; a thumbnail reload only re-uploads the image texture.
+  useCanvasEffect(cv, (c) => {
+    water.current = img.current ? createWater(c, { mode: "image", source: img.current }) : null;
+    return water.current && { destroy: () => { water.current?.destroy(); water.current = null; } };
+  }, [shown]);
+  useEffect(() => { if (loaded > 0 && img.current) water.current?.setSource(img.current); }, [loaded]);
   return (
     <>
       {item.thumbUrl && (
@@ -24,7 +31,7 @@ function Shot({ item }: { item: RecentItem }) {
           className="absolute inset-0 size-full object-cover"
           onLoad={() => setLoaded((n) => n + 1)} onError={() => setLoaded(0)} />
       )}
-      {loaded > 0 && <canvas ref={cv} aria-hidden="true" />}
+      {shown && <canvas ref={cv} aria-hidden="true" />}
     </>
   );
 }
