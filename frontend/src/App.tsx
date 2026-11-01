@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AlertTriangle } from "lucide-react";
 import { Header, type HeaderTab } from "@/components/layout/header";
-import { InstanceWorkspace } from "@/components/instances/instance-workspace";
+import { HomePage } from "@/components/home/home-page";
 import { LaunchModal } from "@/components/templates/launch-modal";
 import { SettingsLayout } from "@/components/settings/settings-layout";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -66,8 +66,8 @@ export default function App() {
     <div className="flex h-dvh flex-col bg-background styx-app-bg">
       <Header activeTab={activeTab} onTabChange={setActiveTab} />
       <main className="min-h-0 flex-1 overflow-y-auto p-6">
-        <div className={activeTab === "home" ? "h-full" : "hidden"}>
-          <InstanceWorkspace onLaunch={() => {}} onOpenSettings={() => setActiveTab("admin")} />
+        <div className={activeTab === "home" ? "" : "hidden"}>
+          <HomePage onNewContainer={() => {}} onOpenSettings={() => setActiveTab("admin")} />
         </div>
         <div className={activeTab === "admin" ? "" : "hidden"}>
           <SettingsLayout />

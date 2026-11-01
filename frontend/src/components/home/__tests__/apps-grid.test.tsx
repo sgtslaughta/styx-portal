@@ -32,11 +32,11 @@ beforeEach(() => {
 });
 
 describe("AppsGrid", () => {
-  test("tile shows the service thumbnail", async () => {
+  test("dock item is icon-only (no thumbnail)", async () => {
     listServiceTiles.mockResolvedValue([tile({})]);
     const { container } = renderList();
     await screen.findByRole("link", { name: /open sonarr/i });
-    expect(container.querySelector('img[src="/api/services/1/thumbnail?t=0"]')).not.toBeNull();
+    expect(container.querySelector('img[src*="thumbnail"]')).toBeNull();
   });
   test("tile shows the server icon by id and etag", async () => {
     listServiceTiles.mockResolvedValue([tile({})]);

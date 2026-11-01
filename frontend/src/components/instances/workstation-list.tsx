@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, Search } from "lucide-react";
-import { api, ApiError, type Workstation } from "@/api/client";
+import { api, type Workstation } from "@/api/client";
 import { Thumbnail } from "@/components/common/thumbnail";
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { WorkstationIcon } from "@/components/system/workstation-icon";
 import { WorkstationSpecs } from "@/components/system/workstation-specs";
-import { useOpenChoice } from "@/components/open-prompt";
-import { openPending } from "@/lib/connect-wipe";
+import { useWorkstationConnect } from "@/hooks/use-open-actions";
 import { cn } from "@/lib/utils";
 
 /* ---------- OS badge: brand-colored glyph keyed off os_info.distro ------- */
@@ -124,9 +122,7 @@ export function WorkstationList({ selectedId, onSelect }: WorkstationListProps =
   const [sort, setSort] = useState<SortKey>("status");
   const [filter, setFilter] = useState<FilterKey>("all");
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [takeover, setTakeover] = useState<Workstation | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const choose = useOpenChoice();
+  const { connect, error: err, dialog } = useWorkstationConnect();
 
   useEffect(() => {
     const load = () => api.myWorkstations().then(setRows).catch(() => {});
@@ -156,19 +152,6 @@ export function WorkstationList({ selectedId, onSelect }: WorkstationListProps =
   }, [rows, query, sort, filter]);
 
   if (rows.length === 0) return null;
-
-  const connect = (ws: Workstation, force = false) => {
-    setErr(null);
-    // Takeover is confirmed here, in this tab, before any new tab opens.
-    if (!force && ws.in_use && !ws.in_use_self) { setTakeover(ws); return; }
-    choose("workspaces", ws.name, (mode) => {
-      openPending(mode, `Connecting to ${ws.name}…`, async () => (await api.workstationConnectUrl(ws.id, force)).url)
-        .catch((e) => {
-          if (e instanceof ApiError && e.status === 423) setTakeover(ws); // raced: someone joined meanwhile
-          else setErr((e as Error).message);
-        });
-    });
-  };
 
   return (
     <section className="space-y-2 mb-4">
@@ -280,20 +263,7 @@ export function WorkstationList({ selectedId, onSelect }: WorkstationListProps =
         })}
       </ul>
 
-      <ConfirmDialog
-        open={takeover !== null}
-        onOpenChange={(open) => !open && setTakeover(null)}
-        title={`Take over "${takeover?.name ?? ""}"?`}
-        description={`This workstation is in use by ${takeover?.in_use_by ?? "another user"}. Joining shares the same desktop — you will both see and control the same screen.`}
-        confirmLabel="Take over"
-        variant="destructive"
-        onConfirm={() => {
-          if (takeover) {
-            connect(takeover, true);
-            setTakeover(null);
-          }
-        }}
-      />
+      {dialog}
     </section>
   );
 }

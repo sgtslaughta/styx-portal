@@ -19,6 +19,7 @@ import { ConnectingPage } from "@/pages/ConnectingPage";
 import { DesktopPage } from "@/pages/DesktopPage";
 import "@fontsource-variable/commissioner/flar.css";
 import "./styles/globals.css";
+import "./styles/glass.css";
 
 applyReducedMotion();
 
