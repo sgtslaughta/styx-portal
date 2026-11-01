@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { known, runPath, runs, slotVar, type Slot } from "./axis";
-import { hideTip, showTip } from "./tooltip";
+import { hideTip, showTip, useTipLifecycle } from "./tooltip";
 import { useSize } from "./use-size";
 
 type Props = {
@@ -10,6 +10,7 @@ type Props = {
 
 /** Tile sparkline: 2px line + soft area, last point dotted, hover names the measure. Nulls break the line. */
 export function Sparkline({ data, name, slot = "s1", fmt = String, labels, min, max, height = 34, bare }: Props) {
+  useTipLifecycle();
   const [ref, { w }] = useSize<HTMLDivElement>(120, height);
   const [hi, setHi] = useState<number | null>(null);
   const vals = data.filter(known);
@@ -44,6 +45,7 @@ export function Sparkline({ data, name, slot = "s1", fmt = String, labels, min, 
         {rs.filter((r) => r.length > 1).map((r, k) => (
           <path key={k} d={runPath(r, x, y)} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
         ))}
+        {rs.filter((r) => r.length === 1 && r[0]!.i !== dotI).map((r) => <circle key={`p${r[0]!.i}`} cx={x(r[0]!.i)} cy={y(r[0]!.v)} r={2} fill={color} />)}
         {dotI >= 0 && <circle cx={x(dotI)} cy={y(data[dotI]!)} r={3} fill={color} />}
       </svg>
     </div>

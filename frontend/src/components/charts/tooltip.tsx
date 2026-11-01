@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 /** One shared tooltip element for every chart (a single node appended to <body>). Text stays in ink colours. */
 export type TipRow = { color?: string; name: string; value: string };
 export type TipContent = { title?: string; rows: TipRow[]; note?: string };
@@ -44,4 +46,16 @@ export function showTip(e: { clientX: number; clientY: number }, c: TipContent) 
 
 export function hideTip() {
   if (node) node.style.display = "none";
+}
+
+let users = 0;
+
+/** Charts call this once; the shared node is removed when the last chart unmounts. */
+export function useTipLifecycle() {
+  useEffect(() => {
+    users++;
+    return () => {
+      if (--users <= 0) { node?.remove(); node = null; users = 0; }
+    };
+  }, []);
 }

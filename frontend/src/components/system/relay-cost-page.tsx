@@ -12,11 +12,15 @@ import { Tile } from "./overview-tiles";
 import { SecHead } from "./sec-head";
 
 const PERIODS = [["last", "Last month"], ["this", "This month"], ["6m", "6 months"]] as const;
-const REASONS: Record<string, string> = { symmetric_nat: "Strict NAT", udp_blocked: "UDP blocked", firewall: "Firewall", no_direct: "No direct path" };
+const REASONS: Record<string, { label: string; sub?: string }> = {
+  strict_nat: { label: "Strict NAT", sub: "work network" }, firewall: { label: "Firewall", sub: "UDP blocked" },
+  mobile: { label: "Mobile data" }, unknown: { label: "Unknown" },
+};
+const reasonRow = (x: { reason: string; sessions: number }) => ({ label: REASONS[x.reason]?.label ?? x.reason.replace(/_/g, " "), sub: REASONS[x.reason]?.sub, value: x.sessions });
 
 const top5 = (rows: { name: string; gb: number }[]) =>
   foldTop(rows, 5, (r) => r.gb).map((r) =>
-    "others" in r ? { label: `Others · ${r.others.length} more`, value: r.others.reduce((a, x) => a + x.gb, 0) } : { label: r.name, value: r.gb });
+    "others" in r ? { label: `Others · ${r.others.length} more`, value: r.others.reduce((a, x) => a + x.gb, 0), others: true } : { label: r.name, value: r.gb, others: false });
 
 export function RelayCostPage() {
   const [period, setPeriod] = useState<string>("this");
@@ -33,17 +37,15 @@ export function RelayCostPage() {
   if (isLoading || !r) return <p className="text-sm text-muted-foreground">{error ? "Relay data is unavailable right now." : "Loading…"}</p>;
 
   const byUser = top5(r.by_user), byWs = top5(r.by_workstation);
-  const reasons = r.reasons.map((x) => ({ label: REASONS[x.reason] ?? x.reason.replace(/_/g, " "), value: x.sessions }));
+  const reasons = r.reasons.map(reasonRow);
   const pctUsed = Math.min(100, (r.used_gb / (r.free_gb || 1)) * 100);
   const free = r.est_usd === 0;
-  const perMonth = r.free_gb / (period === "6m" ? 6 : 1);
-  const maxMonth = Math.max(0, ...r.monthly.map((m) => m.gb));
-  // A free-tier line far above the data would flatten every bar, so only draw it when it is in range.
-  const refLine = perMonth > 0 && perMonth <= maxMonth * 3 ? { value: perMonth, label: "Free tier" } : undefined;
+  const budget = r.budget_gb ? r.budget_gb / (period === "6m" ? 6 : 1) : null;
+  const refLine = budget ? { value: budget, label: `Budget alert at ${fmtGb(budget)}` } : undefined;
   const rowsAll = [
     ...r.by_user.map((x) => ["User", x.name, fmtGb(x.gb)]),
     ...r.by_workstation.map((x) => ["Workstation", x.name, fmtGb(x.gb)]),
-    ...r.reasons.map((x) => ["Relay reason", REASONS[x.reason] ?? x.reason, `${x.sessions} sessions`]),
+    ...r.reasons.map((x) => ["Relay reason", REASONS[x.reason]?.label ?? x.reason, `${x.sessions} sessions`]),
     ...r.monthly.map((x) => ["Month", shortMonth(x.month), fmtGb(x.gb)]),
   ];
 

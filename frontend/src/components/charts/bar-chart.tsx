@@ -1,6 +1,6 @@
 import { useId } from "react";
 import { known, slotVar, type Slot } from "./axis";
-import { hideTip, showTip } from "./tooltip";
+import { hideTip, showTip, useTipLifecycle } from "./tooltip";
 import { useSize } from "./use-size";
 import { Grid, PAD, Plot, plotGeom } from "./plot";
 
@@ -12,6 +12,7 @@ type Props = {
 
 /** Single-series vertical bars: 4px rounded tops, ghost (projected) bars textured, optional dashed reference line. */
 export function BarChart({ data, slot = "s1", measure, fmt = String, refLine, label = "Bar chart" }: Props) {
+  useTipLifecycle();
   const [box, { w, h }] = useSize<HTMLDivElement>();
   const uid = useId().replace(/:/g, "");
   const color = slotVar(slot);

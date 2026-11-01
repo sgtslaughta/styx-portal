@@ -45,8 +45,9 @@ async def test_relay_shape(admin_client, monkeypatch, period):
     assert r.status_code == 200, r.text
     j = r.json()
     assert len(j["daily"]) == 30 and len(j["monthly"]) == 6
-    assert {"used_gb", "free_gb", "projected_gb", "est_usd", "budget_usd", "relayed_pct",
+    assert {"used_gb", "free_gb", "projected_gb", "est_usd", "budget_usd", "budget_gb", "relayed_pct",
             "by_user", "by_workstation", "reasons"} <= set(j)
+    assert j["budget_gb"] is None or j["budget_gb"] > 0
 
 
 async def test_system_metrics_host_fields(admin_client):

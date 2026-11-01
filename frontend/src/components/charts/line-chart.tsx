@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { known, runPath, runs, slotVar, type Slot } from "./axis";
-import { hideTip, showTip } from "./tooltip";
+import { hideTip, showTip, useTipLifecycle } from "./tooltip";
 import { useSize } from "./use-size";
 import { Grid, PAD, Plot, plotGeom } from "./plot";
 
@@ -13,6 +13,7 @@ type Props = {
 
 /** Multi-series line chart. null values break the line (never drawn as 0); hover shows a crosshair + tooltip. */
 export function LineChart({ series, labels, max, fmt = String, label = "Line chart" }: Props) {
+  useTipLifecycle();
   const [ref, { w, h }] = useSize<HTMLDivElement>();
   const [hi, setHi] = useState<number | null>(null);
   const n = labels.length;

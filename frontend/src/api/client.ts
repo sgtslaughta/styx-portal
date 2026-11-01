@@ -161,7 +161,7 @@ export type OverviewStats = {
 };
 export type StreamingStats = { rows: { workstation: string; sub?: string; parts: Record<string, number> }[] };
 export type RelayStats = {
-  used_gb: number; free_gb: number; projected_gb: number; est_usd: number; budget_usd: number; relayed_pct: number;
+  used_gb: number; free_gb: number; projected_gb: number; est_usd: number; budget_usd: number; budget_gb: number | null; relayed_pct: number;
   daily: { date: string; gb: number }[]; monthly: { month: string; gb: number }[];
   by_user: { name: string; gb: number }[]; by_workstation: { name: string; gb: number }[];
   reasons: { reason: string; sessions: number }[];
