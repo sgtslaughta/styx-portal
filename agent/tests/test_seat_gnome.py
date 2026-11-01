@@ -247,3 +247,35 @@ def test_healthy_needs_live_proc_and_answering_shell(tmp_path, monkeypatch):
     monkeypatch.setattr(seat, "alive", lambda: False)
     monkeypatch.setattr(seat, "_shell_answers", lambda: True)
     assert not seat.healthy()
+
+
+def test_helper_gets_max_fps_arg(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(seat_gnome.subprocess, "Popen",
+                        lambda cmd, **k: calls.append(cmd) or object())
+    seat = seat_gnome.GnomeSeat(tmp_path, str(tmp_path), log=subprocess.DEVNULL)
+    seat._spawn_helper(1920, 1080)
+    assert calls[0][-2:] == ["--max-fps", "60"]
+    seat.fps = 120
+    seat._spawn_helper(1920, 1080)
+    assert calls[1][-2:] == ["--max-fps", "120"]
+
+
+def test_restart_helper_applies_new_fps_without_touching_shell(tmp_path, monkeypatch):
+    seat = seat_gnome.GnomeSeat(tmp_path, str(tmp_path), log=subprocess.DEVNULL)
+    seat.size = (1920, 1080)
+    calls = []
+    monkeypatch.setattr(seat, "_start_helper", lambda w, h: calls.append((w, h, seat.fps)) or True)
+    assert seat.restart_helper(120) is True and calls == [(1920, 1080, 120)]
+    seat.size = None
+    assert seat.restart_helper(60) is False
+
+
+def test_restart_helper_failure_retries_old_fps(tmp_path, monkeypatch):
+    seat = seat_gnome.GnomeSeat(tmp_path, str(tmp_path), log=subprocess.DEVNULL)
+    seat.size, seat.fps = (1920, 1080), 60
+    calls = []
+    monkeypatch.setattr(seat, "_start_helper",
+                        lambda w, h: calls.append(seat.fps) or len(calls) > 1)
+    assert seat.restart_helper(120) is False
+    assert calls == [120, 60] and seat.fps == 60
