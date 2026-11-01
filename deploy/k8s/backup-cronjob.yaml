@@ -33,7 +33,7 @@ spec:
                     matchLabels: {app: styx-backend}
           containers:
             - name: backup
-              image: ghcr.io/sgtslaughta/styx-backend
+              image: ghcr.io/jmo-labs/styx-backend
               command: [sh, -ec]
               args:
                 - |

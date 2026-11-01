@@ -144,7 +144,7 @@ services:
   backend:
     # Hosted image (default): `docker compose pull` fetches it from GHCR.
     # Local build: `docker compose up --build` uses the repo-root context (backend/Dockerfile) below.
-    image: ${REGISTRY:-ghcr.io/sgtslaughta}/styx-backend:${STYX_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/jmo-labs}/styx-backend:${STYX_TAG:-latest}
     build: {context: ., dockerfile: backend/Dockerfile}
     restart: unless-stopped
     depends_on:
@@ -192,7 +192,7 @@ services:
   frontend:
     # Hosted image (default): `docker compose pull` fetches it from GHCR.
     # Local build: `docker compose up --build` uses the ./frontend context below.
-    image: ${REGISTRY:-ghcr.io/sgtslaughta}/styx-frontend:${STYX_TAG:-latest}
+    image: ${REGISTRY:-ghcr.io/jmo-labs}/styx-frontend:${STYX_TAG:-latest}
     build: ./frontend
     restart: unless-stopped
     depends_on:

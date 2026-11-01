@@ -116,7 +116,7 @@ Most day-to-day behaviour is in the [Settings reference](settings.md) and applie
 | `SERVER_CA_PIN` | auto | Override the TLS pin (`sha256:<hex>`) |
 | `TRUSTED_PROXY_CIDRS` | loopback + backend's own networks | Who may vouch for client IP headers |
 | `STYX_TUNNEL_SUBNET` | `172.31.254.0/28` | Subnet of the cloudflared-to-Traefik network |
-| `REGISTRY`, `STYX_TAG` | `ghcr.io/sgtslaughta`, `latest` | Image namespace and pinned tag |
+| `REGISTRY`, `STYX_TAG` | `ghcr.io/jmo-labs`, `latest` | Image namespace and pinned tag |
 | `OAUTH_REDIRECT_BASE` | `https://${DOMAIN}` | Override the OAuth redirect base |
 
 Next: [Production](production.md).
