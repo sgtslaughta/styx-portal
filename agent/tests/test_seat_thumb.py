@@ -91,6 +91,7 @@ def _reply(jpeg=b"\xff\xd8\xff!"):
 def _reset():
     seat_thumb._proc = seat_thumb._proc_bus = None
     seat_thumb._starts = 0
+    seat_thumb._gaveup_logged = False
     yield
     seat_thumb._proc = seat_thumb._proc_bus = None
     seat_thumb._starts = 0
@@ -178,3 +179,10 @@ def test_run_failure_logs_one_line(tmp_path, capsys):
     assert p.killed and not up.called
     assert capsys.readouterr().out.startswith("seat thumbnail failed: TimeoutError")
     assert seat_thumb._busy is False
+
+
+def test_gaveup_logged_once_per_bus(tmp_path, capsys):
+    seat_thumb._starts, seat_thumb._proc_bus = seat_thumb.MAX_STARTS, "unix:path=/x/bus"
+    for _ in range(3):
+        seat_thumb._run(_cfg(tmp_path))
+    assert capsys.readouterr().out.count("seat thumbnail off") == 1
