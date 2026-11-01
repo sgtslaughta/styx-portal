@@ -28,7 +28,7 @@ def test_load_config(tmp_path):
 
 
 def test_agent_version_bumped():
-    assert styx_agent.AGENT_VERSION == "0.9.27"
+    assert styx_agent.AGENT_VERSION == "0.9.30"
 
 
 def test_gateway_cmd_secrets_via_env(tmp_path):
@@ -71,7 +71,7 @@ def test_health_payload_reports_mode_and_engine(tmp_path):
     h = styx_agent.health_payload(cfg, selkies_alive=True, gateway_alive=False)
     assert h["mode"] == "seat"
     assert h["engine"] == "pixelflux"
-    assert h["agent_version"] == "0.9.27"
+    assert h["agent_version"] == "0.9.30"
     assert "needs_consent" not in h
     assert h["selkies_alive"] is True and h["gateway_alive"] is False
     assert h["active_connections"] == 0
@@ -184,7 +184,7 @@ def test_run_config_from_0411_is_accepted(tmp_path, monkeypatch):
     monkeypatch.setattr(styx_agent.seat_gnome, "gnome_available", lambda: (True, ""))
     assert styx_agent.pick_seat_shell(cfg) == "gnome"
     p = styx_agent.health_payload(cfg, True, True)
-    assert p["agent_version"] == "0.9.27" and "needs_consent" not in p
+    assert p["agent_version"] == "0.9.30" and "needs_consent" not in p
 
 
 def test_rollback_swaps_dirs(tmp_path, monkeypatch):
@@ -420,3 +420,57 @@ def test_apply_portal_restart_noop():
     g = _G([True])
     g.alive_v = False
     assert styx_agent.apply_portal_restart(g, {"framerate": 120}) is None and g.calls == []
+
+
+def test_gateway_cmd_passes_webrtc_config_via_env(tmp_path):
+    _, cfg = _cfg(tmp_path, stream_settings={
+        "framerate": 60, "transport": "webrtc", "max_session_s": 28800})
+    _, env = styx_agent.build_gateway_cmd(cfg, 18444)
+    assert env["STYX_GW_TRANSPORT"] == "webrtc" and env["STYX_GW_MAX_SESSION_S"] == "28800"
+    _, env = styx_agent.build_gateway_cmd(_cfg(tmp_path)[1], 18444)
+    assert env["STYX_GW_TRANSPORT"] == "websockets" and env["STYX_GW_MAX_SESSION_S"] == "0"
+
+
+def test_health_payload_reports_transport_and_turn_delta(tmp_path):
+    import health
+    _, cfg = _cfg(tmp_path)
+    cfg["install_dir"] = str(tmp_path)
+    state = health.gw_state_path(cfg)
+    health._turn_seen["total"] = 0
+    state.write_text(json.dumps({"transport": "webrtc", "turn_bytes_total": 500}))
+    h = styx_agent.health_payload(cfg, True, True)
+    assert h["transport"] == "webrtc" and h["turn_bytes"] == 500
+    state.write_text(json.dumps({"transport": "webrtc", "turn_bytes_total": 800}))
+    assert styx_agent.health_payload(cfg, True, True)["turn_bytes"] == 300
+    assert styx_agent.health_payload(cfg, True, True)["turn_bytes"] == 0
+    state.write_text(json.dumps({"transport": "webrtc", "turn_bytes_total": 40}))   # gateway restarted
+    assert styx_agent.health_payload(cfg, True, True)["turn_bytes"] == 40
+    h = styx_agent.health_payload(cfg, True, False)                                  # gateway down
+    assert h["turn_bytes"] == 0 and h["transport"] == "websockets"
+
+
+def test_cut_stream_restarts_selkies_once(tmp_path):
+    import agent_procs
+
+    class P:
+        def __init__(self):
+            self.killed = False
+
+        def poll(self):
+            return 0 if self.killed else None
+
+        def kill(self):
+            self.killed = True
+
+        def wait(self, timeout=None):
+            pass
+    state = tmp_path / "gw_state.json"
+    procs = {"selkies": P(), "shell": None, "clipboard": None}
+    assert not agent_procs.cut_stream(state, procs, seat=True)
+    (tmp_path / "gw_state.json.kill").write_text("idle")
+    assert agent_procs.kill_requested(state)
+    sel = procs["selkies"]
+    assert agent_procs.cut_stream(state, procs, seat=True)
+    assert sel.killed and procs["selkies"] is None
+    assert not agent_procs.kill_requested(state)          # consumed
+    assert not agent_procs.cut_stream(state, procs, seat=True)

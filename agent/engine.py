@@ -372,6 +372,32 @@ def cap_still_raise(steer_cls) -> None:
     steer_cls.target = target
 
 
+def turn_env(turn) -> dict:
+    """TURN settings -> SELKIES_* env (secrets never touch argv, so not `ps`).
+    selkies defaults to a public demo relay (openrelay + its published shared
+    secret): always blank host + secret so only a relay the admin configured
+    is ever used; no TURN configured = direct/STUN only."""
+    off = {"SELKIES_TURN_HOST": "", "SELKIES_TURN_SHARED_SECRET": ""}
+    if not isinstance(turn, dict):
+        return off
+    if turn.get("provider") == "cloudflare":
+        return {**off, "SELKIES_ENABLE_CLOUDFLARE_TURN": "true",
+                "SELKIES_CLOUDFLARE_TURN_TOKEN_ID": str(turn.get("token_id", "")),
+                "SELKIES_CLOUDFLARE_TURN_API_TOKEN": str(turn.get("api_token", ""))}
+    if turn.get("provider") != "generic":
+        return off
+    env = {"SELKIES_TURN_HOST": str(turn.get("host", "")),
+           "SELKIES_TURN_PORT": str(turn.get("port", 3478)),
+           "SELKIES_TURN_PROTOCOL": "tcp" if turn.get("protocol") == "tcp" else "udp",
+           "SELKIES_TURN_TLS": "true" if turn.get("tls") else "false",
+           # selkies ships a public demo secret as default: blank it unless ours
+           "SELKIES_TURN_SHARED_SECRET": str(turn.get("shared_secret", ""))}
+    if not env["SELKIES_TURN_SHARED_SECRET"]:
+        env["SELKIES_TURN_USERNAME"] = str(turn.get("username", ""))
+        env["SELKIES_TURN_PASSWORD"] = str(turn.get("password", ""))
+    return env
+
+
 def build_selkies_cmd(cfg: dict, internal_port: int,
                       seat: dict | None = None) -> tuple[list[str], dict]:
     """argv + env for selkies 2.x. Secrets travel via env, never argv.
@@ -383,6 +409,7 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
     install = Path(cfg["install_dir"])
     bundle_patch.apply(install, lambda m: print(m, flush=True))  # before the page is served
     s = cfg.get("stream_settings", {})
+    transport = "webrtc" if s.get("transport") == "webrtc" else "websockets"
     env = {
         "HOME": str(HOME),
         "XDG_RUNTIME_DIR": os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"),
@@ -394,7 +421,7 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
         str(install / "venv/bin/selkies"),
         f"--port={internal_port}",          # 2.0 binds loopback by default
         "--enable-basic-auth=false",        # gateway owns auth
-        "--mode=websockets",
+        f"--mode={transport}",
         f"--framerate={s.get('framerate', 60)}",
         "--second-screen=false",
         # Off until their phase ships (spec §6): devices, printing.
@@ -461,6 +488,8 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
     pcrf = _int_in(s.get("video_paintover_crf", s.get("h264_paintover_crf")), 5, 50)
     env["SELKIES_VIDEO_PAINTOVER_CRF"] = str(12 if pcrf is None else pcrf)
 
+    if transport == "webrtc":
+        env.update(turn_env(s.get("turn")))
     if monitor:
         env["SELKIES_AUDIO_ENABLED"] = "true"
         cmd.append(f"--audio-device-name={monitor}")

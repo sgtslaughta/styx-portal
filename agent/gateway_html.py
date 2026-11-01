@@ -72,7 +72,8 @@ def inject_idle_watchdog(html: str, timeout_s: int, lead_s: int,
               "document.body.appendChild(d);return d;}"
               "function hide(){if(ov&&!dead){ov.remove();ov=null;}}"
               "function reset(){last=Date.now();hide();}"
-              "['mousemove','mousedown','keydown','wheel','touchstart']"
+              "window.styxReset=reset;"
+              "['mousemove','mousedown','pointerdown','keydown','wheel','touchstart']"
               ".forEach(function(e){addEventListener(e,reset,"
               "{capture:true,passive:true});});"
               "setInterval(function(){if(dead)return;"
@@ -91,6 +92,57 @@ def inject_idle_watchdog(html: str, timeout_s: int, lead_s: int,
     if "</head>" in html:
         return html.replace("</head>", script + "</head>", 1)
     return script + html
+
+
+# WebRTC page shim. Session id: a fresh uuid per page load, tagged onto the
+# signaling WebSocket URL as `styx_vid` (the gateway keys the session on it) and
+# sent with every beacon. Beacons: real input while visible -> POST
+# styx/activity, leading edge then trailing every 15 s, with the relay bytes
+# the client received (cumulative: per-pair peaks summed over every selected
+# candidate pair of every peer connection, so it never goes backwards). Every
+# 30 s a bytes-only report (active:false) keeps TURN metering honest while idle.
+# Resize/fullscreen -> styx/refit {w,h,dpr} (the "r," message rides the data
+# channel, which the gateway cannot see). Relative URLs: pages live under /w/<sub>/.
+WEBRTC_JS = r"""<script id="styx-webrtc">(function(){
+var sid;try{sid=crypto.randomUUID()}catch(e){sid=Math.random().toString(36).slice(2)+Date.now().toString(36)}
+var pcs=[],RP=window.RTCPeerConnection;
+if(RP){window.RTCPeerConnection=class extends RP{constructor(){super(...arguments);pcs.push(this)}}}
+function post(path,body){try{fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),keepalive:true}).catch(function(){})}catch(e){}}
+function refit(){post('styx/refit',{sid:sid,w:innerWidth,h:innerHeight,dpr:devicePixelRatio||1})}
+var rt;function refitSoon(){clearTimeout(rt);rt=setTimeout(refit,300)}
+addEventListener('resize',refitSoon);document.addEventListener('fullscreenchange',refitSoon);
+var W=window.WebSocket;
+function SW(u,p){var s=String(u),sig=s.indexOf('/api/webrtc/signaling')>=0;
+if(sig)s+=(s.indexOf('?')<0?'?':'&')+'styx_vid='+encodeURIComponent(sid);
+var w=p===undefined?new W(s):new W(s,p);if(sig)w.addEventListener('open',refitSoon);return w}
+SW.prototype=W.prototype;SW.CONNECTING=0;SW.OPEN=1;SW.CLOSING=2;SW.CLOSED=3;window.WebSocket=SW;
+async function relay(){var tot=0;
+for(var pc of pcs){var sel=pc.__styxSel||(pc.__styxSel={});
+try{var st=await pc.getStats(),by={},cur=null;st.forEach(function(r){by[r.id]=r;if(r.type==='transport'&&r.selectedCandidatePairId)cur=r.selectedCandidatePairId});
+st.forEach(function(r){if(r.type!=='candidate-pair')return;
+if(!(r.id===cur||r.selected||(cur===null&&r.nominated&&r.state==='succeeded')))return;
+var l=by[r.localCandidateId],m=by[r.remoteCandidateId];
+if((l&&l.candidateType==='relay')||(m&&m.candidateType==='relay'))sel[r.id]=Math.max(sel[r.id]||0,r.bytesReceived||0)})}catch(e){}
+for(var k in sel)tot+=sel[k]}
+return tot}
+var T=15000,sent=0,rs=0,dirty=false,tm=null;
+function send(active){if(active){sent=Date.now();dirty=false}else rs=Date.now();
+relay().then(function(rb){post('styx/activity',{sid:sid,relay_bytes:rb,active:active})})}
+function act(){if(document.visibilityState!=='visible')return;dirty=true;
+var wait=sent+T-Date.now();if(wait<=0)send(true);
+else if(!tm)tm=setTimeout(function(){tm=null;if(dirty)send(true)},wait)}
+['keydown','pointerdown','pointermove','wheel','touchstart'].forEach(function(e){addEventListener(e,act,{capture:true,passive:true})});
+setInterval(function(){try{for(var g of navigator.getGamepads()){if(!g)continue;
+if(g.buttons.some(function(b){return b.pressed})||g.axes.some(function(a){return Math.abs(a)>.2})){act();window.styxReset&&window.styxReset();return}}}catch(e){}},1000);
+setInterval(function(){if(!dirty&&Date.now()-Math.max(sent,rs)>=30000)send(false)},10000);
+})();</script>"""
+
+
+def inject_webrtc(html: str, enabled: bool) -> str:
+    """WebRTC transport only: session tag, input beacons, refit posts (WEBRTC_JS)."""
+    if not enabled or "</head>" not in html:
+        return html
+    return html.replace("</head>", WEBRTC_JS + "</head>", 1)
 
 
 def inject_favicon(html: str, etag: str) -> str:

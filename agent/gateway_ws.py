@@ -2,8 +2,7 @@
 
 WebRTC mode signals over /api/webrtc/signaling/: SDP and ICE as text, no video.
 http_proxy cannot upgrade, so without this the client gets a 204 and retries
-forever. ponytail: no idle/busy tracking here; WebRTC input rides the data
-channel, which the gateway cannot see. Add when WebRTC becomes a default mode.
+forever. No tracking here: gateway_webrtc.py wraps this for the signaling path.
 """
 import asyncio
 
@@ -25,6 +24,17 @@ def same_origin(request) -> bool:
     return o.host == h.host and o.explicit_port == h.explicit_port
 
 
+async def pump(src, dst):
+    async for msg in src:
+        if msg.type == aiohttp.WSMsgType.TEXT:
+            await dst.send_str(msg.data)
+        elif msg.type == aiohttp.WSMsgType.BINARY:
+            await dst.send_bytes(msg.data)
+        else:
+            break
+    await dst.close()
+
+
 async def raw_ws_proxy(request, upstream_url: str):
     if request.headers.get("Upgrade", "").lower() != "websocket":
         return web.Response(status=426, text="websocket upgrade required")
@@ -37,17 +47,6 @@ async def raw_ws_proxy(request, upstream_url: str):
             return web.Response(status=502, text="stream backend unavailable")
         down = web.WebSocketResponse(max_msg_size=0)
         await down.prepare(request)
-
-        async def pump(src, dst):
-            async for msg in src:
-                if msg.type == aiohttp.WSMsgType.TEXT:
-                    await dst.send_str(msg.data)
-                elif msg.type == aiohttp.WSMsgType.BINARY:
-                    await dst.send_bytes(msg.data)
-                else:
-                    break
-            await dst.close()
-
         await asyncio.gather(pump(down, up), pump(up, down), return_exceptions=True)
         await up.close()
         return down
