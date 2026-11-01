@@ -1,0 +1,59 @@
+/* Shared Mermaid look for the Styx docs.
+ *
+ * Mermaid renders inside a shadow root, so only CSS custom properties reach it.
+ * These override the theme's --md-mermaid-* variables with the Styx brand palette
+ * (frontend/src/styles/globals.css): teal #2A767C / #6FB7BC on navy #0F1C22.
+ * Role colours (classDef ext/core/gate/run/store/bad/chk) are set per diagram (classDef cannot
+ * use var()). They are mid-tone (relative luminance about 0.2) so both the dark label of the
+ * light scheme and the light label of the dark scheme keep roughly 4:1 contrast, on GitHub too.
+ * See docs/build/contributing.md#diagram-style.
+ */
+:root > * {
+  --md-mermaid-font-family: var(--md-text-font-family), sans-serif;
+}
+
+[data-md-color-scheme="default"] {
+  --md-mermaid-node-bg-color: #dcebec;
+  --md-mermaid-node-fg-color: #2a767c;
+  --md-mermaid-edge-color: #4a5a60;
+  --md-mermaid-label-bg-color: #f7f9f8;
+  --md-mermaid-label-fg-color: #0f1c22;
+  --md-mermaid-sequence-actor-bg-color: #dcebec;
+  --md-mermaid-sequence-actor-fg-color: #0f1c22;
+  --md-mermaid-sequence-actor-border-color: #2a767c;
+  --md-mermaid-sequence-note-bg-color: #f3e3be;
+  --md-mermaid-sequence-note-fg-color: #0f1c22;
+  --md-mermaid-sequence-note-border-color: #b88a3e;
+  --md-mermaid-sequence-label-bg-color: #2a767c;
+  --md-mermaid-sequence-label-fg-color: #ffffff;
+  --md-mermaid-sequence-loop-bg-color: #edf1ef;
+  --md-mermaid-sequence-loop-border-color: #2a767c;
+  --md-mermaid-sequence-number-bg-color: #2a767c;
+  --md-mermaid-sequence-number-fg-color: #ffffff;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-mermaid-node-bg-color: #1d3139;
+  --md-mermaid-node-fg-color: #6fb7bc;
+  --md-mermaid-edge-color: #9fb0b4;
+  --md-mermaid-label-bg-color: #15262d;
+  --md-mermaid-label-fg-color: #edf1ef;
+  --md-mermaid-sequence-actor-bg-color: #1d3139;
+  --md-mermaid-sequence-actor-fg-color: #edf1ef;
+  --md-mermaid-sequence-actor-border-color: #6fb7bc;
+  --md-mermaid-sequence-note-bg-color: #3a2f16;
+  --md-mermaid-sequence-note-fg-color: #edf1ef;
+  --md-mermaid-sequence-note-border-color: #d2a657;
+  --md-mermaid-sequence-label-bg-color: #2a767c;
+  --md-mermaid-sequence-label-fg-color: #ffffff;
+  --md-mermaid-sequence-loop-bg-color: #15262d;
+  --md-mermaid-sequence-loop-border-color: #6fb7bc;
+  --md-mermaid-sequence-number-bg-color: #6fb7bc;
+  --md-mermaid-sequence-number-fg-color: #0f1c22;
+}
+
+/* Centre diagrams and keep wide ones scrollable on small screens. */
+.mermaid {
+  text-align: center;
+  overflow-x: auto;
+}

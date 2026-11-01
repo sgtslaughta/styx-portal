@@ -1,25 +1,55 @@
-# Zensical site configuration. See docs/CICD.md for why these choices were made.
+# Zensical site configuration. See docs/build/releases.md for why these choices were made.
 
 [project]
 site_name = "Styx Portal"
 site_description = "Self-hosted remote-desktop platform"
 docs_dir = "docs"
 site_dir = "site"
+extra_css = ["stylesheets/extra.css"]
 
 # Navigation structure
 nav = [
   { "Home" = "index.md" },
-  { "Quickstart" = "QUICKSTART.md" },
-  { "Instances" = "INSTANCES.md" },
-  { "Workstations" = "WORKSTATIONS.md" },
-  { "Services" = "SERVICES.md" },
-  { "GPU" = "GPU.md" },
-  { "Admin" = "ADMIN.md" },
-  { "Production" = "PRODUCTION.md" },
-  { "Kubernetes" = "KUBERNETES.md" },
-  { "Agent Build" = "AGENT_BUILD.md" },
-  { "CI/CD" = "CICD.md" },
-  { "Decisions" = "decisions/index.md" },
+  { "Use" = [
+    "use/index.md",
+    { "Getting started" = "use/getting-started.md" },
+    { "Desktops" = "use/desktops.md" },
+    { "Workstations" = "use/workstations.md" },
+    { "Apps and the shell" = "use/services.md" },
+    { "Troubleshooting" = "use/troubleshooting.md" },
+  ] },
+  { "Operate" = [
+    "operate/index.md",
+    { "Install" = "operate/install.md" },
+    { "Production" = "operate/production.md" },
+    { "Kubernetes" = "operate/kubernetes.md" },
+    { "Enroll workstations" = "operate/workstations-enroll.md" },
+    { "Templates and instances" = "operate/templates-instances.md" },
+    { "Proxied services" = "operate/services.md" },
+    { "Users, groups and SSO" = "operate/users-groups-sso.md" },
+    { "Security" = "operate/security.md" },
+    { "Settings reference" = "operate/settings.md" },
+    { "GPU" = "operate/gpu.md" },
+    { "Streaming tuning" = "operate/streaming-tuning.md" },
+    { "WebRTC and TURN" = "operate/webrtc-turn.md" },
+    { "Monitoring" = "operate/monitoring.md" },
+    { "Upgrade" = "operate/upgrade.md" },
+  ] },
+  { "Build" = [
+    "build/index.md",
+    { "Architecture" = "build/architecture.md" },
+    { "Backend" = "build/backend.md" },
+    { "Frontend" = "build/frontend.md" },
+    { "Agent" = "build/agent.md" },
+    { "Streaming pipeline" = "build/streaming.md" },
+    { "Security model" = "build/security.md" },
+    { "Testing" = "build/testing.md" },
+    { "Releases and CI/CD" = "build/releases.md" },
+    { "Contributing" = "build/contributing.md" },
+    { "Upstream contributions" = "build/upstream.md" },
+    { "Decisions" = "decisions/index.md" },
+  ] },
+  { "Acknowledgements" = "acknowledgements.md" },
 ]
 
 [project.theme]
@@ -39,6 +69,7 @@ features = [
     "navigation.instant.prefetch",
     "navigation.path",
     "navigation.sections",
+    "navigation.tabs",
     "navigation.top",
     "navigation.tracking",
     "search.highlight",

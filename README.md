@@ -1,5 +1,9 @@
-# Styx Portal
-![Styx Portal logo image](./frontend/public/styx_portal_main.jpeg?raw=true "Styx Portal")
+<h1 align="center">Styx Portal</h1>
+
+<p align="center">
+  <img src="docs/assets/screens/hero-dashboard.png" alt="Styx Portal dashboard with running desktops and workstations" width="900">
+</p>
+
 
 <!-- Status -->
 [![CI](https://github.com/sgtslaughta/styx-portal/actions/workflows/ci.yml/badge.svg)](https://github.com/sgtslaughta/styx-portal/actions/workflows/ci.yml)
@@ -20,97 +24,150 @@
 ![React](https://img.shields.io/badge/React-20232A?logo=react&logoColor=61DAFB)
 ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white)
-![Traefik](https://img.shields.io/badge/Traefik-24A1C1?logo=traefikproxy&logoColor=white)
 
-> Self-hosted remote-desktop platform — launch containerized desktops and stream
-> physical/virtual workstations through the browser.
+> **Your machines and your apps, in a browser tab.** Styx Portal is a self-hosted platform that launches containerized Linux desktops, streams your physical workstations at low latency, and puts your home-lab apps behind one sign-in. Streaming is powered by the excellent [Selkies Project](https://github.com/selkies-project) — [selkies](https://github.com/selkies-project/selkies), [pixelflux](https://github.com/selkies-project/pixelflux) and [pcmflux](https://github.com/selkies-project/pcmflux).
 
-## Overview
+## Why Styx
 
-> What is this? Why?
+I routinely need to reach things running at home, from somewhere else, with nothing but a browser. The alternatives I tried were slow or choppy, needlessly complex, paywalled, abandoned, or made me reverse-engineer them to do what I wanted. So the requirements were simple: easy to use, clientless, fast, and with the nice things included (audio, copy/paste, upload/download, SSO).
 
-I routinely require access to resources running at home, while not at home, using only a browser.
+The spark was [LinuxServer.io](https://www.linuxserver.io/) moving from Kasm Workspaces to `project selkies`-based images. Once I saw the performance, I wanted the whole platform around it.
 
-### Other solutions were lacking:
-- Slow or choppy streams
-- Undue complexity/overhead
-- Paywalls for useful features
-- Abandonware
-- Freedom to do what I wanted, when I wanted (without reverse engineering)
+## What you get
 
-### My personal requirements:
-- Should be easy to use
-- Clientless (browser only)
-- Fast
-- Includes all the nice things (audio, copy/paste, upload/download, SSO, etc)
+### Stream a real workstation
 
-### What spurred the idea:
-Massive shoutout to LinuxServer.io. I discovered their transition away from Kasm Workspaces to a `project selkies`-based image system. Once I saw the performance gain over 'other' options, I knew I had to have it.
+Enroll a Linux machine with one command and open its desktop in the browser. A private GNOME seat runs beside your login session (the physical screen is untouched), encoded on the GPU with AV1, HEVC or H.264, with audio, two-way clipboard and file transfer.
 
-### Is it vibe coded?
-- **Of course it's vibe coded!** I don't have months and months to spend grinding! Kidding, *not kidding*. I have a lot of experience with much of the tech stack involved and needed a solution quickly, so here we are.
-- You might disparage anything vibe coded and that is your prerogative, but luckily, you don't have to use it! Fork it and hand jam your own code!
+![A streamed desktop with the side panel open](docs/assets/screens/hero-workstation-stream.png)
 
-### Is it secure?
-- I put a decent amount of thought into making the application as secure as I could. Is it Fort Knox? Not even close. That being said, it should be fine for most people. If you find a security issue, let me know!
+### Launch disposable desktops
+
+Pick a template (XFCE, developer, gaming, or your own Selkies image), and get a persistent containerized desktop at its own address. Idle desktops pause themselves; GPU passthrough is one switch.
+
+### One front door for your apps
+
+Put Jellyfin, the \*arr stack, Nextcloud, Home Assistant and friends behind one hostname with SSO and group access. Styx can set an app's base path for you (with backup and rollback), and every app opens in a framed shell with a draggable dock.
+
+![Proxied apps in the Styx shell](docs/assets/screens/hero-services.png)
+
+### Administer it from the UI
+
+Users, invites, groups, OIDC/OAuth2 SSO, printable sign-in cards for 2FA, brute-force protection, live-tunable settings, and a health page with history.
+
+![Admin settings and health](docs/assets/screens/hero-admin.png)
+
+### Also
+
+- Docker Compose for the core; Kubernetes manifests for k3s
+- Per-user isolation, audit log, CSRF, CSP/HSTS, refresh-token reuse detection
+- Tested on Ubuntu 24.04 with Wayland; other Debian-family systems should work. No Windows or macOS agent yet: send a demand signal if you want one.
+
+## Quickstart (about 60 seconds)
+
+You need Docker with Compose v2, a domain, and a [Cloudflare Tunnel token](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/).
+
+```bash
+git clone https://github.com/sgtslaughta/styx-portal.git
+cd styx-portal
+cp .env.example .env          # set DOMAIN and CF_TUNNEL_TOKEN
+docker compose up -d
+```
+
+Open `https://<your domain>`, enter the setup code from `docker compose logs backend | grep "setup code"`, and create the admin account. No domain? See the [install guide](https://sgtslaughta.github.io/styx-portal/operate/install/) for direct TLS and local options.
 
 > [!CAUTION]
-> I highly suggest you do not leave it exposed on the internet — put it behind a CF Application / 2FA! See [Cloudflare Applications](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/).
+> Do not leave it bare on the internet. Put it behind a Cloudflare Access application or another second factor. See [Security](https://sgtslaughta.github.io/styx-portal/operate/security/).
 
-### Did I run exhaustive tests across every surface?
-- **No**. Bugs are likely on the fringes. Make an issue if you hit one.
+## How it fits together
 
-## Features
+Browser, Traefik (TLS, rate limits, forwardAuth), FastAPI backend and React frontend, then Docker (or Kubernetes) for desktops and proxied apps, and a small agent on each enrolled workstation running Selkies behind an authenticated gateway. Details: [architecture](https://sgtslaughta.github.io/styx-portal/build/architecture/).
 
-- Docker based core
-  - Simple `docker compose up -d`
-- Linux based workstation agents
-  - Connect to physical machines
-  - Tested on `Ubuntu 24.04` using `Wayland`
-    - Should work on other `Debian` systems
-  - No plan for `Windows` or `MacOS` yet, send demand signal if interested
-- Proxied services: put Jellyfin, the *arr stack, Nextcloud etc. behind one hostname with SSO and group access ([docs](docs/SERVICES.md))
-  - Managed base paths: Styx sets the app's URL base, restarts it, checks it and rolls back on failure (asks consent for containers it didn't create)
-  - Focus mode for root-only apps such as Home Assistant and Immich
-  - The Styx shell: every app opens in a frame with a draggable dock (Alt+Shift+S) to swap apps, go home or pop out
-  - Optional native-app access (Jellyfin apps) and opt-in identity headers (Grafana, Paperless)
-- Basic multi user isolation
-- SSO
-  - generic OAuth2 (Authentik/Keycloak/Google)
-  - GitHub OAuth
-
-![Styx consent dialog before changing an app's settings](docs/assets/services-consent.png)
-
-![An app open in the Styx shell with the dock](docs/assets/shell-dock.png)
-
-## Quickstart
-
-See the [documentation site](https://sgtslaughta.github.io/styx-portal/).
-See **[docs/QUICKSTART.md](docs/QUICKSTART.md)**.
+```mermaid
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 30
+    rankSpacing: 40
+    padding: 10
+---
+flowchart TD
+    you("Browser<br/>any device"):::ext
+    subgraph edge ["Edge"]
+        tun("Cloudflare Tunnel<br/>or direct TLS"):::gate
+        tr("Traefik<br/>rate limit · ban gate · forwardAuth"):::gate
+    end
+    subgraph portal ["Styx portal"]
+        fe("Frontend<br/>React SPA"):::core
+        be("Backend<br/>FastAPI"):::core
+        db[("SQLite<br/>db-data volume")]:::store
+    end
+    subgraph rt ["Docker or Kubernetes"]
+        inst("Disposable desktops<br/>from templates"):::run
+        apps("Proxied apps<br/>Jellyfin, Sonarr, ..."):::run
+    end
+    subgraph ws ["Your workstation"]
+        gw("Agent gateway<br/>Basic auth, idle, busy gate"):::run
+        sk("Selkies stream<br/>headless GNOME seat"):::run
+        ag("Styx agent<br/>supervisor"):::run
+    end
+    you -->|HTTPS| tun --> tr
+    tr -->|"/"| fe
+    tr -->|"/api"| be
+    be --- db
+    tr -->|"/i/name"| inst
+    tr -->|"/app-slug"| apps
+    tr -->|"/w/name over LAN"| gw --> sk
+    ag -.->|"heartbeat every 30 s"| be
+    ag -.->|supervises| gw
+    be -.->|"creates and stops"| inst
+    be -.->|"writes routes"| tr
+    classDef ext fill:#66797F,stroke:#3F5157
+    classDef core fill:#2A8C94,stroke:#1B5F65
+    classDef gate fill:#A67828,stroke:#6E4F14
+    classDef run fill:#3C9060,stroke:#285F3F
+    classDef store fill:#4B7DB3,stroke:#2D5280
+```
 
 ## Documentation
 
-Full docs (Zensical site, also published to GitHub/GitLab Pages):
+The site at **<https://sgtslaughta.github.io/styx-portal/>** has three paths:
 
-- [Quickstart](docs/QUICKSTART.md)
-- [Instances](docs/INSTANCES.md)
-- [Workstations](docs/WORKSTATIONS.md)
-- [GPU](docs/GPU.md)
-- [Services](docs/SERVICES.md)
-- [Admin](docs/ADMIN.md)
-- [Production](docs/PRODUCTION.md)
-- [Agent Build](docs/AGENT_BUILD.md)
-- [CI/CD architecture](docs/CICD.md)
+| | |
+|---|---|
+| [**Use**](https://sgtslaughta.github.io/styx-portal/use/) | Sign in, desktops, workstations, apps, troubleshooting |
+| [**Operate**](https://sgtslaughta.github.io/styx-portal/operate/) | Install, production, Kubernetes, enrolling, users and SSO, settings, streaming tuning |
+| [**Build**](https://sgtslaughta.github.io/styx-portal/build/) | Architecture, backend, frontend, agent, testing, CI/CD, ADRs |
 
-## Development
+## FAQ
 
-See **[CLAUDE.md](CLAUDE.md)** for project structure and commands.
+**Is it vibe coded?** Of course. I do not have months to grind, and I know much of this stack well enough to steer it. If that bothers you, you do not have to use it; fork it and hand-jam your own.
+
+**Is it secure?** I put real thought into it. Is it Fort Knox? Not even close, but it should be fine for most people. Found an issue? Please tell me.
+
+**Did I test every surface?** No. Bugs are likely on the fringes. Open an issue.
 
 ## Contributing
 
-This project uses **Conventional Commits** (enforced by commitlint) so releases
-and changelogs are automated. Example: `feat(agent): add reconnect backoff`.
+Start with [CLAUDE.md](CLAUDE.md) for the project layout and commands, and the [contributing guide](https://sgtslaughta.github.io/styx-portal/build/contributing/). Commits follow **Conventional Commits** (enforced by commitlint), which drives automated releases and the changelog, for example `feat(agent): add reconnect backoff`.
+
+
+## Standing on the shoulders of giants
+
+Styx is glue around other people's outstanding work, and it could not exist without them.
+
+- **[The Selkies Project](https://github.com/selkies-project)** — selkies, pixelflux and pcmflux do the
+  hard part: capture, hardware encoding, the WebSocket/WebRTC transports and the browser client. Its
+  maintainers answered our bug reports with root-cause fixes and reviewed our patches with real care.
+  If Styx is useful to you, please [star and support Selkies](https://github.com/selkies-project/selkies).
+- **[LinuxServer.io](https://www.linuxserver.io/)** — the `baseimage-selkies` desktop images (and the move
+  to Selkies that inspired this project).
+- **GNOME/Mutter, PipeWire, Traefik, FastAPI, React** and many more — see
+  [Acknowledgements](https://sgtslaughta.github.io/styx-portal/acknowledgements/).
 
 ## License
 
-GPL-2.0 license
+GPL-2.0. See [LICENSE](LICENSE).

@@ -63,7 +63,7 @@ services:
       retries: 20
 
   backend:
-    build: ../backend
+    build: {context: .., dockerfile: backend/Dockerfile}
     depends_on:
       docker-shim: {condition: service_healthy}
       volume-init: {condition: service_completed_successfully}
