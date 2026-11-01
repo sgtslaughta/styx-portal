@@ -4,17 +4,14 @@ import { AlertTriangle } from "lucide-react";
 import { Header, type HeaderTab } from "@/components/layout/header";
 import { StatusRail } from "@/components/layout/status-rail";
 import { HomePage } from "@/components/home/home-page";
-import { LaunchModal } from "@/components/templates/launch-modal";
+import { NewContainerDrawer } from "@/components/launch/new-container-drawer";
 import { SettingsLayout } from "@/components/settings/settings-layout";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
-import type { ServiceTemplate, RegistryImage } from "@/lib/types";
 
 export default function App() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<HeaderTab>("home");
-  const [launchRegistry, setLaunchRegistry] = useState<RegistryImage | null>(null);
-  const [launchTemplate, setLaunchTemplate] = useState<ServiceTemplate | null>(null);
   const [launchOpen, setLaunchOpen] = useState(false);
   const [railPad, setRailPad] = useState(0);
 
@@ -42,47 +39,20 @@ export default function App() {
     if (user?.role === "admin" && new URLSearchParams(window.location.search).has("setup")) setActiveTab("admin");
   }, [user?.role]);
 
-  function handleImportRegistry(image: RegistryImage) {
-    setLaunchRegistry(image);
-    setLaunchTemplate(null);
-    setLaunchOpen(true);
-  }
-
-  function handleLaunchTemplate(template: ServiceTemplate) {
-    setLaunchTemplate(template);
-    setLaunchRegistry(null);
-    setLaunchOpen(true);
-  }
-
-  function closeLaunchModal() {
-    setLaunchOpen(false);
-    setLaunchRegistry(null);
-    setLaunchTemplate(null);
-  }
-
-  // Unreachable until Task 7 rewires launching; kept so LaunchModal flow stays intact.
-  void [handleImportRegistry, handleLaunchTemplate];
-
   return (
     <TooltipProvider>
     <div className="flex h-dvh flex-col bg-background styx-app-bg">
       <Header activeTab={activeTab} onTabChange={setActiveTab} />
       <main className="min-h-0 flex-1 overflow-y-auto p-6 transition-[padding] motion-reduce:transition-none" style={{ paddingRight: 24 + railPad }}>
         <div className={activeTab === "home" ? "" : "hidden"}>
-          <HomePage onNewContainer={() => {}} onOpenSettings={() => setActiveTab("admin")} />
+          <HomePage onNewContainer={() => setLaunchOpen(true)} onOpenSettings={() => setActiveTab("admin")} />
         </div>
         <div className={activeTab === "admin" ? "" : "hidden"}>
           <SettingsLayout />
         </div>
       </main>
       <StatusRail forceCollapsed={activeTab === "admin"} onOpenAdmin={() => setActiveTab("admin")} onWidthChange={setRailPad} />
-      <LaunchModal
-        key={launchRegistry?.name ?? launchTemplate?.id ?? "custom"}
-        open={launchOpen}
-        onClose={closeLaunchModal}
-        registryImage={launchRegistry}
-        template={launchTemplate}
-      />
+      <NewContainerDrawer open={launchOpen} onClose={() => setLaunchOpen(false)} />
     </div>
     </TooltipProvider>
   );

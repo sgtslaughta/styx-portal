@@ -127,6 +127,7 @@ export interface TemplateCreate {
   gpu_enabled?: boolean;
   gpu_count?: number;
   dind?: boolean;
+  shared?: boolean;
   memory_limit?: string;
   cpu_limit?: string;
   shm_size?: string;

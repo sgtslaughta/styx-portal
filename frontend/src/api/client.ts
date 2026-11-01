@@ -52,6 +52,7 @@ export type ServiceTile = {
 /** `icon` is only for create (a preset emoji); omit it on update, icons change via setServiceIcon. */
 export type ProxiedServiceInput = Omit<ProxiedService,
   "icon_kind" | "icon_etag" | "id" | "upstream_fallback" | "health_status" | "health_checked_at" | "created_at" | "updated_at" | "mount_managed" | "needs_setup"> & { icon?: string | null };
+export type SizePreset = { id: string; label: string; cpus: number; memory_gb: number; gpu: boolean };
 export type ServicePreset = {
   id: string; name: string; icon: string | null; default_port: number | null;
   mount_mode: ProxiedService["mount_mode"]; auth_mode: ProxiedService["auth_mode"];
@@ -345,7 +346,8 @@ export const api = {
   getInstanceStats: (id: string) =>
     request<{ cpu_percent: number; memory_mb: number; memory_limit_mb: number; memory_percent: number }>(`/instances/${id}/stats`),
 
-  listTemplates: () => request<ServiceTemplate[]>("/templates"),
+  listTemplates: (shared?: boolean) => request<ServiceTemplate[]>(shared ? "/templates?shared=1" : "/templates"),
+  getSizePresets: () => request<SizePreset[]>("/system/size-presets"),
   createTemplate: (data: TemplateCreate) =>
     request<ServiceTemplate>("/templates", { method: "POST", body: JSON.stringify(data) }),
   updateTemplate: (id: string, data: Partial<TemplateCreate>) =>
