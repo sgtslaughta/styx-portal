@@ -50,6 +50,27 @@ def log(*a):
     print("[seat-portal]", time.strftime("%H:%M:%S") + f".{int(time.time()*1000)%1000:03d}", *a, flush=True)
 
 
+def parse_fps(arg) -> int:
+    """Capture frame-rate cap: default 60, clamped to 1..240."""
+    try:
+        return max(1, min(240, int(arg)))
+    except (TypeError, ValueError):
+        return 60
+
+
+def caps(w, h, fps=60) -> str:
+    # fps = admin stream_settings.framerate: the capture CEILING; the selkies
+    # panel may pick any rate up to it, never above.
+    return f"video/x-raw,width={w},height={h},max-framerate={parse_fps(fps)}/1"
+
+
+def parse_args(argv) -> tuple[int, int, int]:
+    """argv: prog WxH [--max-fps N]"""
+    w, h = parse_size(argv[1])
+    fps = argv[i + 1] if "--max-fps" in argv[2:-1] and (i := argv.index("--max-fps")) else None
+    return w, h, parse_fps(fps)
+
+
 def parse_size(arg: str) -> tuple[int, int]:
     w, h = (int(v) for v in arg.lower().split("x"))
     if w <= 0 or h <= 0:
@@ -337,7 +358,8 @@ class Monitor:
     """Mutter virtual monitor held at w x h by a fakesink consumer.
     ponytail: always-copy costs one copy per painted frame (unmeasurable in the
     spike at 1440p60); drop it if a box's CPU budget ever says otherwise."""
-    def __init__(self, w, h, on_closed):
+    def __init__(self, w, h, on_closed, fps=60):
+        self.fps = fps
         self.w, self.h, self.pipe, self.playing = w, h, None, False
         path = _mutter("ScreenCast", "/org/gnome/Mutter/ScreenCast",
                        "ScreenCast").CreateSession(dbus.Dictionary({}, signature="sv"))
@@ -357,7 +379,7 @@ class Monitor:
         self.node = int(node)
         self.pipe = Gst.parse_launch(
             f"pipewiresrc path={int(node)} always-copy=true ! "
-            f"capsfilter name=cf caps=video/x-raw,width={self.w},height={self.h},max-framerate=60/1 ! "
+            f"capsfilter name=cf caps={caps(self.w, self.h, self.fps)} ! "
             "fakesink sync=false")
         self.pipe.set_state(Gst.State.PLAYING)
         self.playing = True
@@ -374,7 +396,7 @@ class Monitor:
         self.pipe.set_state(Gst.State.NULL)
         self.pipe = Gst.parse_launch(
             f"pipewiresrc path={self.node} always-copy=true ! "
-            f"capsfilter name=cf caps=video/x-raw,width={w},height={h},max-framerate=60/1 ! "
+            f"capsfilter name=cf caps={caps(w, h, self.fps)} ! "
             "fakesink sync=false")
         self.pipe.set_state(Gst.State.PLAYING)
         log("resize: reconnected consumer at", f"{w}x{h}")
@@ -419,7 +441,7 @@ def main(argv) -> int:
     global bus
     if argv[1:] == ["--selftest"]:
         return selftest()
-    w, h = parse_size(argv[1])
+    w, h, fps = parse_args(argv)
     DBusGMainLoop(set_as_default=True)
     Gst.init(None)
     bus = dbus.SessionBus()
@@ -437,7 +459,7 @@ def main(argv) -> int:
         st["rc"] = 1
         loop.quit()
 
-    mon = Monitor(w, h, on_closed)
+    mon = Monitor(w, h, on_closed, fps)
 
     def poll():
         if mon.playing and mon.is_current():

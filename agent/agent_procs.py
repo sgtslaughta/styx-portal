@@ -7,6 +7,27 @@ from pathlib import Path
 from health import gw_state_path
 
 
+def parse_fps(v) -> int:
+    """Tolerant framerate from the unvalidated stream_settings: junk -> 60, clamp 1-240."""
+    try:
+        return max(1, min(240, int(float(v or 60))))
+    except (TypeError, ValueError, OverflowError):
+        return 60
+
+
+def apply_portal_restart(gseat, ss: dict) -> str | None:
+    """Relaunch only the capture helper at ss' framerate; GNOME stays up unless
+    even the rollback to the previous fps fails. Returns an error text or None."""
+    if not gseat or not gseat.alive():
+        return None
+    if gseat.restart_helper(parse_fps(ss.get("framerate"))):
+        return None
+    if gseat.alive():
+        return "framerate change failed — kept previous capture rate"
+    gseat.stop()
+    return "capture helper relaunch failed — seat restarting"
+
+
 def build_gateway_cmd(cfg: dict, upstream_port: int,
                       seat_dir: str = "") -> tuple[list[str], dict]:
     install = Path(cfg["install_dir"])
@@ -80,11 +101,16 @@ SEAT_DEFAULTS = {"seat_shell": "gnome", "seat_width": 2560, "seat_height": 1440}
 def settings_restart_keys(old: dict, new: dict) -> tuple[str, ...]:
     """Procs to relaunch on a stream_settings push. The gateway is always in:
     idle-timeout config reaches it only through its launch env (STYX_GW_IDLE_*).
-    The GNOME seat restarts only when its shell/geometry changed."""
+    The GNOME seat restarts only when its shell/geometry changed;
+    a framerate change relaunches just its capture helper ("portal")."""
     keys = ("selkies", "standby", "shell", "clipboard", "gateway")
+    gnome = (new.get("seat_shell") or "gnome") == "gnome"
     if any((old.get(k) or d) != (new.get(k) or d)
            for k, d in SEAT_DEFAULTS.items()):
         keys += ("seat",)
+    elif gnome and parse_fps(old.get("framerate")) != parse_fps(new.get("framerate")):
+        # fps caps the capture helper only (--max-fps): relaunch it, keep GNOME
+        keys += ("portal",)
     return keys
 
 

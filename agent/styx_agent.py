@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-AGENT_VERSION = "0.9.25"
+AGENT_VERSION = "0.9.26"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -42,6 +42,7 @@ from health import (  # noqa: E402
 from health import gw_state_path  # noqa: E402, F401
 from seat_gnome import Escalation, pick_seat_shell  # noqa: E402
 from agent_procs import (  # noqa: E402
+    apply_portal_restart, parse_fps,
     FRAME_START_TIMEOUT_S, _restart_engine, _terminate,
     _check, build_gateway_cmd, drop_clients, settings_restart_keys,  # noqa: F401
     viewers_connected, merge_pending, must_apply_now, restart_plan)
@@ -160,6 +161,7 @@ def run(cfg: dict) -> int:
             print(f"seat sink setup failed: {e}", flush=True)
         size = refit.read_size(gseat.size_file) or (
             int(ss.get("seat_width") or 2560), int(ss.get("seat_height") or 1440))
+        gseat.fps = parse_fps(ss.get("framerate"))
         gseat.start(*refit.clamp(*size))
         if not gseat.ready():
             last_error = "GNOME seat failed to start — see logs/seat.log"
@@ -264,6 +266,9 @@ def run(cfg: dict) -> int:
                     procs[key] = None
             if "seat" in keys_now and gseat:
                 gseat.stop()
+            elif "portal" in keys_now and gseat and gseat.alive():
+                last_error = apply_portal_restart(
+                    gseat, cfg.get("stream_settings") or {}) or last_error
             apply_now = False
         if gseat and not gseat.alive():
             # Seat died: selkies (and the standby) are captured against a dead
