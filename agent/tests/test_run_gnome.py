@@ -41,6 +41,8 @@ class FakeProc:
 
 class FakeSeat:
     answers = False                 # shell D-Bus ping (watchdog escalation gate)
+    x11_on = False
+    fell_back = False               # set by healthy() after STRIKES misses
 
     def __init__(self, h):
         self.h, self.restarts, self._alive, self.started = h, 0, False, False
@@ -70,7 +72,7 @@ class FakeSeat:
         self._alive = False
 
     def info(self):
-        return {"socket": "wayland-70", "bus": "unix:path=/x"}
+        return {"socket": "wayland-70", "bus": "unix:path=/x", "x11": "on"}
 
 
 class Harness:
@@ -212,3 +214,19 @@ def test_seat_shell_flip_exits_for_restart(tmp_path, monkeypatch):
     assert h.run() != 0
     assert h.count("seat_stop") >= 1
     assert h.count("term", "selkies") == 2 and h.count("term", "gateway") == 1   # active + standby
+
+
+def test_hung_shell_with_x11_on_is_stopped_and_restarted(tmp_path, monkeypatch):
+    monkeypatch.setattr(FakeSeat, "x11_on", True)
+    monkeypatch.setattr(FakeSeat, "fell_back", True)
+    h = Harness(tmp_path, monkeypatch, lambda h, i: "revoke" if i >= 2 else None)
+    assert h.run() == 0
+    assert h.count("seat_stop") >= 1
+    assert h.count("seat_start") >= 2
+
+
+def test_slow_probe_without_fallback_keeps_seat(tmp_path, monkeypatch):
+    monkeypatch.setattr(FakeSeat, "x11_on", True)    # unhealthy once, not yet a deadlock
+    h = Harness(tmp_path, monkeypatch, lambda h, i: "revoke" if i >= 2 else None)
+    assert h.run() == 0
+    assert h.count("seat_start") == 1

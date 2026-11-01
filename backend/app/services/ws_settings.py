@@ -8,6 +8,7 @@ _VIDEO_ALIASES = {"h264_crf": "video_crf",
                   "h264_streaming_mode": "video_streaming_mode",
                   "h264_paintover_crf": "video_paintover_crf"}
 _SEAT_SHELLS = ("gnome", "labwc")
+_SEAT_X11 = ("auto", "off")
 
 
 def is_v2_agent(agent_version: str | None) -> bool:
@@ -85,6 +86,7 @@ def resolve_stream_settings(ws_ss: dict | None, sys: Mapping[str, Any],
             eff[new] = eff[old]
     shell = ss.get("seat_shell")
     eff["seat_shell"] = shell if shell in _SEAT_SHELLS else "gnome"
+    eff["seat_x11"] = ss["seat_x11"] if ss.get("seat_x11") in _SEAT_X11 else "auto"
     eff["seat_width"] = ss.get("seat_width", sys.get("WORKSTATION_SEAT_WIDTH"))
     eff["seat_height"] = ss.get("seat_height", sys.get("WORKSTATION_SEAT_HEIGHT"))
     return eff

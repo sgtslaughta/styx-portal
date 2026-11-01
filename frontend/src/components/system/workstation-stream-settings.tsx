@@ -44,6 +44,9 @@ export function WorkstationStreamSettings({
   const [transport, setTransport] = useState<string>(
     typeof ss.transport === "string" ? ss.transport : "inherit"
   );
+  const [seatX11, setSeatX11] = useState<string>(
+    ss.seat_x11 === "off" ? "off" : "auto"
+  );
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -56,6 +59,7 @@ export function WorkstationStreamSettings({
       use_paint_over_quality: paintOver,
       video_fullcolor: fullColor,
       transport,
+      seat_x11: seatX11,
     };
     const crfNum = parseInt(crf, 10);
     if (!Number.isNaN(crfNum) && crfNum >= 5 && crfNum <= 50) {
@@ -125,6 +129,25 @@ export function WorkstationStreamSettings({
               <option value="webrtc">WebRTC</option>
             </select>
           </label>
+          <label
+            className="flex items-center gap-1.5"
+            title="Lets X11-only apps such as Steam run. Some GNOME 50 hosts deadlock with it; Auto detects that and turns it off on that host."
+          >
+            X11 apps (Xwayland)
+            <select
+              aria-label="X11 apps (Xwayland)"
+              className="rounded border border-border bg-surface px-1 py-0.5"
+              value={seatX11}
+              onChange={(e) => setSeatX11(e.target.value)}
+            >
+              <option value="auto">Auto (falls back if the seat hangs)</option>
+              <option value="off">Off</option>
+            </select>
+          </label>
+          <span className="basis-full text-xs text-muted-foreground">
+            Lets X11-only apps such as Steam run. Some GNOME 50 hosts deadlock
+            with it; Auto detects that and turns it off on that host.
+          </span>
           <label
             className="flex items-center gap-1.5"
             title="Preferred codec, if this GPU encodes it in hardware. Other hardware codecs stay as fallbacks for browsers that cannot decode it. Pick HEVC for viewers without AV1 hardware decode."

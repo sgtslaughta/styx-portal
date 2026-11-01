@@ -50,7 +50,7 @@ def write_portal_dir(d: Path, src: Path = PORTAL_SRC) -> None:
         (d / name).write_text(PORTALS_CONF)
 
 
-def build_launch_script(sink: str, bus_file: str, portal_dir: str) -> str:
+def build_launch_script(sink: str, bus_file: str, portal_dir: str, x11: bool = True) -> str:
     sink, bus_file, portal_dir = (shlex.quote(v) for v in (sink, bus_file, portal_dir))
     return "\n".join([
         "#!/bin/bash",
@@ -71,9 +71,22 @@ def build_launch_script(sink: str, bus_file: str, portal_dir: str) -> str:
         # auto-connect-display=no libpulse never touches X.
         'printf "auto-connect-display = no\\n" > "$XDG_RUNTIME_DIR/styx-shell-pulse.conf"',
         'export PULSE_CLIENTCONFIG="$XDG_RUNTIME_DIR/styx-shell-pulse.conf"',
-        f"exec gnome-shell --headless --wayland --wayland-display={SOCKET}",
+        f"exec gnome-shell --headless --wayland --wayland-display={SOCKET}"
+        + ("" if x11 else " --no-x11"),
         "",
     ])
+
+
+STRIKES = 3   # consecutive failed main-loop probes before the Xwayland fallback
+
+
+def gnome_version() -> str:
+    """`gnome-shell --version` output ('' if unavailable)."""
+    try:
+        return subprocess.run(["gnome-shell", "--version"], capture_output=True,
+                              text=True, timeout=10).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
 
 
 def gnome_available() -> tuple[bool, str]:
@@ -140,6 +153,34 @@ class GnomeSeat:
         self._helper = None
         self._heal = False
         self.fps = 60   # capture cap; styx_agent sets it from stream_settings
+        self.x11_mode = "auto"   # "auto" | "off"; styx_agent sets it (seat_x11)
+        self.marker = self.install_dir / "seat-no-x11"
+        self._version: str | None = None
+        self._x11 = False        # Xwayland on for the running/last-started shell
+        self._fell_back = False
+        self._strikes = 0
+
+    def _gnome_version(self) -> str:
+        if self._version is None:
+            self._version = gnome_version()
+        return self._version
+
+    @property
+    def x11_on(self) -> bool:
+        return self._x11
+
+    def _marked(self) -> bool:
+        try:
+            return self.marker.read_text().strip() == self._gnome_version()
+        except OSError:
+            return False
+
+    def _mark_fallback(self) -> None:
+        """Main loop dead with Xwayland on: next start runs --no-x11."""
+        self._fell_back = True
+        print("seat: GNOME main loop stopped answering with Xwayland on; "
+              "falling back to --no-x11 (X11 apps disabled on this host)", flush=True)
+        self.marker.write_text(self._gnome_version() + "\n")
 
     def start(self, width: int, height: int) -> None:
         from engine import SEAT_SINK
@@ -156,12 +197,15 @@ class GnomeSeat:
         self._started = True
         self.size = (width, height)
         self.bus = None
+        self._fell_back = False
+        self._strikes = 0
+        self._x11 = self.x11_mode == "auto" and not self._marked()
         self.bus_file.unlink(missing_ok=True)
         for n in (SOCKET, SOCKET + ".lock"):
             Path(self.runtime_dir, n).unlink(missing_ok=True)
         write_portal_dir(self.portal_dir)
         self.script.write_text(build_launch_script(SEAT_SINK, str(self.bus_file),
-                                                   str(self.portal_dir)))
+                                                   str(self.portal_dir), self._x11))
         self.script.chmod(0o700)
         env = {k: v for k, v in os.environ.items() if k not in _SCRUB}
         env["XDG_RUNTIME_DIR"] = self.runtime_dir
@@ -176,7 +220,8 @@ class GnomeSeat:
         try:
             r = subprocess.run(
                 ["gdbus", "call", "--session", "-d", "org.gnome.Shell", "-o",
-                 "/org/gnome/Shell", "-m", "org.freedesktop.DBus.Peer.Ping"],
+                 "/org/gnome/Shell", "-m", "org.freedesktop.DBus.Properties.Get",
+                 "org.gnome.Shell", "ShellVersion"],
                 env=env, capture_output=True, timeout=5)
         except (subprocess.TimeoutExpired, OSError):
             return False
@@ -196,11 +241,29 @@ class GnomeSeat:
                     and self._shell_answers()):
                 return self._start_helper(*self.size)
             time.sleep(0.1)
+        # Only a shell that got its bus + socket up and then stopped answering is
+        # the Xwayland deadlock; a slow first start (GPU init) is not.
+        if self._x11 and self.alive() and self.bus and Path(self.runtime_dir, SOCKET).exists():
+            self._mark_fallback()
         return False
 
     def healthy(self) -> bool:
-        """Alive and the shell's main loop still answers D-Bus."""
-        return self.alive() and self._shell_answers()
+        """Alive and the shell's main loop still answers D-Bus (the probe runs
+        on that loop: Peer.Ping is answered by a GDBus worker thread)."""
+        if not self.alive():
+            return False
+        if self._shell_answers():
+            self._strikes = 0
+            return True
+        self._strikes += 1
+        # 3 straight misses (one per check, 5 s each): a busy shell under load is not a deadlock.
+        if self._x11 and self._strikes >= STRIKES and not self._fell_back:
+            self._mark_fallback()   # process up, main loop dead
+        return False
+
+    @property
+    def fell_back(self) -> bool:
+        return self._fell_back
 
     def alive(self) -> bool:
         """GNOME up and, once started, the seat helper too (it owns the monitor
@@ -303,7 +366,10 @@ class GnomeSeat:
             pass
 
     def info(self) -> dict:
-        return {"socket": SOCKET, "bus": self.bus}
+        x11 = ("off" if self.x11_mode == "off"
+               else "fallback" if self._fell_back or not self._x11 and self._started
+               else "on")
+        return {"socket": SOCKET, "bus": self.bus, "x11": x11}
 
     def stop(self) -> None:
         self._stop_helper()
@@ -313,7 +379,7 @@ class GnomeSeat:
             try:
                 os.killpg(p.pid, signal.SIGTERM)
                 try:
-                    p.wait(timeout=15)
+                    p.wait(timeout=5)
                 except subprocess.TimeoutExpired:
                     os.killpg(p.pid, signal.SIGKILL)
                     p.wait()
