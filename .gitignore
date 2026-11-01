@@ -17,3 +17,4 @@ traefik/dynamic.yml
 /node_modules/
 /site/
 /.release-version
+/.cache/

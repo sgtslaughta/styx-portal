@@ -1,0 +1,472 @@
+# Enroll workstations
+
+You will enroll a physical Linux machine with the Styx agent, check that it is healthy, and learn how to upgrade or remove it. Viewers should read [Use: Workstations](../use/workstations.md).
+
+**Prerequisites:** a running portal reachable from the workstation's LAN ([Install](install.md)), and admin rights.
+
+## Overview
+
+**What it is:** Styx Agent is a lightweight Python daemon that runs on physical Linux machines and streams their desktop to browsers via the [Selkies 2.x](https://github.com/selkies-project/selkies) WebSocket streaming protocol. The native desktop (X11 session or a private virtual desktop) is encoded in real-time using GPU hardware (NVENC or VA-API) or CPU fallback, with audio support.
+
+**Desktop modes (auto-detected at enrollment):**
+- **Mirror mode:** Your existing X11 desktop is live-streamed. The remote user and you share control of the same session — input from the browser moves your local cursor. Requires a running X11 graphical session (`:0`, `:1`, etc.).
+- **Second-seat mode:** A private GPU-accelerated desktop runs on the machine (by default a real headless GNOME Shell captured through xdg-desktop-portal; see [GNOME seat](#gnome-seat)) alongside your login session. The physical screen is untouched. Your desktop, apps, and files are available to the remote user; no interference with local work. Used when the host is Wayland, headless, or when mirror mode is explicitly disabled. With `seat_shell: labwc` (the fallback) the seat is a GNOME-like labwc/waybar shell instead. How it's built and **why each choice was made** is documented in [Agent & Workstation Desktop Build](../build/agent.md).
+
+**Architecture:**
+- Enrollment script (`enroll.sh`) performs 8-step preflight (server reachability verified **before** any sudo package install), downloads agent daemon and prebuilt wheels from the portal, and registers the workstation with a one-time hardware/OS report (distro, kernel, CPU model/cores, RAM, disk, GPU model) shown in the admin Workstations panel.
+- Agent daemon (`styx_agent.py`) runs as a systemd `--user` service, supervises the Selkies streaming engine (pixelflux + pcmflux), and sends heartbeats every 30 seconds.
+- Traefik routes `/w/{subdomain}` traffic to the workstation's LAN IP on port 8443, where Selkies listens over WebSocket.
+- Admin Workstations panel in **Settings → Administration → Workstations** controls access, stream settings, and enrollment status.
+
+---
+
+## Enrollment
+
+### Quick Start
+
+1. **In the Styx Portal UI:** Navigate to **Settings → Administration → Workstations** and click **Enroll workstation**.
+2. **Copy the one-liner** from the enrollment token popup.
+3. **On the workstation:** Log in to a graphical session and paste the command in a terminal.
+
+The enrollment script will:
+- Check for Python 3.10+, glibc ≥ 2.34, a graphical session or headless capability, and audio (PipeWire or PulseAudio).
+- Auto-detect the capture mode: mirror (if X11 is found) or second-seat (if Wayland or headless). Can be overridden with `--mode mirror|seat`.
+- Verify TLS fingerprint if `--ca-pin` is set.
+- Install mode-specific dependencies (labwc/waybar fallback-seat packages and wl-clipboard for second-seat; it does **not** install GNOME. The default GNOME seat needs GNOME Shell >= 46 already on the box, as on a standard Ubuntu 24.04 desktop; without it the agent uses the labwc fallback seat; VAAPI drivers for both).
+- Download agent code, the prebuilt wheelhouse (and the `nwg-shell` artifact for the labwc fallback seat) from the server (all cached).
+- Register the machine with the portal and save encrypted config.
+- Start a systemd `--user` service that streams immediately.
+
+**Token validity:** Tokens expire after 1 hour (configurable `ENROLL_TOKEN_TTL_HOURS`). If yours expires, mint a new one in the admin panel.
+
+### What the script does
+
+```mermaid
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 30
+    rankSpacing: 40
+    padding: 10
+---
+flowchart TD
+    tok("Admin: Enroll workstation<br/>single-use token, valid 1 h"):::core --> run("Run the one-liner<br/>on the workstation"):::ext
+    run --> p1
+    subgraph pre ["Preflight (enroll.sh steps 1 to 6)"]
+        p1("E01 tools, Python 3.10+,<br/>glibc 2.34+, 2 GB free"):::chk --> p2("E02 capture mode<br/>mirror needs an X display"):::chk
+        p2 --> p3("E05 / E06 portal reachable,<br/>TLS pin matches"):::chk
+        p3 --> p4("E04 PipeWire<br/>or PulseAudio"):::chk
+        p4 --> p5("E03 install seat and GPU<br/>packages, one by one"):::chk
+        p5 --> p6("E07 port free<br/>E08 systemd --user"):::chk
+    end
+    pre -.->|"any check fails"| fail("Prints its Exx code and stops<br/>an upgrade restores the old install"):::bad
+    p6 -->|ok| inst("Step 7: download agent and wheelhouse,<br/>create venv, install wheels"):::core
+    inst --> reg("Step 8: register with the token<br/>hardware report in, agent token out"):::core
+    reg --> svc("Write config, install the<br/>systemd user unit, start"):::run
+    svc --> hb("Heartbeat every 30 s<br/>workstation shows Online"):::run
+    classDef ext fill:#66797F,stroke:#3F5157
+    classDef core fill:#2A8C94,stroke:#1B5F65
+    classDef run fill:#3C9060,stroke:#285F3F
+    classDef bad fill:#CC563A,stroke:#8E3420
+    classDef chk stroke:#2A8C94,stroke-width:1.5px
+```
+
+### Requirements
+
+Before running enrollment on a workstation, ensure:
+
+- **Distro:** Ubuntu 22.04+, Debian 12+, RHEL 9+, or equivalent (glibc ≥ 2.34). Check: `ldd --version`.
+- **Network:** The machine can reach the portal's LAN address (`SERVER_LAN_URL`). This must be the portal's **local** IP or hostname (e.g., `https://10.0.0.10`), **not** a public tunnel.
+- **Python 3.10+:** `python3` and `python3-venv` command available. Check: `python3 -V && python3 -m venv --help`.
+- **Graphical environment:** X11 session (`:0`, `:1`, …) OR Wayland session OR headless with audio. For X11, `DISPLAY` and `XAUTHORITY` must be resolvable. Mirror mode requires an active X display.
+- **Audio stack:** PipeWire or PulseAudio. Check: `pactl info` (should not error).
+- **Port 8443:** Must be free; the Selkies listener binds to it.
+- **systemd --user:** Required for service management. Standard in all graphical logins; fails only in `su` / `sudo` shells.
+- **GPU drivers (optional, for hardware encoding):**
+  - **NVIDIA:** `nvidia-smi` and `nvidia-smi -L` must work.
+  - **AMD/Intel:** `vainfo` must work (VA-API).
+  - Without GPU drivers, encoding falls back to CPU x264 (acceptable for low-bandwidth work).
+  - **GPU group access:** On Wayland, be in the `render` group: `id -nG | grep -w render`. If not, `sudo usermod -aG render $USER && logout && login`.
+
+---
+
+## Server Setup
+
+**Before first enrollment**, build and cache the agent artifacts on the server:
+
+```bash
+scripts/build_agent_artifacts.sh ./data/artifacts
+```
+
+This generates:
+- `wheelhouse-x86_64.tar.gz` — pinned upstream wheels (selkies 2.1.0, pixelflux 2.2.1, pcmflux 2.2.0) and dependencies (covers Python 3.10–3.14). Wheels are built on the server; nothing is compiled on enrolled boxes.
+
+Rerun this after portal upgrades to sync agent versions.
+
+## Configuration
+
+All settings are environment variables or `.env` file entries on the **server**. Adjust them before enrolling workstations:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SERVER_LAN_URL` | `""` (auto-detects) | Local LAN address for enrollment commands. Example: `https://10.0.0.10` or `https://portal.local`. Workstations must reach this address. When unset, the portal auto-detects (usually correct; set explicitly in Docker bridge networks). |
+| `SERVER_CA_PIN` | `""` (auto-pin) | Override for the TLS pin in enrollment commands. Format: `sha256:<hex>`. Leave empty: the portal auto-generates a self-signed LAN cert and pins it automatically. |
+| `ARTIFACT_CACHE_DIR` | `/app/data/artifacts` | Server-side directory for cached agent wheelhouse and seat artifacts. Must be writable. Enrollment artifacts are served from here. |
+| `AGENT_DIR` | `/app/agent` | Server path to the `agent/` directory (scripts and daemon). Mounted from the repo in Docker Compose. |
+| `ENROLL_TOKEN_TTL_HOURS` | `1` | Lifetime of enrollment tokens (hours). Tokens are single-use and expire after this duration. |
+| `WORKSTATION_OFFLINE_AFTER_S` | `90` | Heartbeat timeout (seconds). If a workstation doesn't heartbeat for 90+ seconds, it is marked offline. |
+| `WORKSTATION_DEFAULT_PORT` | `8443` | Default Selkies port on workstations. Enrollment uses this; if busy, enrollment fails (E07). |
+| `WORKSTATION_HEARTBEAT_S` | `30` | Agent heartbeat interval (seconds). Heartbeat reports status, config changes, and health. |
+
+---
+
+## Error Codes and Remediation
+
+Enrollment runs 8 preflight checks. If any fail, the script prints an error code (E00–E08). Resolve each as follows:
+
+| Code | Message | Remediation |
+|---|---|---|
+| E00 | `--token and --server are required.` | Run the one-liner from the admin Workstations panel. If copying manually, ensure both `--token <TOKEN>` and `--server <URL>` are present. |
+| E01 | `python3/curl/tar/openssl missing, glibc < 2.34, or < 2 GB free in $HOME` | Install the missing tool: `sudo apt install python3 python3-venv curl tar openssl`. Update OS if glibc < 2.34 (need Ubuntu 22.04+, Debian 12+, RHEL 9+). Free disk space if under 2 GB. |
+| E02 | `Mirror mode requested but no X display found.` | Mirror mode requires an active X11 display. Either log into an X11 session, or use `--mode seat` for a private virtual desktop. Check X displays: `ls /tmp/.X11-unix/`. |
+| E03 | `Dependency install failed (labwc, GPU drivers, etc).` | These are the labwc fallback seat's packages (enroll never installs GNOME). Install manually: `sudo apt install labwc wl-clipboard` (Debian/Ubuntu). For the GNOME seat, install GNOME Shell >= 46 with `xdg-desktop-portal-gnome`. For GPU: `sudo apt install mesa-va-drivers` (AMD/Intel) or NVIDIA driver package. Restart agent afterward: `systemctl --user restart styx-agent`. |
+| E04 | `Audio stack not found (PipeWire/PulseAudio).` | Install one: `sudo apt install pipewire` (Debian/Ubuntu) or `sudo dnf install pipewire` (Fedora). Verify: `pactl info` should succeed. A warning (not failure) about `libpulse.so.0` means `sudo apt install libpulse0` / `sudo dnf install pulseaudio-libs`. |
+| E05 | `Cannot reach server / download failed / registration rejected (HTTP code + reason shown).` | Check: 1) Is `SERVER_LAN_URL` the **local LAN address**, not a tunnel? 2) Can the workstation reach it: `curl -kv https://<SERVER_LAN_URL>/api/health`? 3) On the server, did you run `scripts/build_agent_artifacts.sh ./data/artifacts`? 4) HTTP 401 = token expired/used — mint a new one. |
+| E06 | `TLS certificate fingerprint mismatch.` | The server's cert doesn't match the pinned `--ca-pin`. Causes: cert rotated (mint a new token), MITM (unlikely on LAN), or wrong host. Verify: `openssl s_client -connect <HOST>:443 2>/dev/null \| openssl x509 -fingerprint -sha256 -noout`. |
+| E07 | `Port 8443 already in use.` | Find and kill the occupant: `sudo lsof -i :8443` or `sudo ss -ltnp \| grep :8443`. Or on the server, change `WORKSTATION_DEFAULT_PORT` to an unused port and re-enroll. |
+| E08 | `systemd --user session unavailable.` | You are in a `su` or `sudo` shell. Log in as the user normally (SSH or `su - <user>`), then re-run enrollment. |
+
+---
+
+## Usage
+
+### Connecting
+
+Users connect from **Home → Workspaces** ([Use: Workstations](../use/workstations.md)). Online cards show a green badge and a **Connect** button.
+
+### Checking workstation status
+
+**From the agent on the workstation:**
+
+```bash
+AGENT=~/.local/share/styx-agent
+
+# Show last heartbeat result (age, success/failure)
+$AGENT/venv/bin/python $AGENT/styx_agent.py status
+
+# Run diagnostics (service, port, cert, connectivity, GPU render node, audio)
+$AGENT/venv/bin/python $AGENT/styx_agent.py doctor
+
+# View logs
+tail -f $AGENT/logs/selkies.log    # streaming engine
+tail -f $AGENT/logs/gateway.log    # LAN gateway (dashboard + websocket)
+tail -f $AGENT/logs/seat.log       # seat compositor / shell (GNOME or labwc)
+```
+
+Use the venv interpreter — the system `python3` lacks the agent's audio/display helpers, so `doctor` under-reports.
+
+**From the admin panel:** **Settings → Administration → Workstations** shows:
+- **Status badge** (online / offline / pending / revoked)
+- **Last heartbeat** timestamp
+- **Last error** (if any)
+- Auto-refreshes every 15 seconds
+
+### Changing stream settings
+
+In **Settings → Administration → Workstations**, open a workstation's **Stream settings** to set framerate, quality (CRF), max bitrate, Gaming mode, Sharpen static screen and Full colour (4:4:4). Changes apply the next time nobody is connected. The full list, defaults and encoder behaviour are in [Streaming tuning](streaming-tuning.md).
+
+### Clipboard, files, audio
+
+These work from the viewer's sidebar; see [Use: Workstations](../use/workstations.md#clipboard-files-audio). Admin notes: uploads land in `~/Downloads`; override with `FILE_MANAGER_PATH` (selkies/upload side) and `STYX_FILES_DIR` (gateway/download side) on the systemd unit and keep them equal. Seat audio is routed to a dedicated `styx-seat` null sink (`PULSE_SINK`), so nothing plays on physical speakers. The second screen is disabled: upstream's Wayland path captures every display at offset 0,0 and the X11 path would xrandr-resize the physical monitor in mirror mode.
+
+### Workstation icons
+
+Each workstation has an icon on its home tile, in the admin list and on the browser tab of the streamed desktop.
+
+- **Where:** admin > Workstations > **Icon**.
+- **Auto** (default): a rounded badge with the first character of the name, in a colour picked from the workstation id.
+- **Emoji:** a single emoji.
+- **Image:** PNG, SVG, ICO or WebP, up to 256 KB.
+- **SVG rules:** use a plain or optimized SVG. `<style>`, scripts, animation and external references are rejected. Editor metadata (Inkscape, Sodipodi, RDF) is stripped automatically; for anything else, export as plain SVG.
+- **Streamed tab icon:** needs agent 0.8.0 or newer. It appears on the next page load of the desktop after the agent's next heartbeat; until then the Selkies seal shows. No agent restart is needed when you change the icon.
+
+---
+
+## Troubleshooting
+
+### Workstation shows offline
+
+**Symptom:** Status badge says "Offline" even though the machine is powered on.
+
+**Causes & fixes:**
+1. **Service not running:**
+   ```bash
+   systemctl --user status styx-agent
+   ```
+   If stopped: `systemctl --user restart styx-agent`.
+
+2. **Heartbeat timeout (>90s):** The agent hasn't called home. Run diagnostics:
+   ```bash
+   ~/.local/share/styx-agent/venv/bin/python ~/.local/share/styx-agent/styx_agent.py doctor
+   ```
+   This checks service, port, cert, connectivity, and GPU render node availability. Common issues: network unreachable, cert mismatch, engine crash.
+
+3. **Network unreachable:**
+   ```bash
+   curl -kv https://<SERVER_LAN_URL>/api/health
+   ```
+
+### Stream is Black or Laggy
+
+**Symptoms:** Window opens but shows black screen, or video is choppy/delayed.
+
+**Causes & fixes:**
+1. **No GPU encoder (CPU fallback active):** If `doctor` reports `GPU render node — CPU encode` and you have a GPU:
+   - Ensure `/dev/dri/renderD128` (or a similar GPU render device) exists: `ls -la /dev/dri/renderD*`.
+   - Verify you are in the `render` group: `id -nG | grep -w render`. If missing: `sudo usermod -aG render $USER && logout && login`.
+   - **NVIDIA:** Install NVIDIA driver: `sudo apt install nvidia-driver-*` + reboot.
+   - **AMD/Intel:** Install VAAPI drivers: `sudo apt install mesa-va-drivers` then verify: `vainfo`.
+   - Restart the agent: `systemctl --user restart styx-agent`.
+
+2. **Mirror mode X display issue:** For mirror mode, check the X display is accessible:
+   ```bash
+   echo $DISPLAY  # Should be :0 or similar
+   XAUTHORITY=~/.Xauthority xauth list | grep $DISPLAY
+   ```
+   If empty, the agent cannot access the display. Run doctor to diagnose.
+
+3. **Engine logs:** Check for errors:
+   ```bash
+   tail -50 ~/.local/share/styx-agent/logs/selkies.log
+   tail -50 ~/.local/share/styx-agent/logs/gateway.log
+   ```
+
+4. **Network/bitrate:** Reduce bitrate in admin panel (e.g., 16000 → 8000 kbps) if latency is high.
+
+### "Revoked by server" Message
+
+**Symptom:** Agent logs "Revoked by server. Stopping. To remove this agent run: `python3 ~/.local/share/styx-agent/styx_agent.py uninstall`".
+
+**Cause:** An admin clicked **Revoke** on the workstation in the admin panel. This tells the agent to stop streaming gracefully and show uninstall instructions.
+
+**Action:** Run the uninstall command if you no longer need the workstation, or contact the admin to re-enable it.
+
+---
+
+## Removal
+
+### From the Workstation
+
+On the machine, run:
+
+```bash
+python3 ~/.local/share/styx-agent/styx_agent.py uninstall
+```
+
+This stops the service, removes the agent and Selkies, and cleans up config/logs.
+
+Alternatively, use the standalone uninstall script:
+
+```bash
+bash ~/.local/share/styx-agent/uninstall.sh
+```
+
+### From the Admin Panel
+
+**Revoke (soft):**
+1. **Settings → Administration → Workstations** → select the machine.
+2. Click **Revoke**.
+3. The agent receives the revocation on the next heartbeat, stops streaming, and shows the uninstall command to the operator.
+
+**Purge (hard):**
+1. **Settings → Administration → Workstations** → select the machine.
+2. Click **Delete** (trash icon) to purge it from the database.
+3. The workstation is immediately unreachable and removed from all users' access lists.
+4. **Note:** The agent on the machine must still be uninstalled manually (or will fail to deregister and leave files behind).
+
+**Typical flow:**
+1. Click **Revoke** → agent stops cleanly within 30 seconds.
+2. Admin runs uninstall on the workstation machine (or user self-serves).
+3. Click **Purge** in the admin panel to remove it from the database.
+
+---
+
+## GNOME seat
+
+Agent 0.9.0 runs upstream selkies 2.1.0 + pixelflux 2.2.1 + pcmflux 2.2.0 (0.5.0–0.8.x ran selkies 2.0.0). In seat mode the default `seat_shell: gnome` starts a real headless GNOME Shell on a private D-Bus session and captures it through xdg-desktop-portal.
+
+- **Requirement:** GNOME Shell >= 46 on the box. If GNOME is unavailable the agent automatically falls back to `seat_shell: labwc` (the previous labwc/waybar seat). Changing `seat_shell` restarts the agent.
+- **Resolution:** follows the browser. The first viewer to connect owns the seat size; when its window changes size the seat monitor is resized in place (Mutter keeps the monitor, windows reflow) and the stream restarts from a warm standby selkies: the gateway cuts the stream socket and selkies 2.1 reconnects in place, holding the last frame for ~0.1-0.4 s with no page reload. Other viewers see the owner's size scaled to fit and take over when the owner leaves. `seat_width` / `seat_height` (system defaults 2560x1440 in **Settings -> Workstation features**) only size the seat before the first viewer connects. The standby costs one extra idle selkies process (~190 MB).
+- **Stream connection:** selkies 2.1 adapts the bitrate to the path (congestion control, CBR) up to the configured bitrate. The gateway pings every 30 s so a background tab's quiet socket is not dropped by proxies, and logs `ws stall` lines when a browser goes silent for more than 1 s while video plays (network jitter shows up there).
+- **Chroma:** streams are 4:2:0 (hardware encoded). **Full colour (4:4:4)** in the workstation's stream settings gives crisp text, but VA-API GPUs cannot encode H.264 4:4:4, so it switches to software x264: more CPU, larger frames, and audio can stutter on a slow uplink.
+- **Cursor:** the GNOME seat always embeds the cursor in the video (Mutter cursor-mode 1); the `cursor_workaround` setting was removed.
+- **Shared profile:** the seat runs as the same Linux user as the physical login, so dconf settings, extensions, wallpaper and keyring are shared with the local session.
+- **Watchdog:** a stream stall restarts only selkies (apps survive); 3 stalls in 10 minutes restart the GNOME session and report the workstation degraded.
+
+The GNOME seat needs no screen-share consent since agent 0.6.0.
+
+### Stream panel on the GNOME seat
+
+The selkies sidebar display controls work on the seat:
+
+- **Resolution:** presets and manual sizes resize the seat in place. Sizes below 640x480 are clamped; the maximum seat size is 4096x2304.
+- **UI scaling / HiDPI:** switches the seat between GNOME scale 1 and 2 without restarting the stream.
+- **Ownership:** the connected controller owns the seat size (selkies allows one controller; a new one replaces the old). Shared viewers (`#shared` links) watch at the controller's size.
+- **Admin defaults:** the workstation's stream settings (framerate, CRF, etc.) are defaults that viewers can change from the panel. Bitrate is a ceiling: the admin value is the default and the maximum; viewers may lower it (floor 1000 kbps). Codec and CPU encode are locked.
+- **Applying changes:** admin changes apply when nobody is connected, so they never kick an active session. The exception is idle-timeout changes, which apply at once (connected viewers reconnect). A viewer that reconnects after a resize already gets the new stream settings.
+
+### Upgrade and rollback
+
+```bash
+# Upgrade in place (no enrollment token needed; no package installs; keeps config and cert pinning)
+curl -fsSL https://<portal>/api/enroll/script | bash -s -- --upgrade --server https://<portal>
+
+# Roll back to the previous install
+~/.local/share/styx-agent/venv/bin/python ~/.local/share/styx-agent/styx_agent.py rollback
+```
+
+**Update flow**
+
+```mermaid
+---
+config:
+  themeVariables:
+    fontSize: 15px
+  flowchart:
+    curve: basis
+    nodeSpacing: 30
+    rankSpacing: 40
+    padding: 10
+---
+flowchart TD
+    hb("Agent heartbeat<br/>reports agent_version"):::run --> cmp{{"Older than the<br/>portal's AGENT_VERSION?"}}
+    cmp -->|no| cur("Up to date"):::run
+    cmp -->|yes| badge("Admin panel shows<br/>update available"):::core
+    badge --> up("On the workstation, run the<br/>enroll script with --upgrade"):::ext
+    up --> mv("Old install moves to<br/>styx-agent.prev, config and<br/>TLS pin are kept"):::core
+    mv --> ok{{"New install<br/>starts OK?"}}
+    ok -->|yes| new("Heartbeats with the<br/>new version"):::run
+    ok -->|no| rb("Previous install restored<br/>automatically"):::bad
+    new -.->|"later, if needed"| rbk("styx_agent.py rollback<br/>swaps the two directories"):::gate
+    classDef ext fill:#66797F,stroke:#3F5157
+    classDef core fill:#2A8C94,stroke:#1B5F65
+    classDef gate fill:#A67828,stroke:#6E4F14
+    classDef run fill:#3C9060,stroke:#285F3F
+    classDef bad fill:#CC563A,stroke:#8E3420
+```
+
+Upgrade may ask for sudo only to enable user lingering if it is off. The old install moves to `~/.local/share/styx-agent.prev`; a failed upgrade restores it automatically.
+
+---
+
+## Advanced
+
+### Capture Mode Overrides
+
+By default, `enroll.sh` auto-detects the capture mode:
+- **X11 session running** → mirror mode (live desktop capture).
+- **Wayland session or headless** → second-seat mode (private virtual desktop).
+
+To override:
+```bash
+# Force mirror mode on an X display
+curl ... | bash -s -- --token ... --server ... --mode mirror --display :0
+
+# Force second-seat mode (private virtual desktop)
+curl ... | bash -s -- --token ... --server ... --mode seat
+```
+
+For X11 workstations where you prefer a private session, use `--mode seat`. The physical screen remains untouched, and the remote user gets a fresh desktop with access to the machine's apps and files.
+
+### Hardware encoder selection
+
+The agent probes the GPU once and offers AV1, HEVC and H.264 in that order; there is no per-workstation encoder switch. See [Streaming tuning](streaming-tuning.md#encoders).
+
+### TLS
+
+**Automatic (default):** When the LAN address has no publicly-valid certificate
+(any host in tunnel mode, IP addresses in direct mode), the backend generates a
+persistent self-signed certificate for it (`lan-certs` volume), Traefik serves
+it on port 443, and the minted LAN command pins it two ways automatically:
+`curl --pinnedpubkey 'sha256//…'` so the very first fetch of the enrollment
+script verifies the self-signed server cryptographically, and `--ca-pin
+sha256:…` so the script re-verifies and saves the cert the agent trusts.
+Nothing to configure. The cert (and pins) only change if you change the LAN
+address. (`-k` appears on the bootstrap line — it only skips CA-chain
+validation of the self-signed root; identity is still enforced by the pinned
+public key, so MITM fails closed.)
+
+**Tunnel mode prerequisite:** publish ports 80/443 on the `traefik` service —
+uncomment the `ports:` block in `docker-compose.yml`, then
+`docker compose up -d traefik`.
+
+**Manual override:** to pin your own certificate instead, set `SERVER_CA_PIN`:
+
+```bash
+echo | openssl s_client -connect <HOST>:443 2>/dev/null \
+  | openssl x509 -fingerprint -sha256 -noout
+# Outputs: sha256=AB:CD:...  → format as sha256:ABCD... (remove colons)
+```
+
+---
+
+## Logs and diagnostics {#diagnostics}
+
+**Agent state file:**
+```
+~/.local/share/styx-agent/state.json
+```
+Last heartbeat timestamp, status (ok/failed), and error message.
+
+**Engine logs:**
+```
+~/.local/share/styx-agent/logs/selkies.log   # Video/audio capture and stream
+~/.local/share/styx-agent/logs/gateway.log   # HTTP gateway (auth, credential injection)
+~/.local/share/styx-agent/logs/seat.log      # Second-seat mode logs (GNOME session or labwc)
+```
+
+**systemd user service logs:**
+```bash
+journalctl --user -u styx-agent -n 50
+```
+Agent daemon startup, crashes, restarts.
+
+---
+
+## Security Model
+
+- **Token-based enrollment:** Enrollment tokens are single-use and expire after 1 hour (configurable). Each token mints a unique agent token at registration.
+- **Per-workstation bearer token:** The agent authenticates to the portal with a unique token (stored hashed in the database). Compromising one workstation's token does not affect others.
+- **TLS pinning (automatic):** The enrollment command pins the portal's LAN certificate fingerprint (auto-generated self-signed cert, or `SERVER_CA_PIN` override). Enrollment and all agent traffic verify against the pinned cert — MITM on the LAN fails closed, and no insecure connections are ever made.
+- **Per-user access control:** Admins can restrict which users can connect to each workstation in the admin panel.
+- **Stream access (forwardAuth):** Requests to `/w/<subdomain>/` are gated by Traefik forwardAuth against the portal — you must be logged in to the portal in the same browser, and your account must have access to that workstation. A 401 on the stream URL means you are not logged in; a 403 means your account is not assigned to that workstation.
+- **Revocation:** Disabling, deleting or demoting a user, or removing their workstation access, drops their live workstation stream at the next agent heartbeat (the agent closes clients) and every later reconnect is denied. Instance streams (`/i/`) have no kick channel: a revoked user keeps an already-open websocket until it closes; every new request and reconnect is denied. Stop the instance to cut it immediately.
+- **Seat lock:** A second user cannot open another user's live seat by URL; they must use Connect with takeover (grants a 60 s window).
+- **Unused enrollment tokens:** `GET /api/workstations/enroll-tokens` lists them, `DELETE /api/workstations/enroll-tokens/{id}` revokes one.
+- **Selkies credentials never reach the browser:** Each workstation's Selkies instance is protected by HTTP basic auth (random password, encrypted at rest). Traefik injects the `Authorization` header server-side after forwardAuth passes, so the password never appears in URLs, browser history, or logs. Direct LAN access to the workstation's Selkies port still requires that password.
+- **Heartbeat revocation:** Admins can revoke a workstation at any time; the agent sees it on the next heartbeat (~30 s) and stops.
+
+---
+
+## Limits and Caveats
+
+- **No SSH tunneling:** Workstations must have direct LAN connectivity to `SERVER_LAN_URL`. Remote access requires a VPN or SSH tunnel set up outside the portal.
+- **Single stream per machine:** The agent streams one desktop per machine. For multi-monitor setups, use a virtual compositor or extended desktop.
+- **Wayland mirror not supported:** The agent cannot mirror an existing Wayland desktop (upstream Selkies limitation; see [selkies#46](https://github.com/selkies-project/selkies/issues/46)). Wayland machines get a private second-seat desktop (GNOME by default) instead.
+- **Performance:** Quality depends on network bandwidth, encoder choice, and GPU availability. Start with default settings and reduce bitrate/framerate on slow links ([Streaming tuning](streaming-tuning.md)).
+
+---
+
+## Support
+
+For enrollment or streaming issues:
+1. Run diagnostics: `~/.local/share/styx-agent/venv/bin/python ~/.local/share/styx-agent/styx_agent.py doctor`
+2. Check logs: `tail -50 ~/.local/share/styx-agent/logs/{selkies,gateway,seat}.log`
+3. Review the admin panel: click the workstation card to see "Last error".
+4. Check the error codes above (E00–E08).
+5. Consult server logs for registration/heartbeat failures.
+
+For Selkies 2.x or pixelflux issues, see the [Selkies GitHub repository](https://github.com/selkies-project/selkies).
