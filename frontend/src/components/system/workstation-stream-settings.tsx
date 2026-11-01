@@ -231,7 +231,7 @@ export function WorkstationStreamSettings({
             {saving ? "Saving…" : "Save"}
           </Button>
           <span className="text-xs text-muted-foreground">
-            Changes apply the next time nobody is connected.
+            Applies when no one is connected to this workstation.
           </span>
         </div>
       )}
