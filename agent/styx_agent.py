@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-AGENT_VERSION = "0.9.30"
+AGENT_VERSION = "0.9.31"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -29,6 +29,7 @@ def load_config(path: Path = CONFIG_PATH) -> dict:
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import agent_update  # noqa: E402
 import favicon  # noqa: E402
 import seat_thumb  # noqa: E402
 import refit  # noqa: E402
@@ -66,6 +67,7 @@ def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool,
         "seat_shell": seat_shell or cfg.get("mode", "mirror"),
         "seat_restarts": seat_restarts,
         "degraded": degraded,
+        "update": agent_update.report(),
     }
 
 
@@ -364,6 +366,8 @@ def run(cfg: dict) -> int:
                       flush=True)
                 break
             favicon.on_heartbeat(cfg, hb)
+            agent_update.on_heartbeat(cfg, hb)
+            selkies_ok and gateway_ok and agent_update.confirm(AGENT_VERSION)
             gseat and seat_thumb.on_heartbeat(cfg)
             if hb.get("disconnect_clients"):
                 print("server requested client disconnect (logout); "

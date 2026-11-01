@@ -20,6 +20,7 @@ from app.security.crypto import encrypt_secret
 from app.services import single_use
 from app.services.audit import audit_request
 from app.services.workstations import (
+    agent_dir,
     AGENT_UPDATE_FILES, SELKIES_USER, sha256_hex, unique_subdomain,
 )
 
@@ -33,11 +34,7 @@ _SERVED = {remote: local for remote, local in AGENT_UPDATE_FILES} | {
 
 
 def _agent_dir() -> Path:
-    p = Path(_settings.AGENT_DIR)
-    if p.is_dir():
-        return p
-    # Dev fallback: repo layout backend/app/routers/ -> repo root /agent
-    return Path(__file__).resolve().parents[3] / "agent"
+    return agent_dir()
 
 
 def _serve(filename: str) -> PlainTextResponse:

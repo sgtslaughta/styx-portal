@@ -15,7 +15,9 @@ from app.models import Workstation, WorkstationAccess
 from app.schemas import WorkstationHeartbeatRequest, WorkstationHeartbeatResponse
 from app.services import ws_icon, ws_thumb
 from app.services.audit import audit_request
-from app.services.workstations import sha256_hex
+from app.services.workstations import (
+    build_update_manifest, can_self_update, get_latest_agent_version, request_agent_update, sha256_hex,
+)
 from app.services.settings_store import settings as _sys_settings
 from app.services.ws_settings import resolve_stream_settings, stream_sys_settings
 from app.services.turn_usage import record_turn_usage, turn_over_budget
@@ -58,6 +60,18 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
     ver = body.health.get("agent_version")
     if isinstance(ver, str) and ver:
         ws.agent_version = ver
+    _apply_update_report(ws, body.health.get("update"))
+    latest = get_latest_agent_version()
+    if (ws.update_target and ws.agent_version == ws.update_target
+            and ws.update_state != "ok"):
+        ws.update_state = "ok"
+        ws.update_at = datetime.now(timezone.utc)
+    elif (_sys_settings.get("AGENT_AUTO_UPDATE") and latest
+            and ws.agent_version not in ("", latest)
+            and can_self_update(ws.agent_version)
+            and not (ws.update_target == latest
+                     and ws.update_state in ("requested", "updating", "rolled_back", "failed"))):
+        request_agent_update(ws, latest)
     # Attribute relayed bytes before occupancy may clear (final delta of a session).
     await record_turn_usage(session, ws, body.health.get("turn_bytes"))
     # Occupancy: the agent's gateway counts live stream websockets; the
@@ -105,7 +119,28 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
         state="ok", stream_settings=effective_ss,
         heartbeat_interval_s=_settings.WORKSTATION_HEARTBEAT_S,
         disconnect_clients=disconnect,
-        icon_etag=ws_icon.icon_etag(ws.icon, ws.name, ws.id))
+        icon_etag=ws_icon.icon_etag(ws.icon, ws.name, ws.id),
+        update=({"version": ws.update_target}
+                if ws.update_state == "requested"
+                and ws.agent_version != ws.update_target else None))
+
+
+def _apply_update_report(ws: Workstation, rep) -> None:
+    """Copy the agent's self-update progress; only for the ordered target."""
+    if not isinstance(rep, dict) or not ws.update_target or rep.get("to") != ws.update_target:
+        return
+    state = rep.get("state")
+    if state not in ("updating", "ok", "rolled_back", "failed"):
+        return
+    err = rep.get("error")
+    ws.update_state = state
+    ws.update_error = str(err)[:500] if err else None
+    ws.update_at = datetime.now(timezone.utc)
+
+
+@router.get("/update-manifest")
+async def update_manifest(ws: Workstation = Depends(get_agent_workstation)):
+    return build_update_manifest()
 
 
 @router.get("/icon")

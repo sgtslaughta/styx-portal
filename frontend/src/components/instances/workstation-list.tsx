@@ -253,6 +253,9 @@ export function WorkstationList({ selectedId, onSelect }: WorkstationListProps =
                     {os.pretty_name ? ` · ${os.pretty_name}` : ""}
                     {" · "}seen {fmtSeen(ws.last_heartbeat)}
                   </p>
+                  {ws.agent_outdated && (
+                    <span className="text-[10px] text-amber-400">Agent out of date</span>
+                  )}
                 </div>
                 <button
                   onClick={(e) => { e.stopPropagation(); setExpanded(isOpen ? null : ws.id); }}

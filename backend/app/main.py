@@ -25,6 +25,7 @@ from app.routers import matrix as matrix_router
 from app.routers import oauth as oauth_router
 from app.routers import oauth_admin as oauth_admin_router
 from app.routers import audit as audit_router
+from app.routers import workstation_update as workstation_update_router
 from app.routers import workstations as workstations_router
 from app.routers import instance_auth as instance_auth_router
 from app.routers import enroll as enroll_router
@@ -184,6 +185,8 @@ app.include_router(users_router.router, prefix="/api/users", tags=["users"])
 app.include_router(oauth_router.router, prefix="/api/auth/oauth", tags=["oauth"])
 app.include_router(oauth_admin_router.router, prefix="/api/oauth-providers", tags=["oauth-admin"])
 app.include_router(audit_router.router, prefix="/api/audit", tags=["audit"])
+app.include_router(workstation_update_router.router, prefix="/api/workstations",
+                   tags=["workstations"])
 app.include_router(workstations_router.router, prefix="/api/workstations", tags=["workstations"])
 app.include_router(workstations_router.internal_router, prefix="/internal/workstations",
                    tags=["workstations"])

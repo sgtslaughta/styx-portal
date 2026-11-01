@@ -138,6 +138,8 @@ def build_enroll_command(raw_token: str, base: str,
 # (remote endpoint name, local filename in the install dir)
 AGENT_UPDATE_FILES = [
     ("agent.py", "styx_agent.py"),
+    ("agent_update.py", "agent_update.py"),
+    ("agent_updater.py", "agent_updater.py"),
     ("engine.py", "engine.py"),
     ("gateway.py", "gateway.py"),
     ("gateway_html.py", "gateway_html.py"),
@@ -240,3 +242,47 @@ async def kick_unqualified(session, user_id: str | None = None, ws_id: str | Non
             session.add(ws)
             n += 1
     return n
+
+
+def agent_dir() -> Path:
+    p = Path(_settings.AGENT_DIR)
+    if p.is_dir():
+        return p
+    # Dev fallback: repo layout backend/app/services/ -> repo root /agent
+    return Path(__file__).resolve().parents[3] / "agent"
+
+
+def build_update_manifest() -> dict:
+    """Files (sha256+size) and pinned deps an agent needs to self-update."""
+    d = agent_dir()
+    files = []
+    for remote, local in [*AGENT_UPDATE_FILES, ("uninstall", "uninstall.sh")]:
+        p = d / local
+        if not p.is_file():
+            continue
+        data = p.read_bytes()
+        files.append({"remote": remote, "local": local,
+                      "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)})
+    deps: dict[str, str] = {}
+    enroll = d / "enroll.sh"
+    if enroll.is_file():
+        deps = dict(re.findall(r"\b(selkies|pixelflux|pcmflux)==([\w.]+)", enroll.read_text()))
+    return {"version": get_latest_agent_version(), "files": files, "deps": deps}
+
+
+MIN_SELF_UPDATE = (0, 9, 31)   # first agent that ships agent_updater.py
+
+
+def can_self_update(version: str) -> bool:
+    """Older agents have no updater: they need the one-liner once."""
+    try:
+        return tuple(int(x) for x in version.split(".")[:3]) >= MIN_SELF_UPDATE
+    except ValueError:
+        return False
+
+
+def request_agent_update(ws: Workstation, latest: str) -> None:
+    ws.update_target = latest
+    ws.update_state = "requested"
+    ws.update_error = None
+    ws.update_at = datetime.now(timezone.utc)

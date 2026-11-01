@@ -353,6 +353,9 @@ class WorkstationOut(BaseModel):
     in_use_self: bool = False
     icon_kind: str = "auto"          # auto | emoji | image
     icon_etag: str = ""              # cache-buster for /{id}/icon?v=
+    update_state: str = ""
+    update_error: str | None = None
+    update_target: str = ""
 
 
 class WorkstationIconUpdate(BaseModel):
@@ -457,6 +460,8 @@ class WorkstationHeartbeatResponse(BaseModel):
     disconnect_clients: bool = False
     # Hash of the workstation icon; the agent re-fetches /api/agent/icon on change.
     icon_etag: str = ""
+    # {"version": ...} when the agent should self-update now.
+    update: dict[str, Any] | None = None
 
 
 class WorkstationUpdate(BaseModel):
