@@ -9,7 +9,7 @@ export const OverviewPane = () => (
   <div className="space-y-8"><MetricsOverview /><MetricsResources /></div>
 );
 export const PeoplePane = () => (
-  <div className="space-y-8"><UsersPanel /><GroupsPanel /></div>
+  <div className="space-y-10"><UsersPanel /><GroupsPanel /></div>
 );
 export const SecurityPane = () => (
   <SystemSettingsPanel groups={["brute_force", "rate_limits", "password_policy", "quota"]} />

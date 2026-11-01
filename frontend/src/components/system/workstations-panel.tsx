@@ -1,23 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, Copy, Monitor, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowRight, Copy, RefreshCw } from "lucide-react";
+import "@/styles/admin-table.css";
 import { api, type EnrollToken, type Workstation, type WorkstationUpdateCommand } from "@/api/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SectionHead } from "@/components/common/section-head";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { toast } from "sonner";
-import { AgentUpdateChip } from "@/components/system/agent-update-chip";
-import { WorkstationIcon } from "@/components/system/workstation-icon";
-import { WorkstationIconSettings } from "@/components/system/workstation-icon-settings";
-import { WorkstationSpecs } from "@/components/system/workstation-specs";
-import { WorkstationStreamSettings } from "@/components/system/workstation-stream-settings";
-
-const STATUS_STYLES: Record<string, string> = {
-  online: "bg-emerald-500/15 text-emerald-400",
-  offline: "bg-amber-500/15 text-amber-400",
-  pending: "bg-sky-500/15 text-sky-400",
-  revoked: "bg-rose-500/15 text-rose-400",
-};
+import { WorkstationRow } from "@/components/system/workstation-row";
+import { WorkstationManageDialog } from "@/components/system/workstation-manage-dialog";
 
 export function WorkstationsPanel() {
   const [rows, setRows] = useState<Workstation[]>([]);
@@ -28,6 +19,7 @@ export function WorkstationsPanel() {
   const [revokeTarget, setRevokeTarget] = useState<Workstation | null>(null);
   const [purgeTarget, setPurgeTarget] = useState<Workstation | null>(null);
   const [updateCmd, setUpdateCmd] = useState<WorkstationUpdateCommand | null>(null);
+  const [manageId, setManageId] = useState<string | null>(null);
   const [updCopied, setUpdCopied] = useState<"lan" | "public" | null>(null);
 
   const refresh = useCallback(() => {
@@ -91,171 +83,85 @@ export function WorkstationsPanel() {
   };
 
   return (
-    <div className="space-y-6">
-      <Card className="styx-card">
-        <CardHeader className="pb-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="rounded-lg bg-primary/10 p-2">
-                <Monitor className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <CardTitle>Workstations</CardTitle>
+    <section>
+      <SectionHead title="Workstations" action={
+        <>
+          <Button onClick={refresh} variant="ghost" size="sm" title="Refresh"><RefreshCw className="h-4 w-4" /></Button>
+          {rows.some((w) => w.agent_outdated && w.status === "online") && (
+            <Button onClick={updateAll} variant="secondary" size="sm">Update all outdated</Button>
+          )}
+          <button type="button" className="btn-gold" onClick={mint}>Enroll a workstation</button>
+        </>
+      } />
+      <div className="space-y-4">
+        {error && <p className="text-sm text-rose-400">{error}</p>}
+        {enroll && (
+        <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
+          <p className="text-sm">Run this on the workstation (token valid until{" "}
+            {new Date(enroll.expires_at).toLocaleString()}, single use):</p>
+          {enroll.lan_command ? (
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">
+                Same network (LAN)
+                {enroll.lan_url_source === "detected" &&
+                  " — auto-detected IP; set SERVER_LAN_URL to override"}
+              </p>
+              <div className="flex items-start gap-2">
+                <code className="flex-1 break-all rounded bg-muted px-2 py-1 text-xs">
+                  {enroll.lan_command}
+                </code>
+                <Button
+                  onClick={() => copy(enroll.lan_command!, "lan")}
+                  variant="secondary"
+                  size="sm"
+                  title="Copy to clipboard"
+                >
+                  <Copy className="h-4 w-4" /> {copied === "lan" ? "Copied" : "Copy"}
+                </Button>
               </div>
             </div>
-            <div className="flex gap-2">
+          ) : (
+            <p className="text-xs text-amber-400">
+              No LAN address available — set SERVER_LAN_URL on the server for
+              LAN enrollment.
+            </p>
+          )}
+          <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">
+              Outside the LAN (public URL) — note: streaming still requires the
+              server to reach the workstation&apos;s IP
+            </p>
+            <div className="flex items-start gap-2">
+              <code className="flex-1 break-all rounded bg-muted px-2 py-1 text-xs">
+                {enroll.public_command}
+              </code>
               <Button
-                onClick={refresh}
+                onClick={() => copy(enroll.public_command, "public")}
                 variant="secondary"
                 size="sm"
-                title="Refresh"
+                title="Copy to clipboard"
               >
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-              {rows.some((w) => w.agent_outdated && w.status === "online") && (
-                <Button onClick={updateAll} variant="secondary" size="sm">
-                  Update all outdated
-                </Button>
-              )}
-              <Button onClick={mint} size="sm">
-                Enroll workstation
+                <Copy className="h-4 w-4" /> {copied === "public" ? "Copied" : "Copy"}
               </Button>
             </div>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {error && <p className="text-sm text-rose-400">{error}</p>}
+        </div>
+      )}
 
-          {enroll && (
-            <div className="rounded-lg border border-border bg-surface p-4 space-y-3">
-              <p className="text-sm">Run this on the workstation (token valid until{" "}
-                {new Date(enroll.expires_at).toLocaleString()}, single use):</p>
-              {enroll.lan_command ? (
-                <div className="space-y-1">
-                  <p className="text-xs font-medium text-muted-foreground">
-                    Same network (LAN)
-                    {enroll.lan_url_source === "detected" &&
-                      " — auto-detected IP; set SERVER_LAN_URL to override"}
-                  </p>
-                  <div className="flex items-start gap-2">
-                    <code className="flex-1 break-all rounded bg-muted px-2 py-1 text-xs">
-                      {enroll.lan_command}
-                    </code>
-                    <Button
-                      onClick={() => copy(enroll.lan_command!, "lan")}
-                      variant="secondary"
-                      size="sm"
-                      title="Copy to clipboard"
-                    >
-                      <Copy className="h-4 w-4" /> {copied === "lan" ? "Copied" : "Copy"}
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-xs text-amber-400">
-                  No LAN address available — set SERVER_LAN_URL on the server for
-                  LAN enrollment.
-                </p>
-              )}
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Outside the LAN (public URL) — note: streaming still requires the
-                  server to reach the workstation&apos;s IP
-                </p>
-                <div className="flex items-start gap-2">
-                  <code className="flex-1 break-all rounded bg-muted px-2 py-1 text-xs">
-                    {enroll.public_command}
-                  </code>
-                  <Button
-                    onClick={() => copy(enroll.public_command, "public")}
-                    variant="secondary"
-                    size="sm"
-                    title="Copy to clipboard"
-                  >
-                    <Copy className="h-4 w-4" /> {copied === "public" ? "Copied" : "Copy"}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No workstations enrolled. Click "Enroll a workstation" and run the command
+            on a physical Linux machine on the same network.
+          </p>
+        ) : rows.map((ws) => (
+          <WorkstationRow key={ws.id} ws={ws} onManage={() => setManageId(ws.id)}
+                          onUpdate={() => requestUpdate(ws)} onManual={() => openUpdate(ws)} />
+        ))}
+      </div>
 
-          {rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No workstations enrolled. Click "Enroll workstation" and run the command
-              on a physical Linux machine on the same network.
-            </p>
-          ) : rows.map((ws) => {
-            return (
-            <div key={ws.id} className="rounded-lg border border-border bg-surface p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <WorkstationIcon ws={ws} className="mr-2 inline-block align-middle" />
-                  <span className="font-medium">{ws.name}</span>
-                  <span className={`ml-2 rounded px-2 py-0.5 text-xs ${STATUS_STYLES[ws.status] ?? ""}`}>
-                    {ws.status}
-                  </span>
-                  <AgentUpdateChip state={ws.update_state} error={ws.update_error} />
-                </div>
-                <div className="flex gap-2">
-                  {ws.agent_outdated && !["requested", "updating"].includes(ws.update_state ?? "") && (
-                    <Button onClick={() => requestUpdate(ws)} size="sm">
-                      Update agent
-                    </Button>
-                  )}
-                  {ws.agent_outdated && (
-                    <Button onClick={() => openUpdate(ws)} variant="secondary" size="sm"
-                            title="Copy-paste one-liner">
-                      Manual
-                    </Button>
-                  )}
-                  <Button
-                    onClick={() => setRevokeTarget(ws)}
-                    variant="secondary"
-                    size="sm"
-                    disabled={ws.status === "revoked"}
-                  >
-                    Revoke
-                  </Button>
-                  <Button
-                    onClick={() => setPurgeTarget(ws)}
-                    variant="destructive"
-                    size="sm"
-                    title="Remove from portal"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-              <WorkstationSpecs ws={ws} />
-              <WorkstationIconSettings ws={ws} onSaved={refresh} />
-              <WorkstationStreamSettings ws={ws} onSaved={refresh} />
-              {ws.last_error && <p className="text-xs text-rose-400">Agent error: {ws.last_error}</p>}
-              <div className="flex flex-wrap items-center gap-3 text-sm">
-                <label className="flex items-center gap-1.5">
-                  <input type="checkbox" checked={ws.all_users}
-                         onChange={() => toggleAllUsers(ws)} />
-                  All users
-                </label>
-                {!ws.all_users && users.map((u) => (
-                  <label key={u.id} className="flex items-center gap-1.5">
-                    <input type="checkbox"
-                           checked={ws.allowed_user_ids.includes(u.id)}
-                           onChange={() => toggleUser(ws, u.id)} />
-                    {u.username}
-                  </label>
-                ))}
-              </div>
-              {ws.status === "revoked" && (
-                <p className="text-xs text-muted-foreground">
-                  To finish removal on the machine:{" "}
-                  <code>python3 ~/.local/share/styx-agent/styx_agent.py uninstall</code>
-                </p>
-              )}
-            </div>
-            );
-          })}
-        </CardContent>
-      </Card>
+      <WorkstationManageDialog ws={rows.find((w) => w.id === manageId) ?? null} users={users}
+        onClose={() => setManageId(null)} onSaved={refresh} onRevoke={setRevokeTarget} onPurge={setPurgeTarget}
+        onToggleAll={toggleAllUsers} onToggleUser={toggleUser} />
 
       {/* Revoke confirmation dialog */}
       <ConfirmDialog
@@ -316,6 +222,6 @@ export function WorkstationsPanel() {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </section>
   );
 }
