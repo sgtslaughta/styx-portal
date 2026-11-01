@@ -5,6 +5,7 @@ import { SettingsNav } from "./settings-nav";
 import { visibleCategories, type SettingsSection } from "./nav-config";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
+import { useCfAnalytics } from "@/hooks/use-admin-stats";
 import { UnsavedProvider, useUnsaved } from "./unsaved-context";
 
 const ALIASES: Record<string, string> = { resources: "overview", groups: "users", settings: "security" };
@@ -17,7 +18,9 @@ function SettingsLayoutInner() {
   const { confirmLeave } = useUnsaved();
   const { user, loading } = useAuth();
   const reduce = useReducedMotion();
-  const cats = useMemo(() => visibleCategories(user?.role === "admin"), [user?.role]);
+  const isAdmin = user?.role === "admin";
+  const cfAnalytics = useCfAnalytics(isAdmin);
+  const cats = useMemo(() => visibleCategories(isAdmin, { cfAnalytics }), [isAdmin, cfAnalytics]);
   const sections = useMemo(() => cats.flatMap((c) => c.sections), [cats]);
   const [activeId, setActiveId] = useState<string | undefined>(
     () => (new URLSearchParams(window.location.search).has("setup") ? "services" : undefined));

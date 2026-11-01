@@ -1,52 +1,42 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { expect, test, vi } from "vitest";
 
-const insts = ["running", "idle", "paused", "stopped", "error"].map((s, i) => ({ id: String(i), status: s }));
-vi.mock("@/hooks/use-instances", () => ({ useInstances: () => ({ data: insts }) }));
-vi.mock("@/hooks/use-system", () => ({
-  useSystemMetrics: () => ({ data: {
-    aggregate_cpu: 12.5, aggregate_ram_mb: 2048, disk_used_gb: 40, disk_total_gb: 100,
-    recent_events: [
-      { type: "error", instance: "alpha", time: "1m" }, { type: "started", instance: "beta", time: "2m" },
-      { type: "stopped", instance: "gamma", time: "3m" }, { type: "started", instance: "delta", time: "4m" },
-    ],
-    host: { gpu: "RTX 4090", docker_version: "27" } } }),
-  useResourceHistory: () => ({ data: { aggregate_cpu: [1, 2, 3], aggregate_ram: [4, 5, 6],
-    storage: { volumes_gb: 1, images_gb: 1, total_gb: 100, available_gb: 60 } } }),
+const series = (n: number, v: number | null) => Array.from({ length: 24 }, (_, i) => (i === 3 ? null : v ?? n + i));
+const overview = {
+  tiles: { cpu: { now: 23, series: series(10, null) }, ram: { now: 41, series: series(30, null) }, disk: { now: 68, series: series(60, null) }, live: { now: 2, series: series(0, 2) } },
+  health_hours: [...Array(22).fill("ok"), "warn", null],
+  load: { labels: ["a", "b"], cpu: [10, null], ram: [30, 31] },
+  sessions_per_day: [{ date: "2026-10-31", count: 3 }],
+};
+vi.mock("@/api/client", () => ({
+  ApiError: class extends Error {},
+  api: {
+    getOverviewStats: async () => overview,
+    getStreamingStats: async () => ({ rows: [{ workstation: "mini", sub: "online", parts: { Richard: 3, Maya: 1 } }] }),
+    getDiagnostics: async () => ({ ok: true, checked_at: "", checks: [{ key: "docker", ok: true }, { key: "disk", ok: true }] }),
+    getSystemSettings: async () => [{ group: "g", label: "g", settings: [
+      { key: "CLOUDFLARE_ACCOUNT_ID", type: "str", value: "abc" }, { key: "CLOUDFLARE_ANALYTICS_TOKEN", type: "secret", value: null, is_set: true }] }],
+    getRelayStats: async () => ({ used_gb: 12.4, free_gb: 1000, projected_gb: 31, est_usd: 0, budget_usd: 5, relayed_pct: 18, daily: [], monthly: [], by_user: [], by_workstation: [], reasons: [] }),
+    getSystemMetrics: async () => ({ disk_used_gb: 68, disk_total_gb: 100, host_ram_total_mb: 32768 }),
+    listWorkstations: async () => [], listServices: async () => [{ id: "p", name: "Paperless", needs_setup: true }],
+    stopInstance: async () => ({}),
+  },
 }));
-vi.mock("@tanstack/react-query", () => ({
-  useQuery: (o: { queryKey: string[] }) => o.queryKey[0] === "workstations" ? { data: [] } : { data: { ok: false, checked_at: new Date().toISOString(), checks: [
-    { key: "docker", ok: true, latency_ms: 1, detail: "" },
-    { key: "disk", ok: false, latency_ms: 1, detail: "" },
-    { key: "gpu", ok: false, latency_ms: 1, detail: "" }] } },
-}));
+vi.mock("@/hooks/use-instances", () => ({ useInstances: () => ({ isSuccess: true, data: [{ id: "1", name: "Chromium", status: "running" }] }) }));
+vi.mock("@/hooks/use-system", () => ({ useSystemMetrics: () => ({ data: { disk_used_gb: 68, disk_total_gb: 100, host_ram_total_mb: 32768 } }) }));
 import { MetricsOverview } from "../metrics-overview";
 
-test("renders a rollup card per section with figures and links", () => {
-  render(<MetricsOverview />);
-  for (const s of ["health", "sessions", "resources", "logs", "workstations"]) {
-    const link = screen.getByRole("link", { name: new RegExp(`View ${s}`, "i") });
-    expect(link.getAttribute("href")).toBe(`?section=${s}`);
-  }
-  expect(screen.getByText("2 failing")).toBeTruthy();
-  expect(screen.getByText("Disk space")).toBeTruthy();
-  const sess = within(screen.getByTestId("card-sessions"));
-  for (const l of ["Running", "Idle", "Paused", "Stopped", "Error"]) {
-    expect(sess.getAllByText(l).find((n) => n.nextSibling)!.nextSibling?.textContent).toBe("1");
-  }
-  expect(screen.getByText("12.5%")).toBeTruthy();
-  expect(screen.getByText("40.0 / 100 GB")).toBeTruthy();
-  expect(screen.getByText("RTX 4090")).toBeTruthy();
-  expect(screen.getByText(/1 error event/)).toBeTruthy();
-  expect(screen.getByText("gamma")).toBeTruthy();
-  expect(screen.queryByText("delta")).toBeNull();
-});
-
-test("link dispatches section navigation", () => {
-  const h = vi.fn();
-  window.addEventListener("styx:settings-section", h);
-  render(<MetricsOverview />);
-  fireEvent.click(screen.getByRole("link", { name: /View logs/i }));
-  expect(h).toHaveBeenCalled();
-  expect((h.mock.calls[0]![0] as CustomEvent).detail).toBe("logs");
+test("tiles, three charts, and the lists (incl. Relay cost card when configured)", async () => {
+  render(<QueryClientProvider client={new QueryClient()}><MetricsOverview /></QueryClientProvider>);
+  expect(await screen.findByText("23%")).toBeTruthy();
+  for (const t of ["CPU", "Memory", "Disk", "Live sessions", "Health"]) expect(screen.getAllByText(t).length).toBeGreaterThan(0);
+  expect(screen.getByText("2/2")).toBeTruthy();
+  for (const c of ["Server load", "Sessions per day", "Streaming time"]) expect(screen.getByRole("region", { name: c })).toBeTruthy();
+  expect(await screen.findByText("Paperless isn't set up")).toBeTruthy();
+  expect(screen.getByRole("region", { name: "Active now" })).toBeTruthy();
+  expect(await screen.findByText("Breakdown")).toBeTruthy();
+  const cells = screen.getByRole("img", { name: /Health, last 24 hours/ }).children;
+  expect(cells).toHaveLength(24);
+  expect(cells[23]!.getAttribute("title")).toContain("No data");
 });

@@ -151,6 +151,21 @@ export type Setting = {
   choices?: string[];
 };
 export type SettingGroup = { group: string; label: string; settings: Setting[] };
+export type Tri = "ok" | "warn" | "fail";
+export type StatTile = { now: number | null; series: (number | null)[] };
+export type OverviewStats = {
+  tiles: { cpu: StatTile; ram: StatTile; disk: StatTile; live: StatTile };
+  health_hours: (Tri | null)[];
+  load: { labels: string[]; cpu: (number | null)[]; ram: (number | null)[] };
+  sessions_per_day: { date: string; count: number }[];
+};
+export type StreamingStats = { rows: { workstation: string; sub?: string; parts: Record<string, number> }[] };
+export type RelayStats = {
+  used_gb: number; free_gb: number; projected_gb: number; est_usd: number; budget_usd: number; relayed_pct: number;
+  daily: { date: string; gb: number }[]; monthly: { month: string; gb: number }[];
+  by_user: { name: string; gb: number }[]; by_workstation: { name: string; gb: number }[];
+  reasons: { reason: string; sessions: number }[];
+};
 export type TurnCheckStatus = "ok" | "warn" | "error" | "skip";
 export type TurnCheckItem = { id: string; label: string; status: TurnCheckStatus; detail: string };
 export type TurnCheck = { provider: string; checked_at: string; checks: TurnCheckItem[] };
@@ -389,8 +404,8 @@ export const api = {
 
   getResourceHistory: (range: string) =>
     request<{
-      aggregate_cpu: number[];
-      aggregate_ram: number[];
+      aggregate_cpu: (number | null)[];
+      aggregate_ram: (number | null)[];
       storage: { volumes_gb: number; images_gb: number; total_gb: number; available_gb: number };
     }>(`/system/metrics/history?range=${range}`),
 
@@ -496,4 +511,7 @@ export const api = {
   getTurnUsage: (month?: string) =>
     request<TurnUsage>(`/admin/turn-usage${month ? `?month=${month}` : ""}`),
   getTurnCheck: () => request<TurnCheck>("/admin/turn-check"),
+  getOverviewStats: (range: string) => request<OverviewStats>(`/admin/stats/overview?range=${range}`),
+  getStreamingStats: (days = 7, top = 5) => request<StreamingStats>(`/admin/stats/streaming?days=${days}&top=${top}`),
+  getRelayStats: (period: string) => request<RelayStats>(`/admin/stats/relay?period=${period}`),
 };

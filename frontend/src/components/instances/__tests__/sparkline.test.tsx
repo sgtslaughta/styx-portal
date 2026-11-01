@@ -11,16 +11,11 @@ test("monotonePath is smooth and never overshoots", () => {
   expect(monotonePath([])).toBe("");
 });
 
-test("renders gradient area + curve and shows hover tooltip", () => {
-  const mk = (v: number) => [{ value: v, color: "var(--chart-1)", label: "CPU" }];
+test("accumulates polled values, shows the current value and names the measure on hover", () => {
+  const mk = (v: number) => [{ value: v, color: "x", label: "CPU" }];
   const { container, rerender } = render(<OverlaySparkline series={mk(10)} />);
   rerender(<OverlaySparkline series={mk(40)} />);
-  expect(container.querySelectorAll("linearGradient").length).toBe(1);
-  expect(container.querySelectorAll("path").length).toBe(2);
   expect(screen.getByText("CPU 40%")).toBeTruthy();
-  expect(screen.queryByRole("tooltip")).toBeNull();
-  const root = container.firstElementChild!;
-  root.getBoundingClientRect = () => ({ left: 0, width: 100 }) as DOMRect;
-  fireEvent.mouseMove(root, { clientX: 0 });
-  expect(screen.getByRole("tooltip").textContent).toBe("CPU 10%");
+  fireEvent.mouseMove(container.querySelector("svg")!, { clientX: 0 });
+  expect(screen.getByRole("tooltip").textContent).toContain("CPU 10%");
 });

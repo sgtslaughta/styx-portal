@@ -1,11 +1,12 @@
 import type { ComponentType } from "react";
 import {
   Activity, Terminal, ScrollText, Users, KeyRound, HardDrive, Link2, BarChart3, UserCircle,
-  FolderClock, Heart, MonitorSmartphone, SlidersHorizontal, Globe, Grid3x3, Radio, Clock, ShieldCheck, Boxes,
+  FolderClock, Heart, Coins, MonitorSmartphone, SlidersHorizontal, Globe, Grid3x3, Radio, Clock, ShieldCheck, Boxes,
 } from "lucide-react";
 import { OverviewPane, PeoplePane, SecurityPane, TimeoutsPane, StreamingPane } from "./section-panels";
 import { MetricsSessions } from "@/components/system/metrics-sessions";
 import { MetricsLogs } from "@/components/system/metrics-logs";
+import { RelayCostPage } from "@/components/system/relay-cost-page";
 import { HealthPanel } from "@/components/system/health-panel";
 import { ServicesPanel } from "@/components/system/services-panel";
 import { WorkstationsPanel } from "@/components/system/workstations-panel";
@@ -14,6 +15,8 @@ import { ImageManager } from "@/components/system/image-manager";
 import { ConnectedAccounts } from "@/components/system/connected-accounts";
 import { MyProfiles } from "@/components/settings/my-profiles";
 import { MatrixCard } from "@/components/settings/matrix-card";
+
+export type NavCfg = { cfAnalytics: boolean };
 
 export type SettingsSection = {
   id: string;
@@ -24,7 +27,7 @@ export type SettingsSection = {
   /** Extra words the "Find a setting" filter matches besides the label. */
   keywords?: string[];
   /** Return false to hide the item (e.g. Relay cost without Cloudflare credentials). */
-  visible?: () => boolean;
+  visible?: (cfg: NavCfg) => boolean;
   Component: ComponentType;
 };
 
@@ -51,6 +54,10 @@ export const CATEGORIES: SettingsCategory[] = [
       { id: "sessions", label: "Sessions", icon: Terminal,
         description: "Running instances and their lifecycle actions.",
         tooltip: "View and control active instances", keywords: ["instances"], Component: MetricsSessions },
+      { id: "relay-cost", label: "Relay cost", icon: Coins,
+        description: "Relay data, projected cost and where it comes from.",
+        tooltip: "Cloudflare TURN relay usage and cost", keywords: ["turn", "cloudflare", "bandwidth", "budget"],
+        visible: (cfg) => cfg.cfAnalytics, Component: RelayCostPage },
       { id: "logs", label: "Logs", icon: ScrollText,
         description: "Recent system and session events.",
         tooltip: "System event log", keywords: ["events"], Component: MetricsLogs },
@@ -114,9 +121,9 @@ export const CATEGORIES: SettingsCategory[] = [
   },
 ];
 
-export function visibleCategories(isAdmin: boolean): SettingsCategory[] {
+export function visibleCategories(isAdmin: boolean, cfg: NavCfg = { cfAnalytics: false }): SettingsCategory[] {
   return CATEGORIES.filter((c) => isAdmin || !c.adminOnly)
-    .map((c) => ({ ...c, sections: c.sections.filter((s) => s.visible?.() ?? true) }))
+    .map((c) => ({ ...c, sections: c.sections.filter((s) => s.visible?.(cfg) ?? true) }))
     .filter((c) => c.sections.length > 0);
 }
 

@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { ChevronRight } from "lucide-react";
-import { api } from "@/api/client";
 import { useAuth } from "@/hooks/use-auth";
-import { useInstances } from "@/hooks/use-instances";
+import { useRailRows, type RailRow } from "@/hooks/use-rail-data";
 import { useSystemMetrics } from "@/hooks/use-system";
 import { cn } from "@/lib/utils";
 
@@ -13,7 +11,7 @@ const KEY = "styxRail";
 const MOBILE = "(max-width: 900px)";
 const isMobile = () => typeof matchMedia === "function" && matchMedia(MOBILE).matches;
 
-type Row = { id: string; text: string; sub?: string; tone: "ok" | "bad" | "use" };
+type Row = RailRow;
 
 const known = (v: number | null | undefined): v is number => typeof v === "number" && Number.isFinite(v);
 
@@ -66,14 +64,7 @@ function AdminRail({ forceCollapsed = false, onOpenAdmin, onWidthChange }: Props
   const collapsed = forceCollapsed || closed;
 
   const { data: m } = useSystemMetrics();
-  const { data: instancesData, isSuccess: instOk } = useInstances();
-  const instances = instancesData ?? [];
-  const { data: wsData, isSuccess: wsOk } = useQuery({ queryKey: ["workstations"], queryFn: api.listWorkstations, refetchInterval: 30000 });
-  const ws = wsData ?? [];
-  const { data: svcData, isSuccess: svcOk } = useQuery({ queryKey: ["services"], queryFn: api.listServices });
-  const services = svcData ?? [];
-  const activeReady = instOk && wsOk;
-  const checkReady = instOk && wsOk && svcOk;
+  const { active, check, activeReady, checkReady } = useRailRows();
 
   useEffect(() => {
     onWidthChange?.(collapsed || isMobile() ? RAIL_MIN : RAIL_W);
@@ -88,17 +79,6 @@ function AdminRail({ forceCollapsed = false, onOpenAdmin, onWidthChange }: Props
   const cpu = m?.host_cpu_pct;
   const mem = m?.host_ram_pct;
   const disk = m && m.disk_total_gb > 0 ? Math.round((m.disk_used_gb / m.disk_total_gb) * 100) : null;
-
-  const active: Row[] = [
-    ...instances.filter((i) => i.status === "running").map((i): Row => ({ id: `i${i.id}`, text: i.name, sub: "Container running", tone: "ok" })),
-    ...ws.filter((w) => w.in_use).map((w): Row => ({ id: `w${w.id}`, text: `${w.in_use_by ?? "Someone"} on ${w.name}`, tone: "ok" })),
-  ];
-  const check: Row[] = [
-    ...services.filter((s) => s.needs_setup).map((s): Row => ({ id: `s${s.id}`, text: `${s.name} isn't set up`, sub: "Add its address and sign-in", tone: "bad" })),
-    ...instances.filter((i) => i.status === "error").map((i): Row => ({ id: `e${i.id}`, text: `${i.name} hit an error`, sub: i.error_message ?? undefined, tone: "bad" })),
-    ...ws.filter((w) => w.status === "offline").map((w): Row => ({ id: `o${w.id}`, text: `${w.name} is offline`, tone: "use" })),
-    ...ws.filter((w) => w.agent_outdated && w.status !== "offline").map((w): Row => ({ id: `u${w.id}`, text: `${w.name} agent is out of date`, sub: "Updates when it comes online", tone: "use" })),
-  ];
 
   return (
     <aside

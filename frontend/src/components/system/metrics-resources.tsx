@@ -14,19 +14,20 @@ const TIME_RANGES = [
 
 function TimeSeriesChart({
   label,
-  data,
+  data: raw,
   color,
   max = 100,
   unit = "%",
   height = 80,
 }: {
   label: string;
-  data: number[];
+  data: (number | null)[];
   color: string;
   max?: number;
   unit?: string;
   height?: number;
 }) {
+  const data = raw.filter((v): v is number => typeof v === "number"); // null = no data that bucket
   if (data.length < 2) {
     return (
       <div className="flex items-center justify-center" style={{ height }}>
