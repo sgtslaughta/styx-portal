@@ -26,10 +26,51 @@ function applyClassDefs(mmd, elements) {
   }
 }
 
+// Edge labels: the converter centres them on their arrow, so they cross lines and pile up where
+// edges fan out. Unbind them, lift sequence labels above the arrow, push overlapping labels apart,
+// and back each with a page-coloured box (like Mermaid's label background).
+const PAD = 4;
+const hit = (a, b) => a.x < b.x + b.width + PAD && b.x < a.x + a.width + PAD &&
+  a.y < b.y + b.height + PAD && b.y < a.y + a.height + PAD;
+function tidyLabels(mmd, els) {
+  const byId = Object.fromEntries(els.map((e) => [e.id, e]));
+  const seq = /^\s*sequenceDiagram/m.test(mmd);
+  const labels = els.filter((t) => t.type === "text" && byId[t.containerId]?.type === "arrow");
+  for (const t of labels) {
+    const a = byId[t.containerId];
+    a.boundElements = (a.boundElements || []).filter((b) => b.id !== t.id);
+    t.containerId = null;
+    const [p0, p1] = [a.points[0], a.points[a.points.length - 1]];
+    if (seq && Math.abs(p1[1] - p0[1]) < 2) t.y = a.y + p0[1] - t.height - 6;
+  }
+  for (let pass = 0; pass < 20; pass++) {
+    let moved = false;
+    labels.sort((a, b) => a.y - b.y || a.x - b.x);
+    for (let i = 0; i < labels.length; i++)
+      for (let j = i + 1; j < labels.length; j++)
+        if (hit(labels[i], labels[j])) { labels[j].y = labels[i].y + labels[i].height + PAD; moved = true; }
+    if (!moved) break;
+  }
+  if (seq) return els;
+  const out = [];
+  for (const e of els) {
+    if (labels.includes(e)) {
+      const [bg] = convertToExcalidrawElements([{ type: "rectangle", x: e.x - 3, y: e.y - 1,
+        width: e.width + 6, height: e.height + 2, backgroundColor: "#ffffff", fillStyle: "solid",
+        strokeColor: "transparent", roughness: 0, strokeWidth: 1 }]);
+      bg.customData = { styxBg: 1 };
+      out.push(bg);
+    }
+    out.push(e);
+  }
+  return out;
+}
+
 window.convert = async (mmd) => {
   const { elements, files } = await parseMermaidToExcalidraw(mmd, { fontSize: 18 });
-  const converted = convertToExcalidrawElements(elements, { regenerateIds: false });
+  let converted = convertToExcalidrawElements(elements, { regenerateIds: false });
   applyClassDefs(mmd, converted);
+  converted = tidyLabels(mmd, converted);
   return {
     type: "excalidraw",
     version: 2,
@@ -58,7 +99,9 @@ function preDark(hex) {
 }
 
 window.render = async (scene, dark) => {
-  if (dark) scene = { ...scene, elements: scene.elements.map((e) => e.customData?.styx ? { ...e, strokeColor: preDark(e.strokeColor), backgroundColor: preDark(e.backgroundColor) } : e) };
+  if (dark) scene = { ...scene, elements: scene.elements.map((e) =>
+    e.customData?.styxBg ? { ...e, backgroundColor: preDark("#0d1117") } // GitHub dark page
+    : e.customData?.styx ? { ...e, strokeColor: preDark(e.strokeColor), backgroundColor: preDark(e.backgroundColor) } : e) };
   const svg = await exportToSvg({
     elements: scene.elements,
     appState: { ...scene.appState, exportBackground: false, exportWithDarkMode: dark },
