@@ -36,6 +36,7 @@
 }
 
 .dark {
+  color-scheme: dark; /* native controls (select popups, scrollbars) follow the theme */
   --background: #0F1C22;
   --foreground: #EDF1EF;
   --card: #15262D;
@@ -294,4 +295,10 @@ select:not([multiple]) { appearance: none; background-image: var(--select-chevro
   body * { visibility: hidden; }
   .matrix-print, .matrix-print * { visibility: visible; }
   .matrix-print { position: absolute; left: 0; top: 0; }
+}
+
+/* Native <select> popups: Firefox/Windows ignore color-scheme for options. */
+option {
+  background-color: var(--card);
+  color: var(--foreground);
 }

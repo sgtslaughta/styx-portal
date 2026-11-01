@@ -1,15 +1,11 @@
 import { motion, useReducedMotion } from "framer-motion";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/api/client";
 import { useInstances } from "@/hooks/use-instances";
-import { useSystemMetrics } from "@/hooks/use-system";
-import {
-  Activity,
-  Cpu,
-  MemoryStick,
-  HardDrive,
-  AlertTriangle,
-} from "lucide-react";
-import { StatTile } from "@/components/common/stat-tile";
+import { useSystemMetrics, useResourceHistory } from "@/hooks/use-system";
+import { AlertTriangle } from "lucide-react";
 import { formatDuration } from "@/lib/utils";
+import { OverviewCard, Figure, Sparkline, type Level } from "./overview-cards";
 
 function EventRow({ event }: { event: { type: string; instance: string; time: string; details?: string } }) {
   const typeColors: Record<string, string> = {
@@ -35,37 +31,49 @@ function EventRow({ event }: { event: { type: string; instance: string; time: st
   );
 }
 
+const HEALTH_LABELS: Record<string, string> = {
+  docker: "Docker engine", kubernetes: "Kubernetes API", database: "Database",
+  traefik_routes: "Traefik routing", disk: "Disk space", gpu: "GPU",
+};
+
 export function MetricsOverview() {
   const { data: instances } = useInstances();
   const { data: metrics } = useSystemMetrics();
+  const { data: history } = useResourceHistory("1h");
+  const { data: diag } = useQuery({
+    queryKey: ["diagnostics"], queryFn: api.getDiagnostics, refetchInterval: 30000,
+  });
   const reduce = useReducedMotion();
 
-  const counts = {
-    running: 0,
-    stopped: 0,
-    error: 0,
-    paused: 0,
-    total: 0,
-  };
-  instances?.forEach((inst) => {
-    counts.total++;
-    if (inst.status === "running" || inst.status === "idle") counts.running++;
-    else if (inst.status === "error") counts.error++;
-    else if (inst.status === "paused") counts.paused++;
-    else counts.stopped++;
+  const c = { running: 0, idle: 0, paused: 0, stopped: 0, error: 0, total: 0 };
+  instances?.forEach((i) => {
+    c.total++;
+    if (i.status === "running") c.running++;
+    else if (i.status === "idle") c.idle++;
+    else if (i.status === "paused") c.paused++;
+    else if (i.status === "error") c.error++;
+    else c.stopped++;
   });
 
   const events = metrics?.recent_events ?? [];
-  const hostInfo = metrics?.host ?? {};
-  const aggregateCpu = metrics?.aggregate_cpu ?? 0;
-  const aggregateRam = metrics?.aggregate_ram_mb ?? 0;
+  const errorEvents = events.filter((e) => e.type === "error").length;
+  const host = metrics?.host ?? {};
+  const cpu = metrics?.aggregate_cpu ?? 0;
+  const ram = metrics?.aggregate_ram_mb ?? 0;
   const diskUsed = metrics?.disk_used_gb ?? 0;
   const diskTotal = metrics?.disk_total_gb ?? 0;
+  const diskPct = diskTotal > 0 ? diskUsed / diskTotal : 0;
+
+  const checks = diag?.checks ?? [];
+  const failing = checks.filter((k) => !k.ok);
+  const healthLevel: Level = failing.length > 0 ? "error" : "ok";
+  const sessionLevel: Level = c.error > 0 ? "error" : c.paused > 0 ? "warn" : "ok";
+  const resLevel: Level = diskPct > 0.9 || cpu > 90 ? "error" : diskPct > 0.8 || cpu > 75 ? "warn" : "ok";
+  const logLevel: Level = errorEvents > 0 ? "warn" : "ok";
 
   return (
     <div className="space-y-6">
-      {/* Health banner */}
-      {counts.error > 0 && (
+      {c.error > 0 && (
         <motion.div
           initial={reduce ? false : { opacity: 0, height: 0 }}
           animate={reduce ? {} : { opacity: 1, height: "auto" }}
@@ -73,79 +81,59 @@ export function MetricsOverview() {
         >
           <AlertTriangle className="h-4 w-4 text-destructive" />
           <span className="text-sm text-destructive/80">
-            {counts.error} instance{counts.error > 1 ? "s" : ""} in error state
+            {c.error} instance{c.error > 1 ? "s" : ""} in error state
           </span>
         </motion.div>
       )}
 
-      {/* Stat cards grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatTile
-          label="Running"
-          value={counts.running}
-          sub={`of ${counts.total}`}
-          icon={Activity}
-        />
-        <StatTile
-          label="CPU Usage"
-          value={`${aggregateCpu.toFixed(1)}%`}
-          sub="aggregate"
-          icon={Cpu}
-        />
-        <StatTile
-          label="Memory"
-          value={aggregateRam >= 1024 ? `${(aggregateRam / 1024).toFixed(1)} GB` : `${Math.round(aggregateRam)} MB`}
-          sub="allocated"
-          icon={MemoryStick}
-        />
-        <StatTile
-          label="Disk"
-          value={`${diskUsed.toFixed(1)} GB`}
-          sub={diskTotal > 0 ? `of ${diskTotal.toFixed(0)} GB` : undefined}
-          icon={HardDrive}
-        />
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <OverviewCard section="health" level={healthLevel}>
+          <Figure label="Checks" value={`${checks.length - failing.length} ok / 0 warn / ${failing.length} fail`} />
+          <Figure label="Status" value={failing.length ? `${failing.length} failing` : "All passing"} />
+          {failing.slice(0, 3).map((k) => (
+            <div key={k.key} className="text-destructive">{HEALTH_LABELS[k.key] ?? k.key}</div>
+          ))}
+          <Figure label="Last checked" value={diag?.checked_at ? new Date(diag.checked_at).toLocaleTimeString() : "—"} />
+        </OverviewCard>
+
+        <OverviewCard section="sessions" level={sessionLevel}>
+          <Figure label="Running" value={c.running} />
+          <Figure label="Idle" value={c.idle} />
+          <Figure label="Paused" value={c.paused} />
+          <Figure label="Stopped" value={c.stopped} />
+          <Figure label="Error" value={c.error} />
+        </OverviewCard>
+
+        <OverviewCard section="resources" level={resLevel}>
+          <Figure label="CPU" value={`${cpu.toFixed(1)}%`} />
+          <Figure label="RAM" value={ram >= 1024 ? `${(ram / 1024).toFixed(1)} GB` : `${Math.round(ram)} MB`} />
+          <Figure label="Disk" value={`${diskUsed.toFixed(1)} / ${diskTotal.toFixed(0)} GB`} />
+          {host.gpu && <Figure label="GPU" value={host.gpu} />}
+          <Sparkline data={history?.aggregate_cpu ?? []} label="CPU, last hour" />
+        </OverviewCard>
+
+        <OverviewCard section="logs" level={logLevel}>
+          <Figure label="Recent events" value={events.length} />
+          <Figure label="Errors" value={`${errorEvents} error event${errorEvents === 1 ? "" : "s"}`} />
+          <div className="divide-y divide-border/40">
+            {events.slice(0, 3).map((ev, i) => <EventRow key={i} event={ev} />)}
+          </div>
+        </OverviewCard>
       </div>
 
-      {/* Two-column: Events + Host Info */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Recent Events */}
-        <div className="styx-card lg:col-span-2 rounded-lg">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border/40">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Recent Events
-            </span>
-            <span className="text-[10px] text-muted-foreground/60">{events.length} events</span>
-          </div>
-          <div className="max-h-[280px] overflow-y-auto divide-y divide-border/40">
-            {events.length === 0 ? (
-              <div className="py-8 text-center text-xs text-muted-foreground/60">No recent events</div>
-            ) : (
-              events.map((ev, i) => <EventRow key={i} event={ev} />)
-            )}
-          </div>
-        </div>
-
-        {/* Host Info */}
-        <div className="styx-card rounded-lg">
-          <div className="px-4 py-3 border-b border-border/40">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Host
-            </span>
-          </div>
-          <div className="p-4 space-y-3">
-            {[
-              { label: "Docker", value: hostInfo.docker_version ?? "—" },
-              { label: "GPU", value: hostInfo.gpu ?? "None" },
-              { label: "Containers", value: `${counts.total}` },
-              { label: "Network", value: hostInfo.network ?? "styx-portal" },
-              { label: "Uptime", value: hostInfo.uptime ? formatDuration(hostInfo.uptime) : "—" },
-            ].map((row) => (
-              <div key={row.label} className="flex items-center justify-between">
-                <span className="text-[11px] text-muted-foreground">{row.label}</span>
-                <span className="text-xs text-foreground font-mono">{row.value}</span>
-              </div>
-            ))}
-          </div>
+      <div className="styx-card rounded-lg p-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {[
+            { label: "Docker", value: host.docker_version ?? "—" },
+            { label: "Containers", value: `${c.total}` },
+            { label: "Network", value: host.network ?? "styx-portal" },
+            { label: "Uptime", value: host.uptime ? formatDuration(host.uptime) : "—" },
+          ].map((r) => (
+            <div key={r.label}>
+              <div className="text-[11px] text-muted-foreground">{r.label}</div>
+              <div className="font-mono text-xs text-foreground">{r.value}</div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
