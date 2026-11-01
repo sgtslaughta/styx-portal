@@ -145,3 +145,17 @@ describe("StreamingPage", () => {
     await waitFor(() => expect(updateSystemSettings).toHaveBeenCalledWith({ CLOUDFLARE_TURN_API_TOKEN: "s3cret" }));
   });
 });
+
+describe("reset to default", () => {
+  test("stages the default and counts as a change; sends nothing until Save", async () => {
+    const g = await getSystemSettings();
+    g[0].settings = g[0].settings.map((x: { key: string }) => x.key === "WORKSTATION_DEFAULT_CRF" ? { ...x, value: 30, default: 25 } : x);
+    getSystemSettings.mockResolvedValue(g);
+    mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Reset to default" }));
+    expect(updateSystemSettings).not.toHaveBeenCalled();
+    expect(screen.getByTestId("count").textContent).toBe("1");
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(updateSystemSettings).toHaveBeenCalledWith({ WORKSTATION_DEFAULT_CRF: 25 }));
+  });
+});

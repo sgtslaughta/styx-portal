@@ -74,7 +74,7 @@ export function StreamingPage() {
     return s && (
       <SettingField key={k} setting={s} value={edits[k]} disabled={save.isPending}
         onChange={(v) => stage(k, s.type === "int" && v !== "" ? Number(v) : v)} onRestore={() => drop(k)}
-        onClear={() => stage(k, null)} onResetDefault={() => drop(k)} />
+        onClear={() => stage(k, null)} onResetDefault={() => stage(k, s.default)} />
     );
   };
   const transport = val("WORKSTATION_TRANSPORT") ?? "websockets";

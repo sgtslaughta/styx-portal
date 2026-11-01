@@ -1,14 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api, type Setting, type SettingGroup, type SettingValue } from "@/api/client";
 import { SettingField, isChanged } from "@/components/settings/setting-field";
 import { SavePill } from "@/components/settings/save-pill";
 import { useUnsaved } from "@/components/settings/unsaved-context";
-import { TurnCostCard } from "./turn-cost-card";
-import { TurnSetupCheck } from "./turn-setup-check";
-import { TurnSetupGuide } from "./turn-setup-guide";
-import { isSettingVisible } from "./webrtc-fields";
 
 export function SystemSettingsPanel({ groups: only }: { groups?: string[] } = {}) {
   const qc = useQueryClient();
@@ -55,15 +51,6 @@ export function SystemSettingsPanel({ groups: only }: { groups?: string[] } = {}
     onError: (e: Error) => toast.error(e.message),
   });
 
-  const resetMutation = useMutation({
-    mutationFn: (key: string) => api.resetSystemSetting(key),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["system-settings"] });
-      toast.success("Setting reset to default");
-    },
-    onError: (e: Error) => toast.error(e.message),
-  });
-
   const drop = (key: string) => {
     setEdits((p) => { const n = { ...p }; delete n[key]; return n; });
     setErrors((p) => { const n = { ...p }; delete n[key]; return n; });
@@ -96,45 +83,30 @@ export function SystemSettingsPanel({ groups: only }: { groups?: string[] } = {}
     return <div className="text-sm text-muted-foreground">Loading settings...</div>;
   }
 
-  const provider = (g: SettingGroup) =>
-    edits.WEBRTC_TURN_PROVIDER ?? g.settings.find((s) => s.key === "WEBRTC_TURN_PROVIDER")?.value;
-  const busy = updateMutation.isPending || resetMutation.isPending;
+  const busy = updateMutation.isPending;
 
   return (
     <>
       <div data-testid="settings-grid" className="groups">
-        {groups.map((group: SettingGroup) => {
-          const web = group.group === "webrtc";
-          return (
-            <Fragment key={group.group}>
-              {web && (
-                <div data-testid="turn-guide-wrap" className="col-span-full">
-                  <TurnSetupGuide provider={provider(group)} />
-                </div>
-              )}
-              <fieldset className="grp">
-                <legend>{group.label}</legend>
-                {group.settings
-                  .filter((s) => !web || isSettingVisible(s.key, provider(group)))
-                  .map((setting: Setting) => (
-                    <SettingField
-                      key={setting.key}
-                      setting={setting}
-                      value={edits[setting.key]}
-                      error={errors[setting.key]}
-                      disabled={busy}
-                      onChange={(v) => handleChange(setting.key, v, setting)}
-                      onRestore={() => drop(setting.key)}
-                      onClear={() => setEdits((p) => ({ ...p, [setting.key]: null }))}
-                      onResetDefault={() => { drop(setting.key); resetMutation.mutate(setting.key); }}
-                    />
-                  ))}
-              </fieldset>
-              {web && <div className="col-span-full"><TurnSetupCheck provider={String(provider(group) ?? "none")} /></div>}
-              {web && <div data-testid="turn-cost-wrap" className="col-span-full"><TurnCostCard /></div>}
-            </Fragment>
-          );
-        })}
+        {groups.map((group: SettingGroup) => (
+          <fieldset key={group.group} className="grp">
+            <legend>{group.label}</legend>
+            {group.settings.map((setting: Setting) => (
+              <SettingField
+                key={setting.key}
+                setting={setting}
+                value={edits[setting.key]}
+                error={errors[setting.key]}
+                disabled={busy}
+                onChange={(v) => handleChange(setting.key, v, setting)}
+                onRestore={() => drop(setting.key)}
+                onClear={() => setEdits((p) => ({ ...p, [setting.key]: null }))}
+                // Staged like any edit: nothing is sent until Save changes.
+                onResetDefault={() => handleChange(setting.key, setting.default, setting)}
+              />
+            ))}
+          </fieldset>
+        ))}
       </div>
       <SavePill
         count={dirty}

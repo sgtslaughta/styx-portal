@@ -4,11 +4,12 @@ import { MemoryRouter } from "react-router";
 import { describe, test, expect, vi, beforeEach } from "vitest";
 
 const getSystemSettings = vi.fn();
+const resetSystemSetting = vi.fn();
 vi.mock("@/api/client", () => ({
   api: {
     getSystemSettings: (...a: unknown[]) => getSystemSettings(...a),
     updateSystemSettings: vi.fn(),
-    resetSystemSetting: vi.fn(),
+    resetSystemSetting: (...a: unknown[]) => resetSystemSetting(...a),
     getTurnUsage: vi.fn().mockResolvedValue({}),
   },
 }));
@@ -55,14 +56,25 @@ describe("settings groups", () => {
 });
 
 describe("settings grid", () => {
-  test("groups sit in the auto-fill grid; guide and cost span all columns", async () => {
+  test("groups sit in the auto-fill grid", async () => {
     getSystemSettings.mockResolvedValue([
       { group: "webrtc", label: "WebRTC", settings: [row("WEBRTC_TURN_PROVIDER", "str", "none")] },
     ]);
     wrap();
     const grid = await screen.findByTestId("settings-grid");
     expect(grid.className).toMatch(/groups/);
-    expect(screen.getByTestId("turn-guide-wrap").className).toMatch(/col-span-full/);
-    expect(screen.getByTestId("turn-cost-wrap").className).toMatch(/col-span-full/);
+  });
+});
+
+describe("reset to default", () => {
+  test("stages the default; nothing is sent until Save", async () => {
+    getSystemSettings.mockResolvedValue([
+      { group: "g", label: "G", settings: [{ ...row("SEC_PORT", "int", 5), default: 3 }] },
+    ]);
+    wrap();
+    fireEvent.click(await screen.findByRole("button", { name: "Reset to default" }));
+    expect(resetSystemSetting).not.toHaveBeenCalled();
+    expect((screen.getByLabelText("SEC_PORT") as HTMLInputElement).value).toBe("3");
+    expect(screen.getByText(/unsaved change$/)).toBeTruthy();
   });
 });

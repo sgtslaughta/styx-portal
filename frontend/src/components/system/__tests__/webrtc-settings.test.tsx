@@ -20,7 +20,6 @@ vi.mock("@/api/client", () => ({
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 import { SystemSettingsPanel } from "../system-settings-panel";
-import { estimateCost } from "../turn-cost-card";
 import { WorkstationStreamSettings } from "../workstation-stream-settings";
 import type { Workstation } from "@/api/client";
 
@@ -87,66 +86,6 @@ describe("secret rows", () => {
     await waitFor(() =>
       expect(updateSystemSettings).toHaveBeenCalledWith({ CLOUDFLARE_TURN_API_TOKEN: "abc" })
     );
-  });
-});
-
-describe("provider switch", () => {
-  test("shows only fields for the chosen provider", async () => {
-    getSystemSettings.mockResolvedValue(groups("none"));
-    wrap(<SystemSettingsPanel />);
-    await screen.findByLabelText("WEBRTC_MAX_SESSION_H");
-    expect(screen.queryByLabelText("TURN_HOST")).toBeNull();
-    expect(screen.queryByLabelText("CLOUDFLARE_TURN_TOKEN_ID")).toBeNull();
-    fireEvent.change(screen.getByLabelText("WEBRTC_TURN_PROVIDER"), { target: { value: "cloudflare" } });
-    expect(screen.getByLabelText("CLOUDFLARE_TURN_TOKEN_ID")).toBeTruthy();
-    expect(screen.queryByLabelText("TURN_HOST")).toBeNull();
-    fireEvent.change(screen.getByLabelText("WEBRTC_TURN_PROVIDER"), { target: { value: "generic" } });
-    expect(screen.getByLabelText("TURN_HOST")).toBeTruthy();
-    expect(screen.queryByLabelText("CLOUDFLARE_TURN_TOKEN_ID")).toBeNull();
-    expect(screen.getByLabelText("WEBRTC_MAX_SESSION_H")).toBeTruthy();
-  });
-});
-
-describe("TURN cost card", () => {
-  test("what-if math", () => {
-    const r = estimateCost(100, 20, 1000, 0.05);
-    expect(r.gb).toBeCloseTo(900);
-    expect(r.usd).toBe(0);
-    const r2 = estimateCost(200, 20, 1000, 0.05);
-    expect(r2.gb).toBeCloseTo(1800);
-    expect(r2.usd).toBeCloseTo(40);
-  });
-
-  test("renders usage", async () => {
-    getSystemSettings.mockResolvedValue(groups("none"));
-    wrap(<SystemSettingsPanel />);
-    expect(await screen.findByText("1234.0 GB")).toBeTruthy();
-    expect(screen.getByText("GAME-01")).toBeTruthy();
-    expect(screen.getByText("alice")).toBeTruthy();
-  });
-
-  test("over budget shows the WebRTC-paused banner and Cloudflare actual", async () => {
-    getSystemSettings.mockResolvedValue(groups("none"));
-    getTurnUsage.mockResolvedValue({ ...usage, budget_gb: 900, over_budget: true, cf_egress_bytes: 950e9 });
-    wrap(<SystemSettingsPanel />);
-    expect((await screen.findByRole("alert")).textContent).toMatch(/WebRTC is paused/);
-    expect(screen.getByText("Cloudflare actual (egress)")).toBeTruthy();
-  });
-
-  test("setup guide explains the Cloudflare steps", async () => {
-    getSystemSettings.mockResolvedValue(groups("cloudflare"));
-    wrap(<SystemSettingsPanel />);
-    fireEvent.click(await screen.findByRole("button", { name: /How to set up WebRTC/ }));
-    expect(screen.getByText(/Realtime → TURN Server/)).toBeTruthy();
-    expect(screen.getByText(/Account → Account Analytics → Read/)).toBeTruthy();
-    expect(screen.queryByText(/static-auth-secret/)).toBeNull();     // coturn steps hidden for cloudflare
-  });
-
-  test("error shows usage unavailable", async () => {
-    getSystemSettings.mockResolvedValue(groups("none"));
-    getTurnUsage.mockRejectedValue(new Error("404"));
-    wrap(<SystemSettingsPanel />);
-    expect(await screen.findByText("usage unavailable")).toBeTruthy();
   });
 });
 
