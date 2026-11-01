@@ -107,31 +107,40 @@ _SPECS: list[SettingSpec] = [
     _spec("PASSWORD_REQUIRE_SYMBOL", "password_policy", "Require symbol",
           "Require at least one non-alphanumeric symbol.", "bool", "PASSWORD_REQUIRE_SYMBOL"),
     _spec("WORKSTATION_TRANSPORT", "webrtc", "Default stream transport",
-          "Transport for workstation streams unless a workstation overrides it.", "enum",
+          "Transport for workstation streams unless a workstation overrides it. WebRTC is lower latency; "
+          "from networks that block peer-to-peer UDP it needs a TURN relay (below).", "enum",
           default="websockets", choices=("websockets", "webrtc")),
     _spec("WEBRTC_TURN_PROVIDER", "webrtc", "TURN provider",
-          "Relay used by WebRTC streams.", "enum",
+          "Relay for WebRTC when a direct connection is blocked. none = direct/STUN only; "
+          "cloudflare = Cloudflare Realtime TURN (billed per GB, 1,000 GB/month free); "
+          "generic = your own TURN server (e.g. coturn).", "enum",
           default="none", choices=("none", "cloudflare", "generic")),
     _spec("CLOUDFLARE_TURN_TOKEN_ID", "webrtc", "Cloudflare TURN token ID",
-          "Cloudflare Calls TURN key ID.", "secret"),
+          "Cloudflare dashboard > Realtime > TURN Server > Create (name it e.g. Styx-Portal). "
+          "Paste the 'Turn Token ID' shown after creation.", "secret"),
     _spec("CLOUDFLARE_TURN_API_TOKEN", "webrtc", "Cloudflare TURN API token",
-          "Cloudflare Calls TURN API token.", "secret"),
+          "The 'API Token' shown with the Turn Token ID when you create the TURN key. "
+          "Shown once: copy it then. Stored encrypted; never displayed again here.", "secret"),
     _spec("CLOUDFLARE_ACCOUNT_ID", "webrtc", "Cloudflare account ID",
-          "For actual TURN usage from Cloudflare analytics (optional).", "str", default=""),
+          "Optional, for actual usage. Dashboard: Ctrl/Cmd+K > 'Copy account ID' (or Workers & Pages > "
+          "Account Details > Account ID).", "str", default=""),
     _spec("CLOUDFLARE_ANALYTICS_TOKEN", "webrtc", "Cloudflare analytics token",
-          "API token with Account Analytics: Read; enables actual usage + budget on real data.",
+          "Optional. My Profile > API Tokens > Create Token > Create Custom Token; permission "
+          "Account > Account Analytics > Read, Account Resources: your account. Shown once. "
+          "Enables actual usage on the cost card and a budget based on Cloudflare's own figure.",
           "secret"),
-    _spec("TURN_HOST", "webrtc", "TURN host", "Generic TURN server host.", "str", default=""),
-    _spec("TURN_PORT", "webrtc", "TURN port", "Generic TURN server port.", "int",
+    _spec("TURN_HOST", "webrtc", "TURN host", "Hostname or IP of your TURN server (e.g. coturn), reachable from both browsers and workstations.", "str", default=""),
+    _spec("TURN_PORT", "webrtc", "TURN port", "Usually 3478 (UDP/TCP) or 5349 / 443 with TLS.", "int",
           default=3478, min=1, max=65535),
-    _spec("TURN_PROTOCOL", "webrtc", "TURN protocol", "Generic TURN transport.", "enum",
+    _spec("TURN_PROTOCOL", "webrtc", "TURN protocol", "udp is best for latency; tcp only if UDP is blocked between browser and relay.", "enum",
           default="udp", choices=("udp", "tcp")),
-    _spec("TURN_TLS", "webrtc", "TURN over TLS", "Use TLS to the generic TURN server.",
+    _spec("TURN_TLS", "webrtc", "TURN over TLS", "turns: (TLS) — gets through firewalls that only allow HTTPS; use with port 5349 or 443.",
           "bool", default=False),
     _spec("TURN_SHARED_SECRET", "webrtc", "TURN shared secret",
-          "coturn use-auth-secret HMAC secret (alternative to username/password).", "secret"),
-    _spec("TURN_USERNAME", "webrtc", "TURN username", "Static TURN username.", "str", default=""),
-    _spec("TURN_PASSWORD", "webrtc", "TURN password", "Static TURN password.", "secret"),
+          "coturn: the static-auth-secret from turnserver.conf (with use-auth-secret). Preferred over a "
+          "fixed username/password: credentials are short-lived.", "secret"),
+    _spec("TURN_USERNAME", "webrtc", "TURN username", "Only if your TURN server uses a fixed user (coturn: user=name:password). Leave empty with a shared secret.", "str", default=""),
+    _spec("TURN_PASSWORD", "webrtc", "TURN password", "Password for the fixed TURN user above.", "secret"),
     _spec("WEBRTC_MAX_SESSION_H", "webrtc", "WebRTC max session (h)",
           "Hard cap on a WebRTC session regardless of input; 0 = off.", "int",
           default=8, min=0, max=72),

@@ -130,6 +130,15 @@ describe("TURN cost card", () => {
     expect(screen.getByText("Cloudflare actual (egress)")).toBeTruthy();
   });
 
+  test("setup guide explains the Cloudflare steps", async () => {
+    getSystemSettings.mockResolvedValue(groups("cloudflare"));
+    wrap(<SystemSettingsPanel />);
+    fireEvent.click(await screen.findByRole("button", { name: /How to set up WebRTC/ }));
+    expect(screen.getByText(/Realtime → TURN Server/)).toBeTruthy();
+    expect(screen.getByText(/Account → Account Analytics → Read/)).toBeTruthy();
+    expect(screen.queryByText(/static-auth-secret/)).toBeNull();     // coturn steps hidden for cloudflare
+  });
+
   test("error shows usage unavailable", async () => {
     getSystemSettings.mockResolvedValue(groups("none"));
     getTurnUsage.mockRejectedValue(new Error("404"));

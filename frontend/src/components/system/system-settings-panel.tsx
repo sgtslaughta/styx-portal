@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SettingRow } from "./setting-row";
 import { TurnCostCard } from "./turn-cost-card";
+import { TurnSetupGuide } from "./turn-setup-guide";
 import { isSettingVisible } from "./webrtc-fields";
 
 export function SystemSettingsPanel() {
@@ -150,6 +151,9 @@ export function SystemSettingsPanel() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
+            {group.group === "webrtc" && (
+              <TurnSetupGuide provider={localState.WEBRTC_TURN_PROVIDER ?? providerRow(group)} />
+            )}
             <div className="space-y-4">
               {group.settings
                 .filter((s) =>
