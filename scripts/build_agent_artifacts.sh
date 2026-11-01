@@ -2,6 +2,9 @@
 # Build the prebuilt agent artifacts into the portal's artifact cache.
 # Run on the portal server host (needs docker + curl). Re-run to refresh.
 # Usage: scripts/build_agent_artifacts.sh [output-dir]   (default ./data/artifacts)
+# EXTRA_WHEELS=<dir>: wheels preferred over PyPI's, e.g. the patched pixelflux
+# 2.2.1+styxN from JMO-Labs/pixelflux@styx/2.2.1 (a local version still matches
+# enroll's `pixelflux==2.2.1` pin, and pip takes it over the plain release).
 set -euo pipefail
 
 OUT="${1:-./data/artifacts}"
@@ -20,10 +23,11 @@ PULSECTL_VER="24.12.0"
 echo "==> [1/2] wheelhouse-x86_64.tar.gz (wheels for cp310-cp314)"
 # Collect every wheel the agent venv needs (selkies 2.0 + transitive deps from
 # PyPI), per python minor version, so workstations never compile.
-docker run --rm -v "$WORK:/out" "$MANYLINUX_IMG" bash -ec '
+EXTRA="${EXTRA_WHEELS:-$WORK/none}"; mkdir -p "$WORK/none"
+docker run --rm -v "$WORK:/out" -v "$(realpath "$EXTRA"):/extra:ro" "$MANYLINUX_IMG" bash -ec '
   for PY in cp310-cp310 cp311-cp311 cp312-cp312 cp313-cp313 cp314-cp314; do
     PIP="/opt/python/$PY/bin/pip"
-    "$PIP" -q wheel --wheel-dir /out/wheelhouse \
+    "$PIP" -q wheel --wheel-dir /out/wheelhouse --find-links /extra \
       selkies==2.1.0 pixelflux==2.2.1 pcmflux==2.2.0 \
       setuptools=='"$SETUPTOOLS_VER"' aiohttp=='"$AIOHTTP_VER"' pulsectl=='"$PULSECTL_VER"'
   done
