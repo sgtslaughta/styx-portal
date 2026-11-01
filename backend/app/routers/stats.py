@@ -36,7 +36,8 @@ async def _series(session: AsyncSession, now: datetime):
 
 
 def _col(series, attr):
-    return [None if v is None else round(getattr(v, attr), 1) for _, v in series]
+    return [None if v is None or getattr(v, attr) is None else round(getattr(v, attr), 1)
+            for _, v in series]
 
 
 async def _load(session: AsyncSession, series, rng: str, now: datetime) -> dict:
@@ -48,7 +49,9 @@ async def _load(session: AsyncSession, series, rng: str, now: datetime) -> dict:
     for r in await metric_rollup.hour_rows(session, days, now):
         daily.setdefault(r.ts_hour.date().isoformat(), []).append(r)
     labels = sorted(daily)
-    avg = lambda rows, a: round(sum(getattr(r, a) for r in rows) / len(rows), 1)  # noqa: E731
+    def avg(rows, a):
+        v = [getattr(r, a) for r in rows if getattr(r, a) is not None]
+        return round(sum(v) / len(v), 1) if v else None
     return {"labels": labels, "cpu": [avg(daily[d], "cpu_avg") for d in labels],
             "ram": [avg(daily[d], "ram_avg") for d in labels]}
 
@@ -65,8 +68,10 @@ async def overview(range: Literal["24h", "7d", "30d"] = "24h",
         StreamSession.ended_at.is_(None)))).all())
     last = lambda col: next((x for x in reversed(col) if x is not None), None)  # noqa: E731
     cpu, ram, disk, lv = (_col(series, a) for a in ("cpu_avg", "ram_avg", "disk_pct", "live_max"))
-    health = [(v.health if v else "ok") for _, v in series]
-    health[-1] = max(health[-1], health_store.current_level(), key=("ok", "warn", "fail").index)
+    health = [(v.health if v else None) for _, v in series]
+    lvl = health_store.current_level()
+    if lvl and (health[-1] is None or ("ok", "warn", "fail").index(lvl) > ("ok", "warn", "fail").index(health[-1])):
+        health[-1] = lvl
     return {
         "tiles": {
             "cpu": {"now": host.get("cpu", last(cpu)), "series": cpu},

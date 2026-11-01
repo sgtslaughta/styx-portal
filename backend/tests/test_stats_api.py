@@ -18,7 +18,7 @@ async def test_overview_shape(admin_client):
     assert set(j["tiles"]) == {"cpu", "ram", "disk", "live"}
     assert all(len(t["series"]) == 24 for t in j["tiles"].values())
     assert j["tiles"]["cpu"]["series"][-1] == 12.0
-    assert len(j["health_hours"]) == 24 and set(j["health_hours"]) <= {"ok", "warn", "fail"}
+    assert len(j["health_hours"]) == 24 and set(j["health_hours"]) <= {"ok", "warn", "fail", None}
     assert len(j["sessions_per_day"]) == 14 and set(j["load"]) == {"labels", "cpu", "ram"}
 
 
@@ -52,3 +52,33 @@ async def test_relay_shape(admin_client, monkeypatch, period):
 async def test_system_metrics_host_fields(admin_client):
     j = (await admin_client.get("/api/system/metrics")).json()
     assert {"host_cpu_pct", "host_ram_pct", "host_ram_total_mb"} <= set(j)
+
+
+async def test_overview_gap_hours_are_null(admin_client):
+    from app.services import health_store
+    metric_rollup.reset()
+    health_store.reset()
+    j = (await admin_client.get("/api/admin/stats/overview")).json()
+    assert j["health_hours"] == [None] * 24
+    assert j["tiles"]["cpu"]["series"] == [None] * 24
+
+
+async def test_heartbeat_stores_relay_reason(client, session):
+    from app.models import StreamSession, User, Workstation
+    from app.services.workstations import sha256_hex
+    u = User(username="al", password_hash="x", role="member")
+    session.add(u)
+    await session.commit()
+    w = Workstation(name="B", hostname="b", subdomain="b", created_by=u.id,
+                    agent_token_hash=sha256_hex("tok"), status="online",
+                    occupied_by=u.id, active_connections=1)
+    session.add(w)
+    await session.commit()
+    h = {"Authorization": "Bearer tok"}
+    body = {"health": {"active_connections": 1, "turn_bytes": 1000}, "relay_reason": "mobile"}
+    # first beat opens the session, second (with relay bytes) flags it
+    assert (await client.post("/api/agent/heartbeat", json={"health": {"active_connections": 1}}, headers=h)).status_code == 200
+    assert (await client.post("/api/agent/heartbeat", json=body, headers=h)).status_code == 200
+    from sqlmodel import select
+    r = (await session.exec(select(StreamSession))).one()
+    assert r.relayed and r.relay_reason == "mobile"

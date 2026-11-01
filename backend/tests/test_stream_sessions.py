@@ -80,3 +80,39 @@ async def test_relay_reason_and_aggregates(session):
     d = await turn_usage.daily_bytes(session, 3)
     assert len(d) == 3 and d[-1]["bytes"] == 5 * 10 ** 6
     assert (await turn_usage.monthly_bytes(session, 6))[-1]["bytes"] == 5 * 10 ** 6
+
+
+async def test_dangling_closed_at_last_heartbeat_not_now(session):
+    u, w = await _ws(session)
+    w.last_heartbeat = NOW - timedelta(hours=5)
+    session.add(w)
+    session.add(StreamSession(target_kind="workstation", target_id=w.id, user_id=u.id,
+                              started_at=NOW - timedelta(hours=8)))
+    session.add(StreamSession(target_kind="instance", target_id="i1", user_id=u.id,
+                              started_at=NOW - timedelta(hours=3)))
+    await session.commit()
+    assert await ss.close_dangling(session, 90, now=NOW) == 2
+    ends = {r.target_kind: r.ended_at for r in (await session.exec(select(StreamSession))).all()}
+    assert ends["workstation"] == NOW - timedelta(hours=5)
+    assert ends["instance"] == NOW - timedelta(hours=3)
+
+
+async def test_sync_instances_open_close(session):
+    from app.models import Instance, ServiceTemplate
+    u, _ = await _ws(session)
+    t = ServiceTemplate(name="t", display_name="T", image="img")
+    session.add(t)
+    await session.commit()
+    i = Instance(template_id=t.id, owner_id=u.id, name="i", subdomain="i", status="running")
+    session.add(i)
+    await session.commit()
+    await ss.sync_instances(session, NOW)
+    await ss.sync_instances(session, NOW)
+    await session.commit()
+    rows = (await session.exec(select(StreamSession).where(StreamSession.target_kind == "instance"))).all()
+    assert len(rows) == 1 and rows[0].ended_at is None and rows[0].user_id == u.id
+    i.status = "idle"
+    session.add(i)
+    await ss.sync_instances(session, NOW)
+    await session.commit()
+    assert (await session.exec(select(StreamSession).where(StreamSession.target_kind == "instance"))).one().ended_at is not None

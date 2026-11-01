@@ -82,12 +82,12 @@ class MetricHour(SQLModel, table=True):
     __tablename__ = "metric_hours"
 
     ts_hour: datetime = Field(primary_key=True)   # UTC, naive, top of the hour
-    cpu_avg: float = 0
-    cpu_max: float = 0
-    ram_avg: float = 0
+    cpu_avg: float | None = None                  # None = no samples
+    cpu_max: float | None = None
+    ram_avg: float | None = None
     disk_pct: float = 0
     live_max: int = 0
-    health: str = "ok"                            # ok | warn | fail
+    health: str | None = None                     # ok | warn | fail (None = no data)
 
 
 class StreamSession(SQLModel, table=True):

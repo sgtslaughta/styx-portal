@@ -50,10 +50,10 @@ def _fold(samples: list[dict]) -> dict:
     cpus = [s["cpu"] for s in samples if s["cpu"] is not None]
     rams = [s["ram"] for s in samples if s["ram"] is not None]
     return {
-        "cpu_avg": sum(cpus) / len(cpus) if cpus else 0, "cpu_max": max(cpus, default=0),
-        "ram_avg": sum(rams) / len(rams) if rams else 0,
+        "cpu_avg": sum(cpus) / len(cpus) if cpus else None, "cpu_max": max(cpus, default=None),
+        "ram_avg": sum(rams) / len(rams) if rams else None,
         "disk_pct": samples[-1]["disk"], "live_max": max(s["live"] for s in samples),
-        "health": max((s["health"] for s in samples), key=_RANK.get),
+        "health": max((s["health"] for s in samples if s["health"]), key=_RANK.get, default=None),
     }
 
 
@@ -83,10 +83,14 @@ async def rollup(session: AsyncSession, now: datetime | None = None, force: bool
         if row is None:
             session.add(MetricHour(ts_hour=h, **v))
             continue
-        row.cpu_avg, row.ram_avg = (row.cpu_avg + v["cpu_avg"]) / 2, (row.ram_avg + v["ram_avg"]) / 2
-        row.cpu_max, row.live_max = max(row.cpu_max, v["cpu_max"]), max(row.live_max, v["live_max"])
+        for k in ("cpu_avg", "ram_avg"):
+            old, new = getattr(row, k), v[k]
+            setattr(row, k, new if old is None else old if new is None else (old + new) / 2)
+        for k in ("cpu_max", "health"):
+            vals = [x for x in (getattr(row, k), v[k]) if x is not None]
+            setattr(row, k, max(vals, key=_RANK.get if k == "health" else None, default=None))
+        row.live_max = max(row.live_max, v["live_max"])
         row.disk_pct = v["disk_pct"]
-        row.health = max(row.health, v["health"], key=_RANK.get)
         session.add(row)
     await session.exec(delete(MetricHour).where(
         MetricHour.ts_hour < cur - timedelta(days=RETENTION_DAYS)))

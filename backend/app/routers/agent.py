@@ -89,8 +89,6 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
             # Re-arm the idle latch: a future session starts fresh.
             ws.idle_disconnect_sent = False
     await stream_sessions.sync_workstation(session, ws)   # idempotent open/close
-    if relayed:
-        await stream_sessions.mark_relayed(session, ws, body.relay_reason)
     # Resolve effective stream settings: per-workstation override else system default.
     sys_settings_dict = stream_sys_settings(_sys_settings)
     sys_settings_dict["TURN_OVER_BUDGET"] = await turn_over_budget(session)

@@ -70,3 +70,10 @@ def test_host_metrics_no_proc(monkeypatch):
         raise OSError
     monkeypatch.setattr("builtins.open", boom)
     assert host_metrics.cpu_pct() is None and host_metrics.ram() is None
+
+
+async def test_ram_only_bucket_has_null_cpu(session):
+    metric_rollup.record_host(None, 40, ts=H)
+    await metric_rollup.rollup(session, now=H + timedelta(hours=1))
+    r = (await session.exec(select(MetricHour))).one()
+    assert r.cpu_avg is None and r.cpu_max is None and r.ram_avg == 40
