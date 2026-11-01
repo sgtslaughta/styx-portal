@@ -9,6 +9,9 @@ permissions:
   packages: write      # push to GHCR
   id-token: write
 
+env:
+  IMAGE_OWNER: jmo-labs   # ghcr needs lowercase; github.repository_owner is "JMO-Labs"
+
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -79,12 +82,12 @@ jobs:
           file: ${{ matrix.dockerfile }}
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/styx-${{ matrix.name }}:${{ needs.release.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/styx-${{ matrix.name }}:latest
+            ghcr.io/${{ env.IMAGE_OWNER }}/styx-${{ matrix.name }}:${{ needs.release.outputs.version }}
+            ghcr.io/${{ env.IMAGE_OWNER }}/styx-${{ matrix.name }}:latest
       - name: Trivy image scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ghcr.io/${{ github.repository_owner }}/styx-${{ matrix.name }}:${{ needs.release.outputs.version }}
+          image-ref: ghcr.io/${{ env.IMAGE_OWNER }}/styx-${{ matrix.name }}:${{ needs.release.outputs.version }}
           severity: HIGH,CRITICAL
           exit-code: "1"
           ignore-unfixed: true
@@ -122,12 +125,12 @@ jobs:
           file: images/desktop/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/styx-desktop:${{ needs.release.outputs.version }}
-            ghcr.io/${{ github.repository_owner }}/styx-desktop:latest
+            ghcr.io/${{ env.IMAGE_OWNER }}/styx-desktop:${{ needs.release.outputs.version }}
+            ghcr.io/${{ env.IMAGE_OWNER }}/styx-desktop:latest
       - name: Trivy image scan (desktop)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ghcr.io/${{ github.repository_owner }}/styx-desktop:${{ needs.release.outputs.version }}
+          image-ref: ghcr.io/${{ env.IMAGE_OWNER }}/styx-desktop:${{ needs.release.outputs.version }}
           severity: HIGH,CRITICAL
           exit-code: "1"
           ignore-unfixed: true
