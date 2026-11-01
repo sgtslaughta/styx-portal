@@ -395,3 +395,11 @@ def test_encoder_ladder_from_hardware(tmp_path, monkeypatch):
     _stub(monkeypatch, hw=())
     cmd, _ = engine.build_selkies_cmd(cfg, 1)
     assert "--encoder=h264enc" in cmd
+
+
+def test_nvenc_encoders_by_generation():
+    assert engine.nvenc_encoders("8.9") == ("av1enc", "h265enc")   # RTX 4090
+    assert engine.nvenc_encoders("12.0\n") == ("av1enc", "h265enc")
+    assert engine.nvenc_encoders("8.6") == ("h265enc",)            # RTX 30
+    assert engine.nvenc_encoders("5.0") == ()
+    assert engine.nvenc_encoders("") == ()
