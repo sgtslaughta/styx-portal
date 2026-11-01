@@ -326,6 +326,7 @@ export const api = {
   },
   getRegistryImage: (name: string) => request<RegistryImage>(`/registry/images/${name}`),
 
+  getRuntime: () => request<{ runtime: "docker" | "kubernetes" }>("/system/runtime"),
   getGpuInfo: () => request<{ available: boolean; type: string | null; devices: string[] }>("/system/gpu"),
 
   listImages: () => request<PulledImage[]>("/images"),

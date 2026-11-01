@@ -254,6 +254,11 @@ async def instance_unavailable(request: Request, session: AsyncSession = Depends
     return HTMLResponse(content=_INSTANCE_STOPPED_HTML)
 
 
+@app.get("/api/system/runtime")
+async def system_runtime(user: User = Depends(get_current_user)):
+    return {"runtime": "kubernetes" if _settings.ROUTE_BACKEND == "k8s" else "docker"}
+
+
 @app.get("/api/system/gpu")
 async def system_gpu(user: User = Depends(get_current_user)):
     from app.services.docker_manager import detect_gpu

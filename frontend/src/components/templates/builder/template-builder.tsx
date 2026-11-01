@@ -48,17 +48,21 @@ const SECTIONS = [
 export function TemplateBuilder({
   cfg,
   isAdmin,
+  k8s = false,
 }: {
   cfg: LaunchConfig;
   isAdmin: boolean;
+  k8s?: boolean;
 }) {
   const [active, setActive] = useState("basics");
-  const Active = SECTIONS.find((s) => s.id === active)!.Comp;
+  // Security (privileged/devices) is Docker-only; k8s refuses or ignores it.
+  const sections = SECTIONS.filter((s) => !(k8s && s.id === "security"));
+  const Active = (sections.find((s) => s.id === active) ?? sections[0]!).Comp;
 
   return (
     <div className="flex gap-4 min-h-[300px]">
       <nav className="w-40 shrink-0 space-y-1">
-        {SECTIONS.map((s) => (
+        {sections.map((s) => (
           <button
             key={s.id}
             type="button"
@@ -75,7 +79,12 @@ export function TemplateBuilder({
         ))}
       </nav>
       <div className="min-w-0 flex-1">
-        <Active cfg={cfg} isAdmin={isAdmin} />
+        {k8s && (
+          <p className="px-4 pt-2 text-xs text-muted-foreground">
+            Docker-only settings are hidden on Kubernetes.
+          </p>
+        )}
+        <Active cfg={cfg} isAdmin={isAdmin} k8s={k8s} />
       </div>
     </div>
   );
