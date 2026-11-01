@@ -233,3 +233,15 @@ def test_kill_flag_path_matches_agent():
     import agent_procs
     import gateway_webrtc
     assert agent_procs.KILL_SUFFIX == gateway_webrtc.KILL_SUFFIX
+
+
+def test_relay_credit_capped_by_elapsed_time():
+    import gateway_webrtc as gw
+    g = gw.WebRTCGateway.__new__(gw.WebRTCGateway)
+    g.turn_bytes = 0
+    s = gw.Session("s1", 1000.0)
+    g.credit(s, 10**12, now=1001.0)            # 1 TB claimed after 1 s
+    assert g.turn_bytes <= 250e6 / 8 + gw.RELAY_SLACK_B
+    before = g.turn_bytes
+    g.credit(s, 10**12 + 5_000_000, now=1011.0)  # honest 5 MB over 10 s counts fully
+    assert g.turn_bytes - before == 5_000_000

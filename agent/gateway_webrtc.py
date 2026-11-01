@@ -24,6 +24,10 @@ FINAL_CODE = 4001       # idle/age cut; the client must not reconnect
 GRACE_S = 60.0          # a session keeps its age/idle clocks across a signaling reconnect
 HEARTBEAT_S = 30.0
 MAX_RELAY = 10**13      # sanity bound on a client-reported counter
+# Client-reported relay bytes are advisory (cost estimate only, never billing or
+# access): a credit can't exceed elapsed time at this bitrate plus a little slack.
+MAX_RELAY_BPS = 250e6
+RELAY_SLACK_B = 10**7
 KILL_SUFFIX = ".kill"   # <state file>.kill = "restart selkies now" (agent_procs polls it)
 
 
@@ -32,6 +36,7 @@ class Session:
         self.sid, self.opened, self.last_activity = sid, now, 0.0
         self.socks: set = set()
         self.relay_last = 0
+        self.relay_ts = now
         self.dead = False
         self.gone_at = 0.0
 
@@ -78,11 +83,14 @@ class WebRTCGateway:
     def busy(self, sid: str, now: float) -> bool:
         return self.viewers.busy(sid, now, self.hold_s)
 
-    def credit(self, s: Session, relay: int) -> None:
-        """`relay` is cumulative per sid (monotonic page-side): count positive deltas."""
+    def credit(self, s: Session, relay: int, now: float | None = None) -> None:
+        """`relay` is cumulative per sid (monotonic page-side): count positive
+        deltas, each capped at what MAX_RELAY_BPS could carry since the last one."""
         if relay > s.relay_last:
-            self.turn_bytes += relay - s.relay_last
-            s.relay_last = relay
+            now = time.time() if now is None else now
+            cap = max(0.0, now - s.relay_ts) * MAX_RELAY_BPS / 8 + RELAY_SLACK_B
+            self.turn_bytes += int(min(relay - s.relay_last, cap))
+            s.relay_last, s.relay_ts = relay, now
 
     def kill(self, why: str) -> None:
         """Ask the supervisor to restart selkies (drops the peer connection)."""
