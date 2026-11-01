@@ -53,6 +53,7 @@ class WebRTCGateway:
         self.viewers, self.seat = viewers, seat
         self.live_port, self.write_state, self.touch, self.kill_path = live_port, write_state, touch, kill_path
         self.attach, self.detach, self.submit_size, self.log = attach, detach, submit_size, log
+        self.gamemode = None
 
     @property
     def n(self) -> int:
@@ -147,7 +148,7 @@ class WebRTCGateway:
         rec = self.viewers.by_vid.get(sid) if sid else None
         if rec is None:
             rec = self.viewers.by_vid.get(self.viewers.newest())
-        if rec is not None and self.seat:
+        if rec is not None and self.seat and not (self.gamemode and self.gamemode.pin):
             self.submit_size(rec, req)
         return web.Response(status=204)
 

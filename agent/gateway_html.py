@@ -145,6 +145,24 @@ def inject_webrtc(html: str, enabled: bool) -> str:
     return html.replace("</head>", WEBRTC_JS + "</head>", 1)
 
 
+# Game mode (selkies posts gamingModeUpdate): pin the seat size, and go
+# fullscreen on the next click so selkies arms pointer + keyboard lock.
+GAMEMODE_JS = r"""<script id="styx-gamemode">(function(){var on=false;
+function post(b){try{fetch('styx/gamemode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b),keepalive:true}).catch(function(){})}catch(e){}}
+addEventListener('message',function(e){try{if(e.source!==window||!e.data||e.data.type!=='gamingModeUpdate')return;
+on=!!e.data.active;var d=devicePixelRatio||1;
+post(on?{active:true,w:screen.width,h:screen.height,dpr:d}:{active:false,w:innerWidth,h:innerHeight,dpr:d})}catch(x){}});
+addEventListener('pointerdown',function(e){try{if(on&&e.button===0&&!document.fullscreenElement)document.documentElement.requestFullscreen({navigationUI:'hide'}).catch(function(){})}catch(x){}},true);
+})();</script>"""
+
+
+def inject_gamemode(html: str) -> str:
+    """Both transports: game-mode seat pin + auto-fullscreen (GAMEMODE_JS)."""
+    if "</head>" not in html:
+        return html
+    return html.replace("</head>", GAMEMODE_JS + "</head>", 1)
+
+
 def inject_favicon(html: str, etag: str) -> str:
     """Replace the selkies tab icon with the workstation icon (styx-favicon, relative: streams live under /w/<sub>/).
     Selkies sets its own <link rel=icon>, so remove those and re-assert ours
