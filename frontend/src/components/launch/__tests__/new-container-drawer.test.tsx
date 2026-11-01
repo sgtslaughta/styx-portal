@@ -141,4 +141,17 @@ describe("NewContainerDrawer", () => {
     fireEvent.keyDown(await screen.findByLabelText(/search linuxserver/i), { key: "Escape" });
     await waitFor(() => expect(trigger).toHaveFocus());
   });
+
+  test("Advanced resource edits win over the preset", async () => {
+    wrap("user");
+    fireEvent.click(await screen.findByText("firefox"));
+    await screen.findByRole("button", { name: /standard/i });
+    fireEvent.click(screen.getByText(/^Advanced/));
+    fireEvent.click(screen.getByRole("button", { name: /resources/i }));
+    const cpu = screen.getAllByRole("spinbutton")[1]!;
+    fireEvent.change(cpu, { target: { value: "3" } });
+    fireEvent.click(screen.getByRole("button", { name: /^launch$/i }));
+    await waitFor(() => expect(m.createTemplate).toHaveBeenCalled());
+    expect(m.createTemplate.mock.calls[0]![0]).toMatchObject({ cpu_limit: "3", memory_limit: "4g" });
+  });
 });

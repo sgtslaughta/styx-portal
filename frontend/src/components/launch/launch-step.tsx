@@ -33,7 +33,10 @@ export function LaunchStep({ target, onClose }: { target: LaunchTarget; onClose:
   const [idle, setIdle] = useState<Idle>(template?.session_config?.never_timeout ? "keep" : "stop");
   const [saveSetup, setSaveSetup] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [useGpu, setUseGpu] = useState(!!template);
+  const [tmplGpu, setTmplGpu] = useState(true);
+  // New launches: cfg is the single source for GPU (preset seeds it, Advanced can edit it).
+  const useGpu = template ? tmplGpu : cfg.gpuEnabled;
+  const setUseGpu = (v: boolean) => { if (template) setTmplGpu(v); else cfg.setGpuEnabled(v); };
   const preset = presets.find((p) => p.id === presetId);
   const canGpu = !!user?.can_use_gpu && (template ? template.gpu_enabled : true);
   const hasProfile = !!profileMountOf(cfg.profileMount, cfg.volumes);
@@ -48,7 +51,7 @@ export function LaunchStep({ target, onClose }: { target: LaunchTarget; onClose:
   // Presets size new containers; a saved setup keeps its own size.
   useEffect(() => {
     if (template || !preset) return;
-    cfg.setCpuLimit(String(preset.cpus)); cfg.setMemoryLimit(`${preset.memory_gb}g`); cfg.setGpuEnabled(preset.gpu); setUseGpu(preset.gpu);
+    cfg.setCpuLimit(String(preset.cpus)); cfg.setMemoryLimit(`${preset.memory_gb}g`); cfg.setGpuEnabled(preset.gpu);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preset?.id, template]);
 
@@ -57,7 +60,6 @@ export function LaunchStep({ target, onClose }: { target: LaunchTarget; onClose:
     setBusy(true);
     try {
       const data = cfg.buildTemplateData();
-      if (!template && preset) Object.assign(data, { cpu_limit: String(preset.cpus), memory_limit: `${preset.memory_gb}g`, gpu_enabled: useGpu, gpu_count: useGpu ? 1 : 0 });
       const tmpl = await resolveTemplate({ template, data, create: createTemplate.mutateAsync, regName: image?.name, userId: user?.id, isAdmin });
       const sc: SessionConfig = { ...(template?.session_config ?? data.session_config), timeout_action: "stop", never_timeout: idle === "keep" };
       await createInstance.mutateAsync({
