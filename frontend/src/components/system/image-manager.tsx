@@ -4,6 +4,7 @@ import { Trash2, HardDrive, AlertTriangle } from "lucide-react";
 import { useImages, useDeleteImage, usePurgeImages } from "@/hooks/use-images";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { toast } from "sonner";
+import { SetupsSection } from "@/components/system/setups-section";
 
 function formatSize(mb: number | null) {
   if (mb === null) return "—";
@@ -21,6 +22,15 @@ function timeAgo(iso: string) {
 }
 
 export function ImageManager() {
+  return (
+    <div className="space-y-8">
+      <SetupsSection />
+      <Images />
+    </div>
+  );
+}
+
+function Images() {
   const { data: images, isLoading } = useImages();
   const deleteMut = useDeleteImage();
   const purgeMut = usePurgeImages();
