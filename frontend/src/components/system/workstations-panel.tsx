@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { toast } from "sonner";
+import { AgentUpdateChip } from "@/components/system/agent-update-chip";
 import { WorkstationIcon } from "@/components/system/workstation-icon";
 import { WorkstationIconSettings } from "@/components/system/workstation-icon-settings";
 import { WorkstationSpecs } from "@/components/system/workstation-specs";
@@ -57,6 +59,12 @@ export function WorkstationsPanel() {
     setUpdCopied(which);
     setTimeout(() => setUpdCopied(null), 1500);
   };
+  const requestUpdate = (ws: Workstation) =>
+    api.requestAgentUpdate(ws.id).then(refresh).catch((e) => toast.error(String(e)));
+  const updateAll = () =>
+    api.requestAgentUpdateOutdated()
+      .then((r) => { toast.success(`Update requested for ${r.requested} workstation(s)`); refresh(); })
+      .catch((e) => toast.error(String(e)));
   const toggleAllUsers = (ws: Workstation) =>
     api.updateWorkstation(ws.id, { all_users: !ws.all_users }).then(refresh);
   const toggleUser = (ws: Workstation, uid: string) => {
@@ -104,6 +112,11 @@ export function WorkstationsPanel() {
               >
                 <RefreshCw className="h-4 w-4" />
               </Button>
+              {rows.some((w) => w.agent_outdated && w.status === "online") && (
+                <Button onClick={updateAll} variant="secondary" size="sm">
+                  Update all outdated
+                </Button>
+              )}
               <Button onClick={mint} size="sm">
                 Enroll workstation
               </Button>
@@ -181,11 +194,18 @@ export function WorkstationsPanel() {
                   <span className={`ml-2 rounded px-2 py-0.5 text-xs ${STATUS_STYLES[ws.status] ?? ""}`}>
                     {ws.status}
                   </span>
+                  <AgentUpdateChip state={ws.update_state} error={ws.update_error} />
                 </div>
                 <div className="flex gap-2">
+                  {ws.agent_outdated && !["requested", "updating"].includes(ws.update_state ?? "") && (
+                    <Button onClick={() => requestUpdate(ws)} size="sm">
+                      Update agent
+                    </Button>
+                  )}
                   {ws.agent_outdated && (
-                    <Button onClick={() => openUpdate(ws)} variant="secondary" size="sm">
-                      Update
+                    <Button onClick={() => openUpdate(ws)} variant="secondary" size="sm"
+                            title="Copy-paste one-liner">
+                      Manual
                     </Button>
                   )}
                   <Button

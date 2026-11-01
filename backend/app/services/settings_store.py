@@ -151,6 +151,9 @@ _SPECS: list[SettingSpec] = [
           "When this month's relayed total reaches it, every workstation falls back to "
           "WebSockets (no TURN) until the next month or until it is raised; 0 = no limit.",
           "int", default=900, min=0, max=1000000),
+    _spec("AGENT_AUTO_UPDATE", "workstation_features", "Auto-update workstation agents",
+          "Outdated agents update themselves on their next check-in; a failed update rolls back "
+          "and is not retried until an admin asks again.", "bool", default=False),
     _spec("TURN_USD_PER_GB", "webrtc", "TURN price (USD/GB)",
           "Price per GB beyond the free allowance, e.g. 0.05.", "str",
           default="0.05", pattern=r"^\d+(\.\d+)?$"),

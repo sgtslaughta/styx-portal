@@ -14,6 +14,7 @@ export type Workstation = {
   lan_ip: string; port: number; status: string; display_server: string;
   gpu_info: Record<string, unknown>; os_info: Record<string, unknown>;
   agent_version: string; agent_outdated: boolean;
+  update_state?: string; update_error?: string | null; update_target?: string;
   stream_settings: Record<string, unknown> & { encoder?: string; framerate?: number; bitrate_kbps?: number };
   all_users: boolean; last_heartbeat: string | null; last_error: string | null;
   created_at: string; allowed_user_ids: string[];
@@ -457,6 +458,10 @@ export const api = {
     request<{ ok: boolean }>(`/workstations/${id}?purge=${purge}`, { method: "DELETE" }),
   workstationConnectUrl: (id: string, force = false) =>
     request<{ url: string }>(`/workstations/${id}/connect${force ? "?force=true" : ""}`),
+  requestAgentUpdate: (id: string) =>
+    request<Workstation>(`/workstations/${id}/agent-update`, { method: "POST" }),
+  requestAgentUpdateOutdated: () =>
+    request<{ requested: number }>("/workstations/agent-update-outdated", { method: "POST" }),
   workstationUpdateCommand: (id: string) =>
     request<WorkstationUpdateCommand>(`/workstations/${id}/update-command`),
 

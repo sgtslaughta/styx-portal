@@ -141,7 +141,9 @@ def _out(ws: Workstation, allowed: list[str],
         in_use_by=occupant.username if (in_use and occupant) else None,
         in_use_self=bool(in_use and viewer_id and ws.occupied_by == viewer_id),
         icon_kind=ws_icon.icon_kind(ws.icon),
-        icon_etag=ws_icon.icon_etag(ws.icon, ws.name, ws.id))
+        icon_etag=ws_icon.icon_etag(ws.icon, ws.name, ws.id),
+        update_state=ws.update_state, update_error=ws.update_error,
+        update_target=ws.update_target)
 
 
 async def _occupant(session, ws: Workstation) -> User | None:
