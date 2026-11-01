@@ -4,6 +4,12 @@ import { api, type Workstation } from "@/api/client";
 import { Button } from "@/components/ui/button";
 
 const FRAMERATES = [30, 60, 120];
+const CODECS = [
+  ["auto", "Auto (AV1 first)"],
+  ["hevc", "HEVC"],
+  ["av1", "AV1"],
+  ["h264", "H.264"],
+] as const;
 
 export function WorkstationStreamSettings({
   ws,
@@ -16,6 +22,9 @@ export function WorkstationStreamSettings({
   const [open, setOpen] = useState(false);
   const [framerate, setFramerate] = useState<number>(
     Number(ss.framerate) || 60
+  );
+  const [encoder, setEncoder] = useState<string>(
+    typeof ss.encoder === "string" ? ss.encoder : "auto"
   );
   const [crf, setCrf] = useState<string>(
     ss.h264_crf != null ? String(ss.h264_crf) : ""
@@ -39,6 +48,7 @@ export function WorkstationStreamSettings({
     const next: Record<string, unknown> = {
       ...ss,
       framerate,
+      encoder,
       h264_streaming_mode: gaming,
       use_paint_over_quality: paintOver,
       video_fullcolor: fullColor,
@@ -91,6 +101,23 @@ export function WorkstationStreamSettings({
               {FRAMERATES.map((f) => (
                 <option key={f} value={f}>
                   {f}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label
+            className="flex items-center gap-1.5"
+            title="Preferred codec, if this GPU encodes it in hardware. Other hardware codecs stay as fallbacks for browsers that cannot decode it. Pick HEVC for viewers without AV1 hardware decode."
+          >
+            Codec
+            <select
+              className="rounded border border-border bg-surface px-1 py-0.5"
+              value={encoder}
+              onChange={(e) => setEncoder(e.target.value)}
+            >
+              {CODECS.map(([v, label]) => (
+                <option key={v} value={v}>
+                  {label}
                 </option>
               ))}
             </select>
