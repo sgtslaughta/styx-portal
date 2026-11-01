@@ -164,11 +164,20 @@ addEventListener('pointerdown',function(e){try{if(on&&e.button===0&&!document.fu
 # client-side, moved by the lock's movement deltas (server deltas are those
 # deltas scaled to server pixels, so on screen they match 1:1) and clamped to
 # the stream; hidden whenever the remote cursor is hidden (sprite cleared).
+# While locked it also asks selkies for its pointer echo (`pointer,<display>,<x>,
+# <y>,<scale>,<seq>`, server pixels; needs a pixelflux reporting the host cursor)
+# and snaps the sprite to the true position once the mouse rests, so a game's
+# pointer warp no longer leaves it behind.
 LOCKCURSOR_JS = r"""<script id="styx-lockcursor">(function(){
-var img=null,x=0,y=0,lx=0,ly=0,hooked=null;
+var img=null,x=0,y=0,lx=0,ly=0,hooked=null,raw=null,moved=0;
+var REST=120;
 function inp(){return window.webrtcInput}
-function hook(){var w=inp();if(!w||w===hooked||typeof w.send!=='function')return;hooked=w;var s=w.send.bind(w);
-w.send=function(m){if(typeof m==='string'&&(m.indexOf('SET_NATIVE_CURSOR_RENDERING,')===0||/^p,[01]$/.test(m)))return;return s.apply(null,arguments)}}
+function hook(){var w=inp();if(!w||w===hooked||typeof w.send!=='function')return;hooked=w;var s=w.send.bind(w);raw=s;
+w.send=function(m){if(typeof m==='string'&&(m.indexOf('SET_NATIVE_CURSOR_RENDERING,')===0||/^p,[01]$/.test(m)))return;return s.apply(null,arguments)};
+var echo=w.onPointerEcho;w.onPointerEcho=function(m){try{snap(m)}catch(z){}if(typeof echo==='function')return echo.apply(w,arguments)}}
+function snap(m){var t=String(m).split(','),w=inp();if(t.length<6||!document.pointerLockElement||Date.now()-moved<REST)return;
+if(w.displayId&&t[1]!==w.displayId)return;var b=w._streamBox&&w._streamBox(),ex=+t[2],ey=+t[3];
+if(!b||!(b.scaleX>0)||!(b.scaleY>0)||!isFinite(ex)||!isFinite(ey))return;x=b.left+ex/b.scaleX;y=b.top+ey/b.scaleY;clamp();draw()}
 function clamp(){var w=inp(),r=w&&w.element&&w.element.getBoundingClientRect();if(!r)return;
 x=Math.max(r.left,Math.min(r.right-1,x));y=Math.max(r.top,Math.min(r.bottom-1,y))}
 function draw(){hook();var w=inp(),d=w&&w._cursorBase64Data;
@@ -178,9 +187,9 @@ img.style.cssText='position:fixed;left:0;top:0;pointer-events:none;z-index:21474
 var src='data:image/png;base64,'+d;if(img.getAttribute('src')!==src)img.setAttribute('src',src);
 var h=w.cursorHotspot||{x:0,y:0};img.style.display='block';
 img.style.transform='translate('+(x-h.x)+'px,'+(y-h.y)+'px)'}
-addEventListener('mousemove',function(e){try{if(document.pointerLockElement){x+=e.movementX||0;y+=e.movementY||0;clamp();draw()}
+addEventListener('mousemove',function(e){try{if(document.pointerLockElement){moved=Date.now();x+=e.movementX||0;y+=e.movementY||0;clamp();draw()}
 else{lx=e.clientX;ly=e.clientY}}catch(z){}},true);
-document.addEventListener('pointerlockchange',function(){try{x=lx;y=ly;draw()}catch(z){}});
+document.addEventListener('pointerlockchange',function(){try{x=lx;y=ly;draw();if(raw)raw('_pointer_echo,'+(document.pointerLockElement?1:0))}catch(z){}});
 setInterval(function(){try{draw()}catch(z){}},100);
 })();</script>"""
 

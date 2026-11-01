@@ -27,9 +27,12 @@ const doc = {
 const input = {
   send: (m) => sent.push(m),
   element: {getBoundingClientRect: () => ({left: 0, top: 0, right: 1280, bottom: 720})},
-  _cursorBase64Data: 'QUJD', cursorHotspot: {x: 2, y: 3},
+  _cursorBase64Data: 'QUJD', cursorHotspot: {x: 2, y: 3}, displayId: 'primary',
+  _streamBox: () => ({left: 10, top: 20, scaleX: 2, scaleY: 2}),
+  echoes: [], onPointerEcho(m) { this.echoes.push(m) },
 };
-Object.assign(win, {document: doc, Math, setInterval: () => 0,
+let T = 1000;
+Object.assign(win, {document: doc, Math, Date: {now: () => T}, setInterval: () => 0,
   addEventListener: (e, f) => { winL[e] = f }, webrtcInput: input});
 win.window = win;
 vm.createContext(win);
@@ -49,14 +52,25 @@ assert.strictEqual(img.style.transform, 'translate(-2px,177px)');
 win.webrtcInput.send('SET_NATIVE_CURSOR_RENDERING,1');
 win.webrtcInput.send('p,1');
 win.webrtcInput.send('m2,3,4,0,0');
-assert.deepStrictEqual(sent, ['m2,3,4,0,0']);
+assert.deepStrictEqual(sent, ['_pointer_echo,1', 'm2,3,4,0,0']);
+// the true server position: ignored while the mouse moves, snapped to once it rests
+win.webrtcInput.onPointerEcho('pointer,primary,500,300,1,7');
+assert.strictEqual(img.style.transform, 'translate(-2px,177px)');
+assert.deepStrictEqual(input.echoes, ['pointer,primary,500,300,1,7']);  // selkies still sees it
+T += 200;
+win.webrtcInput.onPointerEcho('pointer,primary,500,300,1,8');
+assert.strictEqual(img.style.transform, 'translate(258px,167px)');      // 10+500/2-2, 20+300/2-3
+win.webrtcInput.onPointerEcho('pointer,other,0,0,1,9');                  // another display: ignored
+win.webrtcInput.onPointerEcho('pointer,none');
+assert.strictEqual(img.style.transform, 'translate(258px,167px)');
 input._cursorBase64Data = null;                     // remote cursor hidden (games)
 winL.mousemove({movementX: 1, movementY: 1});
 assert.strictEqual(img.style.display, 'none');
 input._cursorBase64Data = 'QUJD';
-doc.pointerLockElement = null;                       // unlock: overlay gone
+doc.pointerLockElement = null;                       // unlock: overlay gone, echo off
 docL.pointerlockchange();
 assert.strictEqual(img.style.display, 'none');
+assert.strictEqual(sent[sent.length - 1], '_pointer_echo,0');
 console.log('ok');
 """
 
