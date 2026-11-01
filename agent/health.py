@@ -10,6 +10,22 @@ def gw_state_path(cfg: dict) -> Path:
     return Path(cfg["install_dir"]) / "gw_state.json"
 
 
+STREAM_MODE_NAME = "stream-mode"   # gateway writes the viewer's chosen transport next to its state file
+
+
+def stream_mode_path(state_path) -> Path:
+    return Path(state_path).with_name(STREAM_MODE_NAME)
+
+
+def read_stream_mode(state_path) -> str | None:
+    """The transport the viewer last switched to, or None if unset/invalid."""
+    try:
+        mode = stream_mode_path(state_path).read_text().strip()
+    except OSError:
+        return None
+    return mode if mode in ("webrtc", "websockets") else None
+
+
 def active_connections(cfg: dict, gateway_alive: bool) -> int:
     """Live stream-websocket count from the gateway's state file. A dead
     gateway means no viewers regardless of what the file says."""

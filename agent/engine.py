@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 
 import bundle_patch
+import health
 import shallow_pipe
 
 HOME = Path.home()
@@ -426,6 +427,7 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
     bundle_patch.apply(install, lambda m: print(m, flush=True))  # before the page is served
     s = cfg.get("stream_settings", {})
     transport = "webrtc" if s.get("transport") == "webrtc" else "websockets"
+    transport = health.read_stream_mode(health.gw_state_path(cfg)) or transport  # viewer's sidebar pick
     env = {
         "HOME": str(HOME),
         "XDG_RUNTIME_DIR": os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}"),

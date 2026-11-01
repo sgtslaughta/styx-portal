@@ -140,3 +140,37 @@ def test_is_bare_motion():
     assert not is_bare_motion("m,10,20,0,120")    # wheel
     assert not is_bare_motion("kd,65") and not is_bare_motion(b"\x00")
     assert not is_bare_motion("m2,100,100")       # malformed: treat as input
+
+
+async def _switch_upstream(status):
+    from aiohttp import web
+    from aiohttp.test_utils import TestClient, TestServer
+
+    async def switch(request):
+        return web.Response(status=status)
+    app = web.Application()
+    app.router.add_post("/api/switch", switch)
+    up = TestClient(TestServer(app))
+    await up.start_server()
+    return up
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status,body,expect", [
+    (200, {"mode": "webrtc"}, "webrtc"),
+    (200, {"mode": "websockets"}, "websockets"),
+    (409, {"mode": "webrtc"}, None),
+    (200, {"mode": "bogus"}, None),
+])
+async def test_switch_remembers_mode(tmp_path, status, body, expect):
+    up = await _switch_upstream(status)
+    client = await _gw(up, state_file=str(tmp_path / "gw_state.json"))
+    try:
+        r = await client.post("/api/switch", json=body, headers=HDR)
+        assert r.status == status
+        await asyncio.sleep(0.1)   # file is written just after the response is flushed
+        f = tmp_path / "stream-mode"
+        assert (f.read_text() if f.exists() else None) == expect
+    finally:
+        await client.close()
+        await up.close()
