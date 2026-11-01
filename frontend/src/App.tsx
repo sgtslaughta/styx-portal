@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AlertTriangle } from "lucide-react";
 import { Header, type HeaderTab } from "@/components/layout/header";
+import { StatusRail } from "@/components/layout/status-rail";
 import { HomePage } from "@/components/home/home-page";
 import { LaunchModal } from "@/components/templates/launch-modal";
 import { SettingsLayout } from "@/components/settings/settings-layout";
@@ -15,6 +16,7 @@ export default function App() {
   const [launchRegistry, setLaunchRegistry] = useState<RegistryImage | null>(null);
   const [launchTemplate, setLaunchTemplate] = useState<ServiceTemplate | null>(null);
   const [launchOpen, setLaunchOpen] = useState(false);
+  const [railPad, setRailPad] = useState(0);
 
   useEffect(() => {
     const sp = new URLSearchParams(window.location.search);
@@ -65,7 +67,7 @@ export default function App() {
     <TooltipProvider>
     <div className="flex h-dvh flex-col bg-background styx-app-bg">
       <Header activeTab={activeTab} onTabChange={setActiveTab} />
-      <main className="min-h-0 flex-1 overflow-y-auto p-6">
+      <main className="min-h-0 flex-1 overflow-y-auto p-6 transition-[padding] motion-reduce:transition-none" style={{ paddingRight: 24 + railPad }}>
         <div className={activeTab === "home" ? "" : "hidden"}>
           <HomePage onNewContainer={() => {}} onOpenSettings={() => setActiveTab("admin")} />
         </div>
@@ -73,6 +75,7 @@ export default function App() {
           <SettingsLayout />
         </div>
       </main>
+      <StatusRail forceCollapsed={activeTab === "admin"} onOpenAdmin={() => setActiveTab("admin")} onWidthChange={setRailPad} />
       <LaunchModal
         key={launchRegistry?.name ?? launchTemplate?.id ?? "custom"}
         open={launchOpen}
