@@ -84,7 +84,7 @@ export function WorkstationsPanel() {
 
   return (
     <section>
-      <SectionHead title="Workstations" action={
+      <SectionHead title="Enrolled machines" action={
         <>
           <Button onClick={refresh} variant="ghost" size="sm" title="Refresh"><RefreshCw className="h-4 w-4" /></Button>
           {rows.some((w) => w.agent_outdated && w.status === "online") && (
