@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Styx: Login, gold wave field</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="tokens.css">
+<style>
+  body { font-family: "Instrument Sans", system-ui, sans-serif; }
+  .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(400px, min(40vw, 620px)); min-height: 100dvh; }
+  /* Brand panel: same gradient + river lines as the real LoginBrandPanel */
+  .brand { position: relative; overflow: hidden; isolation: isolate; display: flex; flex-direction: column; justify-content: flex-end; padding: 40px;
+    background: radial-gradient(60% 50% at 80% 15%, rgba(111,183,188,.18), transparent 70%), linear-gradient(to top right, #0F1C22 0%, #16323A 100%); color: #EDF1EF; }
+  html:not(.dark) .brand { background: radial-gradient(60% 50% at 80% 15%, rgba(42,118,124,.25), transparent 70%), linear-gradient(to top right, #EDF1EF 0%, #BFD6D6 60%, #9CC1C3 100%); color: #0F1C22; }
+  .brand::before { content: ""; position: absolute; inset: -40%; z-index: -1; pointer-events: none; opacity: .15;
+    background: repeating-linear-gradient(115deg, transparent 0 22px, #C9A04E 22px 23px); animation: flow 14s linear infinite;
+    -webkit-mask: radial-gradient(150% 130% at 0% 100%, #000 30%, transparent 72%); mask: radial-gradient(150% 130% at 0% 100%, #000 30%, transparent 72%); }
+  @keyframes flow { to { transform: translate(-23px, -49px); } }
+  .logo { display: flex; align-items: center; gap: 8px; font-weight: 800; letter-spacing: .08em; font-size: 18px; }
+  .logo svg { color: var(--teal); }
+  .gold-rule { display: block; width: min(320px, 70%); height: 1.5px; margin: 18px 0 0; border-radius: 1px;
+    background: linear-gradient(90deg, #8A6420 0%, #F1DA9A 18%, #B8862F 38%, #E6C67A 60%, #8A6420 100%);
+    box-shadow: 0 1px 1.5px rgba(0,0,0,.45), 0 0 8px rgba(230,198,122,.35);
+    -webkit-mask: linear-gradient(90deg, #000 50%, transparent); mask: linear-gradient(90deg, #000 50%, transparent);
+    transform-origin: left; animation: draw 1.2s cubic-bezier(.2,.8,.2,1) 1.4s both; }
+  html:not(.dark) .gold-rule { box-shadow: 0 1px 1.5px rgba(80,50,10,.35); }
+  @keyframes draw { from { transform: scaleX(0); } }
+  .card input:focus { outline: none; border-color: #C9A04E; box-shadow: 0 0 0 3px rgba(201,160,78,.22); }
+  .hero h2 { font-size: clamp(32px, 3.6vw, 52px); font-weight: 700; line-height: 1.08; letter-spacing: -.02em; max-width: 12ch; }
+  .hero p { margin-top: 14px; font-size: 15px; color: var(--dim); max-width: 34ch; }
+
+  /* Unfocused reveal: each word starts out of focus with chromatic fringes, then pulls sharp.
+     Focus travels outward from the bottom-left corner (delay set per word from its distance). */
+  /* No transform/will-change: avoids the raster swap that snaps the text when the animation ends. */
+  .reveal { animation: focus 2.2s cubic-bezier(.25,.6,.3,1) .3s both; }
+  @keyframes focus {
+    from { opacity: 0; filter: blur(16px); text-shadow: -8px 0 6px rgba(255,80,110,.8), 8px 0 6px rgba(80,200,255,.8); }
+    to   { opacity: 1; filter: blur(0); text-shadow: 0 0 0 rgba(255,80,110,0), 0 0 0 rgba(80,200,255,0); }
+  }
+  @media (prefers-reduced-motion: reduce) { .reveal { animation: fade .4s ease forwards; } @keyframes fade { to { opacity: 1; } } }
+
+  /* Sign-in panel: quiet theme surface with slow, subtle god rays falling from the top-left. */
+  .form { display: flex; align-items: center; justify-content: center; padding: 48px 24px; position: relative; isolation: isolate; overflow: hidden;
+    --ink: #E4ECEC; --ink-dim: #9FB0B4; --field: rgba(255,255,255,.04); --field-line: rgba(255,255,255,.13); --field-hi: rgba(255,255,255,.04);
+    --ray: rgba(241,218,154,.075); --ray2: rgba(190,230,232,.05);
+    background: radial-gradient(120% 90% at 0% 0%, #17303A 0%, #10222A 45%, #0C1A20 100%); color: var(--ink); }
+  html:not(.dark) .form { --ink: #14232A; --ink-dim: #4A5A60; --field: rgba(255,255,255,.7); --field-line: rgba(20,35,42,.16); --field-hi: rgba(255,255,255,.8);
+    --ray: rgba(255,250,232,.55); --ray2: rgba(232,214,160,.22);
+    background: radial-gradient(120% 90% at 0% 0%, #F4F7F6 0%, #E7EDEB 50%, #DCE5E3 100%); }
+  .form > canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; }
+  .card { position: relative; }
+  .card input { box-shadow: 0 1px 0 var(--field-hi) !important; }
+  .form > .logo { position: absolute; top: 40px; left: 40px; z-index: 1; color: var(--ink); }
+  .card h1 { color: var(--ink); } .card .sub { color: var(--ink-dim) !important; } .card label { color: var(--ink); }
+  .card input { background: var(--field) !important; color: var(--ink) !important; border: 1px solid var(--field-line) !important;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,.35), 0 1px 0 var(--field-hi); backdrop-filter: blur(2px); }
+  html:not(.dark) .card input { box-shadow: inset 0 1px 2px rgba(0,0,0,.12), 0 1px 0 var(--field-hi); }
+  .card { width: 100%; max-width: 360px; display: grid; gap: 18px; }
+  .card h1 { font-size: 24px; font-weight: 600; text-align: center; } .card .sub { text-align: center; color: #4A5A60; font-size: 14px; margin-top: -12px; }
+  .card label { display: grid; gap: 6px; font-size: 14px; font-weight: 500; }
+  .card input { padding: 10px 12px; border-radius: 8px; border: 1px solid #C9D3D0; background: #F7F9F8; color: #0F1C22; }
+  .card .btn-gold { padding: 11px; }
+  .replay { position: absolute; right: 16px; top: 16px; z-index: 2; font-size: 12px; border: 1px solid rgba(255,255,255,.2); background: rgba(0,0,0,.25); color: inherit; padding: 6px 10px; border-radius: 8px; }
+  /* Water surface canvas behind the brand content */
+  .brand > canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; }
+  .brand.has-water::before { display: none; }
+  .brand > .logo, .brand > .hero { position: relative; z-index: 1; } .brand > .replay { z-index: 3; }
+  /* Glass Sign in: teal glass on the light form, glints from ripple.js */
+  .glass { position: relative; overflow: hidden; isolation: isolate; border-radius: 10px; padding: 11px; font-weight: 600; font-size: 15px; color: #fff;
+    text-shadow: 0 1px 1px rgba(0,0,0,.25); border: 1px solid rgba(42,118,124,.55);
+    background: linear-gradient(180deg, rgba(255,255,255,.28), rgba(255,255,255,0) 55%), linear-gradient(180deg, rgba(42,118,124,.92), rgba(31,95,100,.95));
+    box-shadow: inset 0 1px 0 rgba(241,218,154,.75), inset 0 -6px 12px -8px rgba(255,255,255,.3), 0 8px 20px -10px rgba(42,118,124,.7); transition: transform .15s; }
+  .glass::after { content: ""; position: absolute; left: 14px; right: 14px; bottom: 0; height: 1px; z-index: 1; background: linear-gradient(90deg, transparent, #E6C67A 30%, #F1DA9A 50%, #B8862F 70%, transparent); opacity: .8; }
+  .glass:active { transform: scale(.985); }
+  .glass .lbl { position: relative; z-index: 1; }
+  .glass canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; mix-blend-mode: screen; opacity: .55; filter: blur(.6px); }
+  .demo { left: auto; right: 16px; } .demo button[id^="r-"] { display: none; }
+  @media (max-width: 860px) { .split { grid-template-columns: 1fr; } .brand { min-height: 46dvh; } }
+</style>
+</head>
+<body>
+<div class="split">
+  <section class="brand">
+    <button class="replay" id="replay">Replay reveal</button>
+        <div class="hero reveal" id="hero">
+      <h2>Cross over to your workspaces.</h2>
+    </div>
+  </section>
+  <section class="form">
+    <div class="logo"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 6c.6.5 1.2 1 2.5 1C7 7 7 5 9.5 5c2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 12c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/><path d="M2 18c.6.5 1.2 1 2.5 1 2.5 0 2.5-2 5-2 2.6 0 2.4 2 5 2 2.5 0 2.5-2 5-2 1.3 0 1.9.5 2.5 1"/></svg>STYX PORTAL</div>
+    <form class="card" onsubmit="return false">
+      <h1>Sign in</h1><p class="sub">Welcome back.</p>
+      <label>Username<input autocomplete="username"></label>
+      <label>Password<input type="password" autocomplete="current-password"></label>
+      <button class="glass"><span class="lbl">Sign in</span></button>
+    </form>
+  </section>
+</div>
+<script>
+  // Replay: restart the reveal (and the gold rule) uniformly.
+  document.getElementById("replay").onclick = () => document.querySelectorAll(".reveal").forEach((el) => {
+    el.style.animation = "none"; void el.offsetWidth; el.style.animation = ""; });
+</script>
+<script src="demo.js"></script>
+<script src="ripple.js"></script>
+<script>
+  // Gold wave field: ~28 horizontal lines in perspective across the lower panel, slowly undulating.
+  // Each line is stroked with a brushed-gold gradient + a shadow line.
+  const brand = document.querySelector(".brand"), cv = document.createElement("canvas"), cx = cv.getContext("2d");
+  cv.style.cssText = "position:absolute;inset:0;width:100%;height:100%;z-index:-1"; brand.prepend(cv); brand.classList.add("has-water");
+  const still = matchMedia("(prefers-reduced-motion: reduce)");
+  let W, H, dpr, raf;
+  function size() { const r = brand.getBoundingClientRect(); dpr = devicePixelRatio; W = cv.width = r.width * dpr; H = cv.height = r.height * dpr; sunCache = {}; }
+  // Bayer-dithered "sun": the soft glow in the upper right rendered as an ordered 8x8 dot pattern.
+  // Built once per size/theme and cached; drawn each frame with a single drawImage.
+  const BAYER = [0,32,8,40,2,34,10,42, 48,16,56,24,50,18,58,26, 12,44,4,36,14,46,6,38, 60,28,52,20,62,30,54,22,
+                 3,35,11,43,1,33,9,41, 51,19,59,27,49,17,57,25, 15,47,7,39,13,45,5,37, 63,31,55,23,61,29,53,21];
+  let sunCache = {};
+  // Blocky value noise: random value per coarse block, so density changes in stepped patches (like the demo).
+  const hash = (x, y) => { let h = (x * 374761393 + y * 668265263) ^ 0x5bd1e995; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
+  function sun(dark) {
+    if (sunCache[dark]) return sunCache[dark];
+    const c = document.createElement("canvas"); c.width = W; c.height = H; const x = c.getContext("2d");
+    const px = Math.round(5 * dpr), dot = 1.1 * dpr, cx0 = W * .72, cy0 = H * .2, R = Math.max(W, H) * .55;
+    const horizon = H * .42 - 18 * dpr;                     // just above the top wave line (its max swell is ~14px)
+    const B1 = px * 6, B2 = px * 14;                        // two block scales of noise
+    x.fillStyle = dark ? "rgba(170,222,224,.38)" : "rgba(30,96,102,.32)";
+    for (let y = 0; y < horizon; y += px) for (let X = 0; X < W; X += px) {
+      const d = Math.hypot((X - cx0) * .85, (y - cy0) * 1.2) / R; if (d >= 1) continue;
+      const fall = Math.pow(1 - d, 1.4) * Math.min(1, (horizon - y) / (36 * dpr));   // sun falloff, fades before horizon
+      const n = .55 * hash(X / B1 | 0, y / B1 | 0) + .45 * hash((X / B2 | 0) + 97, (y / B2 | 0) + 31);
+      const v = fall * (n * 1.6 - .25);                     // patchy: some blocks empty, some dense
+      const th = (BAYER[((y / px | 0) % 8) * 8 + ((X / px | 0) % 8)] + .5) / 64;
+      if (v > th) { x.beginPath(); x.arc(X + px / 2, y + px / 2, dot, 0, 6.283); x.fill(); }
+    }
+    return (sunCache[dark] = c);
+  }
+  // Smooth 2D "noise" from a few incommensurate sines: cheap, seamless, no dependency.
+  const wave = (x, i, t) => Math.sin(x * 2.1 + i * 0.37 + t * 0.55) * 0.55 + Math.sin(x * 4.3 - i * 0.21 + t * 0.9) * 0.28
+                         + Math.sin(x * 7.7 + i * 0.83 - t * 0.4) * 0.12 + Math.sin(x * 1.3 - i * 0.11 + t * 0.25) * 0.4;
+  function frame(ms) {
+    const t = still.matches ? 0 : ms / 1000, dark = document.documentElement.classList.contains("dark");
+    const bg = cx.createLinearGradient(0, H, W, 0);
+    bg.addColorStop(0, dark ? "#0B171C" : "#E9EEEC"); bg.addColorStop(1, dark ? "#16323A" : "#A9C9CA"); cx.fillStyle = bg; cx.fillRect(0, 0, W, H);
+    const glow = cx.createRadialGradient(W * .8, H * .15, 0, W * .8, H * .15, W * .6);               // sun: smooth gradient
+    glow.addColorStop(0, dark ? "rgba(111,183,188,.16)" : "rgba(42,118,124,.2)"); glow.addColorStop(1, "transparent"); cx.fillStyle = glow; cx.fillRect(0, 0, W, H);
+    cx.drawImage(sun(dark), 0, 0);                                                                       // + dithered layer
+    const N = 28, top = H * 0.42, steps = 90;
+    const metal = cx.createLinearGradient(0, 0, W, 0);
+    ["#8A6420", "#D6AE58", "#F6E2A8", "#B88A35", "#EED08A", "#9C7228", "#E3C070", "#FBEBC0", "#A97C2E"].forEach((c, k, a) => metal.addColorStop(k / (a.length - 1), c));
+    // Specular band that drifts slowly along the lines: where the gold catches the light.
+    const sx = ((t * 0.03 + 0.55) % 1.6 - 0.3) * W, spec = cx.createLinearGradient(sx - W * .5, 0, sx + W * .5, 0);
+    if (dark) { spec.addColorStop(0, "rgba(255,236,190,.6)"); spec.addColorStop(.5, "rgba(255,250,232,1)"); spec.addColorStop(1, "rgba(255,236,190,.6)"); }
+    else { spec.addColorStop(0, "rgba(110,76,22,.55)"); spec.addColorStop(.5, "rgba(70,46,10,.95)"); spec.addColorStop(1, "rgba(110,76,22,.55)"); } // light: inverted, dark bronze edge
+    for (let i = 0; i < N; i++) {
+      const d = i / (N - 1), y0 = top + (H - top) * Math.pow(d, 1.6);   // perspective: spacing grows toward the bottom
+      const amp = (10 + 46 * d) * dpr, lw = (0.7 + 1.5 * d) * dpr;     // nearer lines: bigger swell, thicker
+      const alpha = (dark ? 0.45 : 0.45) + (dark ? 0.55 : 0.5) * Math.pow(d, 0.8);
+      const pts = [];
+      for (let s = 0; s <= steps; s++) {
+        const x = (s / steps) * W, u = s / steps;
+        let y = y0 + wave(u, i, t) * amp;
+        pts.push(x, y);
+      }
+      const path = (off) => { cx.beginPath(); cx.moveTo(pts[0] + off, pts[1] + off);
+        for (let k = 2; k < pts.length - 2; k += 2) cx.quadraticCurveTo(pts[k] + off, pts[k + 1] + off, (pts[k] + pts[k + 2]) / 2 + off, (pts[k + 1] + pts[k + 3]) / 2 + off);
+        cx.lineTo(pts.at(-2) + off, pts.at(-1) + off); };
+      cx.globalAlpha = alpha * (dark ? 0.6 : 0.75); cx.strokeStyle = dark ? "#000" : "rgba(45,30,8,.85)"; cx.lineWidth = lw; path(lw * 0.8); cx.stroke(); // dark underline (both themes)
+      cx.globalAlpha = alpha; cx.strokeStyle = metal; path(0); cx.stroke();                                                          // brushed gold
+      cx.globalCompositeOperation = dark ? "lighter" : "source-over"; cx.globalAlpha = Math.min(1, alpha * 1.1); cx.strokeStyle = spec; cx.lineWidth = lw * 0.45; path(-lw * 0.3); cx.stroke(); cx.globalCompositeOperation = "source-over"; // bright edge
+    }
+    cx.globalAlpha = 1;
+    // Calm water behind the headline: fade the lines out under the text so it stays crisp.
+    const hero = document.getElementById("hero").getBoundingClientRect(), br = brand.getBoundingClientRect();
+    const hx = (hero.left - br.left + hero.width * .4) * dpr, hy = (hero.top - br.top + hero.height * .5) * dpr;
+    const calm = cx.createRadialGradient(hx, hy, 0, hx, hy, Math.max(hero.width, 420) * .85 * dpr);
+    const base = dark ? "11,23,28" : "226,234,232";
+    calm.addColorStop(0, `rgba(${base},.92)`); calm.addColorStop(.55, `rgba(${base},.7)`); calm.addColorStop(1, `rgba(${base},0)`);
+    cx.save(); cx.scale(1, .55); cx.translate(0, hy / .55 - hy); cx.fillStyle = calm; cx.fillRect(0, 0, W, H / .55); cx.restore();
+    if (!still.matches && !document.hidden) raf = requestAnimationFrame(frame);
+  }
+  document.addEventListener("visibilitychange", () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(frame); });
+  new ResizeObserver(() => { size(); cancelAnimationFrame(raf); raf = requestAnimationFrame(frame); }).observe(brand);
+  // Theme switch: next frame reads the class, nothing else to do (static mode needs one redraw).
+  new MutationObserver(() => still.matches && requestAnimationFrame(frame)).observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+  // Glyph beams on the sign-in panel: a dim grid of monospace glyphs; soft diagonal light beams sweep
+  // across it, brightening and scrambling glyphs as they pass. Calm area behind the form keeps it readable.
+  (() => {
+    const form = document.querySelector(".form"), gc = document.createElement("canvas"), g = gc.getContext("2d"); form.prepend(gc);
+    const CH = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz0123456789<>[]{}/\\|=+-*#%&$@?!:;~^ΣΤΥΞΩΔΛΦΨ";
+    const pick = () => CH[(Math.random() * CH.length) | 0];
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)");
+    let W, H, dpr, cols, rows, cell, grid, phase, last = 0;
+    function size() { const r = form.getBoundingClientRect(); dpr = devicePixelRatio; W = gc.width = r.width * dpr; H = gc.height = r.height * dpr;
+      cell = 19 * dpr; cols = Math.ceil(W / cell); rows = Math.ceil(H / cell); grid = Array.from({ length: cols * rows }, pick);
+      phase = Float32Array.from({ length: cols * rows }, () => Math.random() * 6.283); }
+    function frame(ms) {
+      if (ms - last > 33) { last = ms; // ~30fps is plenty for this
+        const t = reduce.matches ? 4 : ms / 1000, dark = document.documentElement.classList.contains("dark");
+        g.clearRect(0, 0, W, H); g.font = `${12 * dpr}px "IBM Plex Mono", monospace`; g.textAlign = "center"; g.textBaseline = "middle";
+        const card = document.querySelector(".card").getBoundingClientRect(), fr = form.getBoundingClientRect();
+        const lg = document.querySelector(".form > .logo").getBoundingClientRect(), lcx = (lg.left - fr.left + lg.width / 2) * dpr, lcy = (lg.top - fr.top + lg.height / 2) * dpr, lrx = (lg.width * .8 + 24) * dpr, lry = (lg.height + 26) * dpr;
+        const ccx = (card.left - fr.left + card.width / 2) * dpr, ccy = (card.top - fr.top + card.height / 2) * dpr, crx = card.width * .95 * dpr, cry = card.height * 1.05 * dpr;
+        const bell = (v, w) => Math.exp(-(v * v) / (2 * w * w)), wrap = (v, p) => ((v % p) + p) % p;
+        const ang = Math.PI / 4, ca = Math.cos(ang), sa = Math.sin(ang), period = 230 * dpr, width = 34 * dpr; // parallel beams, 45°
+        for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+          const x = (c + .5) * cell, y = (r + .5) * cell;
+          // beams: soft bands along a diagonal, two speeds layered
+          // Parallel narrow beams sweeping diagonally (top-left → bottom-right), plus a slow broad glow.
+          const u = x * ca + y * sa, i = r * cols + c;
+          const b1 = bell(wrap(u - t * 85 * dpr, period) - period / 2, width);
+          const b2 = .35 * bell(wrap(u - t * 30 * dpr, period * 3.2) - period * 1.6, width * 4);
+          const shimmer = 0.65 + 0.35 * Math.sin(t * 9 + phase[i]); // per-glyph flicker inside the beam
+          const beam = Math.min(1, b1 * shimmer + b2);
+          const qx = (x - ccx) / crx, qy = (y - ccy) / cry, calm0 = Math.min(1, Math.max(0, Math.hypot(qx, qy) - .62) * 1.5); // 0 behind form → 1 outside
+          const lx = (x - lcx) / lrx, ly = (y - lcy) / lry, calm = calm0 * Math.min(1, Math.max(0, Math.hypot(lx, ly) - .7) * 1.6); // and behind the logo
+          const edge = Math.min(1, x / (60 * dpr), (W - x) / (60 * dpr), y / (60 * dpr), (H - y) / (60 * dpr));
+          const a = (0.06 + beam * 0.6) * calm * edge; if (a < 0.02) continue;
+          if (!reduce.matches && Math.random() < b1 * 0.18) grid[i] = pick(); // scramble under the beam
+          const warm = beam * beam; // core of the beam turns champagne
+          g.fillStyle = dark ? `rgba(${111 + 130 * warm | 0},${183 + 35 * warm | 0},${188 - 30 * warm | 0},${a})` : `rgba(${42 + 100 * warm | 0},${118 - 10 * warm | 0},${124 - 80 * warm | 0},${a * 1.1})`;
+          g.fillText(grid[i], x, y);
+        }
+      }
+      if (!reduce.matches) requestAnimationFrame(frame);
+    }
+    new ResizeObserver(() => { size(); requestAnimationFrame(frame); }).observe(form);
+    new MutationObserver(() => reduce.matches && requestAnimationFrame(frame)).observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+  })();
+  document.querySelectorAll(".glass").forEach((b) => { const c = document.createElement("canvas"); b.prepend(c);
+    water(c, { mode: "glass", scale: 2, damping: 0.95, hoverRadius: 6, hoverStrength: 0.9, clickRadius: 10, clickStrength: 3.5, light: 0.7 }); });
+</script>
+</body>
+</html>
