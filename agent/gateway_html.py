@@ -159,8 +159,13 @@ var done=function(){post({diag:r});if(r.lock!=='ok')note()};
 .then(function(){if(!r.api){r.lock='noapi';return}return K.lock().then(function(){r.lock='ok'},function(e){r.lock=e.name+' '+e.message})}).then(done,done)}catch(x){}}
 function post(b){try{fetch('styx/gamemode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b),keepalive:true}).catch(function(){})}catch(e){}}
 addEventListener('message',function(e){try{if(e.source!==window||!e.data||e.data.type!=='gamingModeUpdate')return;
-on=!!e.data.active;var d=devicePixelRatio||1;if(on)setTimeout(kb,2500);
+on=!!e.data.active;var d=devicePixelRatio||1;if(on){T0=performance.now();esc=[];setTimeout(kb,2500)}
 post(on?{active:true,w:screen.width,h:screen.height,dpr:d}:{active:false,w:innerWidth,h:innerHeight,dpr:d})}catch(x){}});
+var esc=[],T0=0;function rel(){return Math.round(performance.now()-T0)}
+addEventListener('keydown',function(e){if(on&&e.key==='Escape'&&!e.repeat){esc.push('d'+rel());esc=esc.slice(-6)}},true);
+addEventListener('keyup',function(e){if(on&&e.key==='Escape'){esc.push('u'+rel());esc=esc.slice(-6)}},true);
+document.addEventListener('pointerlockchange',function(){if(on)post({diag:{ev:'pointerlock '+(document.pointerLockElement?'on':'off'),t:rel(),esc:esc}})});
+document.addEventListener('fullscreenchange',function(){if(T0)post({diag:{ev:'fullscreen '+(document.fullscreenElement?'on':'off'),t:rel(),esc:esc}})});
 addEventListener('pointerdown',function(e){try{if(on&&e.button===0&&!document.fullscreenElement)document.documentElement.requestFullscreen({navigationUI:'hide'}).catch(function(){})}catch(x){}},true);
 })();</script>"""
 
