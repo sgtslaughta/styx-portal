@@ -36,7 +36,10 @@ export function NewContainerDrawer({ open, onClose }: { open: boolean; onClose: 
       await create.mutateAsync({
         template_id: t.id, name, subdomain: sub,
         use_profile: !!profileMountOf(t.profile_mount, t.volumes), use_gpu: true,
-        session_config: { ...t.session_config, timeout_action: "stop", never_timeout: false, idle_timeout: "30m" },
+        // The setup's own idle policy wins; stop-after-30-min only when it saved none.
+        session_config: Object.keys(t.session_config ?? {}).length
+          ? t.session_config
+          : { timeout_action: "stop", never_timeout: false, idle_timeout: "30m" },
       });
       close();
       wave.play(`Launching ${name}…`);

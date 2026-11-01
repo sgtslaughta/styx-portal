@@ -5,7 +5,7 @@ import { SetupsRow } from "./setups-row";
 import { SectionHead } from "@/components/common/section-head";
 import { useRegistryImages } from "@/hooks/use-registry";
 import { Button } from "@/components/ui/button";
-import { slugify } from "@/lib/utils";
+import { isLinuxserverImage } from "./resolve-template";
 import type { RegistryImage, ServiceTemplate } from "@/lib/types";
 
 interface Props {
@@ -28,7 +28,7 @@ export function CatalogGrid({ setups, searchRef, isAdmin, onPickImage, onLaunchS
   const term = q.trim().toLowerCase();
   const list = images.filter((i) => (cat === "All" || i.category === cat) && (!term || i.name.toLowerCase().includes(term)));
   const showSetups = !term && cat === "All" && setups.length > 0;
-  const saved = (i: RegistryImage) => setups.some((s) => s.name === slugify(i.name));
+  const saved = (i: RegistryImage) => setups.some((s) => isLinuxserverImage(s.image, i.name));
 
   return (
     <div className="space-y-5">

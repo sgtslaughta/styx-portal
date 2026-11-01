@@ -98,6 +98,29 @@ describe("NewContainerDrawer", () => {
     expect(m.createTemplate).not.toHaveBeenCalled();
   });
 
+  test("one-click launch keeps the setup's own idle policy", async () => {
+    const own = { timeout_action: "none", never_timeout: true, idle_timeout: "2h" };
+    m.listTemplates.mockResolvedValue([{ ...setup, session_config: own }]);
+    wrap("user");
+    fireEvent.click(await screen.findByRole("button", { name: "Launch Chrome GPU" }));
+    await waitFor(() => expect(m.createInstance).toHaveBeenCalled());
+    expect(m.createInstance.mock.calls[0]![0].session_config).toEqual(own);
+  });
+
+  test("one-click launch falls back to stop after 30m when the setup has no policy", async () => {
+    wrap("user");
+    fireEvent.click(await screen.findByRole("button", { name: "Launch Chrome GPU" }));
+    await waitFor(() => expect(m.createInstance).toHaveBeenCalled());
+    expect(m.createInstance.mock.calls[0]![0].session_config).toEqual({ timeout_action: "stop", never_timeout: false, idle_timeout: "30m" });
+  });
+
+  test("saved-setup badge matches by image repository, not setup name", async () => {
+    m.listTemplates.mockResolvedValue([{ ...setup, name: "firefox-setup", image: "lscr.io/linuxserver/firefox:latest" }]);
+    wrap("user");
+    expect(await screen.findByText("You have a saved setup")).toBeInTheDocument();
+    expect(screen.getAllByText("You have a saved setup")).toHaveLength(1);
+  });
+
   test("customising a setup hides Advanced and shows its size", async () => {
     wrap("user");
     fireEvent.click(await screen.findByRole("button", { name: "Customise Chrome GPU" }));

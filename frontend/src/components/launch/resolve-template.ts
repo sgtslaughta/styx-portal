@@ -1,12 +1,16 @@
 import { api } from "@/api/client";
 import type { ServiceTemplate, TemplateCreate } from "@/lib/types";
 
-const repoOf = (image: string) => image.split("@")[0]!.replace(/:[^:/]*$/, "");
+export const repoOf = (image: string) => image.split("@")[0]!.replace(/:[^:/]*$/, "");
+
+/** True when the template's image (any registry prefix or tag) is the LinuxServer image `regName`. */
+export const isLinuxserverImage = (image: string, regName: string) =>
+  [`lscr.io/linuxserver/${regName}`, `linuxserver/${regName}`].includes(repoOf(image));
 
 /** Same-repo template that is the user's own or shared (no owner) can be reused. */
 function reusable(t: ServiceTemplate, regName: string | undefined, userId: string | undefined) {
   if (!regName) return false;
-  const sameRepo = [`lscr.io/linuxserver/${regName}`, `linuxserver/${regName}`].includes(repoOf(t.image));
+  const sameRepo = isLinuxserverImage(t.image, regName);
   return sameRepo && (t.owner_id == null || t.owner_id === userId);
 }
 
