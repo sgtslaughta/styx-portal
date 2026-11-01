@@ -7,7 +7,8 @@
 .row { display: grid; grid-template-columns: minmax(0, 1fr) 138px 22px; align-items: center; gap: 8px; min-height: 38px; font-size: 14px; border-radius: 8px; padding: 0 4px 0 8px; margin: 0 -4px 0 -8px; }
 .row:hover { background: color-mix(in srgb, var(--primary) 10%, transparent); }
 .row > span:first-child { color: var(--foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.row i { font-style: normal; display: inline-grid; place-items: center; width: 15px; height: 15px; margin-left: 6px; border-radius: 50%; border: 1px solid var(--border); font-size: 10px; color: var(--muted-foreground); cursor: help; vertical-align: 1px; }
+.row .help { display: inline-grid; place-items: center; width: 15px; height: 15px; margin-left: 6px; border-radius: 50%; border: 1px solid var(--border); font-size: 10px; color: var(--muted-foreground); cursor: help; vertical-align: 1px; background: none; padding: 0; }
+.row .help:focus-visible { outline: 2px solid #C9A04E; outline-offset: 2px; }
 .in { display: flex; align-items: center; height: 32px; border: 1px solid var(--border); border-radius: 8px; background: var(--background); overflow: hidden; transition: border-color .15s, box-shadow .15s; }
 .in input, .in select { flex: 1; min-width: 0; width: 100%; border: 0; background: none; padding: 0 8px; height: 100%; text-align: right; font: inherit; font-variant-numeric: tabular-nums; outline: none; color: var(--foreground); }
 .in input.no-spin::-webkit-outer-spin-button, .in input.no-spin::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }

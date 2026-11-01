@@ -71,6 +71,8 @@ describe("secret rows", () => {
     expect(screen.getByText("Not set")).toBeTruthy();
     // only the is_set row has a Clear button
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(updateSystemSettings).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() =>
       expect(updateSystemSettings).toHaveBeenCalledWith({ CLOUDFLARE_TURN_TOKEN_ID: "" })
     );

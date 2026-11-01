@@ -40,4 +40,23 @@ describe("SettingField", () => {
     fireEvent.change(screen.getByLabelText("Auth"), { target: { value: "9" } });
     expect(onChange).toHaveBeenCalledWith("9/60");
   });
+  test("clearing a rate keeps its unit; retyping keeps the period", () => {
+    const onChange = vi.fn();
+    const st = s({ key: "RATE_LIMIT_AUTH", label: "Auth", type: "rate", value: "5/60", default: "5/60", min: null, max: null });
+    const { rerender } = render(<SettingField setting={st} value={undefined} disabled={false} onChange={onChange}
+      onRestore={vi.fn()} onResetDefault={vi.fn()} onClear={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("Auth"), { target: { value: "" } });
+    expect(onChange).toHaveBeenLastCalledWith("");
+    rerender(<SettingField setting={st} value="" disabled={false} onChange={onChange}
+      onRestore={vi.fn()} onResetDefault={vi.fn()} onClear={vi.fn()} />);
+    const input = screen.getByLabelText("Auth") as HTMLInputElement;
+    expect(input.type).toBe("number");
+    expect(screen.getByText("per min")).toBeTruthy();
+    fireEvent.change(input, { target: { value: "7" } });
+    expect(onChange).toHaveBeenLastCalledWith("7/60");
+  });
+  test("help is a focusable button", () => {
+    render(<Harness setting={s({})} />);
+    expect(screen.getByRole("button", { name: /About/ }).tagName).toBe("BUTTON");
+  });
 });

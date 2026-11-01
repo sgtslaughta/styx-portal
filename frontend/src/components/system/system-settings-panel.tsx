@@ -86,7 +86,7 @@ export function SystemSettingsPanel({ groups: only }: { groups?: string[] } = {}
     all_.forEach((s) => {
       if (!isChanged(s, edits[s.key])) return;
       if (validate(s, edits[s.key] ?? null)) bad = true;
-      else changes[s.key] = edits[s.key] as number | boolean | string;
+      else changes[s.key] = (edits[s.key] ?? "") as number | boolean | string;
     });
     if (bad) return void toast.error("Please fix validation errors before saving");
     if (Object.keys(changes).length > 0) updateMutation.mutate(changes);
@@ -125,7 +125,7 @@ export function SystemSettingsPanel({ groups: only }: { groups?: string[] } = {}
                       disabled={busy}
                       onChange={(v) => handleChange(setting.key, v, setting)}
                       onRestore={() => drop(setting.key)}
-                      onClear={() => updateMutation.mutate({ [setting.key]: "" })}
+                      onClear={() => setEdits((p) => ({ ...p, [setting.key]: null }))}
                       onResetDefault={() => { drop(setting.key); resetMutation.mutate(setting.key); }}
                     />
                   ))}
