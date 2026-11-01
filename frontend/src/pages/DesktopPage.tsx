@@ -91,7 +91,6 @@ export function DesktopPage() {
           </button>
         </div>
       )}
-  return (
     <iframe
       ref={frameRef}
       src={`/i/${sub}/`}
