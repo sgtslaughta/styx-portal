@@ -3,6 +3,7 @@ import type { Setting, SettingValue } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
 import {
   Tooltip,
@@ -88,7 +89,7 @@ export function SettingRow(props: Props) {
   const { setting, value, disabled, onReset, onClear } = props;
   const isSecret = setting.type === "secret";
   return (
-    <div className="flex items-start gap-4 rounded-lg border border-border/50 p-4 hover:bg-muted/20 transition-colors">
+    <div className={cn("flex items-start gap-4 rounded-lg border border-border/50 p-4 hover:bg-muted/20 transition-colors", (setting.help?.length ?? 0) > 160 && "col-span-full")}>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
           <label className="text-sm font-medium leading-none">{setting.label}</label>
