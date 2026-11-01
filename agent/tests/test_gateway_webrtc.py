@@ -209,7 +209,7 @@ async def test_refit_without_seat_is_a_noop(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_page_injection_only_for_webrtc(tmp_path):
+async def test_page_injection_in_both_transports(tmp_path):
     from aiohttp import web
     from aiohttp.test_utils import TestClient, TestServer
     app = web.Application()
@@ -225,8 +225,9 @@ async def test_page_injection_only_for_webrtc(tmp_path):
         out[tr] = await (await c.get("/", headers=HDR)).text()
         await c.close()
     await up.close()
-    assert "styx/activity" in out["webrtc"] and "styx/refit" in out["webrtc"]
-    assert "styx/activity" not in out["websockets"]
+    # both: the sidebar may pick WebRTC on a WebSockets default; the shim arms on signaling open
+    for tr in ("webrtc", "websockets"):
+        assert "styx/activity" in out[tr] and "styx/refit" in out[tr]
 
 
 def test_kill_flag_path_matches_agent():
@@ -248,21 +249,32 @@ def test_relay_credit_capped_by_elapsed_time():
 
 
 @pytest.mark.asyncio
-async def test_signaling_refused_when_admin_chose_websockets(tmp_path):
-    # The selkies sidebar can switch the client to WebRTC on its own; that would
-    # skip refit, idle/max-session cuts and the TURN budget. Only the portal decides.
+async def test_sidebar_webrtc_allowed_on_websockets_default(tmp_path):
     up, client, seen = await _pair(tmp_path, transport="websockets")
     try:
-        r = await client.get("/api/webrtc/signaling/?x=1", headers={
-            **HDR, "Upgrade": "websocket", "Connection": "Upgrade",
-            "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==", "Sec-WebSocket-Version": "13"})
-        assert r.status == 403
-        assert "WebRTC is not enabled" in await r.text()
-        assert seen == []
+        ws = await _sig(client, "A")
+        await _until(lambda: _state(tmp_path)["active_connections"] == 1)
+        assert seen == ["x=1"]
+        await ws.close()
     finally:
         await client.close()
         await up.close()
 
+
+@pytest.mark.asyncio
+async def test_signaling_409_when_webrtc_off(tmp_path):
+    # 409 is selkies' own "server serves WebSockets": the client flips back once
+    # instead of retrying in a reload loop.
+    up, client, seen = await _pair(tmp_path, transport="websockets", webrtc_off=True)
+    try:
+        r = await client.get("/api/webrtc/signaling/?x=1", headers={
+            **HDR, "Upgrade": "websocket", "Connection": "Upgrade",
+            "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==", "Sec-WebSocket-Version": "13"})
+        assert r.status == 409
+        assert seen == []
+    finally:
+        await client.close()
+        await up.close()
 
 async def _gm(client, **body):
     return await client.post("/styx/gamemode", json=body, headers=HDR)

@@ -506,8 +506,9 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
     pcrf = _int_in(s.get("video_paintover_crf", s.get("h264_paintover_crf")), 5, 50)
     env["SELKIES_VIDEO_PAINTOVER_CRF"] = str(12 if pcrf is None else pcrf)
 
-    if transport == "webrtc":
-        env.update(turn_env(s.get("turn")))
+    # Every mode: the sidebar can switch a viewer to WebRTC, and selkies must
+    # never fall back to its public demo relay.
+    env.update(turn_env(s.get("turn")))
     if monitor:
         env["SELKIES_AUDIO_ENABLED"] = "true"
         cmd.append(f"--audio-device-name={monitor}")

@@ -16,7 +16,7 @@ const assert = require('assert'), vm = require('vm');
 const html = process.argv[process.argv.length - 1];
 const body = html.slice(html.indexOf('>') + 1, html.lastIndexOf('</script>'));
 const posts = [], socks = [], listeners = {};
-class FakeWS { constructor(u) { this.url = String(u); socks.push(this) } addEventListener() {} }
+class FakeWS { constructor(u) { this.url = String(u); this.on = {}; socks.push(this) } addEventListener(e, f) { this.on[e] = f } }
 class FakePC { getStats() {
   const m = new Map([
     ['t', {id: 't', type: 'transport', selectedCandidatePairId: 'p1'}],
@@ -40,12 +40,16 @@ new win.WebSocket('wss://h/other');
 assert.strictEqual(socks[0].url, 'wss://h/w/x/api/webrtc/signaling/?a=1&styx_vid=sid-1');
 assert.strictEqual(socks[1].url, 'wss://h/other');
 const pc = new win.RTCPeerConnection(); pc.rx = 1000; pc.remote = 'relay';
+listeners.keydown[0]({});                       // WebSockets session: shim stays inert
+assert.strictEqual(posts.length, 0);
+socks[0].on.open();                             // a WebRTC signaling socket opened
 listeners.keydown[0]({});
 setTimeout(() => {
-  assert.deepStrictEqual(posts[0], ['styx/activity', {sid: 'sid-1', relay_bytes: 1000, active: true}]);
+  const act = posts.filter(p => p[0] === 'styx/activity');
+  assert.deepStrictEqual(act[0], ['styx/activity', {sid: 'sid-1', relay_bytes: 1000, active: true}]);
   pc.rx = 400; // counter went backwards (pair swap): total never decreases
   listeners.pointerdown[0]({});   // within 15 s: trailing, not immediate
-  setTimeout(() => { assert.strictEqual(posts.length, 1); console.log('ok'); process.exit(0) }, 20);
+  setTimeout(() => { assert.strictEqual(posts.filter(p => p[0] === 'styx/activity').length, 1); console.log('ok'); process.exit(0) }, 20);
 }, 30);
 """
 

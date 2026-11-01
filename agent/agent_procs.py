@@ -46,6 +46,7 @@ def build_gateway_cmd(cfg: dict, upstream_port: int,
         "STYX_GW_IDLE_ENABLED": "1" if ss.get("idle_timeout_enabled") else "",
         "STYX_GW_TRANSPORT": "webrtc" if ss.get("transport") == "webrtc" else "websockets",
         "STYX_GW_MAX_SESSION_S": str(ss.get("max_session_s") or 0),
+        "STYX_GW_WEBRTC_OFF": "1" if ss.get("turn_budget_paused") else "",
         "STYX_GW_SEAT_DIR": seat_dir,
         "STYX_GW_ICON_DIR": str(install),
     }

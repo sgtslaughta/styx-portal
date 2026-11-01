@@ -105,16 +105,16 @@ def inject_idle_watchdog(html: str, timeout_s: int, lead_s: int,
 # channel, which the gateway cannot see). Relative URLs: pages live under /w/<sub>/.
 WEBRTC_JS = r"""<script id="styx-webrtc">(function(){
 var sid;try{sid=crypto.randomUUID()}catch(e){sid=Math.random().toString(36).slice(2)+Date.now().toString(36)}
-var pcs=[],RP=window.RTCPeerConnection;
+var rtc=false,pcs=[],RP=window.RTCPeerConnection;
 if(RP){window.RTCPeerConnection=class extends RP{constructor(){super(...arguments);pcs.push(this)}}}
 function post(path,body){try{fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),keepalive:true}).catch(function(){})}catch(e){}}
-function refit(){post('styx/refit',{sid:sid,w:innerWidth,h:innerHeight,dpr:devicePixelRatio||1})}
+function refit(){if(rtc)post('styx/refit',{sid:sid,w:innerWidth,h:innerHeight,dpr:devicePixelRatio||1})}
 var rt;function refitSoon(){clearTimeout(rt);rt=setTimeout(refit,300)}
 addEventListener('resize',refitSoon);document.addEventListener('fullscreenchange',refitSoon);
 var W=window.WebSocket;
 function SW(u,p){var s=String(u),sig=s.indexOf('/api/webrtc/signaling')>=0;
 if(sig)s+=(s.indexOf('?')<0?'?':'&')+'styx_vid='+encodeURIComponent(sid);
-var w=p===undefined?new W(s):new W(s,p);if(sig)w.addEventListener('open',refitSoon);return w}
+var w=p===undefined?new W(s):new W(s,p);if(sig)w.addEventListener('open',function(){rtc=true;refitSoon()});return w}
 SW.prototype=W.prototype;SW.CONNECTING=0;SW.OPEN=1;SW.CLOSING=2;SW.CLOSED=3;window.WebSocket=SW;
 async function relay(){var tot=0;
 for(var pc of pcs){var sel=pc.__styxSel||(pc.__styxSel={});
@@ -126,7 +126,7 @@ if((l&&l.candidateType==='relay')||(m&&m.candidateType==='relay'))sel[r.id]=Math
 for(var k in sel)tot+=sel[k]}
 return tot}
 var T=15000,sent=0,rs=0,dirty=false,tm=null;
-function send(active){if(active){sent=Date.now();dirty=false}else rs=Date.now();
+function send(active){if(!rtc)return;if(active){sent=Date.now();dirty=false}else rs=Date.now();
 relay().then(function(rb){post('styx/activity',{sid:sid,relay_bytes:rb,active:active})})}
 function act(){if(document.visibilityState!=='visible')return;dirty=true;
 var wait=sent+T-Date.now();if(wait<=0)send(true);
@@ -139,7 +139,8 @@ setInterval(function(){if(!dirty&&Date.now()-Math.max(sent,rs)>=30000)send(false
 
 
 def inject_webrtc(html: str, enabled: bool) -> str:
-    """WebRTC transport only: session tag, input beacons, refit posts (WEBRTC_JS)."""
+    """Session tag, input beacons, refit posts (WEBRTC_JS); inert until a WebRTC
+    signaling socket opens, so WebSockets sessions are untouched."""
     if not enabled or "</head>" not in html:
         return html
     return html.replace("</head>", WEBRTC_JS + "</head>", 1)
