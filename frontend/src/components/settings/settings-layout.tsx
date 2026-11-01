@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { SettingsNav } from "./settings-nav";
@@ -13,6 +13,11 @@ export function SettingsLayout() {
   const sections = useMemo(() => cats.flatMap((c) => c.sections), [cats]);
   const [activeId, setActiveId] = useState<string | undefined>(
     () => (new URLSearchParams(window.location.search).has("setup") ? "services" : undefined));
+  useEffect(() => {
+    const go = (e: Event) => setActiveId((e as CustomEvent<string>).detail);
+    window.addEventListener("styx:settings-section", go);
+    return () => window.removeEventListener("styx:settings-section", go);
+  }, []);
 
   const active: SettingsSection | undefined =
     sections.find((s) => s.id === activeId) ?? sections[0];

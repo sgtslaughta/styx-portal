@@ -1,10 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { api, type Setting, type SettingGroup, type SettingValue } from "@/api/client";
 import { SlidersHorizontal } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { SettingsGroupNav } from "./settings-group-nav";
 import { SettingRow } from "./setting-row";
 import { TurnCostCard } from "./turn-cost-card";
 import { TurnSetupGuide } from "./turn-setup-guide";
@@ -19,6 +21,7 @@ export function SystemSettingsPanel() {
 
   const [localState, setLocalState] = useState<Record<string, SettingValue>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [params, setParams] = useSearchParams();
 
   // Initialize local state when data loads
   if (groups.length > 0 && Object.keys(localState).length === 0) {
@@ -119,13 +122,29 @@ export function SystemSettingsPanel() {
     resetMutation.mutate(key);
   };
 
+  const isDirty = (g: SettingGroup) =>
+    g.settings.some((s) => {
+      const v = localState[s.key];
+      if (s.type === "secret") return v !== undefined && v !== "";
+      return (v !== undefined && v !== s.value) || s.key in errors;
+    });
+
   if (isLoading) {
     return <div className="text-sm text-muted-foreground">Loading settings...</div>;
   }
 
+  const wanted = params.get("group");
+  const active = groups.find((g) => g.group === wanted) ?? groups[0];
+
   return (
-    <div className="space-y-6">
-      {groups.map((group: SettingGroup) => (
+    <div className="flex flex-col gap-4 md:flex-row md:gap-6">
+      <SettingsGroupNav
+        items={groups.map((g) => ({ id: g.group, label: g.label, dirty: isDirty(g) }))}
+        activeId={active?.group ?? ""}
+        onSelect={(id) => setParams((p) => { p.set("group", id); return p; })}
+      />
+      <div className="min-w-0 flex-1 space-y-6">
+      {(active ? [active] : []).map((group: SettingGroup) => (
         <div key={group.group} className="space-y-6">
         <Card className="styx-card">
           <CardHeader className="pb-4">
@@ -186,6 +205,7 @@ export function SystemSettingsPanel() {
         {group.group === "webrtc" && <TurnCostCard />}
         </div>
       ))}
+      </div>
     </div>
   );
 }
