@@ -47,7 +47,7 @@ from agent_procs import (  # noqa: E402
     FRAME_START_TIMEOUT_S, _restart_engine, _terminate,
     _check, build_gateway_cmd, drop_clients, settings_restart_keys,  # noqa: F401
     viewers_connected, merge_pending, must_apply_now, restart_plan,
-    cut_stream, kill_requested, sleep_or_kill,
+    cut_stream, kill_requested, sleep_or_kill, deferred_apply_stop,
     sync_stream_mode, clear_stream_mode_on_portal_change)
 
 
@@ -400,9 +400,11 @@ def run(cfg: dict) -> int:
             _write_state({"ts": time.time(), "ok": False, "error": str(e)})
             print(f"heartbeat failed: {e}", flush=True)
         gw_state = gw_state_path(cfg)
+        idle_apply = deferred_apply_stop(lambda: pending, lambda: pending_exit, gw_state)
         req = (refit.wait_for_request(refit_req, interval, poll=0.05,
-                                      stop=lambda: not gseat.alive() or kill_requested(gw_state))
-               if gseat else sleep_or_kill(gw_state, interval))  # wake on refit, seat death, WebRTC cut
+                                      stop=lambda: not gseat.alive() or kill_requested(gw_state)
+                                      or idle_apply())
+               if gseat else sleep_or_kill(gw_state, interval, stop=idle_apply))  # wake on refit, seat death, WebRTC cut
         if cut_stream(gw_state, procs, bool(gseat)):
             last_engine_restart = time.monotonic()
         if req:

@@ -106,9 +106,10 @@ def cut_stream(state_path, procs: dict, seat: bool) -> bool:
     return True
 
 
-def sleep_or_kill(state_path, seconds: float, step: float = 0.5) -> None:
+def sleep_or_kill(state_path, seconds: float, step: float = 0.5, stop=None) -> None:
     end = time.monotonic() + seconds
-    while time.monotonic() < end and not kill_requested(state_path):
+    while (time.monotonic() < end and not kill_requested(state_path)
+           and not (stop and stop())):
         time.sleep(min(step, max(0.0, end - time.monotonic())))
 
 
@@ -180,6 +181,11 @@ def restart_plan(pending: dict | None, apply_now: bool, viewers: bool) -> tuple[
         return (), pending
     rest = tuple(k for k in pending["keys"] if k != "gateway")
     return ("gateway",), ({"old": pending["old"], "keys": rest} if rest else None)
+
+
+def deferred_apply_stop(get_pending, get_exit, state_path):
+    """Wait-stop predicate: true once deferred settings can apply (no viewers)."""
+    return lambda: bool((get_pending() or get_exit()) and not viewers_connected(state_path))
 
 
 def merge_pending(pending: dict | None, old_ss: dict, new_ss: dict) -> dict:

@@ -480,3 +480,25 @@ def test_seat_x11_change_restarts_seat():
     old = {"video_crf": 25}
     assert "seat" not in styx_agent.settings_restart_keys(old, {**old, "seat_x11": "auto"})
     assert "seat" in styx_agent.settings_restart_keys(old, {**old, "seat_x11": "off"})
+
+
+def test_deferred_apply_stop_fires_only_when_pending_and_idle(monkeypatch):
+    from agent_procs import deferred_apply_stop
+    viewers = {"on": True}
+    monkeypatch.setattr("agent_procs.viewers_connected", lambda p: viewers["on"])
+    pend = {"old": {}, "keys": ("selkies",)}
+    stop = deferred_apply_stop(lambda: pend, lambda: False, "gw")
+    assert stop() is False          # viewer still connected
+    viewers["on"] = False
+    assert stop() is True           # last viewer left
+    pend = None
+    assert stop() is False          # nothing deferred
+    assert deferred_apply_stop(lambda: None, lambda: True, "gw")() is True
+
+
+def test_sleep_or_kill_honours_stop(tmp_path):
+    import time
+    from agent_procs import sleep_or_kill
+    t = time.monotonic()
+    sleep_or_kill(tmp_path / "gw.json", 5, step=0.01, stop=lambda: True)
+    assert time.monotonic() - t < 1
