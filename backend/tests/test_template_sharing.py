@@ -2,9 +2,11 @@
 
 import pytest
 
+from app.models import ServiceTemplate
+
 
 @pytest.mark.asyncio
-async def test_shared_template_visible_to_other_user(member_client, second_member_client):
+async def test_shared_template_visible_to_other_user(member_client, second_member_client, session):
     """A shared template created by member should be visible to other members."""
     # member creates a private template
     r = await member_client.post("/api/templates", json={
@@ -12,10 +14,11 @@ async def test_shared_template_visible_to_other_user(member_client, second_membe
     assert r.status_code == 201
     tid = r.json()["id"]
 
-    # member shares it
-    up = await member_client.put(f"/api/templates/{tid}", json={"shared": True})
-    assert up.status_code == 200
-    assert up.json()["shared"] is True
+    # sharing is admin-only; flip the flag directly
+    t = await session.get(ServiceTemplate, tid)
+    t.shared = True
+    session.add(t)
+    await session.commit()
 
     # second_member should see it in their list
     resp = await second_member_client.get("/api/templates")
@@ -40,13 +43,16 @@ async def test_unshared_template_not_visible_to_other_user(member_client, second
 
 
 @pytest.mark.asyncio
-async def test_non_owner_cannot_edit_shared_template(member_client, second_member_client):
+async def test_non_owner_cannot_edit_shared_template(member_client, second_member_client, session):
     """A non-owner should not be able to edit a shared template (even if shared)."""
-    # member creates a shared template
     r = await member_client.post("/api/templates", json={
-        "name": "mine2", "display_name": "Mine2", "image": "img", "shared": True})
+        "name": "mine2", "display_name": "Mine2", "image": "img"})
     assert r.status_code == 201
     tid = r.json()["id"]
+    t = await session.get(ServiceTemplate, tid)
+    t.shared = True
+    session.add(t)
+    await session.commit()
 
     # second_member attempts to edit it
     r2 = await second_member_client.put(f"/api/templates/{tid}", json={"display_name": "Hacked"})
@@ -55,7 +61,7 @@ async def test_non_owner_cannot_edit_shared_template(member_client, second_membe
 
 
 @pytest.mark.asyncio
-async def test_owner_can_edit_shared_template(member_client):
+async def test_owner_cannot_share_but_can_edit_private(member_client):
     """A template owner should be able to edit their own shared template."""
     # member creates a template
     r = await member_client.post("/api/templates", json={
@@ -63,11 +69,11 @@ async def test_owner_can_edit_shared_template(member_client):
     assert r.status_code == 201
     tid = r.json()["id"]
 
-    # owner can share it
+    # owner cannot share it (admin-only)
     r2 = await member_client.put(f"/api/templates/{tid}", json={"shared": True})
-    assert r2.status_code == 200
+    assert r2.status_code == 403
 
-    # owner can still edit it after sharing
+    # owner can still edit it while private
     r3 = await member_client.put(f"/api/templates/{tid}", json={"display_name": "Updated"})
     assert r3.status_code == 200
     assert r3.json()["display_name"] == "Updated"

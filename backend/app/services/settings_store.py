@@ -1,6 +1,6 @@
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -11,6 +11,42 @@ from app.security.crypto import decrypt_secret, encrypt_secret
 
 _settings = Settings()
 _RATE_RE = re.compile(r"^\d+/\d+$")
+
+
+class JsonValueError(ValueError):
+    """Invalid structured (json) setting value; surfaced as 422."""
+
+
+_DEFAULT_SIZE_PRESETS = [
+    {"id": "light", "label": "Light", "cpus": 2, "memory_gb": 2, "gpu": False},
+    {"id": "standard", "label": "Standard", "cpus": 4, "memory_gb": 4, "gpu": False},
+    {"id": "heavy", "label": "Heavy", "cpus": 6, "memory_gb": 8, "gpu": True},
+]
+
+
+def _num(v: Any, lo: int, hi: int) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and lo <= v <= hi
+
+
+def _validate_size_presets(value: Any) -> None:
+    if not isinstance(value, list) or not 1 <= len(value) <= 6:
+        raise JsonValueError("CONTAINER_SIZE_PRESETS must be a list of 1 to 6 presets")
+    keys = {"id", "label", "cpus", "memory_gb", "gpu"}
+    ids = set()
+    for p in value:
+        if not isinstance(p, dict) or set(p) != keys:
+            raise JsonValueError("each preset needs exactly: id, label, cpus, memory_gb, gpu")
+        if not (isinstance(p["id"], str) and p["id"] and isinstance(p["label"], str) and p["label"]):
+            raise JsonValueError("preset id and label must be non-empty strings")
+        if not _num(p["cpus"], 1, 64):
+            raise JsonValueError("preset cpus must be 1 to 64")
+        if not _num(p["memory_gb"], 1, 512):
+            raise JsonValueError("preset memory_gb must be 1 to 512")
+        if not isinstance(p["gpu"], bool):
+            raise JsonValueError("preset gpu must be a boolean")
+        if p["id"] in ids:
+            raise JsonValueError("preset ids must be unique")
+        ids.add(p["id"])
 
 
 @dataclass
@@ -26,6 +62,7 @@ class SettingSpec:
     max: int | None = None
     choices: tuple[str, ...] | None = None
     pattern: str | None = None
+    validator: Callable[[Any], None] | None = None
 
 
 def _spec(*a, **k) -> SettingSpec:
@@ -95,6 +132,9 @@ _SPECS: list[SettingSpec] = [
     _spec("MAX_INSTANCES_PER_USER", "quota", "Max instances per user",
           "Per-user instance cap; 0 = unlimited. Admins are exempt.", "int",
           "MAX_INSTANCES_PER_USER", min=0, max=1000),
+    _spec("CONTAINER_SIZE_PRESETS", "quota", "Container size presets",
+          "Light / Standard / Heavy choices offered when launching a container.", "json",
+          default=_DEFAULT_SIZE_PRESETS, validator=_validate_size_presets),
     _spec("PASSWORD_MIN_LENGTH", "password_policy", "Minimum length",
           "Minimum password length.", "int",
           "PASSWORD_MIN_LENGTH", min=8, max=256),
@@ -211,6 +251,9 @@ class SettingsService:
         elif spec.type == "enum":
             if value not in (spec.choices or ()):
                 raise ValueError(f"{spec.key} must be one of {', '.join(spec.choices or ())}")
+        elif spec.type == "json":
+            if spec.validator:
+                spec.validator(value)
         elif spec.type in ("str", "secret"):
             if not isinstance(value, str) or len(value) > 512:
                 raise ValueError(f"{spec.key} must be a string of at most 512 characters")

@@ -265,6 +265,12 @@ async def system_runtime(user: User = Depends(get_current_user)):
     return {"runtime": "kubernetes" if _settings.ROUTE_BACKEND == "k8s" else "docker"}
 
 
+@app.get("/api/system/size-presets")
+async def system_size_presets(user: User = Depends(get_current_user)):
+    from app.services.settings_store import settings as _settings
+    return _settings.get("CONTAINER_SIZE_PRESETS")
+
+
 @app.get("/api/system/gpu")
 async def system_gpu(user: User = Depends(get_current_user)):
     from app.services.docker_manager import detect_gpu
