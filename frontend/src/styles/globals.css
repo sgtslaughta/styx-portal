@@ -4,6 +4,8 @@
 
 /* Runtime CSS variables — these change with .dark class */
 :root {
+  --obol: linear-gradient(135deg, #6E4C16 0%, #B8862F 22%, #F1DA9A 46%, #C9A04E 58%, #8A6420 80%, #D9B565 100%);
+  --obol-edge: linear-gradient(135deg, #8A6420, #F1DA9A 45%, #A9792C 70%, #E6C67A);
   --background: #EDF1EF;
   --foreground: #0F1C22;
   --card: #F7F9F8;
@@ -24,8 +26,10 @@
   --ring: #2A767C;
   --success: #4F9A6C;
   --success-foreground: #3A7A53;
-  --obol: #B88A3E;
+  --obol-solid: #B88A3E;
   --obol-foreground: #86601F;
+  --gold-text: #86601F;
+  --s0: #9AA6A9; --s1: #008E9C; --s2: #A87423; --s3: #6B58C9; --s4: #C2512F; --s5: #3A6FCC;
   --warning: #A87A2A;
   --warning-foreground: #86601F;
   --idle: #A87A2A;
@@ -57,8 +61,10 @@
   --ring: #6FB7BC;
   --success: #4F9A6C;
   --success-foreground: #7CC49A;
-  --obol: #B88A3E;
+  --obol-solid: #B88A3E;
   --obol-foreground: #D2A657;
+  --gold-text: #DDB869;
+  --s0: #56676C; --s1: #0596A3; --s2: #B9852A; --s3: #8573DE; --s4: #D65B3C; --s5: #4F86E0;
   --warning: #D2A657;
   --warning-foreground: #D2A657;
   --idle: #D2A657;
@@ -90,7 +96,7 @@
   --color-ring: var(--ring);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
-  --color-obol: var(--obol);
+  --color-obol: var(--obol-solid);
   --color-obol-foreground: var(--obol-foreground);
   --font-sans: "Commissioner Variable", ui-sans-serif, system-ui, sans-serif;
   --color-warning: var(--warning);
@@ -116,65 +122,6 @@
   body { line-height: 1.55; }
   h1, h2, h3 { font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; font-variation-settings: "FLAR" 40; }
 }
-
-/* Styx Portal login brand panel — theme-aware, animated "river current" */
-.styx-brand {
-  position: relative;
-  overflow: hidden;
-  isolation: isolate; /* keeps z:-1 line layers above this panel's background */
-  /* Light theme: Mist -> pale Water, faint Current glow */
-  background: radial-gradient(60% 50% at 80% 15%, rgba(42, 118, 124, 0.25), transparent 70%),
-    linear-gradient(to top right, #EDF1EF 0%, #BFD6D6 60%, #9CC1C3 100%);
-  color: #0F1C22;
-  --brand-fg: #0F1C22;
-  --brand-fg-muted: #2F4A52;
-  --brand-ripple-r: 42;
-  --brand-ripple-g: 118;
-  --brand-ripple-b: 124;
-}
-/* Dark theme: Water with a faint Current glow */
-.dark .styx-brand {
-  background: radial-gradient(60% 50% at 80% 15%, rgba(111, 183, 188, 0.18), transparent 70%),
-    linear-gradient(to top right, #0F1C22 0%, #16323A 100%);
-  color: #EDF1EF;
-  --brand-fg: #EDF1EF;
-  --brand-fg-muted: #9FB0B4;
-  --brand-ripple-r: 111;
-  --brand-ripple-g: 183;
-  --brand-ripple-b: 188;
-}
-.styx-brand::before,
-.styx-brand::after {
-  content: "";
-  position: absolute;
-  inset: -40% -40%;
-  pointer-events: none;
-  /* No-WebGL fallback only: the opaque RippleCanvas (z:0) draws its own
-     refracted lines and covers these; they show when the canvas stays
-     transparent (no WebGL / reduced motion / shader failure). */
-  z-index: -1;
-  -webkit-mask: radial-gradient(150% 130% at 0% 100%, #000 30%, transparent 72%);
-          mask: radial-gradient(150% 130% at 0% 100%, #000 30%, transparent 72%);
-}
-.styx-brand::before {
-  background: repeating-linear-gradient(115deg, transparent 0 22px, rgb(var(--brand-ripple-r), var(--brand-ripple-g), var(--brand-ripple-b)) 22px 23px);
-  opacity: 0.15;
-  animation: styx-flow 14s linear infinite;
-}
-.styx-brand::after {
-  background: repeating-linear-gradient(115deg, transparent 0 40px, rgb(var(--brand-ripple-r), var(--brand-ripple-g), var(--brand-ripple-b)) 40px 41px);
-  opacity: 0.1;
-  animation: styx-flow 26s linear infinite;
-}
-@keyframes styx-flow {
-  from { transform: translate(0, 0); }
-  to   { transform: translate(-23px, -49px); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .styx-brand::before,
-  .styx-brand::after { animation: none; }
-}
-.styx-brand > * { position: relative; z-index: 1; }
 
 /* ── Styx Portal dashboard theming (immersive depth) ───────────────── */
 :root {
@@ -212,16 +159,36 @@
   background: var(--header-gradient);
 }
 
-/* Static river current — no animation (header motif). */
-.styx-motif::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: repeating-linear-gradient(115deg, transparent 0 16px, var(--motif-color) 16px 17px);
-  -webkit-mask: radial-gradient(120% 200% at 0% 50%, #000 30%, transparent 75%);
-          mask: radial-gradient(120% 200% at 0% 50%, #000 30%, transparent 75%);
+/* Brushed-gold river lines: sheen masked into 1px diagonals (::after) over a 1px shadow line (::before). */
+.styx-header::before, .styx-header::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  --fade: radial-gradient(90% 220% at 0% 50%, #000 15%, transparent 70%);
 }
+.styx-header::before {
+  background: rgba(0,0,0,.6); opacity: .35;
+  -webkit-mask: repeating-linear-gradient(115deg, transparent 0 16px, #000 16px 17px), var(--fade);
+          mask: repeating-linear-gradient(115deg, transparent 0 16px, #000 16px 17px), var(--fade);
+  -webkit-mask-position: 1px 1px, 0 0; mask-position: 1px 1px, 0 0;
+}
+.styx-header::after {
+  opacity: .32;
+  background: linear-gradient(25deg, #6E4C16, #C9A04E 10%, #F1DA9A 17%, #A9792C 27%, #E6C67A 38%, #7A5518 49%, #D9B565 61%, #F6E4B0 69%, #8A6420 81%, #C9A04E 92%, #F1DA9A);
+  -webkit-mask: repeating-linear-gradient(115deg, transparent 0 16px, #000 16px 17px), var(--fade);
+          mask: repeating-linear-gradient(115deg, transparent 0 16px, #000 16px 17px), var(--fade);
+}
+/* after the mask shorthand, which resets it */
+.styx-header::before, .styx-header::after { -webkit-mask-composite: source-in; mask-composite: intersect; }
+:root:not(.dark) .styx-header::before { opacity: .12; }
+:root:not(.dark) .styx-header::after { opacity: .5; }
+/* Frosted patch behind logo + nav: blurs the gold lines under the labels, soft-edged */
+.styx-header > .styx-logo::before, .styx-header > .styx-tabs::before {
+  content: ""; position: absolute; inset: 4px -18px; z-index: -1; pointer-events: none;
+  backdrop-filter: blur(5px) saturate(.9); -webkit-backdrop-filter: blur(5px) saturate(.9);
+  background: color-mix(in srgb, var(--background) 35%, transparent);
+  -webkit-mask: radial-gradient(closest-side, #000 55%, transparent);
+          mask: radial-gradient(closest-side, #000 55%, transparent);
+}
+.styx-header > .styx-tabs::before { inset: 6px -22px; }
 .styx-header > * { position: relative; z-index: 1; }
 
 /* Auth form panel — FIXED light (off-white), theme-independent. Re-declares the
@@ -302,3 +269,19 @@ option {
   background-color: var(--card);
   color: var(--foreground);
 }
+
+/* ── Glance gold utilities ─────────────────────────────────────────── */
+.btn-gold { border: 0; border-radius: 0.5rem; padding: 9px 16px; font-weight: 600; color: #2A1C05; background: var(--obol);
+  background-size: 200% 200%; background-position: 0% 50%; transition: background-position .5s ease;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.55), inset 0 -1px 0 rgba(80,50,10,.35), 0 1px 2px rgba(80,50,10,.3); }
+.btn-gold:hover { background-position: 100% 50%; }
+.gold-rule { flex: 1; height: 1px; align-self: center; border-radius: 1px;
+  background: linear-gradient(90deg, #8A6420 0%, #F1DA9A 14%, #B8862F 30%, #E6C67A 48%, #9C7228 66%, #D9B565 82%, #8A6420 100%);
+  /* Soft blurred shadow only: a crisp dark row blended into the gold (grey) on half-pixel positions. */
+  box-shadow: 0 1px 3px rgba(0,0,0,.35);
+  -webkit-mask: linear-gradient(90deg, #000 0%, #000 55%, transparent 100%); mask: linear-gradient(90deg, #000 0%, #000 55%, transparent 100%); }
+:root:not(.dark) .gold-rule { background: linear-gradient(90deg, #8A6420 0%, #D9B565 14%, #A9792C 30%, #C9A04E 48%, #8A6420 66%, #B8862F 82%, #7A5518 100%);
+  box-shadow: 0 1px 3px rgba(80,50,10,.18); }
+.gold-underline { position: relative; }
+.gold-underline::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; border-radius: 2px; background: var(--obol-edge); }
+@media (prefers-reduced-motion: reduce) { .btn-gold { transition: none; } }

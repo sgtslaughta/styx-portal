@@ -1,10 +1,14 @@
 import { UserRound } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/api/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SetupsSection } from "@/components/system/setups-section";
 import { ProfilesList } from "@/components/system/profiles-list";
 
 export function MyProfiles() {
+  const { user } = useAuth();
   return (
+    <div className="space-y-6">
     <Card className="styx-card">
       <CardHeader className="pb-4">
         <div className="flex items-center gap-3">
@@ -21,5 +25,7 @@ export function MyProfiles() {
         <ProfilesList load={api.getMyProfiles} remove={api.deleteMyProfile} actionLabel="Reset" />
       </CardContent>
     </Card>
+    {user?.role !== "admin" && <SetupsSection only="mine" />}
+    </div>
   );
 }

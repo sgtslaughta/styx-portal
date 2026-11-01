@@ -1,0 +1,100 @@
+import pytest
+
+from app.models import StreamSession
+from app.services import cf_turn_usage, metric_rollup
+
+
+@pytest.mark.parametrize("path", ["overview", "streaming", "relay"])
+async def test_non_admin_403(member_client, path):
+    assert (await member_client.get(f"/api/admin/stats/{path}")).status_code == 403
+
+
+async def test_overview_shape(admin_client):
+    metric_rollup.reset()
+    metric_rollup.record_host(12.0, 34.0, 50.0, 1)
+    r = await admin_client.get("/api/admin/stats/overview?range=7d")
+    assert r.status_code == 200, r.text
+    j = r.json()
+    assert set(j["tiles"]) == {"cpu", "ram", "disk", "live"}
+    assert all(len(t["series"]) == 24 for t in j["tiles"].values())
+    assert j["tiles"]["cpu"]["series"][-1] == 12.0
+    assert len(j["health_hours"]) == 24 and set(j["health_hours"]) <= {"ok", "warn", "fail", None}
+    assert len(j["sessions_per_day"]) == 14 and set(j["load"]) == {"labels", "cpu", "ram"}
+
+
+async def test_streaming_rows(admin_client, session):
+    session.add(StreamSession(target_kind="workstation", target_id="gone", user_id=None))
+    await session.commit()
+    r = await admin_client.get("/api/admin/stats/streaming?days=7&top=5")
+    assert r.status_code == 200 and len(r.json()["rows"]) == 1
+
+
+async def test_relay_404_when_unconfigured(admin_client, monkeypatch):
+    monkeypatch.setattr(cf_turn_usage, "configured", lambda: False)
+    assert (await admin_client.get("/api/admin/stats/relay")).status_code == 404
+
+
+@pytest.mark.parametrize("period", ["this", "last", "6m"])
+async def test_relay_shape(admin_client, monkeypatch, period):
+    monkeypatch.setattr(cf_turn_usage, "configured", lambda: True)
+
+    async def egress(now=None, client=None):
+        return {"bytes": None, "error": None}
+    monkeypatch.setattr(cf_turn_usage, "month_egress", egress)
+    r = await admin_client.get(f"/api/admin/stats/relay?period={period}")
+    assert r.status_code == 200, r.text
+    j = r.json()
+    assert len(j["daily"]) == 30 and len(j["monthly"]) == 6
+    assert {"used_gb", "free_gb", "projected_gb", "est_usd", "budget_usd", "budget_gb", "relayed_pct",
+            "by_user", "by_workstation", "reasons"} <= set(j)
+    assert j["budget_gb"] is None or j["budget_gb"] > 0
+
+
+async def test_system_metrics_host_fields(admin_client):
+    j = (await admin_client.get("/api/system/metrics")).json()
+    assert {"host_cpu_pct", "host_ram_pct", "host_ram_total_mb"} <= set(j)
+
+
+async def test_overview_gap_hours_are_null(admin_client):
+    from app.services import health_store
+    metric_rollup.reset()
+    health_store.reset()
+    j = (await admin_client.get("/api/admin/stats/overview")).json()
+    assert j["health_hours"] == [None] * 24
+    assert j["tiles"]["cpu"]["series"] == [None] * 24
+
+
+async def test_heartbeat_stores_relay_reason(client, session):
+    from app.models import StreamSession, User, Workstation
+    from app.services.workstations import sha256_hex
+    u = User(username="al", password_hash="x", role="member")
+    session.add(u)
+    await session.commit()
+    w = Workstation(name="B", hostname="b", subdomain="b", created_by=u.id,
+                    agent_token_hash=sha256_hex("tok"), status="online",
+                    occupied_by=u.id, active_connections=1)
+    session.add(w)
+    await session.commit()
+    h = {"Authorization": "Bearer tok"}
+    body = {"health": {"active_connections": 1, "turn_bytes": 1000}, "relay_reason": "mobile"}
+    # first beat opens the session, second (with relay bytes) flags it
+    assert (await client.post("/api/agent/heartbeat", json={"health": {"active_connections": 1}}, headers=h)).status_code == 200
+    assert (await client.post("/api/agent/heartbeat", json=body, headers=h)).status_code == 200
+    from sqlmodel import select
+    r = (await session.exec(select(StreamSession))).one()
+    assert r.relayed and r.relay_reason == "mobile"
+
+
+async def test_heartbeat_unknown_relay_reason_not_422(client, session):
+    from app.models import User, Workstation
+    from app.services.workstations import sha256_hex
+    u = User(username="bo", password_hash="x", role="member")
+    session.add(u)
+    await session.commit()
+    session.add(Workstation(name="C", hostname="c", subdomain="c", created_by=u.id,
+                            agent_token_hash=sha256_hex("tok2"), status="online"))
+    await session.commit()
+    for v in ("weird", 5, None):
+        r = await client.post("/api/agent/heartbeat", json={"relay_reason": v},
+                              headers={"Authorization": "Bearer tok2"})
+        assert r.status_code == 200

@@ -1,13 +1,20 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const listUsers = vi.fn();
 const adminResetMatrix = vi.fn();
+const unlockUser = vi.fn();
+const changeRole = vi.fn();
+const deleteUser = vi.fn();
 vi.mock("@/api/client", () => ({
   api: {
     listUsers: (...a: unknown[]) => listUsers(...a),
     adminResetMatrix: (...a: unknown[]) => adminResetMatrix(...a),
+    unlockUser: (...a: unknown[]) => unlockUser(...a),
+    changeRole: (...a: unknown[]) => changeRole(...a),
+    listInvites: () => Promise.resolve([{ id: "i1", email: "sam@x.io", role: "user", created_at: "2026-10-30T00:00:00Z", expires_at: null }]),
+    deleteUser: (...a: unknown[]) => deleteUser(...a),
   },
   ApiError: class extends Error {},
 }));
@@ -16,7 +23,7 @@ vi.mock("@/components/system/user-groups-dialog", () => ({ UserGroupsDialog: () 
 
 import { UsersPanel } from "../users-panel";
 
-const base = { last_login: null, locked_until: null };
+const base = { last_login: null, locked_until: null, failed_count: 0, email: null };
 const user = (o: object) => ({ ...base, id: "u1", username: "pat", role: "user", is_active: true, ...o });
 
 function renderPanel() {
@@ -30,30 +37,76 @@ async function openMenu(name: string) {
 
 beforeEach(() => vi.clearAllMocks());
 
-describe("UsersPanel row actions at small widths", () => {
-  test("role, unlock and role-change live in the More menu with mobile-only items", async () => {
-    listUsers.mockResolvedValue([user({ locked_until: "2999-01-01T00:00:00Z" })]);
+describe("UsersPanel bulk and invites", () => {
+  const two = () => listUsers.mockResolvedValue([
+    user({ id: "u1", username: "pat", locked_until: "2999-01-01T00:00:00Z" }),
+    user({ id: "u2", username: "kim", locked_until: "2999-01-01T00:00:00Z", groups: ["media"] }),
+  ]);
+  test("select two rows, bulk Unlock calls unlock twice", async () => {
+    two(); unlockUser.mockResolvedValue({});
     renderPanel();
-    await openMenu("More actions for pat");
-    const adminItem = await screen.findByRole("menuitem", { name: /Make admin/ });
-    expect(adminItem.className).toContain("sm:hidden");
-    const unlockItem = screen.getByRole("menuitem", { name: /Unlock/ });
-    expect(unlockItem.className).toContain("sm:hidden");
-    expect(screen.getByRole("menuitem", { name: /Groups/ })).toBeTruthy();
+    await screen.findByRole("checkbox", { name: "Select kim" });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select all users" }));
+    expect(screen.getByText("2 selected")).toBeTruthy();
+    expect(screen.getByText("media")).toBeTruthy();
+    fireEvent.click(within(screen.getByRole("region", { name: "Bulk actions" })).getByRole("button", { name: "Unlock" }));
+    await waitFor(() => expect(unlockUser).toHaveBeenCalledTimes(2));
+  });
+  test("bulk Delete asks for confirmation first", async () => {
+    two(); deleteUser.mockResolvedValue({});
+    renderPanel();
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Select pat" }));
+    fireEvent.click(within(screen.getByRole("region", { name: "Bulk actions" })).getByRole("button", { name: "Delete" }));
+    expect(await screen.findByText(/Delete 1 user permanently/)).toBeTruthy();
+    expect(deleteUser).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(deleteUser).toHaveBeenCalledWith("u1"));
+  });
+  test("Invites segment lists API invites", async () => {
+    two();
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: "Invites 1" }));
+    expect(screen.getByText("sam@x.io")).toBeTruthy();
+  });
+});
+
+describe("UsersPanel table", () => {
+  test("Locked filter shows only locked rows and Unlock calls the API", async () => {
+    listUsers.mockResolvedValue([
+      user({ id: "u1", username: "pat" }),
+      user({ id: "u2", username: "theo", locked_until: "2999-01-01T00:00:00Z", failed_count: 5 }),
+    ]);
+    unlockUser.mockResolvedValue({});
+    renderPanel();
+    await screen.findByText("pat");
+    fireEvent.click(screen.getByRole("button", { name: "Locked 1" }));
+    expect(screen.queryByText("pat")).toBeNull();
+    expect(screen.getByText("theo")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Unlock" }));
+    await waitFor(() => expect(unlockUser).toHaveBeenCalledWith("u2"));
   });
 
-  test("inactive users still get the menu", async () => {
+  test("segments show counts", async () => {
+    listUsers.mockResolvedValue([user({ role: "admin" }), user({ id: "u2", username: "b" })]);
+    renderPanel();
+    expect(await screen.findByRole("button", { name: "All 2" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Admins 1" })).toBeTruthy();
+  });
+
+  test("inline role select changes role", async () => {
+    listUsers.mockResolvedValue([user({})]);
+    changeRole.mockResolvedValue({});
+    renderPanel();
+    fireEvent.change(await screen.findByLabelText("Role for pat"), { target: { value: "admin" } });
+    await waitFor(() => expect(changeRole).toHaveBeenCalledWith("u1", "admin"));
+  });
+
+  test("More menu keeps groups, profiles, reset, force, disable, delete", async () => {
     listUsers.mockResolvedValue([user({ is_active: false })]);
     renderPanel();
     await openMenu("More actions for pat");
-    expect(await screen.findByRole("menuitem", { name: /Groups/ })).toBeTruthy();
-    expect(screen.queryByRole("menuitem", { name: /Make admin/ })).toBeNull();
-  });
-
-  test("role shows under the username on mobile", async () => {
-    listUsers.mockResolvedValue([user({ role: "admin" })]);
-    renderPanel();
-    await waitFor(() => expect(screen.getAllByText("admin").some((e) => e.className.includes("sm:hidden"))).toBe(true));
+    for (const n of [/Groups/, /Profiles/, /Reset password/, /Force password change/, /Disable/, /Delete permanently/])
+      expect(await screen.findByRole("menuitem", { name: n })).toBeTruthy();
   });
 });
 

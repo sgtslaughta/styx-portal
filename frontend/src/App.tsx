@@ -1,27 +1,20 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AlertTriangle } from "lucide-react";
-import { Header } from "@/components/layout/header";
-import { TabNav } from "@/components/layout/tab-nav";
-import { InstanceWorkspace } from "@/components/instances/instance-workspace";
-import { TemplateGrid } from "@/components/templates/template-grid";
-import { RegistryBrowser } from "@/components/templates/registry-browser";
-import { LaunchModal } from "@/components/templates/launch-modal";
+import { Header, type HeaderTab } from "@/components/layout/header";
+import { StatusRail } from "@/components/layout/status-rail";
+import { HomePage } from "@/components/home/home-page";
+import { NewContainerDrawer } from "@/components/launch/new-container-drawer";
 import { SettingsLayout } from "@/components/settings/settings-layout";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
-import { useTemplates } from "@/hooks/use-templates";
-import { cn } from "@/lib/utils";
-import type { ServiceTemplate, RegistryImage } from "@/lib/types";
+import { AdminActiveContext } from "@/hooks/use-admin-poll";
 
 export default function App() {
-  const { data: templates } = useTemplates();
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState("instances");
-  const [templateSubTab, setTemplateSubTab] = useState<string | null>(null);
-  const [launchRegistry, setLaunchRegistry] = useState<RegistryImage | null>(null);
-  const [launchTemplate, setLaunchTemplate] = useState<ServiceTemplate | null>(null);
+  const [activeTab, setActiveTab] = useState<HeaderTab>("home");
   const [launchOpen, setLaunchOpen] = useState(false);
+  const [railPad, setRailPad] = useState(0);
 
   useEffect(() => {
     const sp = new URLSearchParams(window.location.search);
@@ -44,69 +37,23 @@ export default function App() {
 
   // /?setup=<id> (tile or shell card of an unconfigured service): admins land on Settings > Services.
   useEffect(() => {
-    if (user?.role === "admin" && new URLSearchParams(window.location.search).has("setup")) setActiveTab("system");
+    if (user?.role === "admin" && new URLSearchParams(window.location.search).has("setup")) setActiveTab("admin");
   }, [user?.role]);
-
-  function handleImportRegistry(image: RegistryImage) {
-    setLaunchRegistry(image);
-    setLaunchTemplate(null);
-    setLaunchOpen(true);
-  }
-
-  function handleLaunchTemplate(template: ServiceTemplate) {
-    setLaunchTemplate(template);
-    setLaunchRegistry(null);
-    setLaunchOpen(true);
-  }
-
-  function closeLaunchModal() {
-    setLaunchOpen(false);
-    setLaunchRegistry(null);
-    setLaunchTemplate(null);
-  }
-
-  const resolvedSubTab = templateSubTab ?? (templates?.length ? "my-templates" : "registry");
 
   return (
     <TooltipProvider>
     <div className="flex h-dvh flex-col bg-background styx-app-bg">
-      <Header />
-      <TabNav activeTab={activeTab} onTabChange={setActiveTab} />
-      <main className="min-h-0 flex-1 overflow-y-auto p-6">
-        <div className={activeTab === "instances" ? "h-full" : "hidden"}>
-          <InstanceWorkspace onLaunch={() => setActiveTab("templates")} onOpenSettings={() => setActiveTab("system")} />
+      <Header activeTab={activeTab} onTabChange={setActiveTab} />
+      <main className="min-h-0 flex-1 overflow-y-auto p-6 transition-[padding] motion-reduce:transition-none" style={{ paddingRight: 24 + railPad }}>
+        <div className={activeTab === "home" ? "" : "hidden"}>
+          <HomePage onNewContainer={() => setLaunchOpen(true)} onOpenSettings={() => setActiveTab("admin")} />
         </div>
-        <div className={activeTab === "templates" ? "" : "hidden"}>
-          <div className="mb-4 flex gap-1">
-            {[
-              { id: "registry", label: "LinuxServer registry" },
-              { id: "my-templates", label: "My templates" },
-            ].map((tab) => (
-              <button key={tab.id} onClick={() => setTemplateSubTab(tab.id)} aria-current={resolvedSubTab === tab.id ? "page" : undefined} className={cn("rounded-lg px-3 py-1.5 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-11", resolvedSubTab === tab.id ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground")}>
-                {tab.label}
-              </button>
-            ))}
-          </div>
-          <div className={resolvedSubTab === "registry" ? "" : "hidden"}>
-            <RegistryBrowser onImport={handleImportRegistry} />
-          </div>
-          <div className={resolvedSubTab === "my-templates" ? "" : "hidden"}>
-            <TemplateGrid
-              onLaunch={handleLaunchTemplate}
-            />
-          </div>
-        </div>
-        <div className={activeTab === "system" ? "" : "hidden"}>
-          <SettingsLayout />
+        <div className={activeTab === "admin" ? "" : "hidden"}>
+          <AdminActiveContext.Provider value={activeTab === "admin"}><SettingsLayout /></AdminActiveContext.Provider>
         </div>
       </main>
-      <LaunchModal
-        key={launchRegistry?.name ?? launchTemplate?.id ?? "custom"}
-        open={launchOpen}
-        onClose={closeLaunchModal}
-        registryImage={launchRegistry}
-        template={launchTemplate}
-      />
+      <StatusRail forceCollapsed={activeTab === "admin"} onOpenAdmin={() => setActiveTab("admin")} onWidthChange={setRailPad} />
+      <NewContainerDrawer open={launchOpen} onClose={() => setLaunchOpen(false)} />
     </div>
     </TooltipProvider>
   );

@@ -1,3 +1,4 @@
+import { SectionHead } from "@/components/common/section-head";
 import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -5,19 +6,30 @@ import { SettingsNav } from "./settings-nav";
 import { visibleCategories, type SettingsSection } from "./nav-config";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
+import { useCfAnalytics } from "@/hooks/use-admin-stats";
+import { UnsavedProvider, useUnsaved } from "./unsaved-context";
+
+const ALIASES: Record<string, string> = { resources: "overview", groups: "users", settings: "security" };
 
 export function SettingsLayout() {
+  return <UnsavedProvider><SettingsLayoutInner /></UnsavedProvider>;
+}
+
+function SettingsLayoutInner() {
+  const { confirmLeave } = useUnsaved();
   const { user, loading } = useAuth();
   const reduce = useReducedMotion();
-  const cats = useMemo(() => visibleCategories(user?.role === "admin"), [user?.role]);
+  const isAdmin = user?.role === "admin";
+  const cfAnalytics = useCfAnalytics(isAdmin);
+  const cats = useMemo(() => visibleCategories(isAdmin, { cfAnalytics }), [isAdmin, cfAnalytics]);
   const sections = useMemo(() => cats.flatMap((c) => c.sections), [cats]);
   const [activeId, setActiveId] = useState<string | undefined>(
     () => (new URLSearchParams(window.location.search).has("setup") ? "services" : undefined));
   useEffect(() => {
-    const go = (e: Event) => setActiveId((e as CustomEvent<string>).detail);
+    const go = (e: Event) => { const id = (e as CustomEvent<string>).detail; confirmLeave(() => setActiveId(ALIASES[id] ?? id)); };
     window.addEventListener("styx:settings-section", go);
     return () => window.removeEventListener("styx:settings-section", go);
-  }, []);
+  }, [confirmLeave]);
 
   const active: SettingsSection | undefined =
     sections.find((s) => s.id === activeId) ?? sections[0];
@@ -29,7 +41,7 @@ export function SettingsLayout() {
 
   const Section = active.Component;
   return (
-    <div className="mx-auto flex w-full max-w-[1800px] flex-col px-0 md:flex-row md:gap-6 2xl:gap-8">
+    <div className="mx-auto flex w-full max-w-[1640px] flex-col px-0 md:flex-row md:gap-6 2xl:gap-8">
       <SettingsNav categories={cats} activeId={active.id} onSelect={setActiveId} />
       <div className="min-w-0 flex-1 md:pl-0">
         {/* Mobile section selector (horizontal scrollable) */}
@@ -37,11 +49,11 @@ export function SettingsLayout() {
           <div className="flex snap-x gap-2 overflow-x-auto scroll-px-6 px-6 pb-3 [scrollbar-width:none] [mask-image:linear-gradient(to_right,transparent,#000_24px,#000_calc(100%-24px),transparent)]">
             {sections.map((s) => {
               const Icon = s.icon;
-              const isActive = s.id === activeId;
+              const isActive = s.id === active.id;
               return (
                 <Button
                   key={s.id}
-                  onClick={() => setActiveId(s.id)}
+                  onClick={() => { if (!isActive) confirmLeave(() => setActiveId(s.id)); }}
                   variant="outline"
                   size="sm"
                   aria-current={isActive ? "page" : undefined}
@@ -57,10 +69,7 @@ export function SettingsLayout() {
         </div>
 
         {/* Section header */}
-        <div className="mb-6 space-y-1">
-          <h2 className="text-2xl font-semibold tracking-tight">{active.label}</h2>
-          <p className="text-sm text-muted-foreground">{active.description}</p>
-        </div>
+        <SectionHead size="page" title={active.label} note={active.description} />
 
         {/* Content pane */}
         <AnimatePresence mode="wait">

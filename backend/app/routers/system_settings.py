@@ -5,7 +5,7 @@ from app.database import get_session
 from app.models import User
 from app.security.deps import require_admin
 from app.services.audit import audit_request
-from app.services.settings_store import settings, SCHEMA
+from app.services.settings_store import settings, SCHEMA, JsonValueError
 
 router = APIRouter()
 
@@ -27,6 +27,8 @@ async def patch_settings(body: dict, request: Request,
     try:
         for key, value in body.items():
             await settings.set(session, key, value, actor_id=admin.id)
+    except JsonValueError as e:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(e))
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
     await audit_request(session, request, "settings.update", user_id=admin.id,

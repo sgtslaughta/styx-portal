@@ -20,7 +20,7 @@ from app.security.cookies import (DEVICE_COOKIE, TX_PATH, clear_auth_cookies, se
 from app.security.csrf import new_csrf_token, CSRF_COOKIE
 from app.security.deps import get_current_user
 from app.security.setup_gate import users_exist
-from app.services import federation, login_flow, single_use
+from app.services import federation, login_flow, single_use, stream_sessions
 from app.services.audit import audit_request
 from app.services.gpu_access import user_may_use_gpu
 from app.middleware.rate_limit import client_ip_from_headers, client_ip_resolved
@@ -299,6 +299,7 @@ async def logout(request: Request, response: Response,
         ws.occupied_at = None
         ws.active_connections = 0
         session.add(ws)
+        await stream_sessions.close_session(session, "workstation", ws.id)
 
     if stored:
         # Whole family: a forked/rotated sibling must not keep the proxy cookie alive.

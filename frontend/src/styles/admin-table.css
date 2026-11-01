@@ -1,0 +1,32 @@
+/* Glance admin tables: dense rows, toolbar, small segmented control, workstation rows. */
+table.dense { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.dense th { text-align: left; font-weight: 500; color: var(--muted-foreground); font-size: 12.5px; padding: 0 10px 8px; }
+table.dense td { padding: 8px 10px; border-top: 1px solid var(--border); vertical-align: middle; }
+table.dense td small { display: block; color: var(--muted-foreground); font-size: 12px; }
+table.dense tr:hover td { background: color-mix(in srgb, var(--primary) 7%, transparent); }
+table.dense tr.warn td { background: color-mix(in srgb, var(--destructive) 7%, transparent); }
+table.dense select { padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); font-size: 13px; }
+table.dense .acts { text-align: right; white-space: nowrap; }
+table.dense .acts button { opacity: .6; }
+table.dense tr:hover .acts button, table.dense .acts button:focus-visible { opacity: 1; }
+.chip { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--border); color: var(--muted-foreground); margin-right: 4px; }
+.toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+.toolbar input { flex: 1; max-width: 360px; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); }
+.seg-s { display: inline-flex; padding: 3px; border-radius: 9px; background: var(--muted); }
+.seg-s button { border: 0; background: none; padding: 5px 12px; border-radius: 7px; font-size: 13px; white-space: nowrap; color: var(--muted-foreground); }
+.seg-s button[aria-pressed="true"] { background: var(--card); color: var(--foreground); box-shadow: 0 1px 2px rgba(0,0,0,.25); }
+.sdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted-foreground); }
+.sdot.ok { background: var(--success); } .sdot.use { background: var(--primary); } .sdot.bad { background: var(--destructive); }
+.track { display: block; height: 6px; border-radius: 6px; background: var(--muted); overflow: hidden; }
+.track i { display: block; height: 100%; border-radius: 6px; background: var(--primary); }
+.wsrow { display: grid; grid-template-columns: 120px 1fr 1fr 1fr auto; gap: 20px; align-items: center; padding: 14px 0; border-top: 1px solid var(--border); }
+.wsrow strong { font-weight: 600; display: block; } .wsrow small { color: var(--muted-foreground); font-size: 13px; }
+.wsmeter div { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 13.5px; color: var(--muted-foreground); }
+.wsmeter b { color: var(--foreground); font-weight: 600; }
+@media (max-width: 900px) {
+  .wsrow { grid-template-columns: 90px 1fr auto; } .wsrow > :nth-child(3), .wsrow > :nth-child(4) { display: none; }
+  table.dense.full:not(.users-table) :is(th, td):is(:nth-child(4), :nth-child(5)) { display: none; }
+  /* users: checkbox is column 1, so Sign-in card and Last sign-in are 5 and 6 */
+  table.users-table :is(th, td):is(:nth-child(5), :nth-child(6)) { display: none; }
+}
+.seg-s.mini button { padding: 2px 8px; font-size: 12px; }

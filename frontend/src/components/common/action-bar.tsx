@@ -5,6 +5,7 @@ import { ExternalLink, Pause, Play, RotateCcw, Square, Trash2 } from "lucide-rea
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { statusMeta } from "@/lib/status";
+import { recordOpened } from "@/lib/recents";
 import { openPending } from "@/lib/connect-wipe";
 import { useOpenChoice } from "@/components/open-prompt";
 import { cn } from "@/lib/utils";
@@ -67,6 +68,7 @@ export function ActionBar({ instance, size = "default", showConnect = true, clas
 
   function connect() {
     choose("workspaces", instance.name, (mode) => {
+      recordOpened(instance.id);
       openPending(mode, `Launching ${instance.name}…`, async () => `/desktop/${instance.subdomain}`)
         .catch((e: Error) => toast.error(`Connect failed: ${e.message}`));
     });

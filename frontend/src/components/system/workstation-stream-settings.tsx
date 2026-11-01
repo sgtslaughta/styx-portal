@@ -54,13 +54,13 @@ export function WorkstationStreamSettings({
     const next: Record<string, unknown> = {
       ...ss,
       framerate,
-      encoder,
       h264_streaming_mode: gaming,
       use_paint_over_quality: paintOver,
       video_fullcolor: fullColor,
       transport,
       seat_x11: seatX11,
     };
+    if (encoder === "auto") delete next.encoder; else next.encoder = encoder;
     const crfNum = parseInt(crf, 10);
     if (!Number.isNaN(crfNum) && crfNum >= 5 && crfNum <= 50) {
       next.h264_crf = crfNum;

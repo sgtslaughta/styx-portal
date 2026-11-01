@@ -5,6 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.config import Settings
+from app.schemas_stats import InviteOut, PendingInviteOut, RelayReason, TempPasswordOut  # noqa: F401  (re-export)
 from app.services import template_validation as _tv
 
 SUBDOMAIN_RE = re.compile(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
@@ -217,6 +218,7 @@ class UserOut(BaseModel):
     must_change_pw: bool = False
     has_matrix_card: bool = False
     can_use_gpu: bool = False
+    groups: list[str] = []
 
 
 OpenMode = Literal["new_tab", "same_tab"]
@@ -232,15 +234,6 @@ class OpenPreferences(BaseModel):
 class CreateInviteRequest(BaseModel):
     email: str | None = None
     role: str = "user"
-
-
-class InviteOut(BaseModel):
-    token: str
-    expires_at: str | None
-
-
-class TempPasswordOut(BaseModel):
-    temp_password: str
 
 
 @dataclass
@@ -442,6 +435,7 @@ class WorkstationHeartbeatRequest(BaseModel):
     lan_ip: str | None = None
     last_error: str | None = None
     health: dict[str, Any] = {}
+    relay_reason: RelayReason = "unknown"
 
     @field_validator("lan_ip")
     @classmethod

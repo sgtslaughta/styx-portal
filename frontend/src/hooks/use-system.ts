@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/api/client";
+import { useAdminPoll } from "@/hooks/use-admin-poll";
 
 export function useSystemMetrics() {
   return useQuery({
@@ -18,10 +19,11 @@ export function useSessionEvents(instanceId: string, enabled: boolean) {
 }
 
 export function useResourceHistory(range: string) {
+  const poll = useAdminPoll(30000);
   return useQuery({
     queryKey: ["resource-history", range],
     queryFn: () => api.getResourceHistory(range),
-    refetchInterval: 30000,
+    refetchInterval: poll,
   });
 }
 

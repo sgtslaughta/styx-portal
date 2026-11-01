@@ -10,6 +10,7 @@ from sqlmodel import select
 
 from app.config import Settings
 from app.models import Workstation
+from app.services import stream_sessions
 from app.services.settings_store import settings as _sys_settings
 
 _settings = Settings()
@@ -215,6 +216,7 @@ async def mark_stale_offline(session) -> bool:
             hb = hb.replace(tzinfo=timezone.utc)
         if hb is None or hb < cutoff:
             ws.status = "offline"
+            await stream_sessions.close_session(session, "workstation", ws.id)
             session.add(ws)
             changed = True
     return changed
@@ -240,6 +242,7 @@ async def kick_unqualified(session, user_id: str | None = None, ws_id: str | Non
                 WorkstationAccess.user_id == u.id))).first()))
         if not ok:
             ws.disconnect_pending = True
+            await stream_sessions.close_session(session, "workstation", ws.id)
             ws.occupied_by = None
             ws.occupied_at = None
             session.add(ws)

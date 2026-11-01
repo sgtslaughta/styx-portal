@@ -19,6 +19,8 @@ interface TemplateBuilderModalProps {
   mode: "new" | "edit" | "clone";
   template?: ServiceTemplate | null;
   onClose: () => void;
+  /** Admin "New setup": a single Save that always shares. */
+  sharedOnly?: boolean;
 }
 
 export function TemplateBuilderModal({
@@ -26,6 +28,7 @@ export function TemplateBuilderModal({
   mode,
   template,
   onClose,
+  sharedOnly,
 }: TemplateBuilderModalProps) {
   const [saving, setSaving] = useState(false);
   const create = useCreateTemplate();
@@ -92,16 +95,20 @@ export function TemplateBuilderModal({
         <TemplateBuilder cfg={cfg} isAdmin={isAdmin} k8s={useIsK8s()} />
 
         <div className="flex gap-2 pt-4">
-          <Button onClick={() => save(false)} disabled={saving}>
-            Save
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => save(true)}
-            disabled={saving}
-          >
-            Save & Share
-          </Button>
+          {sharedOnly ? (
+            <Button onClick={() => save(true)} disabled={saving}>
+              Save setup
+            </Button>
+          ) : (
+            <>
+              <Button onClick={() => save(false)} disabled={saving}>
+                Save
+              </Button>
+              <Button variant="secondary" onClick={() => save(true)} disabled={saving}>
+                Save & Share
+              </Button>
+            </>
+          )}
         </div>
       </DialogContent>
     </Dialog>

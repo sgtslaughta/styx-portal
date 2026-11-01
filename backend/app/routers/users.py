@@ -7,10 +7,10 @@ from sqlmodel import select, update
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.database import get_session
-from app.models import User, Invite, RefreshToken, Instance, ServiceTemplate, FederatedIdentity
+from app.models import User, Invite, Group, UserGroup, RefreshToken, Instance, ServiceTemplate, FederatedIdentity
 from app.routers.instances import get_docker_manager
 from app.services import profiles
-from app.schemas import UserOut, CreateInviteRequest, InviteOut, TempPasswordOut
+from app.schemas import UserOut, CreateInviteRequest, InviteOut, PendingInviteOut, TempPasswordOut
 from app.security.deps import require_admin
 from app.security.passwords import hash_password, current_policy
 from app.services.audit import audit_request
@@ -25,7 +25,30 @@ INVITE_TTL_HOURS = 72
 async def list_users(admin: User = Depends(require_admin),
                      session: AsyncSession = Depends(get_session)):
     result = await session.exec(select(User))
-    return [_user_out(u) for u in result.all()]
+    rows = (await session.exec(
+        select(UserGroup.user_id, Group.name)
+        .join(Group, Group.id == UserGroup.group_id).order_by(Group.name))).all()
+    names: dict[str, list[str]] = {}
+    for uid, gname in rows:
+        names.setdefault(uid, []).append(gname)
+    return [_user_out(u).model_copy(update={"groups": names.get(u.id, [])}) for u in result.all()]
+
+
+@router.get("/invites", response_model=list[PendingInviteOut])
+async def list_invites(admin: User = Depends(require_admin),
+                       session: AsyncSession = Depends(get_session)):
+    now = datetime.now(timezone.utc)
+    rows = (await session.exec(select(Invite).where(Invite.used_at == None)  # noqa: E711
+                               .order_by(Invite.created_at.desc()))).all()
+    out = []
+    for i in rows:
+        exp = i.expires_at
+        if exp is not None and (exp.replace(tzinfo=timezone.utc) if exp.tzinfo is None else exp) <= now:
+            continue
+        out.append(PendingInviteOut(id=i.id, email=i.email, role=i.role,
+                                    created_at=i.created_at.isoformat(),
+                                    expires_at=exp.isoformat() if exp else None))
+    return out
 
 
 @router.post("/invites", response_model=InviteOut, status_code=201)

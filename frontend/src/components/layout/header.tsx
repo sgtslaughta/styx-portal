@@ -1,5 +1,4 @@
 import { Monitor, Moon, Sun, Waves } from "lucide-react";
-import { useInstances } from "@/hooks/use-instances";
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme, type Theme } from "@/theme/ThemeProvider";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -29,46 +28,41 @@ function ThemeToggle() {
   );
 }
 
-function CountChip({ count, label, dotClass }: { count: number; label: string; dotClass: string }) {
-  if (count === 0) return null;
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="flex items-center gap-1.5 rounded-full border border-border bg-card/60 px-2 py-0.5 text-xs text-muted-foreground">
-          <span className={cn("h-1.5 w-1.5 rounded-full", dotClass)} />
-          <span className="tabular-nums text-foreground">{count}</span>
-          {label}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>
-        {count} {label} instance{count === 1 ? "" : "s"}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
+export type HeaderTab = "home" | "admin";
 
-export function Header() {
-  const { data: instances } = useInstances();
+export function Header({ activeTab, onTabChange }: { activeTab: HeaderTab; onTabChange: (tab: HeaderTab) => void }) {
   const { user, logout } = useAuth();
-  const running = instances?.filter((i) => i.status === "running" || i.status === "idle").length ?? 0;
-  const paused = instances?.filter((i) => i.status === "paused").length ?? 0;
-  const stopped = instances?.filter((i) => i.status === "stopped").length ?? 0;
-  const errored = instances?.filter((i) => i.status === "error").length ?? 0;
+  const tabs: { id: HeaderTab; label: string }[] = [
+    { id: "home", label: "Home" },
+    // Non-admins have no Admin tab; the same panel serves their account settings.
+    { id: "admin", label: user?.role === "admin" ? "Admin" : "Settings" },
+  ];
 
   return (
-    <header className="styx-header styx-motif flex items-center gap-3 border-b border-border px-6 py-2.5">
-      <Waves className="h-5 w-5" style={{ color: "var(--brand-accent)" }} />
-      <span className="text-base font-extrabold tracking-wider">STYX PORTAL</span>
-      <div className="ml-auto flex items-center gap-1.5 max-sm:hidden">
-        <CountChip count={running} label="running" dotClass="bg-success" />
-        <CountChip count={paused} label="paused" dotClass="bg-warning" />
-        <CountChip count={stopped} label="stopped" dotClass="bg-muted-foreground" />
-        <CountChip count={errored} label="error" dotClass="bg-destructive" />
+    <header className="styx-header flex h-[58px] items-center gap-6 border-b border-border px-6">
+      <div className="styx-logo flex items-center gap-2.5 text-[15px] font-extrabold tracking-[.08em]">
+        <Waves className="h-5 w-5" style={{ color: "var(--brand-accent)" }} />
+        STYX PORTAL
       </div>
+      <nav className="styx-tabs flex h-full" aria-label="Main">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => onTabChange(t.id)}
+            aria-current={activeTab === t.id ? "page" : undefined}
+            className={cn(
+              "px-3 font-medium outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring max-sm:min-h-11",
+              activeTab === t.id ? "gold-underline text-foreground" : "text-muted-foreground",
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </nav>
       {user && (
-        <div className="flex items-center gap-2 max-sm:ml-auto">
+        <div className="ml-auto flex items-center gap-2">
           <OpeningMenu username={user.username} />
-          <button onClick={() => logout()} className="inline-flex min-h-9 max-sm:min-h-11 items-center rounded-md px-1 text-sm underline underline-offset-2 hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">Log out</button>
+          <button onClick={() => logout()} className="inline-flex min-h-9 max-sm:min-h-11 items-center rounded-md px-2.5 text-sm text-muted-foreground hover:bg-secondary hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">Log out</button>
         </div>
       )}
       <ThemeToggle />

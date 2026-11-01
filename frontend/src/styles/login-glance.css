@@ -1,0 +1,36 @@
+/* Glance login: gold wave panel + glyph-beam form panel. Values from docs/design/ui-rework-2026-11/login-waves.html */
+.login-split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(400px, min(40vw, 620px)); min-height: 100dvh; }
+.login-brand { position: relative; overflow: hidden; isolation: isolate; display: flex; flex-direction: column; justify-content: flex-end; padding: 40px;
+  background: radial-gradient(60% 50% at 80% 15%, rgba(111,183,188,.18), transparent 70%), linear-gradient(to top right, #0F1C22 0%, #16323A 100%); color: #EDF1EF; }
+html:not(.dark) .login-brand { background: radial-gradient(60% 50% at 80% 15%, rgba(42,118,124,.25), transparent 70%), linear-gradient(to top right, #EDF1EF 0%, #BFD6D6 60%, #9CC1C3 100%); color: #0F1C22; }
+.login-brand > canvas, .login-form > canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
+.login-hero { position: relative; z-index: 1; }
+.login-hero h2 { font-size: clamp(32px, 3.6vw, 52px); font-weight: 700; line-height: 1.08; letter-spacing: -.02em; max-width: 12ch; }
+
+/* Unfocused reveal. No transform/will-change: avoids the raster swap that snaps the text when the animation ends. */
+.reveal { animation: login-focus 2.2s cubic-bezier(.25,.6,.3,1) .3s both; }
+@keyframes login-focus {
+  from { opacity: 0; filter: blur(16px); text-shadow: -8px 0 6px rgba(255,80,110,.8), 8px 0 6px rgba(80,200,255,.8); }
+  to   { opacity: 1; filter: blur(0); text-shadow: 0 0 0 rgba(255,80,110,0), 0 0 0 rgba(80,200,255,0); }
+}
+@media (prefers-reduced-motion: reduce) { .reveal { animation: login-fade .4s ease forwards; } @keyframes login-fade { to { opacity: 1; } } }
+
+.login-form { display: flex; align-items: center; justify-content: center; padding: 48px 24px; position: relative; isolation: isolate; overflow: hidden;
+  background: radial-gradient(120% 90% at 0% 0%, #17303A 0%, #10222A 45%, #0C1A20 100%); color: #E4ECEC; }
+html:not(.dark) .login-form { background: radial-gradient(120% 90% at 0% 0%, #F4F7F6 0%, #E7EDEB 50%, #DCE5E3 100%); color: #14232A; }
+.login-logo { position: absolute; top: 40px; left: 40px; z-index: 1; display: flex; align-items: center; gap: 8px; font-weight: 800; letter-spacing: .08em; font-size: 18px; }
+.login-logo svg { color: #2A767C; } .dark .login-logo svg { color: #6FB7BC; }
+.login-card { position: relative; width: 100%; max-width: 360px; }
+.login-card input:not([type="checkbox"]) { background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.13); backdrop-filter: blur(2px); box-shadow: inset 0 1px 2px rgba(0,0,0,.35), 0 1px 0 rgba(255,255,255,.04); }
+html:not(.dark) .login-card input:not([type="checkbox"]) { background: rgba(255,255,255,.7); border-color: rgba(20,35,42,.16); box-shadow: inset 0 1px 2px rgba(0,0,0,.12), 0 1px 0 rgba(255,255,255,.8); }
+.login-card input:focus { border-color: #C9A04E; box-shadow: 0 0 0 3px rgba(201,160,78,.22); }
+
+/* Sign in: teal glass with gold edges */
+.login-card .glass { width: 100%; border-radius: 10px; padding: 11px; font-size: 15px; color: #fff; text-shadow: 0 1px 1px rgba(0,0,0,.25); border: 1px solid rgba(42,118,124,.55);
+  background: linear-gradient(180deg, rgba(255,255,255,.28), rgba(255,255,255,0) 55%), linear-gradient(180deg, rgba(42,118,124,.92), rgba(31,95,100,.95));
+  box-shadow: inset 0 1px 0 rgba(241,218,154,.75), inset 0 -6px 12px -8px rgba(255,255,255,.3), 0 8px 20px -10px rgba(42,118,124,.7); backdrop-filter: none; }
+.login-card .glass::after { content: ""; position: absolute; left: 14px; right: 14px; bottom: 0; height: 1px; z-index: 1; opacity: .8;
+  background: linear-gradient(90deg, transparent, #E6C67A 30%, #F1DA9A 50%, #B8862F 70%, transparent); }
+.login-card .glass canvas { mix-blend-mode: screen; opacity: .55; filter: blur(.6px); }
+
+@media (max-width: 860px) { .login-split { grid-template-columns: 1fr; } .login-brand { min-height: 46dvh; } }

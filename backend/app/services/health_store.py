@@ -46,3 +46,15 @@ def get_history(range_str: str = "1h") -> dict:
         status = {k: list(v)[-count:] for k, v in _status.items()}
         latency = {k: list(v)[-count:] for k, v in _latency.items()}
     return {"timestamps": ts, "status": status, "latency_ms": latency}
+
+
+def current_level() -> str | None:
+    """ok | warn | fail from the latest sample of every check (None = no checks yet)."""
+    with _lock:
+        last = [s[-1] for s in _status.values() if s]
+    if not last:
+        return None
+    bad = sum(1 for v in last if not v)
+    if not bad:
+        return "ok"
+    return "fail" if bad * 2 >= len(last) else "warn"

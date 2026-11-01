@@ -14,6 +14,7 @@ vi.mock("@/api/client", () => ({
   api: {
     listWorkstations: () => Promise.resolve([ws]),
     listUsers: () => Promise.resolve([]),
+    workstationThumbUrl: (id: string) => `/t/${id}`,
     requestAgentUpdate: (...a: unknown[]) => requestAgentUpdate(...a),
     requestAgentUpdateOutdated: (...a: unknown[]) => requestAgentUpdateOutdated(...a),
   },
@@ -21,6 +22,7 @@ vi.mock("@/api/client", () => ({
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 vi.mock("@/components/system/workstation-icon", () => ({ WorkstationIcon: () => null }));
 vi.mock("@/components/system/workstation-icon-settings", () => ({ WorkstationIconSettings: () => null }));
+vi.mock("@/components/system/workstation-specs", () => ({ WorkstationSpecs: () => null }));
 vi.mock("@/components/system/workstation-stream-settings", () => ({ WorkstationStreamSettings: () => null }));
 
 import { WorkstationsPanel } from "../workstations-panel";
@@ -32,5 +34,12 @@ describe("WorkstationsPanel agent update", () => {
     await waitFor(() => expect(requestAgentUpdate).toHaveBeenCalledWith("w1"));
     fireEvent.click(screen.getByText("Update all outdated"));
     await waitFor(() => expect(requestAgentUpdateOutdated).toHaveBeenCalled());
+  });
+
+  test("row shows em dash meters without data and Manage opens the dialog", async () => {
+    render(<WorkstationsPanel />);
+    expect(await screen.findByText("Enroll a workstation")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Manage" }));
+    expect(await screen.findByRole("button", { name: "Revoke" })).toBeTruthy();
   });
 });

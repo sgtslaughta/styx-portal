@@ -1,13 +1,13 @@
 """TURN relay usage metering (heartbeat deltas) and the admin cost estimate."""
 import calendar
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from app.models import TurnUsage, User, Workstation
+from app.models import StreamSession, TurnUsage, TurnUsageDay, User, Workstation
 from app.services import cf_turn_usage
 from app.services.settings_store import settings
 
@@ -38,6 +38,56 @@ async def record_turn_usage(session: AsyncSession, ws: Workstation, delta: Any,
     else:
         row = TurnUsage(month=month, workstation_id=ws.id, user_id=uid, bytes=delta)
     session.add(row)
+    day = (now or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
+    drow = await session.get(TurnUsageDay, day)
+    if drow:
+        drow.bytes += delta
+    else:
+        drow = TurnUsageDay(day=day, bytes=delta)
+    session.add(drow)
+
+
+async def daily_bytes(session: AsyncSession, days: int = 30,
+                      now: datetime | None = None) -> list[dict]:
+    """[{date, bytes}] for the last `days` UTC days, oldest first (zeros filled)."""
+    now = now or datetime.now(timezone.utc)
+    keys = [(now - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days - 1, -1, -1)]
+    rows = (await session.exec(select(TurnUsageDay).where(TurnUsageDay.day >= keys[0]))).all()
+    got = {r.day: r.bytes for r in rows}
+    return [{"date": k, "bytes": got.get(k, 0)} for k in keys]
+
+
+def _months_back(now: datetime, n: int) -> list[str]:
+    y, m, out = now.year, now.month, []
+    for _ in range(n):
+        out.append(f"{y:04d}-{m:02d}")
+        y, m = (y, m - 1) if m > 1 else (y - 1, 12)
+    return out[::-1]
+
+
+async def monthly_bytes(session: AsyncSession, months: int = 6,
+                        now: datetime | None = None) -> list[dict]:
+    """[{month, bytes}] for the last `months` months, oldest first."""
+    keys = _months_back(now or datetime.now(timezone.utc), months)
+    rows = (await session.exec(select(TurnUsage).where(TurnUsage.month >= keys[0]))).all()
+    got: dict[str, int] = {}
+    for r in rows:
+        got[r.month] = got.get(r.month, 0) + r.bytes
+    return [{"month": k, "bytes": got.get(k, 0)} for k in keys]
+
+
+async def relay_reasons(session: AsyncSession, month: str) -> list[dict]:
+    """[{reason, sessions}] for relayed stream sessions started in `month` (YYYY-MM)."""
+    y, m = int(month[:4]), int(month[5:7])
+    start = datetime(y, m, 1)
+    end = datetime(y + (m == 12), m % 12 + 1, 1)
+    rows = (await session.exec(select(StreamSession.relay_reason).where(
+        StreamSession.relayed.is_(True), StreamSession.started_at >= start,
+        StreamSession.started_at < end))).all()
+    counts: dict[str, int] = {}
+    for r in rows:
+        counts[r or "unknown"] = counts.get(r or "unknown", 0) + 1
+    return [{"reason": k, "sessions": v} for k, v in sorted(counts.items(), key=lambda kv: -kv[1])]
 
 
 async def month_bytes(session: AsyncSession, now: datetime | None = None) -> int:

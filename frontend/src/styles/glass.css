@@ -1,0 +1,26 @@
+/* Glass button: frosted, lit edge; the water canvas draws a ripple on hover/press. Values from docs/design/ui-rework-2026-11/c5-glance.html */
+.glass { --rc: 42,118,124; position: relative; overflow: hidden; isolation: isolate; border-radius: 99px; padding: 7px 16px; font-size: 13.5px; font-weight: 600; letter-spacing: .01em; cursor: pointer;
+  color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.35); background: linear-gradient(180deg, rgba(255,255,255,.22), rgba(255,255,255,.06)), rgba(15,28,34,.32); border: 1px solid rgba(255,255,255,.32);
+  backdrop-filter: blur(14px) saturate(170%); -webkit-backdrop-filter: blur(14px) saturate(170%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.45), inset 0 -8px 16px -10px rgba(255,255,255,.25), 0 6px 20px -8px rgba(0,0,0,.45);
+  transition: transform .2s, box-shadow .2s, opacity .2s; }
+.dark .glass { --rc: 140,205,210; }
+.glass:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,.6), inset 0 -8px 16px -10px rgba(255,255,255,.35), 0 8px 24px -8px rgba(0,0,0,.5); }
+.glass:active { transform: scale(.97); }
+.glass:disabled { opacity: .5; pointer-events: none; }
+.glass:focus-visible { outline: 2px solid var(--obol-foreground); outline-offset: 2px; }
+.glass .lbl { position: relative; z-index: 1; }
+.glass canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; border-radius: inherit; z-index: 0; mix-blend-mode: soft-light; opacity: .9; }
+.dark .glass canvas { mix-blend-mode: screen; opacity: .5; filter: blur(.6px); }
+/* On flat surfaces the glass is tinted teal so it stays visible */
+.glass[data-tone="teal"] { color: var(--foreground); text-shadow: none; background: linear-gradient(180deg, rgba(var(--rc),.16), rgba(var(--rc),.06)); border-color: rgba(var(--rc),.35);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 4px 14px -8px rgba(0,0,0,.35); }
+/* Hover-reveal parents (tiles, rows); always visible on touch */
+.glass-reveal .glass { opacity: 0; }
+.glass-reveal:hover .glass, .glass-reveal:focus-within .glass { opacity: 1; }
+@media (hover: none) { .glass-reveal .glass { opacity: 1; } }
+/* Recent thumbnails */
+.recent-shot { position: relative; border-radius: 12px; overflow: hidden; }
+.recent-shot > canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
+.recent-shot .glass { position: absolute; right: 12px; bottom: 12px; z-index: 2; }
+.recent-shot .glass canvas { mix-blend-mode: screen; opacity: .5; filter: blur(.6px); }

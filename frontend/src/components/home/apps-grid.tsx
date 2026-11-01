@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Info, Plus, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Thumbnail } from "@/components/common/thumbnail";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { api, type ServiceTile } from "@/api/client";
 import { useOpenChoice } from "@/components/open-prompt";
@@ -15,47 +13,45 @@ import { cn } from "@/lib/utils";
 const TIP_KEY = "styx.serviceTipDismissed";
 const TIP = "Open apps with a non-admin account: proxied apps run with your Styx rights.";
 const tileCls =
-  "flex min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-border bg-card px-3 min-h-16 py-3 text-left text-sm " +
+  "flex min-h-16 min-w-0 flex-1 items-center justify-center gap-2.5 rounded-lg border border-border bg-card px-3 py-3 text-sm " +
   "transition-colors hover:bg-accent outline-none focus-visible:ring-2 focus-visible:ring-ring";
+const dockCls =
+  "relative grid w-20 justify-items-center gap-2 rounded-xl border border-transparent p-1 text-center text-[13px] text-muted-foreground " +
+  "transition-colors hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 function readDismissed(): boolean {
   try { return localStorage.getItem(TIP_KEY) === "1"; } catch { return false; }
 }
 
-function Tile({ s, focused, choose }: { s: ServiceTile; focused: boolean; choose: ReturnType<typeof useOpenChoice> }) {
+function Tile({ s, focused, choose, isAdmin }: { s: ServiceTile; focused: boolean; choose: ReturnType<typeof useOpenChoice>; isAdmin: boolean }) {
   const h = HEALTH(s.up);
   const href = shellHref(s);
-  // Unhealthy tiles stay clickable: health is advisory, the app may still work.
+  // Unhealthy apps stay clickable: health is advisory, the app may still work.
   return (
-    <div className="flex w-full items-stretch gap-2">
-      <a href={href} className={cn(tileCls, "flex-col items-stretch", focused && "border-obol-foreground dark:border-obol")} aria-label={s.needs_setup ? `Set up ${s.name}` : `Open ${s.name}`} aria-current={focused ? "true" : undefined} title={href}
+    <div className="flex flex-col items-center gap-1">
+      <a href={href} className={cn(dockCls, focused && "border-obol-foreground dark:border-obol")} aria-label={s.needs_setup ? `Set up ${s.name}` : `Open ${s.name}`} aria-current={focused ? "true" : undefined} title={href}
         onClick={(e) => {
           // Native new-tab gestures and the admin setup link keep plain link behaviour.
           if (s.needs_setup || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
           e.preventDefault();
           choose("apps", s.name, (mode) => openHref(mode, href));
         }}>
-        <span className="flex w-full items-center gap-2.5">
-        <ServiceIcon s={s} />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate font-medium">{s.name}</span>
-          {s.mount_mode === "cookie-root" && <span className="block text-xs text-muted-foreground">Opens full screen</span>}
+        <span className="relative">
+          <ServiceIcon s={s} className="size-[52px] rounded-[14px] shadow-md" />
+          {s.needs_setup && isAdmin && (
+            <span className="absolute -right-[3px] -top-[3px] size-3 rounded-full border-2 border-background bg-destructive" aria-hidden />
+          )}
+          {!s.needs_setup && (
+            <span className={cn("absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full", h.dot)} aria-hidden />
+          )}
         </span>
-        {s.needs_setup ? (
-          <Badge variant="outline" className="border-destructive/40 text-destructive">Needs setup</Badge>
-        ) : (
-          <span className="flex items-center gap-1.5" title={h.label}>
-            <span className={cn("size-2.5 shrink-0 rounded-full", h.dot)} aria-hidden />
-            <span className="sr-only">{h.label}</span>
-          </span>
-        )}
-        </span>
-        {!s.needs_setup && (
-          <Thumbnail src={api.serviceThumbUrl(s.id)} icon={`/api/services/${s.id}/icon?v=${s.icon_etag}`} isLive={s.up !== false} small />
-        )}
+        <span className="block w-full truncate">{s.name}</span>
+        {s.needs_setup && isAdmin && <span className="sr-only">Needs setup</span>}
+        {!s.needs_setup && <span className="sr-only">{h.label}</span>}
+        {s.mount_mode === "cookie-root" && <span className="sr-only">Opens full screen</span>}
       </a>
       {focused && (
-        <Button asChild variant="outline" size="sm" className="h-auto self-stretch">
+        <Button asChild variant="outline" size="sm" className="h-auto">
           <a href="/_styx/exit?next=/" aria-label={`Exit ${s.name}`}>Exit</a>
         </Button>
       )}
@@ -130,8 +126,8 @@ export function AppsGrid({ onOpenSettings }: { onOpenSettings?: () => void }) {
           </button>
         </div>
       )}
-      <ul className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-3">
-        {tiles.map((s) => <li key={s.id} className="flex"><Tile s={s} focused={!!focus?.slug && focus.slug === s.slug} choose={choose} /></li>)}
+      <ul className="flex flex-wrap gap-[18px]">
+        {tiles.map((s) => <li key={s.id}><Tile s={s} focused={!!focus?.slug && focus.slug === s.slug} choose={choose} isAdmin={isAdmin} /></li>)}
         {isAdmin && <li className="flex"><AddAppTile onClick={onOpenSettings} /></li>}
       </ul>
     </section>

@@ -1,12 +1,4 @@
-import type {
-  Instance,
-  InstanceCreate,
-  InstanceStatus,
-  PulledImage,
-  RegistryImage,
-  ServiceTemplate,
-  TemplateCreate,
-} from "@/lib/types";
+import type { Instance, InstanceCreate, InstanceStatus, PulledImage, RegistryImage, ServiceTemplate, TemplateCreate } from "@/lib/types";
 import { safeNext } from "@/lib/safe-next";
 
 export type Workstation = {
@@ -52,6 +44,7 @@ export type ServiceTile = {
 /** `icon` is only for create (a preset emoji); omit it on update, icons change via setServiceIcon. */
 export type ProxiedServiceInput = Omit<ProxiedService,
   "icon_kind" | "icon_etag" | "id" | "upstream_fallback" | "health_status" | "health_checked_at" | "created_at" | "updated_at" | "mount_managed" | "needs_setup"> & { icon?: string | null };
+export type SizePreset = { id: string; label: string; cpus: number; memory_gb: number; gpu: boolean };
 export type ServicePreset = {
   id: string; name: string; icon: string | null; default_port: number | null;
   mount_mode: ProxiedService["mount_mode"]; auth_mode: ProxiedService["auth_mode"];
@@ -140,7 +133,7 @@ export type Setting = {
   key: string;
   label: string;
   help: string;
-  type: "int" | "bool" | "rate" | "secret" | "enum" | "str";
+  type: "int" | "bool" | "rate" | "secret" | "enum" | "str" | "json";
   value: SettingValue;
   default: SettingValue;
   min: number | null;
@@ -150,9 +143,8 @@ export type Setting = {
   choices?: string[];
 };
 export type SettingGroup = { group: string; label: string; settings: Setting[] };
-export type TurnCheckStatus = "ok" | "warn" | "error" | "skip";
-export type TurnCheckItem = { id: string; label: string; status: TurnCheckStatus; detail: string };
-export type TurnCheck = { provider: string; checked_at: string; checks: TurnCheckItem[] };
+import type { TurnCheck, OverviewStats, StreamingStats, RelayStats } from "./stats-types";
+export * from "./stats-types";
 export type TurnUsage = {
   month: string;
   free_gb: number;
@@ -345,7 +337,8 @@ export const api = {
   getInstanceStats: (id: string) =>
     request<{ cpu_percent: number; memory_mb: number; memory_limit_mb: number; memory_percent: number }>(`/instances/${id}/stats`),
 
-  listTemplates: () => request<ServiceTemplate[]>("/templates"),
+  listTemplates: (shared?: boolean) => request<ServiceTemplate[]>(shared ? "/templates?shared=1" : "/templates"),
+  getSizePresets: () => request<SizePreset[]>("/system/size-presets"),
   createTemplate: (data: TemplateCreate) =>
     request<ServiceTemplate>("/templates", { method: "POST", body: JSON.stringify(data) }),
   updateTemplate: (id: string, data: Partial<TemplateCreate>) =>
@@ -376,6 +369,7 @@ export const api = {
     disk_total_gb: number;
     recent_events: { type: string; instance: string; time: string; details?: string }[];
     host: { docker_version?: string; gpu?: string; network?: string; uptime?: number };
+    host_cpu_pct?: number | null; host_ram_pct?: number | null; host_ram_total_mb?: number | null;
   }>("/system/metrics"),
   getDiagnostics: () => request<Diagnostics>("/system/diagnostics"),
   getDiagnosticsHistory: (range: string) =>
@@ -386,8 +380,8 @@ export const api = {
 
   getResourceHistory: (range: string) =>
     request<{
-      aggregate_cpu: number[];
-      aggregate_ram: number[];
+      aggregate_cpu: (number | null)[];
+      aggregate_ram: (number | null)[];
       storage: { volumes_gb: number; images_gb: number; total_gb: number; available_gb: number };
     }>(`/system/metrics/history?range=${range}`),
 
@@ -417,7 +411,8 @@ export const api = {
   acceptInvite: (data: { token: string; username: string; password: string }) =>
     request<{ id: string; username: string; role: string }>("/auth/accept-invite", {
       method: "POST", body: JSON.stringify(data) }),
-  listUsers: () => request<{ id: string; username: string; email: string | null; role: string; is_active: boolean; last_login: string | null; locked_until: string | null; failed_count: number; has_matrix_card?: boolean }[]>("/users"),
+  listUsers: () => request<{ id: string; username: string; email: string | null; role: string; is_active: boolean; last_login: string | null; locked_until: string | null; failed_count: number; has_matrix_card?: boolean; groups?: string[] }[]>("/users"),
+  listInvites: () => request<{ id: string; email: string | null; role: string; created_at: string; expires_at: string | null }[]>("/users/invites"),
   createInvite: (data: { email?: string; role: string }) =>
     request<{ token: string; expires_at: string | null }>("/users/invites", {
       method: "POST", body: JSON.stringify(data) }),
@@ -492,4 +487,7 @@ export const api = {
   getTurnUsage: (month?: string) =>
     request<TurnUsage>(`/admin/turn-usage${month ? `?month=${month}` : ""}`),
   getTurnCheck: () => request<TurnCheck>("/admin/turn-check"),
+  getOverviewStats: (range: string) => request<OverviewStats>(`/admin/stats/overview?range=${range}`),
+  getStreamingStats: (days = 7, top = 5) => request<StreamingStats>(`/admin/stats/streaming?days=${days}&top=${top}`),
+  getRelayStats: (period: string) => request<RelayStats>(`/admin/stats/relay?period=${period}`),
 };

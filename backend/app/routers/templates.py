@@ -58,9 +58,12 @@ def _member_view(t: ServiceTemplate, user: User) -> ServiceTemplate:
 async def list_templates(
     session: AsyncSession = Depends(get_session),
     user: User = Depends(get_current_user),
+    shared: int = 0,
 ):
     stmt = select(ServiceTemplate)
-    if user.role != "admin":
+    if shared:
+        stmt = stmt.where(ServiceTemplate.shared == True)  # noqa: E712
+    elif user.role != "admin":
         stmt = stmt.where(
             (ServiceTemplate.owner_id == user.id) | (ServiceTemplate.owner_id == None) | (ServiceTemplate.shared == True)  # noqa: E711, E712
         )
@@ -76,6 +79,9 @@ async def create_template(
 ):
     if not body.image or not body.image.strip():
         raise HTTPException(422, "Docker image is required")
+
+    if body.shared and user.role != "admin":
+        raise HTTPException(403, "Shared setups require admin")
 
     # Enforce risk field gate
     _enforce_risk_gate(body, user)
@@ -134,6 +140,9 @@ async def update_template(
     else:
         require_owner_or_admin(template.owner_id, user)
 
+    if (body.shared or template.shared) and user.role != "admin":
+        raise HTTPException(403, "Shared setups can only be modified by admins")
+
     # Enforce risk field gate on patch — only for fields present in the patch
     _enforce_risk_gate(body, user)
 
@@ -173,6 +182,9 @@ async def delete_template(
             raise HTTPException(403, "Shared templates can only be modified by admins")
     else:
         require_owner_or_admin(template.owner_id, user)
+
+    if template.shared and user.role != "admin":
+        raise HTTPException(403, "Shared setups can only be deleted by admins")
 
     await profiles.purge_profiles(session, docker, template_id=template.id, actor=user)
     await session.delete(template)

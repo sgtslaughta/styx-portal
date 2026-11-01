@@ -211,3 +211,28 @@ async def test_heartbeat_delta_capped(session):
     await record_turn_usage(session, ws, 10**15, datetime(2026, 11, 2, tzinfo=timezone.utc))
     await session.commit()
     assert (await session.exec(select(TurnUsage))).one().bytes == MAX_HEARTBEAT_DELTA
+
+
+def test_system_stream_defaults_apply_override_wins_and_unset_unchanged():
+    legacy = resolve_stream_settings({}, CF, "0.9.30")
+    builtin = {"WORKSTATION_DEFAULT_ENCODER": "auto", "WORKSTATION_DEFAULT_FRAMERATE": 60,
+               "WORKSTATION_DEFAULT_CRF": 25, "WORKSTATION_DEFAULT_BITRATE_KBPS": 0,
+               "WORKSTATION_DEFAULT_PAINT_OVER": True}
+    assert resolve_stream_settings({}, {**CF, **builtin}, "0.9.30") == legacy
+    sysd = {**CF, "WORKSTATION_DEFAULT_ENCODER": "hevc", "WORKSTATION_DEFAULT_FRAMERATE": 120,
+            "WORKSTATION_DEFAULT_CRF": 30, "WORKSTATION_DEFAULT_BITRATE_KBPS": 20000,
+            "WORKSTATION_DEFAULT_STREAMING_MODE": True}
+    eff = resolve_stream_settings({}, sysd, "0.9.30")
+    assert (eff["encoder"], eff["framerate"], eff["video_crf"], eff["bitrate_kbps"]) == ("hevc", 120, 30, 20000)
+    assert eff["video_streaming_mode"] is True
+    eff = resolve_stream_settings({"encoder": "av1", "h264_crf": 18}, sysd, "0.9.30")
+    assert eff["encoder"] == "av1" and eff["video_crf"] == 18
+
+
+def test_auto_encoder_inherits_system_default():
+    sysd = {**CF, "WORKSTATION_DEFAULT_ENCODER": "hevc"}
+    assert resolve_stream_settings({"encoder": "auto"}, sysd, "0.9.30")["encoder"] == "hevc"
+    assert resolve_stream_settings({"encoder": "av1"}, sysd, "0.9.30")["encoder"] == "av1"
+    same = resolve_stream_settings({"encoder": "auto"}, CF, "0.9.30")
+    assert same["encoder"] == "auto"
+    assert resolve_stream_settings({"encoder": "auto"}, {**CF, "WORKSTATION_DEFAULT_ENCODER": "auto"}, "0.9.30") == same

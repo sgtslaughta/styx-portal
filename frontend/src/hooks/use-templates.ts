@@ -2,11 +2,16 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/api/client";
 import type { TemplateCreate } from "@/lib/types";
 
-export function useTemplates() {
+export function useTemplates(opts?: { shared?: boolean }) {
+  const shared = !!opts?.shared;
   return useQuery({
-    queryKey: ["templates"],
-    queryFn: api.listTemplates,
+    queryKey: shared ? ["templates", "shared"] : ["templates"],
+    queryFn: () => api.listTemplates(shared),
   });
+}
+
+export function useSizePresets() {
+  return useQuery({ queryKey: ["size-presets"], queryFn: api.getSizePresets, staleTime: 5 * 60 * 1000 });
 }
 
 export function useCreateTemplate() {
