@@ -28,23 +28,24 @@ const input = {
   send: (m) => sent.push(m),
   element: {getBoundingClientRect: () => ({left: 0, top: 0, right: 1280, bottom: 720})},
   _cursorBase64Data: 'QUJD', cursorHotspot: {x: 2, y: 3}, displayId: 'primary',
-  _streamBox: () => ({left: 10, top: 20, scaleX: 2, scaleY: 2}),
+  _streamBox: () => ({left: 10, top: 20, width: 1280, height: 720, scaleX: 2, scaleY: 2}),
+  _pointerSeq: 0,
+  _sendPointer(e) { this._pointerSeq += 1; this.send(e.join(',') + ',' + this._pointerSeq) },
   echoes: [], onPointerEcho(m) { this.echoes.push(m) },
 };
-let T = 1000, tick = null;
-Object.assign(win, {document: doc, Math, Date: {now: () => T}, setInterval: (f) => { tick = f; return 0 },
+Object.assign(win, {document: doc, Math, setInterval: () => 0,
   addEventListener: (e, f) => { winL[e] = f }, webrtcInput: input});
 win.window = win;
 vm.createContext(win);
 vm.runInContext(body, win);
 winL.mousemove({clientX: 100, clientY: 200});       // unlocked: remember the spot
 doc.pointerLockElement = {};
-docL.pointerlockchange();                            // lock: overlay at that spot
+docL.pointerlockchange();                            // lock: overlay at that spot, echo on
 const img = imgs[0];
 assert.strictEqual(img.style.display, 'block');
 assert.strictEqual(img.attrs.src, 'data:image/png;base64,QUJD');
 assert.strictEqual(img.style.transform, 'translate(98px,197px)');
-winL.mousemove({movementX: 50, movementY: -20});    // deltas move it 1:1
+winL.mousemove({movementX: 50, movementY: -20});    // no echo yet: deltas move it 1:1
 assert.strictEqual(img.style.transform, 'translate(148px,177px)');
 winL.mousemove({movementX: -5000, movementY: 0});   // clamped to the stream
 assert.strictEqual(img.style.transform, 'translate(-2px,177px)');
@@ -53,30 +54,23 @@ win.webrtcInput.send('SET_NATIVE_CURSOR_RENDERING,1');
 win.webrtcInput.send('p,1');
 win.webrtcInput.send('m2,3,4,0,0');
 assert.deepStrictEqual(sent, ['_pointer_echo,1', 'm2,3,4,0,0']);
-// a lone repeated position is not trusted (a seat without cursor metadata repeats 0,0)
-win.webrtcInput.onPointerEcho('pointer,primary,0.0,0.0,1,3');
-T += 200; tick();
+// a lock's first echo is held until the position moves (a stale seat repeats 0,0)
+win.webrtcInput.onPointerEcho('pointer,primary,0.0,0.0,1,0');
 assert.strictEqual(img.style.transform, 'translate(-2px,177px)');
-T -= 200;
-// the true server position: held while the mouse moves, applied once it rests
-win.webrtcInput.onPointerEcho('pointer,primary,500,300,1,7');
-assert.strictEqual(img.style.transform, 'translate(-2px,177px)');
-assert.deepStrictEqual(input.echoes, ['pointer,primary,0.0,0.0,1,3', 'pointer,primary,500,300,1,7']);  // selkies still sees it
-T += 200; tick();
-assert.strictEqual(img.style.transform, 'translate(258px,167px)');      // 10+500/2-2, 20+300/2-3
-win.webrtcInput.onPointerEcho('pointer,other,0,0,1,9');                  // another display: ignored
+// server position + the relative moves sent after the echo's seq, in server pixels
+win.webrtcInput._sendPointer(['m2', 10, 5]);         // seq 1, not yet in an echo
+win.webrtcInput.onPointerEcho('pointer,primary,500,300,1,0');
+assert.strictEqual(img.style.transform, 'translate(263px,169.5px)');    // 10+(500+10)/2-2, 20+(300+5)/2-3
+win.webrtcInput.onPointerEcho('pointer,primary,510,305,1,1');          // seq 1 applied: no double count
+assert.strictEqual(img.style.transform, 'translate(263px,169.5px)');
+win.webrtcInput.onPointerEcho('pointer,primary,900,100,1,1');          // a game warp: follow it
+assert.strictEqual(img.style.transform, 'translate(458px,67px)');
+winL.mousemove({movementX: 7, movementY: 7});       // echo known: local deltas do not drift it
+assert.strictEqual(img.style.transform, 'translate(458px,67px)');
+win.webrtcInput.onPointerEcho('pointer,other,0,0,1,9');                // another display: ignored
 win.webrtcInput.onPointerEcho('pointer,none');
-T += 200; tick();
-assert.strictEqual(img.style.transform, 'translate(258px,167px)');
-// the mouse moves but the server pointer does not: a game locked it, the sprite hides
-T += 100; winL.mousemove({movementX: 30, movementY: 0});
-assert.strictEqual(img.style.display, 'block');
-T += 100; winL.mousemove({movementX: 30, movementY: 0});
-assert.strictEqual(img.style.display, 'none');
-win.webrtcInput.onPointerEcho('pointer,primary,600,300,1,12');          // pointer moves again: back
-T += 200; tick();
-assert.strictEqual(img.style.display, 'block');
-assert.strictEqual(img.style.transform, 'translate(308px,167px)');
+assert.strictEqual(img.style.transform, 'translate(458px,67px)');
+assert.strictEqual(input.echoes.length, 6);                             // selkies still sees them all
 input._cursorBase64Data = null;                     // remote cursor hidden (games)
 winL.mousemove({movementX: 1, movementY: 1});
 assert.strictEqual(img.style.display, 'none');

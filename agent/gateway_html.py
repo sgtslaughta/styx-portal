@@ -149,9 +149,13 @@ def inject_webrtc(html: str, enabled: bool) -> str:
 # Game mode (selkies posts gamingModeUpdate): pin the seat size, and go
 # fullscreen on the next click so selkies arms pointer + keyboard lock.
 GAMEMODE_JS = r"""<script id="styx-gamemode">(function(){var on=false;
+function kb(){try{if(!on||!navigator.permissions)return;navigator.permissions.query({name:'keyboard-lock'}).then(function(p){if(p.state==='granted'||!on)return;
+var t=document.createElement('div');t.id='styx-kb-notice';t.textContent='Keyboard lock is not allowed for this site, so Esc leaves game mode. Allow "Keyboard lock" in the site settings (icon left of the address) to send Esc to the game; hold Esc to leave.';
+t.style.cssText='position:fixed;top:12px;left:50%;transform:translateX(-50%);max-width:640px;padding:10px 14px;background:#111d;color:#fff;font:14px sans-serif;border-radius:8px;z-index:2147483647;pointer-events:none';
+document.body.appendChild(t);setTimeout(function(){t.remove()},9000)}).catch(function(){})}catch(x){}}
 function post(b){try{fetch('styx/gamemode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b),keepalive:true}).catch(function(){})}catch(e){}}
 addEventListener('message',function(e){try{if(e.source!==window||!e.data||e.data.type!=='gamingModeUpdate')return;
-on=!!e.data.active;var d=devicePixelRatio||1;
+on=!!e.data.active;var d=devicePixelRatio||1;if(on)setTimeout(kb,2500);
 post(on?{active:true,w:screen.width,h:screen.height,dpr:d}:{active:false,w:innerWidth,h:innerHeight,dpr:d})}catch(x){}});
 addEventListener('pointerdown',function(e){try{if(on&&e.button===0&&!document.fullscreenElement)document.documentElement.requestFullscreen({navigationUI:'hide'}).catch(function(){})}catch(x){}},true);
 })();</script>"""
@@ -165,38 +169,41 @@ addEventListener('pointerdown',function(e){try{if(on&&e.button===0&&!document.fu
 # deltas scaled to server pixels, so on screen they match 1:1) and clamped to
 # the stream; hidden whenever the remote cursor is hidden (sprite cleared).
 # While locked it also asks selkies for its pointer echo (`pointer,<display>,<x>,
-# <y>,<scale>,<seq>`, server pixels, sent when the server pointer moves; needs a
-# pixelflux reporting the host cursor; echoes count only once the position has
-# changed, as a seat without cursor metadata repeats a stale one). The newest echo is applied once the mouse
-# rests, so a game's pointer warp no longer leaves the sprite behind. And when the
-# mouse keeps moving but no echo comes, the game has locked the pointer (GNOME
-# holds it still) and owns the mouse: the sprite hides until the pointer moves.
+# <y>,<scale>,<seq>`: the server pointer in server pixels, including the page's
+# pointer messages up to <seq>; needs a pixelflux reporting the host cursor) and
+# draws the sprite there plus the relative moves sent after <seq>, so it tracks
+# the real pointer through game warps and acceleration without drifting. Until
+# a lock's first moved echo arrives it falls back to summing the deltas.
 LOCKCURSOR_JS = r"""<script id="styx-lockcursor">(function(){
-var img=null,x=0,y=0,lx=0,ly=0,hooked=null,raw=null,moved=0;
-var REST=120,OWN_PX=48,OWN_MS=250,live=false,first=null,ex=null,ey=null,echoAt=0,since=0,own=false,applied=true;
+var img=null,x=0,y=0,lx=0,ly=0,hooked=null,raw=null,echo=null,first=null,pend=[];
 function inp(){return window.webrtcInput}
+function locked(){return !!document.pointerLockElement}
 function hook(){var w=inp();if(!w||w===hooked||typeof w.send!=='function')return;hooked=w;var s=w.send.bind(w);raw=s;
 w.send=function(m){if(typeof m==='string'&&(m.indexOf('SET_NATIVE_CURSOR_RENDERING,')===0||/^p,[01]$/.test(m)))return;return s.apply(null,arguments)};
-var echo=w.onPointerEcho;w.onPointerEcho=function(m){try{onEcho(m)}catch(z){}if(typeof echo==='function')return echo.apply(w,arguments)}}
-function onEcho(m){var t=String(m).split(','),w=inp(),px=+t[2],py=+t[3];if(t.length<6||!isFinite(px)||!isFinite(py))return;
-if(w.displayId&&t[1]!==w.displayId)return;var k=px+','+py;if(first===null)first=k;if(k!==first)live=true;if(!live)return;echoAt=Date.now();since=0;own=false;ex=px;ey=py;applied=false;settle()}
-function settle(){if(applied||ex===null||!document.pointerLockElement||Date.now()-moved<REST)return;
-var w=inp(),b=w._streamBox&&w._streamBox();if(!b||!(b.scaleX>0)||!(b.scaleY>0))return;
-applied=true;x=b.left+ex/b.scaleX;y=b.top+ey/b.scaleY;clamp();draw()}
+var oe=w.onPointerEcho;w.onPointerEcho=function(m){try{onEcho(m)}catch(z){}if(typeof oe==='function')return oe.apply(w,arguments)};
+var sp=w._sendPointer;if(typeof sp==='function')w._sendPointer=function(e){var r=sp.apply(w,arguments);
+try{if(locked()&&e&&e[0]==='m2'){pend.push([w._pointerSeq,+e[1]||0,+e[2]||0]);if(pend.length>512)pend.shift();place()}}catch(z){}return r}}
+function onEcho(m){var t=String(m).split(','),w=inp(),px=+t[2],py=+t[3],sc=+t[4],sq=+t[5];
+if(t.length<6||!isFinite(px)||!isFinite(py)||!isFinite(sq)||(w.displayId&&t[1]!==w.displayId))return;
+var k=px+','+py;if(first===null)first=k;if(!echo&&k===first)return;
+echo={x:px,y:py,s:sc>0?sc:1};pend=pend.filter(function(d){return d[0]>sq});place()}
+function place(){var w=inp(),b=echo&&locked()&&w._streamBox&&w._streamBox();if(!b||!(b.scaleX>0)||!(b.scaleY>0))return;
+var mx=b.width*b.scaleX-1,my=b.height*b.scaleY-1,sx=echo.x,sy=echo.y;
+for(var i=0;i<pend.length;i++){sx=Math.min(Math.max(sx+pend[i][1]*echo.s,0),mx);sy=Math.min(Math.max(sy+pend[i][2]*echo.s,0),my)}
+x=b.left+sx/b.scaleX;y=b.top+sy/b.scaleY;draw()}
 function clamp(){var w=inp(),r=w&&w.element&&w.element.getBoundingClientRect();if(!r)return;
 x=Math.max(r.left,Math.min(r.right-1,x));y=Math.max(r.top,Math.min(r.bottom-1,y))}
 function draw(){hook();var w=inp(),d=w&&w._cursorBase64Data;
-if(!document.pointerLockElement||!d||own){if(img)img.style.display='none';return}
+if(!locked()||!d){if(img)img.style.display='none';return}
 if(!img){img=document.createElement('img');img.id='styx-lock-cursor';
 img.style.cssText='position:fixed;left:0;top:0;pointer-events:none;z-index:2147483647';document.body.appendChild(img)}
 var src='data:image/png;base64,'+d;if(img.getAttribute('src')!==src)img.setAttribute('src',src);
 var h=w.cursorHotspot||{x:0,y:0};img.style.display='block';
 img.style.transform='translate('+(x-h.x)+'px,'+(y-h.y)+'px)'}
-addEventListener('mousemove',function(e){try{if(document.pointerLockElement){var dx=e.movementX||0,dy=e.movementY||0;
-moved=Date.now();since+=Math.abs(dx)+Math.abs(dy);if(live&&since>OWN_PX&&moved-echoAt>OWN_MS)own=true;
-x+=dx;y+=dy;clamp();draw()}else{lx=e.clientX;ly=e.clientY}}catch(z){}},true);
-document.addEventListener('pointerlockchange',function(){try{x=lx;y=ly;own=false;since=0;ex=null;draw();if(raw)raw('_pointer_echo,'+(document.pointerLockElement?1:0))}catch(z){}});
-setInterval(function(){try{settle();draw()}catch(z){}},100);
+addEventListener('mousemove',function(e){try{if(locked()){if(echo)place();else{x+=e.movementX||0;y+=e.movementY||0;clamp();draw()}}
+else{lx=e.clientX;ly=e.clientY}}catch(z){}},true);
+document.addEventListener('pointerlockchange',function(){try{x=lx;y=ly;echo=null;first=null;pend=[];draw();if(raw)raw('_pointer_echo,'+(locked()?1:0))}catch(z){}});
+setInterval(function(){try{draw()}catch(z){}},100);
 })();</script>"""
 
 
