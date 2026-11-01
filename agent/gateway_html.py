@@ -149,10 +149,14 @@ def inject_webrtc(html: str, enabled: bool) -> str:
 # Game mode (selkies posts gamingModeUpdate): pin the seat size, and go
 # fullscreen on the next click so selkies arms pointer + keyboard lock.
 GAMEMODE_JS = r"""<script id="styx-gamemode">(function(){var on=false;
-function kb(){try{if(!on||!navigator.permissions)return;navigator.permissions.query({name:'keyboard-lock'}).then(function(p){if(p.state==='granted'||!on)return;
-var t=document.createElement('div');t.id='styx-kb-notice';t.textContent='Keyboard lock is not allowed for this site, so Esc leaves game mode. Allow "Keyboard lock" in the site settings (icon left of the address) to send Esc to the game; hold Esc to leave.';
+function note(){var t=document.createElement('div');t.id='styx-kb-notice';t.textContent='Keyboard lock is not available in this browser, so Esc leaves game mode instead of reaching the game.';
 t.style.cssText='position:fixed;top:12px;left:50%;transform:translateX(-50%);max-width:640px;padding:10px 14px;background:#111d;color:#fff;font:14px sans-serif;border-radius:8px;z-index:2147483647;pointer-events:none';
-document.body.appendChild(t);setTimeout(function(){t.remove()},9000)}).catch(function(){})}catch(x){}}
+document.body.appendChild(t);setTimeout(function(){t.remove()},9000)}
+function kb(){try{if(!on)return;var K=navigator.keyboard,r={api:!!(K&&K.lock),fs:!!document.fullscreenElement,pl:!!document.pointerLockElement,
+ua:(navigator.userAgent.match(/(Chrome|Edg|Firefox|Version)\/\d+/g)||[]).join(' ')};
+var done=function(){post({diag:r});if(r.lock!=='ok')note()};
+(navigator.permissions?navigator.permissions.query({name:'keyboard-lock'}).then(function(x){r.perm=x.state},function(e){r.perm='err '+e.name}):Promise.resolve())
+.then(function(){if(!r.api){r.lock='noapi';return}return K.lock().then(function(){r.lock='ok'},function(e){r.lock=e.name+' '+e.message})}).then(done,done)}catch(x){}}
 function post(b){try{fetch('styx/gamemode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b),keepalive:true}).catch(function(){})}catch(e){}}
 addEventListener('message',function(e){try{if(e.source!==window||!e.data||e.data.type!=='gamingModeUpdate')return;
 on=!!e.data.active;var d=devicePixelRatio||1;if(on)setTimeout(kb,2500);

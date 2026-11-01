@@ -309,6 +309,9 @@ async def test_gamemode_validation_and_origin(tmp_path):
         assert (await _gm(client, active=True, w="x", h=1)).status == 400
         assert (await _gm(client, active=True, w=0, h=1)).status == 400
         assert (await _gm(client, active=True, w=99999, h=1)).status == 400
+        # the page's keyboard-lock report is logged only: no pin, no refit
+        assert (await _gm(client, diag={"api": True, "lock": "NotAllowedError x"})).status == 204
+        assert not (tmp_path / "refit-request").exists()
         r = await client.post("/styx/gamemode", json={"active": True, "w": 1, "h": 1},
                               headers={**HDR, "Origin": "https://evil.example"})
         assert r.status == 403

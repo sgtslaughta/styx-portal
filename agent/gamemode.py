@@ -19,6 +19,9 @@ class GameMode:
             return web.Response(status=403, text="forbidden origin")
         try:
             d = json.loads(await request.content.read(4096))
+            if isinstance(d, dict) and isinstance(d.get("diag"), dict):   # page's keyboard-lock report
+                self.log(f"gamemode diag: {json.dumps(d['diag'])[:400]}")
+                return web.Response(status=204)
             dpr = float(d.get("dpr", 1))
             req = (round(float(d["w"]) * dpr), round(float(d["h"]) * dpr))
             ok = 0 < req[0] <= 20000 and 0 < req[1] <= 20000
