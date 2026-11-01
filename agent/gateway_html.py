@@ -157,11 +157,40 @@ addEventListener('pointerdown',function(e){try{if(on&&e.button===0&&!document.fu
 })();</script>"""
 
 
+# Pointer-locked cursor. On lock selkies asks the server to embed the cursor in
+# the video, but GNOME's portal draws no cursor on the headless seat (verified:
+# "cursor embedded" session, no sprite in frames) and the switch reopens the
+# capture. So: drop that switch, and while locked draw selkies' own cursor sprite
+# client-side, moved by the lock's movement deltas (server deltas are those
+# deltas scaled to server pixels, so on screen they match 1:1) and clamped to
+# the stream; hidden whenever the remote cursor is hidden (sprite cleared).
+LOCKCURSOR_JS = r"""<script id="styx-lockcursor">(function(){
+var img=null,x=0,y=0,lx=0,ly=0,hooked=null;
+function inp(){return window.webrtcInput}
+function hook(){var w=inp();if(!w||w===hooked||typeof w.send!=='function')return;hooked=w;var s=w.send.bind(w);
+w.send=function(m){if(typeof m==='string'&&(m.indexOf('SET_NATIVE_CURSOR_RENDERING,')===0||/^p,[01]$/.test(m)))return;return s.apply(null,arguments)}}
+function clamp(){var w=inp(),r=w&&w.element&&w.element.getBoundingClientRect();if(!r)return;
+x=Math.max(r.left,Math.min(r.right-1,x));y=Math.max(r.top,Math.min(r.bottom-1,y))}
+function draw(){hook();var w=inp(),d=w&&w._cursorBase64Data;
+if(!document.pointerLockElement||!d){if(img)img.style.display='none';return}
+if(!img){img=document.createElement('img');img.id='styx-lock-cursor';
+img.style.cssText='position:fixed;left:0;top:0;pointer-events:none;z-index:2147483647';document.body.appendChild(img)}
+var src='data:image/png;base64,'+d;if(img.getAttribute('src')!==src)img.setAttribute('src',src);
+var h=w.cursorHotspot||{x:0,y:0};img.style.display='block';
+img.style.transform='translate('+(x-h.x)+'px,'+(y-h.y)+'px)'}
+addEventListener('mousemove',function(e){try{if(document.pointerLockElement){x+=e.movementX||0;y+=e.movementY||0;clamp();draw()}
+else{lx=e.clientX;ly=e.clientY}}catch(z){}},true);
+document.addEventListener('pointerlockchange',function(){try{x=lx;y=ly;draw()}catch(z){}});
+setInterval(function(){try{draw()}catch(z){}},100);
+})();</script>"""
+
+
 def inject_gamemode(html: str) -> str:
-    """Both transports: game-mode seat pin + auto-fullscreen (GAMEMODE_JS)."""
+    """Both transports: game-mode seat pin + auto-fullscreen (GAMEMODE_JS) and the
+    pointer-locked cursor overlay (LOCKCURSOR_JS)."""
     if "</head>" not in html:
         return html
-    return html.replace("</head>", GAMEMODE_JS + "</head>", 1)
+    return html.replace("</head>", GAMEMODE_JS + LOCKCURSOR_JS + "</head>", 1)
 
 
 def inject_favicon(html: str, etag: str) -> str:
