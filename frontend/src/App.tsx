@@ -8,6 +8,7 @@ import { NewContainerDrawer } from "@/components/launch/new-container-drawer";
 import { SettingsLayout } from "@/components/settings/settings-layout";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/use-auth";
+import { AdminActiveContext } from "@/hooks/use-admin-poll";
 
 export default function App() {
   const { user } = useAuth();
@@ -48,7 +49,7 @@ export default function App() {
           <HomePage onNewContainer={() => setLaunchOpen(true)} onOpenSettings={() => setActiveTab("admin")} />
         </div>
         <div className={activeTab === "admin" ? "" : "hidden"}>
-          <SettingsLayout />
+          <AdminActiveContext.Provider value={activeTab === "admin"}><SettingsLayout /></AdminActiveContext.Provider>
         </div>
       </main>
       <StatusRail forceCollapsed={activeTab === "admin"} onOpenAdmin={() => setActiveTab("admin")} onWidthChange={setRailPad} />

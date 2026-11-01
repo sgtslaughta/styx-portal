@@ -20,7 +20,7 @@ export function UsersTable({ users, invites, showInvites, actions, selfId, selec
   const ids = users.map((u) => u.id);
   const allOn = ids.length > 0 && ids.every((id) => selected.has(id));
   return (
-    <table className="dense full">
+    <table className="dense full users-table">
       <thead>
         <tr>
           <th>{!showInvites && (

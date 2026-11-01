@@ -10,6 +10,7 @@ import { useUnsaved } from "@/components/settings/unsaved-context";
 import { StreamingTurn } from "./streaming-turn";
 import { StreamingWsTable } from "./streaming-ws-table";
 import { editCount, mergedSettings, type WsEdits } from "./streaming-overrides";
+import { useAdminPoll } from "@/hooks/use-admin-poll";
 
 const TRANSPORTS = [["websockets", "WebSockets"], ["webrtc", "WebRTC"]] as const;
 const CODEC_OPTS = [["auto", "Auto"], ["av1", "AV1"], ["hevc", "HEVC"], ["h264", "H.264"]] as const;
@@ -22,7 +23,8 @@ export function StreamingPage() {
   const qc = useQueryClient();
   const { setCount } = useUnsaved();
   const { data: groups = [], isLoading } = useQuery({ queryKey: ["system-settings"], queryFn: api.getSystemSettings });
-  const { data: workstations = [] } = useQuery({ queryKey: ["workstations"], queryFn: api.listWorkstations, refetchInterval: 30000 });
+  const poll = useAdminPoll(30000);
+  const { data: workstations = [] } = useQuery({ queryKey: ["workstations"], queryFn: api.listWorkstations, refetchInterval: poll });
   const [edits, setEdits] = useState<Record<string, SettingValue>>({});
   const [wsEdits, setWsEdits] = useState<WsEdits>({});
 

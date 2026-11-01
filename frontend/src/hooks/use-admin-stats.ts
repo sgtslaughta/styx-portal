@@ -1,11 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { api, ApiError } from "@/api/client";
+import { useAdminPoll } from "@/hooks/use-admin-poll";
 
 export function useOverviewStats(range: string) {
-  return useQuery({ queryKey: ["stats-overview", range], queryFn: () => api.getOverviewStats(range), refetchInterval: 60000 });
+  const poll = useAdminPoll(60000);
+  return useQuery({ queryKey: ["stats-overview", range], queryFn: () => api.getOverviewStats(range), refetchInterval: poll });
 }
 export function useStreamingStats() {
-  return useQuery({ queryKey: ["stats-streaming"], queryFn: () => api.getStreamingStats(7, 5), refetchInterval: 120000 });
+  const poll = useAdminPoll(120000);
+  return useQuery({ queryKey: ["stats-streaming"], queryFn: () => api.getStreamingStats(7, 5), refetchInterval: poll });
 }
 export function useRelayStats(period: string, enabled = true) {
   return useQuery({

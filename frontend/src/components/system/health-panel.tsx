@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api, type DiagCheck } from "@/api/client";
 import { Button } from "@/components/ui/button";
+import { useAdminPoll } from "@/hooks/use-admin-poll";
 import {
   RefreshCw,
   CheckCircle2,
@@ -86,16 +87,18 @@ function HistoryStrip({ series }: { series: boolean[] }) {
 }
 
 export function HealthPanel() {
+  const poll = useAdminPoll(30000);
+  const slowPoll = useAdminPoll(60000);
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["diagnostics"],
     queryFn: api.getDiagnostics,
-    refetchInterval: 30000,
+    refetchInterval: poll,
   });
 
   const { data: history } = useQuery({
     queryKey: ["diagnostics-history"],
     queryFn: () => api.getDiagnosticsHistory("1h"),
-    refetchInterval: 60000,
+    refetchInterval: slowPoll,
   });
 
   const allHealthy = data?.ok ?? false;
