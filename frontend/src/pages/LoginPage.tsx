@@ -3,7 +3,9 @@ import { useNavigate, Navigate } from "react-router";
 import { toast } from "sonner";
 import { api, withRetry } from "@/api/client";
 import { useAuth } from "@/hooks/use-auth";
-import { Button } from "@/components/ui/button";
+import { GlassButton } from "@/components/ui/glass-button";
+import { useCanvasEffect } from "@/hooks/use-canvas-effect";
+import { createGlyphBeams } from "@/lib/effects/glyph-beams";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
 import { LoginBrandPanel } from "@/components/auth/LoginBrandPanel";
@@ -19,6 +21,12 @@ export function LoginPage() {
   const [challenge, setChallenge] = useState<string[] | null>(null);
   const [answers, setAnswers] = useState<string[]>([]);
   const [providers, setProviders] = useState<{ name: string; display_label: string; icon_url: string | null }[]>([]);
+  const formCv = useRef<HTMLCanvasElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const logoRef = useRef<HTMLDivElement>(null);
+  useCanvasEffect(formCv, (c) => createGlyphBeams(c, {
+    calmRects: () => [cardRef.current, logoRef.current].filter((e): e is HTMLDivElement => !!e).map((e) => e.getBoundingClientRect()),
+  }), []);
   const nav = useNavigate();
   const { refresh, setupRequired, loading, user } = useAuth();
 
@@ -136,11 +144,12 @@ export function LoginPage() {
   }
 
   return (
-    <div className="grid min-h-screen md:grid-cols-[3fr_2fr]">
+    <div className="login-split">
       <LoginBrandPanel />
-      <div className="styx-auth-form flex items-center justify-center px-6 py-12">
-        <div className="w-full max-w-sm space-y-6">
-          <div className="flex items-center justify-center gap-2 md:hidden"><Waves className="h-5 w-5 text-primary" aria-hidden /><span className="text-base font-extrabold tracking-wider">STYX PORTAL</span></div>
+      <section className="styx-auth-form login-form" data-testid="login-form-panel">
+        <canvas ref={formCv} aria-hidden="true" />
+        <div ref={logoRef} className="login-logo" data-testid="login-logo"><Waves className="h-6 w-6" aria-hidden />STYX PORTAL</div>
+        <div ref={cardRef} className="login-card space-y-6">
           <div className="space-y-1 text-center">
             <h1 className="text-2xl font-semibold">Sign in</h1>
             <p className="text-sm text-muted-foreground">Welcome back.</p>
@@ -232,12 +241,12 @@ export function LoginPage() {
                 </button>
               </div>
             )}
-            <Button type="submit" className="w-full" size="default" disabled={submitting}>
-              {submitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Signing in…</> : challenge ? "Verify" : "Sign in"}
-            </Button>
+            <GlassButton type="submit" tone="teal" disabled={submitting}>
+              {submitting ? <><Loader2 className="mr-2 inline h-4 w-4 animate-spin" />Signing in…</> : challenge ? "Verify" : "Sign in"}
+            </GlassButton>
           </form>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

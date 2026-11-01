@@ -18,8 +18,10 @@ import { AcceptInvitePage } from "@/pages/AcceptInvitePage";
 import { ConnectingPage } from "@/pages/ConnectingPage";
 import { DesktopPage } from "@/pages/DesktopPage";
 import "@fontsource-variable/commissioner/flar.css";
+import "@fontsource/ibm-plex-mono/400.css";
 import "./styles/globals.css";
 import "./styles/glass.css";
+import "./styles/login-glance.css";
 
 applyReducedMotion();
 

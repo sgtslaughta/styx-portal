@@ -1,30 +1,18 @@
-import { Waves } from "lucide-react";
+import { useRef } from "react";
+import { useCanvasEffect } from "@/hooks/use-canvas-effect";
+import { createWaves } from "@/lib/effects/waves";
 
-import { RippleCanvas } from "./RippleCanvas";
-
-/**
- * Theme-aware animated brand panel for the login split layout.
- * Responds to .dark class: dark theme = rich navy gradient + bright ripple,
- * light theme = ethereal sky gradient + subtle ripple.
- */
+/** Gold wave field + dithered sun with the unfocus-reveal headline. Theme-aware via the .dark class. */
 export function LoginBrandPanel() {
+  const cv = useRef<HTMLCanvasElement>(null);
+  const hero = useRef<HTMLDivElement>(null);
+  useCanvasEffect(cv, (c) => createWaves(c, { lines: 28, top: 0.42, calmRect: () => hero.current?.getBoundingClientRect() ?? null }), []);
   return (
-    <div className="styx-brand hidden md:flex flex-col justify-between p-10">
-      <RippleCanvas />
-      <div className="flex items-center gap-2">
-        <Waves className="h-6 w-6" style={{ color: "rgb(var(--brand-ripple-r), var(--brand-ripple-g), var(--brand-ripple-b))" }} />
-        <span className="text-lg font-extrabold tracking-wider">STYX PORTAL</span>
+    <section className="login-brand">
+      <canvas ref={cv} aria-hidden="true" />
+      <div ref={hero} className="login-hero reveal">
+        <h2>Cross over to your workspaces.</h2>
       </div>
-      <div>
-        <h2 className="text-3xl font-bold leading-tight">
-          Cross over to your
-          <br />
-          workspaces.
-        </h2>
-        <p className="mt-3 max-w-xs text-sm" style={{ color: "var(--brand-fg-muted)" }}>
-          Secure remote desktops, on demand.
-        </p>
-      </div>
-    </div>
+    </section>
   );
 }
