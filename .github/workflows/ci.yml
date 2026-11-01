@@ -18,7 +18,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: homelab
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: actions/setup-node@v7
@@ -34,7 +34,7 @@ jobs:
   quality:
     runs-on: homelab
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-backend
       - name: ruff (blocking)
         working-directory: backend
@@ -51,7 +51,7 @@ jobs:
   test:
     runs-on: homelab
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-backend
       - name: pytest
         working-directory: backend
@@ -64,7 +64,7 @@ jobs:
   plugin-test:
     runs-on: homelab
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
@@ -75,7 +75,7 @@ jobs:
   security:
     runs-on: homelab
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-backend
       - name: bandit (fail on HIGH/CRITICAL)
         working-directory: backend
