@@ -1,37 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
-import { api } from "@/api/client";
-import { SlidersHorizontal, HelpCircle, RotateCcw } from "lucide-react";
+import { api, type Setting, type SettingGroup, type SettingValue } from "@/api/client";
+import { SlidersHorizontal } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-
-type SettingValue = number | boolean | string;
-
-type Setting = {
-  key: string;
-  label: string;
-  help: string;
-  type: "int" | "bool" | "rate";
-  value: SettingValue;
-  default: SettingValue;
-  min: number | null;
-  max: number | null;
-};
-
-type SettingGroup = {
-  group: string;
-  label: string;
-  settings: Setting[];
-};
+import { SettingRow } from "./setting-row";
+import { TurnCostCard } from "./turn-cost-card";
+import { isSettingVisible } from "./webrtc-fields";
 
 export function SystemSettingsPanel() {
   const qc = useQueryClient();
@@ -48,7 +24,7 @@ export function SystemSettingsPanel() {
     const initial: Record<string, SettingValue> = {};
     groups.forEach((g) => {
       g.settings.forEach((s) => {
-        initial[s.key] = s.value;
+        if (s.type !== "secret") initial[s.key] = s.value;
       });
     });
     setLocalState(initial);
@@ -67,10 +43,15 @@ export function SystemSettingsPanel() {
   };
 
   const updateMutation = useMutation({
-    mutationFn: (changes: Record<string, SettingValue>) =>
+    mutationFn: (changes: Record<string, number | boolean | string>) =>
       api.updateSystemSettings(changes),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["system-settings"] });
+      setLocalState((prev) => {
+        const next = { ...prev };
+        groups.forEach((g) => g.settings.forEach((s) => s.type === "secret" && delete next[s.key]));
+        return next;
+      });
       toast.success("Settings updated");
       setErrors({});
     },
@@ -85,6 +66,9 @@ export function SystemSettingsPanel() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+
+  const providerRow = (g: SettingGroup) =>
+    g.settings.find((s) => s.key === "WEBRTC_TURN_PROVIDER")?.value;
 
   const handleChange = (key: string, value: SettingValue, setting: Setting) => {
     const newValue = setting.type === "int" ? (value === "" ? "" : Number(value)) : value;
@@ -103,7 +87,7 @@ export function SystemSettingsPanel() {
   };
 
   const handleSaveGroup = (group: SettingGroup) => {
-    const changes: Record<string, SettingValue> = {};
+    const changes: Record<string, number | boolean | string> = {};
     let hasErrors = false;
 
     group.settings.forEach((s) => {
@@ -113,7 +97,7 @@ export function SystemSettingsPanel() {
         if (err) {
           hasErrors = true;
         } else {
-          changes[s.key] = currentValue;
+          changes[s.key] = currentValue as number | boolean | string;
         }
       }
     });
@@ -128,6 +112,8 @@ export function SystemSettingsPanel() {
     }
   };
 
+  const clearSecret = (key: string) => updateMutation.mutate({ [key]: "" });
+
   const handleReset = (key: string) => {
     resetMutation.mutate(key);
   };
@@ -139,7 +125,8 @@ export function SystemSettingsPanel() {
   return (
     <div className="space-y-6">
       {groups.map((group: SettingGroup) => (
-        <Card key={group.group} className="styx-card">
+        <div key={group.group} className="space-y-6">
+        <Card className="styx-card">
           <CardHeader className="pb-4">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
@@ -164,111 +151,36 @@ export function SystemSettingsPanel() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-4">
-              {group.settings.map((setting: Setting) => (
-                <div
-                  key={setting.key}
-                  className="flex items-start gap-4 rounded-lg border border-border/50 p-4 hover:bg-muted/20 transition-colors"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <label className="text-sm font-medium leading-none">
-                        {setting.label}
-                      </label>
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <HelpCircle className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors cursor-help" />
-                          </TooltipTrigger>
-                          <TooltipContent side="right" className="max-w-xs">
-                            {setting.help}
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    </div>
-                    {setting.help && (
-                      <p className="text-xs text-muted-foreground mb-3">{setting.help}</p>
-                    )}
-
-                    {setting.type === "bool" ? (
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          checked={Boolean(localState[setting.key])}
-                          onCheckedChange={(checked) =>
-                            handleChange(setting.key, checked, setting)
-                          }
-                          disabled={updateMutation.isPending}
-                        />
-                        <span className="text-sm text-muted-foreground">
-                          {localState[setting.key] ? "Enabled" : "Disabled"}
-                        </span>
-                      </div>
-                    ) : (
-                      <div>
-                        <Input
-                          type={setting.type === "int" ? "number" : "text"}
-                          value={String(localState[setting.key] ?? "")}
-                          onChange={(e) =>
-                            handleChange(setting.key, e.target.value, setting)
-                          }
-                          disabled={updateMutation.isPending}
-                          className={
-                            errors[setting.key] ? "border-destructive" : ""
-                          }
-                          placeholder={String(setting.default)}
-                          min={
-                            setting.type === "int" && setting.min !== null
-                              ? setting.min
-                              : undefined
-                          }
-                          max={
-                            setting.type === "int" && setting.max !== null
-                              ? setting.max
-                              : undefined
-                          }
-                        />
-                        {errors[setting.key] && (
-                          <p className="mt-1 text-xs text-destructive">
-                            {errors[setting.key]}
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex flex-col items-end gap-2">
-                    {localState[setting.key] !== setting.default && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setLocalState((prev) => ({
-                            ...prev,
-                            [setting.key]: setting.default,
-                          }));
-                          setErrors((prev) => {
-                            const next = { ...prev };
-                            delete next[setting.key];
-                            return next;
-                          });
-                          handleReset(setting.key);
-                        }}
-                        disabled={resetMutation.isPending}
-                        className="text-muted-foreground hover:text-foreground"
-                        title="Reset to default"
-                      >
-                        <RotateCcw className="h-4 w-4" />
-                      </Button>
-                    )}
-                    <span className="text-xs text-muted-foreground text-right">
-                      Default:{" "}
-                      <code className="font-mono">{String(setting.default)}</code>
-                    </span>
-                  </div>
-                </div>
-              ))}
+              {group.settings
+                .filter((s) =>
+                  group.group !== "webrtc" ||
+                  isSettingVisible(s.key, localState.WEBRTC_TURN_PROVIDER ?? providerRow(group))
+                )
+                .map((setting: Setting) => (
+                  <SettingRow
+                    key={setting.key}
+                    setting={setting}
+                    value={localState[setting.key]}
+                    error={errors[setting.key]}
+                    disabled={updateMutation.isPending || resetMutation.isPending}
+                    onChange={(v) => handleChange(setting.key, v, setting)}
+                    onClear={() => clearSecret(setting.key)}
+                    onReset={() => {
+                      setLocalState((prev) => ({ ...prev, [setting.key]: setting.default }));
+                      setErrors((prev) => {
+                        const next = { ...prev };
+                        delete next[setting.key];
+                        return next;
+                      });
+                      handleReset(setting.key);
+                    }}
+                  />
+                ))}
             </div>
           </CardContent>
         </Card>
+        {group.group === "webrtc" && <TurnCostCard />}
+        </div>
       ))}
     </div>
   );
