@@ -104,3 +104,62 @@ TURN (relay, udp) → GAME-01, HEVC hardware decode.
    - Optional phase 2: authoritative usage from Cloudflare GraphQL Analytics API
      (needs a separate read-only Account Analytics token) to reconcile the estimate.
 6. Upstream issues (later, separate): `mode=auto` transport negotiation; hardware-decodable codec.
+
+## Contract (all tracks build against this; do not change without the lead)
+
+### System settings (backend `SettingsService`, group `webrtc`, label "WebRTC / TURN")
+| key | type | default |
+|---|---|---|
+| WORKSTATION_TRANSPORT | enum websockets,webrtc | websockets |
+| WEBRTC_TURN_PROVIDER | enum none,cloudflare,generic | none |
+| CLOUDFLARE_TURN_TOKEN_ID | secret | "" |
+| CLOUDFLARE_TURN_API_TOKEN | secret | "" |
+| TURN_HOST | str | "" |
+| TURN_PORT | int 1-65535 | 3478 |
+| TURN_PROTOCOL | enum udp,tcp | udp |
+| TURN_TLS | bool | false |
+| TURN_SHARED_SECRET | secret | "" |
+| TURN_USERNAME | str | "" |
+| TURN_PASSWORD | secret | "" |
+| WEBRTC_MAX_SESSION_H | int 0-72 | 8 |
+| TURN_FREE_GB_MONTH | int 0-1000000 | 1000 |
+| TURN_USD_PER_GB | str (decimal, regex `^\d+(\.\d+)?$`) | "0.05" |
+
+`GET /api/admin/settings` (existing `effective()`) row shapes:
+- secret: `{"type":"secret","value":null,"is_set":true|false, ...}` — plaintext NEVER returned.
+- enum: `{"type":"enum","value":"...","choices":["a","b"], ...}`.
+- str: `{"type":"str","value":"..."}`.
+Setting a secret to `""` clears it. Secrets stored with `encrypt_secret`.
+
+### Per-workstation `stream_settings.transport`
+`"inherit"` (default, absent) | `"websockets"` | `"webrtc"`.
+
+### Heartbeat response `stream_settings` (what the agent gets)
+- `transport`: resolved `"websockets"|"webrtc"` (always present for agents >= 0.9.30).
+- `turn` (only when transport == webrtc and provider configured & complete):
+  - `{"provider":"cloudflare","token_id":"…","api_token":"…"}`
+  - `{"provider":"generic","host":"…","port":3478,"protocol":"udp","tls":false,
+     "shared_secret":"…"}` or with `"username","password"` instead of shared_secret.
+- `max_session_s`: WEBRTC_MAX_SESSION_H*3600 (0 = off).
+- existing `idle_timeout_s`, `idle_warn_lead_s`, `idle_timeout_enabled` apply to WebRTC too.
+
+### Heartbeat request `health` additions (agent → backend)
+- `turn_bytes`: int, relayed bytes since the previous heartbeat (delta, >= 0).
+- `transport`: "websockets"|"webrtc" currently running.
+- `active_connections` counts live WebRTC signaling sessions too.
+
+### TURN usage API (backend)
+- Table `turn_usage(month TEXT "YYYY-MM", workstation_id, user_id NULL, bytes INT)`,
+  unique (month, workstation_id, user_id); heartbeat adds `turn_bytes` to the row for
+  the workstation's current `occupied_by`.
+- `GET /api/admin/turn-usage?month=YYYY-MM` (admin) →
+  `{"month","free_gb","usd_per_gb","total_bytes","est_usd","projected_bytes",
+    "projected_usd","by_workstation":[{"id","name","bytes"}],"by_user":[{"id","username","bytes"}]}`
+  est_usd = max(0, total_GB − free_gb) × usd_per_gb (GB = 1e9 bytes);
+  projected = total × days_in_month / day_elapsed (current month only, else = total).
+
+### Gateway endpoints (agent, same-origin, behind existing auth)
+- `POST /styx/activity` body `{"sid":"<signaling session id>","relay_bytes":<cumulative int>}`
+  → 204. Marks input activity for that WebRTC session.
+- `POST /styx/refit` body `{"w":int,"h":int,"dpr":float}` → 204. Feeds the size-owner refit path.
+- Both: same `same_origin` check as WS (403 otherwise).
