@@ -129,7 +129,8 @@ async def test_usage_report_math(session):
     session.add(ws)
     await session.commit()
     sess_now = datetime(2026, 11, 11, tzinfo=timezone.utc)   # 10 days elapsed of 30
-    await record_turn_usage(session, ws, 1_500_000_000_000, sess_now)   # 1500 GB
+    session.add(TurnUsage(month="2026-11", workstation_id=ws.id, user_id=ws.occupied_by,
+                          bytes=1_500_000_000_000))                       # 1500 GB
     await session.commit()
     rep = await usage_report(session, None, sess_now)
     assert rep["month"] == "2026-11" and rep["free_gb"] == 1000
@@ -199,3 +200,11 @@ async def test_cf_month_egress_sums_and_caches(session):
     await live.reset(session, "CLOUDFLARE_ACCOUNT_ID", None)
     await live.reset(session, "CLOUDFLARE_ANALYTICS_TOKEN", None)
     cfu._cache.update(key=None, at=0.0, bytes=None, error=None)
+
+
+async def test_heartbeat_delta_capped(session):
+    from app.services.turn_usage import MAX_HEARTBEAT_DELTA
+    ws = await _make_ws(session, status="online")
+    await record_turn_usage(session, ws, 10**15, datetime(2026, 11, 2, tzinfo=timezone.utc))
+    await session.commit()
+    assert (await session.exec(select(TurnUsage))).one().bytes == MAX_HEARTBEAT_DELTA

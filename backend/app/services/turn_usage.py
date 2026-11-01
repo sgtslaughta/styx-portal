@@ -12,6 +12,8 @@ from app.services import cf_turn_usage
 from app.services.settings_store import settings
 
 GB = 10 ** 9
+# 250 Mbps for 60 s: well above one heartbeat of a real stream (heartbeats are ~10-30 s).
+MAX_HEARTBEAT_DELTA = 250 * 10 ** 6 // 8 * 60
 
 
 def _month(now: datetime) -> str:
@@ -25,6 +27,7 @@ async def record_turn_usage(session: AsyncSession, ws: Workstation, delta: Any,
     NULL user_id rows never match `==` in SQL uniqueness/lookup, so use is_(None)."""
     if isinstance(delta, bool) or not isinstance(delta, int) or delta <= 0:
         return
+    delta = min(delta, MAX_HEARTBEAT_DELTA)     # agents self-report: bound what one beat adds
     month = _month(now or datetime.now(timezone.utc))
     uid = ws.occupied_by
     cond = TurnUsage.user_id.is_(None) if uid is None else TurnUsage.user_id == uid
@@ -48,8 +51,12 @@ async def turn_over_budget(session: AsyncSession, now: datetime | None = None) -
     budget = settings.get("TURN_BUDGET_GB")
     if not budget:
         return False
-    cf = (await cf_turn_usage.month_egress(now))["bytes"] or 0    # actual, when configured
-    return max(await month_bytes(session, now), cf) >= budget * GB
+    cf = await cf_turn_usage.month_egress(now)
+    if cf["bytes"] is not None and not cf["error"]:
+        used = cf["bytes"]            # Cloudflare's own figure is authoritative when available
+    else:
+        used = await month_bytes(session, now)   # self-reported (bounded per heartbeat)
+    return used >= budget * GB
 
 
 def _money(x: Decimal) -> float:
