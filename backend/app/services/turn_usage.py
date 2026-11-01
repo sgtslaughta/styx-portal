@@ -8,6 +8,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.models import TurnUsage, User, Workstation
+from app.services import cf_turn_usage
 from app.services.settings_store import settings
 
 GB = 10 ** 9
@@ -36,6 +37,21 @@ async def record_turn_usage(session: AsyncSession, ws: Workstation, delta: Any,
     session.add(row)
 
 
+async def month_bytes(session: AsyncSession, now: datetime | None = None) -> int:
+    month = _month(now or datetime.now(timezone.utc))
+    rows = (await session.exec(select(TurnUsage.bytes).where(TurnUsage.month == month))).all()
+    return int(sum(rows))
+
+
+async def turn_over_budget(session: AsyncSession, now: datetime | None = None) -> bool:
+    """Cost control: this month's relayed total has reached TURN_BUDGET_GB (0 = off)."""
+    budget = settings.get("TURN_BUDGET_GB")
+    if not budget:
+        return False
+    cf = (await cf_turn_usage.month_egress(now))["bytes"] or 0    # actual, when configured
+    return max(await month_bytes(session, now), cf) >= budget * GB
+
+
 def _money(x: Decimal) -> float:
     return float(round(x, 2))
 
@@ -47,6 +63,7 @@ async def usage_report(session: AsyncSession, month: str | None = None,
     month = month or cur
     rows = (await session.exec(select(TurnUsage).where(TurnUsage.month == month))).all()
     total = sum(r.bytes for r in rows)
+    cf = await cf_turn_usage.month_egress(now) if month == cur else {"bytes": None, "error": None}
     free_gb = settings.get("TURN_FREE_GB_MONTH")
     try:
         price = Decimal(str(settings.get("TURN_USD_PER_GB")))
@@ -72,6 +89,9 @@ async def usage_report(session: AsyncSession, month: str | None = None,
     users = {u.id: u.username for u in (await session.exec(select(User))).all()}
     return {
         "month": month, "free_gb": free_gb, "usd_per_gb": float(price),
+        "budget_gb": settings.get("TURN_BUDGET_GB"),
+        "over_budget": month == cur and await turn_over_budget(session, now),
+        "cf_egress_bytes": cf["bytes"], "cf_error": cf["error"],
         "total_bytes": total, "est_usd": usd(total),
         "projected_bytes": projected, "projected_usd": usd(projected),
         "by_workstation": [{"id": i, "name": names.get(i, i), "bytes": b}

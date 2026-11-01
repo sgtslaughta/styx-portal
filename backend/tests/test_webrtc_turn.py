@@ -151,5 +151,51 @@ async def test_usage_endpoint(admin_client):
     r = await admin_client.get("/api/admin/turn-usage")
     assert r.status_code == 200
     assert set(r.json()) == {"month", "free_gb", "usd_per_gb", "total_bytes", "est_usd",
-                             "projected_bytes", "projected_usd", "by_workstation", "by_user"}
+                             "projected_bytes", "projected_usd", "by_workstation", "by_user",
+                             "budget_gb", "over_budget", "cf_egress_bytes", "cf_error"}
     assert (await admin_client.get("/api/admin/turn-usage?month=bad")).status_code == 400
+
+
+def test_over_budget_forces_websockets():
+    eff = resolve_stream_settings({"transport": "webrtc"}, {**CF, "TURN_OVER_BUDGET": True}, "0.9.30")
+    assert eff["transport"] == "websockets" and "turn" not in eff and eff["turn_budget_paused"]
+
+
+async def test_turn_over_budget(session):
+    from app.services.settings_store import settings as live
+    from app.services.turn_usage import turn_over_budget
+    ws = await _make_ws(session, status="online")
+    now = datetime(2026, 11, 2, tzinfo=timezone.utc)
+    await live.set(session, "TURN_BUDGET_GB", 1, None)
+    await record_turn_usage(session, ws, 10**9 - 1, now)
+    await session.commit()
+    assert not await turn_over_budget(session, now)
+    await record_turn_usage(session, ws, 1, now)
+    await session.commit()
+    assert await turn_over_budget(session, now)
+    await live.set(session, "TURN_BUDGET_GB", 0, None)      # 0 = no limit
+    assert not await turn_over_budget(session, now)
+    await live.reset(session, "TURN_BUDGET_GB", None)
+
+
+async def test_cf_month_egress_sums_and_caches(session):
+    import httpx
+    from app.services import cf_turn_usage as cfu
+    from app.services.settings_store import settings as live
+    calls = []
+
+    def handler(req):
+        calls.append(req)
+        assert req.headers["authorization"] == "Bearer tok"
+        return httpx.Response(200, json={"data": {"viewer": {"accounts": [
+            {"callsTurnUsageAdaptiveGroups": [{"sum": {"egressBytes": 7}}, {"sum": {"egressBytes": 5}}]}]}}})
+    await live.set(session, "CLOUDFLARE_ACCOUNT_ID", "acct", None)
+    await live.set(session, "CLOUDFLARE_ANALYTICS_TOKEN", "tok", None)
+    cfu._cache.update(key=None, at=0.0, bytes=None, error=None)
+    mk = lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler))  # noqa: E731
+    now = datetime(2026, 11, 2, tzinfo=timezone.utc)
+    assert (await cfu.month_egress(now, mk()))["bytes"] == 12
+    assert (await cfu.month_egress(now, mk()))["bytes"] == 12 and len(calls) == 1   # cached
+    await live.reset(session, "CLOUDFLARE_ACCOUNT_ID", None)
+    await live.reset(session, "CLOUDFLARE_ANALYTICS_TOKEN", None)
+    cfu._cache.update(key=None, at=0.0, bytes=None, error=None)

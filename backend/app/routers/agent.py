@@ -18,7 +18,7 @@ from app.services.audit import audit_request
 from app.services.workstations import sha256_hex
 from app.services.settings_store import settings as _sys_settings
 from app.services.ws_settings import resolve_stream_settings, stream_sys_settings
-from app.services.turn_usage import record_turn_usage
+from app.services.turn_usage import record_turn_usage, turn_over_budget
 
 router = APIRouter()
 _settings = Settings()
@@ -72,6 +72,7 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
             ws.idle_disconnect_sent = False
     # Resolve effective stream settings: per-workstation override else system default.
     sys_settings_dict = stream_sys_settings(_sys_settings)
+    sys_settings_dict["TURN_OVER_BUDGET"] = await turn_over_budget(session)
     effective_ss = resolve_stream_settings(ws.stream_settings, sys_settings_dict,
                                            ws.agent_version)
     idle_timeout = effective_ss["idle_timeout_s"]

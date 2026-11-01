@@ -159,6 +159,10 @@ export type TurnUsage = {
   projected_usd: number;
   by_workstation: { id: string; name: string; bytes: number }[];
   by_user: { id: string; username: string; bytes: number }[];
+  budget_gb?: number;
+  over_budget?: boolean;
+  cf_egress_bytes?: number | null;
+  cf_error?: string | null;
 };
 
 const BASE = "/api";

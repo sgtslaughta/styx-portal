@@ -122,6 +122,14 @@ describe("TURN cost card", () => {
     expect(screen.getByText("alice")).toBeTruthy();
   });
 
+  test("over budget shows the WebRTC-paused banner and Cloudflare actual", async () => {
+    getSystemSettings.mockResolvedValue(groups("none"));
+    getTurnUsage.mockResolvedValue({ ...usage, budget_gb: 900, over_budget: true, cf_egress_bytes: 950e9 });
+    wrap(<SystemSettingsPanel />);
+    expect((await screen.findByRole("alert")).textContent).toMatch(/WebRTC is paused/);
+    expect(screen.getByText("Cloudflare actual (egress)")).toBeTruthy();
+  });
+
   test("error shows usage unavailable", async () => {
     getSystemSettings.mockResolvedValue(groups("none"));
     getTurnUsage.mockRejectedValue(new Error("404"));

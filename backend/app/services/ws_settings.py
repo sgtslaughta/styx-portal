@@ -72,6 +72,9 @@ def resolve_stream_settings(ws_ss: dict | None, sys: Mapping[str, Any],
         want = ss.get("transport")
         transport = want if want in ("websockets", "webrtc") else \
             sys.get("WORKSTATION_TRANSPORT") or "websockets"
+        if transport == "webrtc" and sys.get("TURN_OVER_BUDGET"):
+            transport = "websockets"            # cost control: TURN budget reached
+            eff["turn_budget_paused"] = True
         eff["transport"] = transport
         eff["max_session_s"] = int(sys.get("WEBRTC_MAX_SESSION_H") or 0) * 3600
         turn = _turn_config(sys) if transport == "webrtc" else None

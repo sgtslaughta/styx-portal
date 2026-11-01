@@ -112,8 +112,24 @@ export function TurnCostCard() {
           <p className="text-sm text-muted-foreground">usage unavailable</p>
         ) : (
           <>
+            {data.over_budget && (
+              <p role="alert" className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
+                TURN budget reached ({data.budget_gb} GB): WebRTC is paused and workstations use
+                WebSockets until next month or until the budget is raised.
+              </p>
+            )}
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-              <Stat label="Used this month" value={fmtGb(data.total_bytes)} />
+              <Stat label="Used this month (metered)" value={fmtGb(data.total_bytes)} />
+              {data.cf_egress_bytes != null && (
+                <Stat label="Cloudflare actual (egress)" value={fmtGb(data.cf_egress_bytes)} />
+              )}
+              {data.cf_error && <Stat label="Cloudflare analytics" value="unavailable" />}
+              {!!data.budget_gb && (
+                <Stat
+                  label="Budget used"
+                  value={`${Math.min(999, (100 * Math.max(gb(data.total_bytes), gb(data.cf_egress_bytes ?? 0))) / data.budget_gb).toFixed(0)}% of ${data.budget_gb} GB`}
+                />
+              )}
               <Stat label="Free allowance left" value={`${Math.max(0, data.free_gb - gb(data.total_bytes)).toFixed(1)} GB`} />
               <Stat label="Estimated cost" value={fmtUsd(data.est_usd)} />
               <Stat label="Projected month-end" value={fmtGb(data.projected_bytes)} />
