@@ -1,4 +1,5 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { describe, test, expect, vi, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthContext, type AuthUser } from "@/auth/AuthContext";
@@ -6,7 +7,7 @@ import { NewContainerDrawer } from "../new-container-drawer";
 
 const m = vi.hoisted(() => ({
   listRegistryImages: vi.fn(), listTemplates: vi.fn(), getSizePresets: vi.fn(),
-  createTemplate: vi.fn(), createInstance: vi.fn(), updateTemplate: vi.fn(),
+  createTemplate: vi.fn(), createInstance: vi.fn(), updateTemplate: vi.fn(), listInstances: vi.fn(), getRuntime: vi.fn(),
 }));
 vi.mock("@/api/client", () => ({ api: m }));
 vi.mock("@/components/effects/transition-provider", () => ({ useWaveTransition: () => ({ play: vi.fn() }) }));
@@ -22,11 +23,11 @@ const presets = [
   { id: "standard", label: "Standard", cpus: 4, memory_gb: 4, gpu: false },
   { id: "heavy", label: "Heavy", cpus: 6, memory_gb: 8, gpu: true },
 ];
-const setup = { id: "s1", name: "chrome-gpu", display_name: "Chrome GPU", image: "lscr.io/linuxserver/chromium:latest", icon: "", session_config: {} };
+const setup = { id: "s1", name: "chrome-gpu", display_name: "Chrome GPU", image: "lscr.io/linuxserver/chromium:latest", icon: "", session_config: {}, gpu_enabled: true, volumes: [{ name: "v", mount: "/config" }], profile_mount: "/config", cpu_limit: "4", memory_limit: "4g" };
 
-function wrap(role: string, onClose = vi.fn()) {
+function wrap(role: string, onClose = vi.fn(), gpu = false) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  const auth = { user: { id: "u", username: "u", email: "u@x", role } as AuthUser, loading: false, setupRequired: false, refresh: vi.fn(), logout: vi.fn() };
+  const auth = { user: { id: "u", username: "u", email: "u@x", role, can_use_gpu: gpu } as AuthUser, loading: false, setupRequired: false, refresh: vi.fn(), logout: vi.fn() };
   render(<QueryClientProvider client={qc}><AuthContext.Provider value={auth}><NewContainerDrawer open onClose={onClose} /></AuthContext.Provider></QueryClientProvider>);
   return onClose;
 }
@@ -37,6 +38,8 @@ beforeEach(() => {
   m.listTemplates.mockResolvedValue([setup]);
   m.getSizePresets.mockResolvedValue(presets);
   m.createTemplate.mockImplementation(async (d) => ({ ...d, id: "t1" }));
+  m.listInstances.mockResolvedValue([{ id: "x", name: "Chrome GPU", subdomain: "chrome-gpu" }]);
+  m.getRuntime.mockResolvedValue({ runtime: "docker" });
   m.createInstance.mockResolvedValue({ id: "i1" });
 });
 
@@ -85,5 +88,57 @@ describe("NewContainerDrawer", () => {
     wrap("admin");
     fireEvent.click(await screen.findByText("firefox"));
     expect(await screen.findByLabelText(/save as a setup/i)).toBeInTheDocument();
+  });
+
+  test("setup Launch creates the instance without opening the launch step, de-duplicating the name", async () => {
+    wrap("user");
+    fireEvent.click(await screen.findByRole("button", { name: "Launch Chrome GPU" }));
+    await waitFor(() => expect(m.createInstance).toHaveBeenCalled());
+    expect(m.createInstance.mock.calls[0]![0]).toMatchObject({ template_id: "s1", name: "Chrome GPU 2", subdomain: "chrome-gpu-2", use_profile: true });
+    expect(m.createTemplate).not.toHaveBeenCalled();
+  });
+
+  test("customising a setup hides Advanced and shows its size", async () => {
+    wrap("user");
+    fireEvent.click(await screen.findByRole("button", { name: "Customise Chrome GPU" }));
+    expect(await screen.findByText(/size comes from this setup/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^Advanced/)).not.toBeInTheDocument();
+  });
+
+  test("GPU toggle is off for Standard, on for Heavy", async () => {
+    wrap("user", vi.fn(), true);
+    fireEvent.click(await screen.findByText("firefox"));
+    const gpu = await screen.findByLabelText(/use gpu/i);
+    expect(gpu).not.toBeChecked();
+    fireEvent.click(await screen.findByRole("button", { name: /heavy/i }));
+    await waitFor(() => expect(screen.getByLabelText(/use gpu/i)).toBeChecked());
+  });
+
+  test("custom image reaches the launch step", async () => {
+    wrap("user");
+    fireEvent.change(await screen.findByLabelText(/use another image/i), { target: { value: "ghcr.io/x/devbox:1" } });
+    fireEvent.click(screen.getByRole("button", { name: /continue/i }));
+    expect(await screen.findByText("Launch devbox")).toBeInTheDocument();
+    expect(screen.getByText("ghcr.io/x/devbox:1")).toBeInTheDocument();
+  });
+
+  test("admin sees Edit on a setup", async () => {
+    wrap("admin");
+    expect(await screen.findByRole("button", { name: "Edit Chrome GPU" })).toBeInTheDocument();
+  });
+
+  test("focus returns to the trigger on close", async () => {
+    function Harness() {
+      const [o, setO] = useState(false);
+      return <><button onClick={() => setO(true)}>open</button><NewContainerDrawer open={o} onClose={() => setO(false)} /></>;
+    }
+    const qc = new QueryClient();
+    const auth = { user: { id: "u", role: "user" } as AuthUser, loading: false, setupRequired: false, refresh: vi.fn(), logout: vi.fn() };
+    render(<QueryClientProvider client={qc}><AuthContext.Provider value={auth}><Harness /></AuthContext.Provider></QueryClientProvider>);
+    const trigger = screen.getByText("open");
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.keyDown(await screen.findByLabelText(/search linuxserver/i), { key: "Escape" });
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 });

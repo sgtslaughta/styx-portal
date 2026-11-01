@@ -3,9 +3,8 @@ import { toast } from "sonner";
 import { Glyph } from "./glyph";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { EnvEditor } from "@/components/templates/env-editor";
-import { StorageSection } from "@/components/templates/builder/sections/storage";
-import { PortsNetworkSection } from "@/components/templates/builder/sections/ports-network";
+import { TemplateBuilder } from "@/components/templates/builder/template-builder";
+import { useIsK8s } from "@/hooks/use-gpu";
 import { useWaveTransition } from "@/components/effects/transition-provider";
 import { useAuth } from "@/hooks/use-auth";
 import { useCreateInstance } from "@/hooks/use-instances";
@@ -28,12 +27,15 @@ export function LaunchStep({ target, onClose }: { target: LaunchTarget; onClose:
   const createInstance = useCreateInstance();
   const createTemplate = useCreateTemplate();
   const wave = useWaveTransition();
+  const k8s = useIsK8s();
   const [presetId, setPresetId] = useState("standard");
   const [keepProfile, setKeepProfile] = useState(true);
   const [idle, setIdle] = useState<Idle>(template?.session_config?.never_timeout ? "keep" : "stop");
   const [saveSetup, setSaveSetup] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [useGpu, setUseGpu] = useState(!!template);
   const preset = presets.find((p) => p.id === presetId);
+  const canGpu = !!user?.can_use_gpu && (template ? template.gpu_enabled : true);
   const hasProfile = !!profileMountOf(cfg.profileMount, cfg.volumes);
 
   useEffect(() => {
@@ -46,7 +48,7 @@ export function LaunchStep({ target, onClose }: { target: LaunchTarget; onClose:
   // Presets size new containers; a saved setup keeps its own size.
   useEffect(() => {
     if (template || !preset) return;
-    cfg.setCpuLimit(String(preset.cpus)); cfg.setMemoryLimit(`${preset.memory_gb}g`); cfg.setGpuEnabled(preset.gpu);
+    cfg.setCpuLimit(String(preset.cpus)); cfg.setMemoryLimit(`${preset.memory_gb}g`); cfg.setGpuEnabled(preset.gpu); setUseGpu(preset.gpu);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [preset?.id, template]);
 
@@ -55,12 +57,12 @@ export function LaunchStep({ target, onClose }: { target: LaunchTarget; onClose:
     setBusy(true);
     try {
       const data = cfg.buildTemplateData();
-      if (!template && preset) Object.assign(data, { cpu_limit: String(preset.cpus), memory_limit: `${preset.memory_gb}g`, gpu_enabled: preset.gpu, gpu_count: preset.gpu ? 1 : 0 });
+      if (!template && preset) Object.assign(data, { cpu_limit: String(preset.cpus), memory_limit: `${preset.memory_gb}g`, gpu_enabled: useGpu, gpu_count: useGpu ? 1 : 0 });
       const tmpl = await resolveTemplate({ template, data, create: createTemplate.mutateAsync, regName: image?.name, userId: user?.id, isAdmin });
       const sc: SessionConfig = { ...(template?.session_config ?? data.session_config), timeout_action: "stop", never_timeout: idle === "keep" };
       await createInstance.mutateAsync({
         template_id: tmpl.id, name: cfg.name, subdomain: cfg.subdomain, session_config: sc,
-        use_profile: hasProfile && keepProfile, use_gpu: !template && preset ? preset.gpu : true,
+        use_profile: hasProfile && keepProfile, use_gpu: canGpu ? useGpu : false,
       });
       if (saveSetup && isAdmin && !template) {
         await createTemplate.mutateAsync({ ...data, name: `${data.name}-setup`, display_name: `${cfg.name} setup`, shared: true })
@@ -109,15 +111,21 @@ export function LaunchStep({ target, onClose }: { target: LaunchTarget; onClose:
               <option value="keep">Keep running</option>
             </select>
           </label>
-          <details>
-            <summary className="cursor-pointer text-sm text-muted-foreground">Advanced: environment, volumes, ports</summary>
-            <div className="mt-2 space-y-4">
-              {image && <p className="text-[13px] text-muted-foreground">Prefilled from the LinuxServer image docs.</p>}
-              <EnvEditor value={cfg.envVars} onChange={cfg.setEnvVars} descriptions={cfg.envDescriptions} />
-              <StorageSection cfg={cfg} isAdmin={isAdmin} />
-              <PortsNetworkSection cfg={cfg} isAdmin={isAdmin} />
-            </div>
-          </details>
+          {canGpu && (
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="size-4 accent-primary" checked={useGpu} onChange={(e) => setUseGpu(e.target.checked)} /> Use GPU</label>
+          )}
+          {!template && (
+            <details>
+              <summary className="cursor-pointer text-sm text-muted-foreground">Advanced: environment, volumes, ports, resources</summary>
+              <div className="mt-2 space-y-4">
+                {image && <p className="text-[13px] text-muted-foreground">Prefilled from the LinuxServer image docs.</p>}
+                <label className="grid gap-1.5 text-sm font-medium">Address
+                  <Input value={cfg.subdomain} onChange={(e) => cfg.setSubdomain(e.target.value)} className="font-mono text-sm" />
+                </label>
+                <TemplateBuilder cfg={cfg} isAdmin={isAdmin} k8s={k8s} />
+              </div>
+            </details>
+          )}
           {isAdmin && !template && (
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" className="size-4 accent-primary" checked={saveSetup} onChange={(e) => setSaveSetup(e.target.checked)} /> Save as a setup for one-click launch</label>
           )}

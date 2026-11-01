@@ -12,11 +12,14 @@ interface Props {
   setups: ServiceTemplate[];
   searchRef: React.Ref<HTMLInputElement>;
   onPickImage: (img: RegistryImage) => void;
+  isAdmin: boolean;
+  onLaunchSetup: (t: ServiceTemplate) => void;
   onPickSetup: (t: ServiceTemplate) => void;
+  onEditSetup: (t: ServiceTemplate) => void;
   onCustom: (image: string) => void;
 }
 
-export function CatalogGrid({ setups, searchRef, onPickImage, onPickSetup, onCustom }: Props) {
+export function CatalogGrid({ setups, searchRef, isAdmin, onPickImage, onLaunchSetup, onPickSetup, onEditSetup, onCustom }: Props) {
   const { data: images = [], isLoading } = useRegistryImages();
   const [q, setQ] = useState("");
   const [cat, setCat] = useState("All");
@@ -39,7 +42,7 @@ export function CatalogGrid({ setups, searchRef, onPickImage, onPickSetup, onCus
             className="rounded-full border border-border px-3 py-1 text-[13.5px] text-muted-foreground aria-pressed:border-foreground aria-pressed:bg-foreground aria-pressed:text-background">{c}</button>
         ))}
       </div>
-      {showSetups && <SetupsRow setups={setups} onPick={onPickSetup} />}
+      {showSetups && <SetupsRow setups={setups} isAdmin={isAdmin} onLaunch={onLaunchSetup} onCustomise={onPickSetup} onEdit={onEditSetup} />}
       <section>
         <SectionHead title="LinuxServer catalog" note={isLoading ? "loading" : `${list.length} images`} />
         <div className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-3">
