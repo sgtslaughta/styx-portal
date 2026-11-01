@@ -9,7 +9,7 @@ import { foldTop } from "@/components/charts/fold-top";
 import { fmtGb, fmtUsd, shortDate, shortMonth } from "@/components/charts/format";
 import { Seg } from "@/components/settings/seg";
 import { Tile } from "./overview-tiles";
-import { SecHead } from "./sec-head";
+import { SectionHead } from "@/components/common/section-head";
 
 const PERIODS = [["last", "Last month"], ["this", "This month"], ["6m", "6 months"]] as const;
 const REASONS: Record<string, { label: string; sub?: string }> = {
@@ -51,9 +51,7 @@ export function RelayCostPage() {
 
   return (
     <div>
-      <SecHead title="Relay cost">
-        <Seg label="Period" value={period} onChange={setPeriod} options={PERIODS} />
-      </SecHead>
+      <SectionHead title="Relay cost" action={<Seg label="Period" value={period} onChange={setPeriod} options={PERIODS} />} />
       <div className="mb-6 grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-3">
         <Tile title="Relay data used" value={fmtGb(r.used_gb)} note={`of ${fmtGb(r.free_gb)} free`}>
           <span className="track my-1.5"><i style={{ width: `${pctUsed}%`, minWidth: 4, background: "var(--obol-solid)" }} /></span>

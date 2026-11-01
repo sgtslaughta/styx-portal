@@ -12,11 +12,11 @@ export type RailRow = {
 
 /** Shared by the status rail and the Overview lists: running things and things needing attention. */
 export function useRailRows() {
-  const { data: instancesData, isSuccess: instOk } = useInstances();
+  const { data: instancesData, isSuccess: instOk, isError: instErr, refetch: rInst } = useInstances();
   const instances = instancesData ?? [];
-  const { data: wsData, isSuccess: wsOk } = useQuery({ queryKey: ["workstations"], queryFn: api.listWorkstations, refetchInterval: 30000 });
+  const { data: wsData, isSuccess: wsOk, isError: wsErr, refetch: rWs } = useQuery({ queryKey: ["workstations"], queryFn: api.listWorkstations, refetchInterval: 30000 });
   const ws = wsData ?? [];
-  const { data: svcData, isSuccess: svcOk } = useQuery({ queryKey: ["services"], queryFn: api.listServices });
+  const { data: svcData, isSuccess: svcOk, isError: svcErr, refetch: rSvc } = useQuery({ queryKey: ["services"], queryFn: api.listServices });
   const services = svcData ?? [];
 
   const active: RailRow[] = [
@@ -29,5 +29,9 @@ export function useRailRows() {
     ...ws.filter((w) => w.status === "offline").map((w): RailRow => ({ id: `o${w.id}`, text: `${w.name} is offline`, tone: "use", action: { label: "View", section: "workstations" } })),
     ...ws.filter((w) => w.agent_outdated && w.status !== "offline").map((w): RailRow => ({ id: `u${w.id}`, text: `${w.name} agent is out of date`, sub: "Updates when it comes online", tone: "use", action: { label: "View", section: "workstations" } })),
   ];
-  return { active, check, activeReady: instOk && wsOk, checkReady: instOk && wsOk && svcOk };
+  return {
+    active, check, activeReady: instOk && wsOk, checkReady: instOk && wsOk && svcOk,
+    activeError: instErr || wsErr, checkError: instErr || wsErr || svcErr,
+    retry: () => { void rInst(); void rWs(); void rSvc(); },
+  };
 }

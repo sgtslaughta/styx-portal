@@ -5,25 +5,25 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { StatusRail } from "../status-rail";
 
 const auth = vi.hoisted(() => ({ role: "admin" }));
-const st = vi.hoisted(() => ({ ram: 41 as number | undefined, hang: false, metrics: vi.fn() }));
+const st = vi.hoisted(() => ({ ram: 41 as number | undefined, hang: false, fail: false, noInst: false, metrics: vi.fn() }));
 vi.mock("@/hooks/use-auth", () => ({ useAuth: () => ({ user: { role: auth.role } }) }));
 vi.mock("@/hooks/use-system", () => ({
   useSystemMetrics: () => { st.metrics(); return { data: { aggregate_cpu: 1, aggregate_ram_mb: 400, disk_used_gb: 68, disk_total_gb: 100, host: {}, host_cpu_pct: 23, host_ram_pct: st.ram } }; },
 }));
 vi.mock("@/hooks/use-instances", () => ({
-  useInstances: () => ({ isSuccess: true, data: [{ id: "1", name: "Chromium", status: "running" }, { id: "2", name: "Bad", status: "error", error_message: null }] }),
+  useInstances: () => ({ isSuccess: true, data: st.noInst ? [] : [{ id: "1", name: "Chromium", status: "running" }, { id: "2", name: "Bad", status: "error", error_message: null }] }),
 }));
 vi.mock("@/api/client", () => ({
   api: {
-    listWorkstations: () => (st.hang ? new Promise(() => {}) : Promise.resolve([])),
+    listWorkstations: () => (st.fail ? Promise.reject(new Error("x")) : st.hang ? new Promise(() => {}) : Promise.resolve([])),
     listServices: async () => [{ id: "s", name: "Paperless", needs_setup: true }],
   },
 }));
 
-const wrap = (p = {}) => render(<QueryClientProvider client={new QueryClient()}><StatusRail {...p} /></QueryClientProvider>);
+const wrap = (p = {}) => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><StatusRail {...p} /></QueryClientProvider>);
 
 describe("StatusRail", () => {
-  beforeEach(() => { auth.role = "admin"; st.ram = 41; st.hang = false; st.metrics.mockClear(); localStorage.clear(); });
+  beforeEach(() => { auth.role = "admin"; st.ram = 41; st.hang = false; st.fail = false; st.noInst = false; st.metrics.mockClear(); localStorage.clear(); });
 
   it("toggle flips aria-expanded and persists", async () => {
     wrap();
@@ -63,6 +63,13 @@ describe("StatusRail", () => {
     expect(screen.getByText("— live")).toBeInTheDocument();
     expect(screen.queryByText("to check")).toBeNull();
     expect(screen.queryByText("All clear")).toBeNull();
+  });
+
+  it("shows Couldn't load with Retry instead of Loading forever when a query fails", async () => {
+    st.fail = true; st.noInst = true;
+    wrap();
+    expect((await screen.findAllByRole("button", { name: "Retry" })).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Loading…")).toBeNull();
   });
 
   it("does not fire the metrics query for non-admins", () => {

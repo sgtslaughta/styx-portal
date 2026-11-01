@@ -4,6 +4,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { useRailRows, type RailRow } from "@/hooks/use-rail-data";
 import { useSystemMetrics } from "@/hooks/use-system";
 import { cn } from "@/lib/utils";
+import { Dot } from "@/components/common/dot";
+import { LoadError } from "@/components/common/load-error";
 
 export const RAIL_W = 320;
 export const RAIL_MIN = 56;
@@ -14,11 +16,6 @@ const isMobile = () => typeof matchMedia === "function" && matchMedia(MOBILE).ma
 type Row = RailRow;
 
 const known = (v: number | null | undefined): v is number => typeof v === "number" && Number.isFinite(v);
-
-function Dot({ tone }: { tone: Row["tone"] }) {
-  const c = tone === "ok" ? "bg-emerald-500" : tone === "bad" ? "bg-destructive" : "bg-amber-500";
-  return <span aria-hidden className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", c)} />;
-}
 
 function Meter({ label, value }: { label: string; value: number | null | undefined }) {
   const v = known(value) ? Math.max(0, Math.min(100, Math.round(value))) : null;
@@ -34,7 +31,8 @@ function Meter({ label, value }: { label: string; value: number | null | undefin
   );
 }
 
-function List({ rows, empty, ready }: { rows: Row[]; empty: string; ready: boolean }) {
+function List({ rows, empty, ready, error, retry }: { rows: Row[]; empty: string; ready: boolean; error?: boolean; retry: () => void }) {
+  if (error && !rows.length) return <LoadError retry={retry} className="mb-6 text-[13px] text-muted-foreground" />;
   if (!ready && !rows.length) return <p className="mb-6 text-[13px] text-muted-foreground">Loading…</p>;
   if (!rows.length) return <p className="mb-6 text-[13px] text-muted-foreground">{empty}</p>;
   return (
@@ -64,7 +62,7 @@ function AdminRail({ forceCollapsed = false, onOpenAdmin, onWidthChange }: Props
   const collapsed = forceCollapsed || closed;
 
   const { data: m } = useSystemMetrics();
-  const { active, check, activeReady, checkReady } = useRailRows();
+  const { active, check, activeReady, checkReady, activeError, checkError, retry } = useRailRows();
 
   useEffect(() => {
     onWidthChange?.(collapsed || isMobile() ? RAIL_MIN : RAIL_W);
@@ -112,9 +110,9 @@ function AdminRail({ forceCollapsed = false, onOpenAdmin, onWidthChange }: Props
           <h3 className="mb-3 mt-1 text-sm font-semibold">Server</h3>
           <div className="mb-6"><Meter label="CPU" value={cpu} /><Meter label="Memory" value={mem} /><Meter label="Disk" value={disk} /></div>
           <h3 className="mb-3 mt-1 text-sm font-semibold">Active now</h3>
-          <List rows={active} empty="Nothing running" ready={activeReady} />
+          <List rows={active} empty="Nothing running" ready={activeReady} error={activeError} retry={retry} />
           <h3 className="mb-3 mt-1 text-sm font-semibold">Needs a look</h3>
-          <List rows={check} empty="All clear" ready={checkReady} />
+          <List rows={check} empty="All clear" ready={checkReady} error={checkError} retry={retry} />
           <button type="button" onClick={onOpenAdmin} className="text-[13.5px] text-[var(--s1)] hover:underline">Open admin</button>
         </div>
       )}

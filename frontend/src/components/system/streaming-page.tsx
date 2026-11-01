@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { api, type Setting, type SettingValue } from "@/api/client";
 import { SettingField, isChanged } from "@/components/settings/setting-field";
 import { SavePill } from "@/components/settings/save-pill";
+import { SectionHead } from "@/components/common/section-head";
 import { Seg } from "@/components/settings/seg";
 import { useUnsaved } from "@/components/settings/unsaved-context";
 import { StreamingTurn } from "./streaming-turn";
@@ -87,7 +88,7 @@ export function StreamingPage() {
 
   return (
     <>
-      <div className="sec-head"><h2 className="ph">Streaming</h2><span className="rule" /><small>Viewers can still adjust quality from the stream panel</small></div>
+      <SectionHead title="Streaming" note="Viewers can still adjust quality from the stream panel" as="h2" />
       <div className="groups">
         <fieldset className="grp">
           <legend>Defaults for every workstation</legend>
@@ -108,7 +109,7 @@ export function StreamingPage() {
         <StreamingTurn provider={val("WEBRTC_TURN_PROVIDER") ?? "none"} byKey={byKey} edits={edits} disabled={save.isPending}
           onProvider={(v) => stage("WEBRTC_TURN_PROVIDER", v)} onToken={(v) => stage("CLOUDFLARE_TURN_API_TOKEN", v)} field={field} />
       </div>
-      <div className="sec-head" style={{ marginTop: 26 }}><h2>Per workstation</h2><span className="rule" /><small>Gold values override the defaults</small></div>
+      <div className="mt-[26px]"><SectionHead title="Per workstation" note="Gold values override the defaults" /></div>
       <StreamingWsTable workstations={workstations} edits={wsEdits} defaults={{ transport, encoder, framerate: fps }} disabled={save.isPending} onEdits={setWsEdits} />
       <SavePill count={dirty} saving={save.isPending} onSave={() => save.mutate()} onDiscard={() => { setEdits({}); setWsEdits({}); }} />
     </>

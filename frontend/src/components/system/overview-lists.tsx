@@ -1,20 +1,26 @@
+import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { api } from "@/api/client";
 import { useRailRows, type RailRow } from "@/hooks/use-rail-data";
 import { useRelayStats } from "@/hooks/use-admin-stats";
 import { goSection } from "@/lib/section-nav";
 import { fmtGb, fmtUsd } from "@/components/charts/format";
-import { SecHead } from "./sec-head";
+import { SectionHead } from "@/components/common/section-head";
+import { ConfirmDialog } from "@/components/common/confirm-dialog";
+import { Dot } from "@/components/common/dot";
+import { LoadError } from "@/components/common/load-error";
 
-const DOT = { ok: "bg-emerald-500", bad: "bg-destructive", use: "bg-amber-500" } as const;
-const Dot = ({ tone }: { tone: RailRow["tone"] }) => <span aria-hidden className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${DOT[tone]}`} />;
 const GHOST = "rounded-lg border border-border px-3 py-1 text-[13px] hover:bg-muted";
 
-export function NeedsLook({ rows, ready }: { rows: RailRow[]; ready: boolean }) {
+type ListProps = { rows: RailRow[]; ready: boolean; error?: boolean; retry: () => void };
+
+export function NeedsLook({ rows, ready, error, retry }: ListProps) {
   return (
     <section className="rounded-xl border border-border bg-card/55 p-4" aria-label="Needs a look">
-      <SecHead title="Needs a look" />
-      {!ready && !rows.length ? <p className="text-[13px] text-muted-foreground">Loading…</p>
+      <SectionHead title="Needs a look" />
+      {error && !rows.length ? <LoadError retry={retry} />
+        : !ready && !rows.length ? <p className="text-[13px] text-muted-foreground">Loading…</p>
         : !rows.length ? <p className="text-[13px] text-muted-foreground">All clear</p>
         : (
           <ul className="grid list-none gap-3 p-0 text-sm">
@@ -35,7 +41,7 @@ export function RelayCard() {
   const { data: r, isError } = useRelayStats("this");
   return (
     <section className="rounded-xl border border-border bg-card/55 p-4" aria-label="Relay cost">
-      <SecHead title="Relay cost" hint="Cloudflare analytics" />
+      <SectionHead title="Relay cost" note="Cloudflare analytics" />
       {isError ? <p className="text-[13px] text-muted-foreground">Relay data is unavailable right now.</p> : !r ? <p className="text-[13px] text-muted-foreground">Loading…</p> : (
         <div className="usage">
           <div className="u-head"><span>Relay data this month</span><b className="tabular-nums text-foreground">{fmtGb(r.used_gb)}</b><span className="text-xs">of {fmtGb(r.free_gb)} free</span></div>
@@ -52,34 +58,46 @@ export function RelayCard() {
   );
 }
 
-export function ActiveNow({ rows, ready }: { rows: RailRow[]; ready: boolean }) {
+export function ActiveNow({ rows, ready, error, retry }: ListProps) {
   const qc = useQueryClient();
-  const end = async (id: string) => { await api.stopInstance(id); qc.invalidateQueries({ queryKey: ["instances"] }); };
+  const [ending, setEnding] = useState<RailRow | null>(null);
+  const end = async (r: RailRow) => {
+    try {
+      await api.stopInstance(r.instanceId!);
+      qc.invalidateQueries({ queryKey: ["instances"] });
+    } catch (e) {
+      toast.error(`Couldn't end ${r.text}: ${(e as Error).message}`);
+    }
+  };
   return (
     <section className="rounded-xl border border-border bg-card/55 p-4" aria-label="Active now">
-      <SecHead title="Active now" />
-      {!rows.length ? <p className="text-[13px] text-muted-foreground">{ready ? "Nothing running" : "Loading…"}</p> : (
+      <SectionHead title="Active now" />
+      {error && !rows.length ? <LoadError retry={retry} /> : !rows.length ? <p className="text-[13px] text-muted-foreground">{ready ? "Nothing running" : "Loading…"}</p> : (
         <table className="dense"><tbody>
           {rows.map((r) => (
             <tr key={r.id}>
               <td><strong>{r.text}</strong></td>
               <td className="text-muted-foreground">{r.kind}</td>
-              <td className="acts">{r.instanceId && <button type="button" className={GHOST} onClick={() => end(r.instanceId!)}>End</button>}</td>
+              <td className="acts">{r.instanceId && <button type="button" className={GHOST} onClick={() => setEnding(r)}>End</button>}</td>
             </tr>
           ))}
         </tbody></table>
       )}
+      <ConfirmDialog open={!!ending} onOpenChange={(o) => !o && setEnding(null)}
+        title={`End ${ending?.text ?? ""}?`} description="This stops the container. Unsaved work in it is lost."
+        variant="destructive" confirmLabel="End"
+        onConfirm={() => { const r = ending; setEnding(null); if (r) void end(r); }} />
     </section>
   );
 }
 
 export function OverviewLists({ cf }: { cf: boolean }) {
-  const { active, check, activeReady, checkReady } = useRailRows();
+  const { active, check, activeReady, checkReady, activeError, checkError, retry } = useRailRows();
   return (
     <div className="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-4">
-      <NeedsLook rows={check} ready={checkReady} />
+      <NeedsLook rows={check} ready={checkReady} error={checkError} retry={retry} />
       {cf && <RelayCard />}
-      <ActiveNow rows={active} ready={activeReady} />
+      <ActiveNow rows={active} ready={activeReady} error={activeError} retry={retry} />
     </div>
   );
 }
