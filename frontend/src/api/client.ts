@@ -150,6 +150,9 @@ export type Setting = {
   choices?: string[];
 };
 export type SettingGroup = { group: string; label: string; settings: Setting[] };
+export type TurnCheckStatus = "ok" | "warn" | "error" | "skip";
+export type TurnCheckItem = { id: string; label: string; status: TurnCheckStatus; detail: string };
+export type TurnCheck = { provider: string; checked_at: string; checks: TurnCheckItem[] };
 export type TurnUsage = {
   month: string;
   free_gb: number;
@@ -488,4 +491,5 @@ export const api = {
     request(`/system-settings/${key}/reset`, { method: "POST" }),
   getTurnUsage: (month?: string) =>
     request<TurnUsage>(`/admin/turn-usage${month ? `?month=${month}` : ""}`),
+  getTurnCheck: () => request<TurnCheck>("/admin/turn-check"),
 };
