@@ -134,6 +134,37 @@ export type SetupPreflight = {
 
 import { singleFlight } from "./single-flight";
 
+export type SettingValue = number | boolean | string | null;
+export type Setting = {
+  key: string;
+  label: string;
+  help: string;
+  type: "int" | "bool" | "rate" | "secret" | "enum" | "str";
+  value: SettingValue;
+  default: SettingValue;
+  min: number | null;
+  max: number | null;
+  /** secret rows only: plaintext is never returned */
+  is_set?: boolean;
+  choices?: string[];
+};
+export type SettingGroup = { group: string; label: string; settings: Setting[] };
+export type TurnUsage = {
+  month: string;
+  free_gb: number;
+  usd_per_gb: number | string;
+  total_bytes: number;
+  est_usd: number;
+  projected_bytes: number;
+  projected_usd: number;
+  by_workstation: { id: string; name: string; bytes: number }[];
+  by_user: { id: string; username: string; bytes: number }[];
+  budget_gb?: number;
+  over_budget?: boolean;
+  cf_egress_bytes?: number | null;
+  cf_error?: string | null;
+};
+
 const BASE = "/api";
 
 export type LoginResult = {
@@ -445,13 +476,11 @@ export const api = {
   oauthTestStartUrl: (id: string) => `/api/oauth-providers/${id}/test/start`,
 
   // System settings
-  getSystemSettings: () =>
-    request<{ group: string; label: string; settings: {
-      key: string; label: string; help: string; type: "int" | "bool" | "rate";
-      value: number | boolean | string; default: number | boolean | string;
-      min: number | null; max: number | null }[] }[]>("/system-settings"),
+  getSystemSettings: () => request<SettingGroup[]>("/system-settings"),
   updateSystemSettings: (changes: Record<string, number | boolean | string>) =>
     request("/system-settings", { method: "PATCH", body: JSON.stringify(changes) }),
   resetSystemSetting: (key: string) =>
     request(`/system-settings/${key}/reset`, { method: "POST" }),
+  getTurnUsage: (month?: string) =>
+    request<TurnUsage>(`/admin/turn-usage${month ? `?month=${month}` : ""}`),
 };

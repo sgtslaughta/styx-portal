@@ -405,6 +405,80 @@ def test_nvenc_encoders_by_generation():
     assert engine.nvenc_encoders("") == ()
 
 
+# --- transport + TURN -------------------------------------------------------
+CF = {"provider": "cloudflare", "token_id": "TID-SECRET", "api_token": "API-SECRET"}
+GEN = {"provider": "generic", "host": "turn.example.com", "port": 3478,
+       "protocol": "tcp", "tls": True}
+
+
+def _ss(**kw):
+    return {"stream_settings": {"framerate": 60, **kw}}
+
+
+def test_transport_defaults_to_websockets(tmp_path, monkeypatch):
+    _stub(monkeypatch)
+    cmd, env = engine.build_selkies_cmd(_cfg(tmp_path), 1)
+    assert "--mode=websockets" in cmd
+    assert not any(k.startswith(("SELKIES_TURN", "SELKIES_CLOUDFLARE")) for k in env)
+
+
+def test_webrtc_transport_switches_mode(tmp_path, monkeypatch):
+    _stub(monkeypatch)
+    cmd, env = engine.build_selkies_cmd(_cfg(tmp_path, **_ss(transport="webrtc")), 1)
+    assert "--mode=webrtc" in cmd and "--mode=websockets" not in cmd
+    assert "SELKIES_ENABLE_CLOUDFLARE_TURN" not in env
+
+
+def test_unknown_transport_falls_back(tmp_path, monkeypatch):
+    _stub(monkeypatch)
+    cmd, _ = engine.build_selkies_cmd(_cfg(tmp_path, **_ss(transport="bogus")), 1)
+    assert "--mode=websockets" in cmd
+
+
+def test_cloudflare_turn_secrets_via_env_only(tmp_path, monkeypatch):
+    _stub(monkeypatch)
+    cfg = _cfg(tmp_path, **_ss(transport="webrtc", turn=CF))
+    cmd, env = engine.build_selkies_cmd(cfg, 1)
+    assert env["SELKIES_ENABLE_CLOUDFLARE_TURN"] == "true"
+    assert env["SELKIES_CLOUDFLARE_TURN_TOKEN_ID"] == "TID-SECRET"
+    assert env["SELKIES_CLOUDFLARE_TURN_API_TOKEN"] == "API-SECRET"
+    assert not any("SECRET" in a for a in cmd)
+
+
+def test_generic_turn_shared_secret(tmp_path, monkeypatch):
+    _stub(monkeypatch)
+    turn = {**GEN, "shared_secret": "HMAC-SECRET"}
+    cmd, env = engine.build_selkies_cmd(_cfg(tmp_path, **_ss(transport="webrtc", turn=turn)), 1)
+    assert env["SELKIES_TURN_HOST"] == "turn.example.com"
+    assert env["SELKIES_TURN_PORT"] == "3478" and env["SELKIES_TURN_PROTOCOL"] == "tcp"
+    assert env["SELKIES_TURN_TLS"] == "true"
+    assert env["SELKIES_TURN_SHARED_SECRET"] == "HMAC-SECRET"
+    assert "SELKIES_ENABLE_CLOUDFLARE_TURN" not in env
+    assert not any("SECRET" in a for a in cmd)
+
+
+def test_generic_turn_username_password(tmp_path, monkeypatch):
+    _stub(monkeypatch)
+    turn = {**GEN, "tls": False, "username": "u1", "password": "PW-SECRET"}
+    cmd, env = engine.build_selkies_cmd(_cfg(tmp_path, **_ss(transport="webrtc", turn=turn)), 1)
+    assert env["SELKIES_TURN_USERNAME"] == "u1" and env["SELKIES_TURN_PASSWORD"] == "PW-SECRET"
+    assert env["SELKIES_TURN_TLS"] == "false"
+    assert env["SELKIES_TURN_SHARED_SECRET"] == ""     # selkies' built-in default must not win
+    assert not any("PW-SECRET" in a for a in cmd)
+
+
+def test_turn_ignored_on_websockets(tmp_path, monkeypatch):
+    _stub(monkeypatch)
+    _, env = engine.build_selkies_cmd(_cfg(tmp_path, **_ss(turn=CF)), 1)
+    assert "SELKIES_CLOUDFLARE_TURN_API_TOKEN" not in env
+
+
+def test_turn_env_never_falls_back_to_public_demo_relay():
+    for turn in (None, {}, {"provider": "cloudflare", "token_id": "i", "api_token": "t"}):
+        env = engine.turn_env(turn)
+        assert env["SELKIES_TURN_HOST"] == "" and env["SELKIES_TURN_SHARED_SECRET"] == ""
+
+
 def test_encoder_order_follows_portal_setting():
     hw = ("av1enc", "h265enc")
     assert engine.encoder_order("auto", hw) == ["av1enc", "h265enc", "h264enc"]

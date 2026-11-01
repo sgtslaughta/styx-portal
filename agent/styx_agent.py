@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-AGENT_VERSION = "0.9.29"
+AGENT_VERSION = "0.9.30"
 HOME = Path.home()
 INSTALL_DIR = HOME / ".local/share/styx-agent"
 CONFIG_PATH = HOME / ".config/styx-agent/config.json"
@@ -37,7 +37,7 @@ import seat_gnome  # noqa: E402
 import seat_labwc  # noqa: E402
 from portal_api import api, check_pin  # noqa: E402
 from health import (  # noqa: E402
-    active_connections, host_tuning_checks, idle_seconds,
+    active_connections, host_tuning_checks, idle_seconds, transport, turn_bytes,
     rollback, seat_advisories, stream_starving_seconds)
 from health import gw_state_path  # noqa: E402, F401
 from seat_gnome import Escalation, pick_seat_shell  # noqa: E402
@@ -45,7 +45,8 @@ from agent_procs import (  # noqa: E402
     apply_portal_restart, parse_fps,
     FRAME_START_TIMEOUT_S, _restart_engine, _terminate,
     _check, build_gateway_cmd, drop_clients, settings_restart_keys,  # noqa: F401
-    viewers_connected, merge_pending, must_apply_now, restart_plan)
+    viewers_connected, merge_pending, must_apply_now, restart_plan,
+    cut_stream, kill_requested, sleep_or_kill)
 
 
 def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool,
@@ -60,6 +61,8 @@ def health_payload(cfg: dict, selkies_alive: bool, gateway_alive: bool,
         "gateway_alive": gateway_alive,
         "active_connections": active_connections(cfg, gateway_alive),
         "idle_seconds": idle_seconds(cfg, gateway_alive),
+        "turn_bytes": turn_bytes(cfg, gateway_alive),
+        "transport": transport(cfg, gateway_alive),
         "seat_shell": seat_shell or cfg.get("mode", "mirror"),
         "seat_restarts": seat_restarts,
         "degraded": degraded,
@@ -383,8 +386,12 @@ def run(cfg: dict) -> int:
         except (urllib.error.URLError, OSError, TimeoutError) as e:
             _write_state({"ts": time.time(), "ok": False, "error": str(e)})
             print(f"heartbeat failed: {e}", flush=True)
-        req = (refit.wait_for_request(refit_req, interval, poll=0.05, stop=lambda: not gseat.alive())
-               if gseat else time.sleep(interval))  # GNOME: wake on refit or seat death
+        gw_state = gw_state_path(cfg)
+        req = (refit.wait_for_request(refit_req, interval, poll=0.05,
+                                      stop=lambda: not gseat.alive() or kill_requested(gw_state))
+               if gseat else sleep_or_kill(gw_state, interval))  # wake on refit, seat death, WebRTC cut
+        if cut_stream(gw_state, procs, bool(gseat)):
+            last_engine_restart = time.monotonic()
         if req:
             if gseat.alive():
                 print(f"refit: rebuilding seat monitor at {req[0]}x{req[1]}", flush=True)

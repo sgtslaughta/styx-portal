@@ -5,6 +5,7 @@ reconnects); it may briefly hold several sockets while reconnecting."""
 from dataclasses import dataclass, field
 
 MAX_VID = 64
+STALL_LOG_S = 1.0       # client silent this long while video is on -> log it
 
 
 def split_vid(raw_qs: str, fallback: str):
@@ -74,3 +75,20 @@ class Viewers:
             if self.by_vid[vid].socks and not self.by_vid[vid].shared:
                 return vid
         return None
+
+
+class StallClock:
+    """Per client socket: gap since its previous message while video is active."""
+    def __init__(self, now: float):
+        self.last = now
+        self.video = False
+
+    def tick(self, data, now: float):
+        gap = now - self.last
+        hit = gap if self.video and gap > STALL_LOG_S else None
+        self.last = now
+        if data == "START_VIDEO":
+            self.video = True
+        elif data == "STOP_VIDEO":
+            self.video = False
+        return hit

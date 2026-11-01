@@ -17,7 +17,8 @@ from app.services import ws_icon, ws_thumb
 from app.services.audit import audit_request
 from app.services.workstations import sha256_hex
 from app.services.settings_store import settings as _sys_settings
-from app.services.ws_settings import resolve_stream_settings
+from app.services.ws_settings import resolve_stream_settings, stream_sys_settings
+from app.services.turn_usage import record_turn_usage, turn_over_budget
 
 router = APIRouter()
 _settings = Settings()
@@ -57,6 +58,8 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
     ver = body.health.get("agent_version")
     if isinstance(ver, str) and ver:
         ws.agent_version = ver
+    # Attribute relayed bytes before occupancy may clear (final delta of a session).
+    await record_turn_usage(session, ws, body.health.get("turn_bytes"))
     # Occupancy: the agent's gateway counts live stream websockets; the
     # occupant's identity comes from forward-auth. Zero connections clears it.
     conns = body.health.get("active_connections")
@@ -68,14 +71,8 @@ async def heartbeat(body: WorkstationHeartbeatRequest,
             # Re-arm the idle latch: a future session starts fresh.
             ws.idle_disconnect_sent = False
     # Resolve effective stream settings: per-workstation override else system default.
-    # Pass system settings as a dict since SettingsService has only get(), not __getitem__.
-    sys_settings_dict = {
-        "WORKSTATION_IDLE_TIMEOUT_S": _sys_settings.get("WORKSTATION_IDLE_TIMEOUT_S"),
-        "WORKSTATION_IDLE_WARN_LEAD_S": _sys_settings.get("WORKSTATION_IDLE_WARN_LEAD_S"),
-        "WORKSTATION_IDLE_TIMEOUT_ENABLED": _sys_settings.get("WORKSTATION_IDLE_TIMEOUT_ENABLED"),
-        "WORKSTATION_SEAT_WIDTH": _sys_settings.get("WORKSTATION_SEAT_WIDTH"),
-        "WORKSTATION_SEAT_HEIGHT": _sys_settings.get("WORKSTATION_SEAT_HEIGHT"),
-    }
+    sys_settings_dict = stream_sys_settings(_sys_settings)
+    sys_settings_dict["TURN_OVER_BUDGET"] = await turn_over_budget(session)
     effective_ss = resolve_stream_settings(ws.stream_settings, sys_settings_dict,
                                            ws.agent_version)
     idle_timeout = effective_ss["idle_timeout_s"]

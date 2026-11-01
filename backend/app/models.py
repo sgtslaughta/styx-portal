@@ -56,6 +56,19 @@ class SystemSetting(SQLModel, table=True):
     updated_by: str | None = None
 
 
+class TurnUsage(SQLModel, table=True):
+    """Relayed TURN bytes per month / workstation / user (user NULL = unattributed)."""
+    __tablename__ = "turn_usage"
+    __table_args__ = (UniqueConstraint("month", "workstation_id", "user_id",
+                                       name="uq_turn_usage"),)
+
+    id: str = Field(default_factory=_uuid, primary_key=True)
+    month: str = Field(index=True)   # YYYY-MM (UTC)
+    workstation_id: str = Field(foreign_key="workstations.id")
+    user_id: str | None = Field(default=None, foreign_key="users.id")
+    bytes: int = 0
+
+
 class Invite(SQLModel, table=True):
     __tablename__ = "invites"
 

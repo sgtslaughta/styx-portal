@@ -18,6 +18,46 @@ def is_v2_agent(agent_version: str | None) -> bool:
     return (major, minor) >= (0, 5)
 
 
+def supports_webrtc(agent_version: str | None) -> bool:
+    try:
+        parts = tuple(int(x) for x in (agent_version or "").split(".")[:3])
+    except ValueError:
+        return False
+    return len(parts) == 3 and parts >= (0, 9, 30)
+
+
+STREAM_SYS_KEYS = (
+    "WORKSTATION_IDLE_TIMEOUT_S", "WORKSTATION_IDLE_WARN_LEAD_S",
+    "WORKSTATION_IDLE_TIMEOUT_ENABLED", "WORKSTATION_SEAT_WIDTH", "WORKSTATION_SEAT_HEIGHT",
+    "WORKSTATION_TRANSPORT", "WEBRTC_TURN_PROVIDER", "WEBRTC_MAX_SESSION_H",
+    "CLOUDFLARE_TURN_TOKEN_ID", "CLOUDFLARE_TURN_API_TOKEN", "TURN_HOST", "TURN_PORT",
+    "TURN_PROTOCOL", "TURN_TLS", "TURN_SHARED_SECRET", "TURN_USERNAME", "TURN_PASSWORD",
+)
+
+
+def stream_sys_settings(store) -> dict[str, Any]:
+    """Snapshot of the system settings the resolver needs (store = SettingsService)."""
+    return {k: store.get(k) for k in STREAM_SYS_KEYS}
+
+
+def _turn_config(sys: Mapping[str, Any]) -> dict | None:
+    """TURN credentials for the agent, or None when the provider is unset/incomplete."""
+    provider = sys.get("WEBRTC_TURN_PROVIDER")
+    if provider == "cloudflare":
+        tid, tok = sys.get("CLOUDFLARE_TURN_TOKEN_ID"), sys.get("CLOUDFLARE_TURN_API_TOKEN")
+        if tid and tok:
+            return {"provider": "cloudflare", "token_id": tid, "api_token": tok}
+    elif provider == "generic" and sys.get("TURN_HOST"):
+        turn = {"provider": "generic", "host": sys["TURN_HOST"],
+                "port": sys.get("TURN_PORT"), "protocol": sys.get("TURN_PROTOCOL"),
+                "tls": bool(sys.get("TURN_TLS"))}
+        if sys.get("TURN_SHARED_SECRET"):
+            return {**turn, "shared_secret": sys["TURN_SHARED_SECRET"]}
+        if sys.get("TURN_USERNAME") and sys.get("TURN_PASSWORD"):
+            return {**turn, "username": sys["TURN_USERNAME"], "password": sys["TURN_PASSWORD"]}
+    return None
+
+
 def resolve_stream_settings(ws_ss: dict | None, sys: Mapping[str, Any],
                             agent_version: str | None) -> dict:
     ss = dict(ws_ss or {})
@@ -28,6 +68,18 @@ def resolve_stream_settings(ws_ss: dict | None, sys: Mapping[str, Any],
                                           sys.get("WORKSTATION_IDLE_TIMEOUT_ENABLED"))}
     if not is_v2_agent(agent_version):
         return eff
+    if supports_webrtc(agent_version):
+        want = ss.get("transport")
+        transport = want if want in ("websockets", "webrtc") else \
+            sys.get("WORKSTATION_TRANSPORT") or "websockets"
+        if transport == "webrtc" and sys.get("TURN_OVER_BUDGET"):
+            transport = "websockets"            # cost control: TURN budget reached
+            eff["turn_budget_paused"] = True
+        eff["transport"] = transport
+        eff["max_session_s"] = int(sys.get("WEBRTC_MAX_SESSION_H") or 0) * 3600
+        turn = _turn_config(sys) if transport == "webrtc" else None
+        if turn:
+            eff["turn"] = turn
     for old, new in _VIDEO_ALIASES.items():
         if new not in eff and old in eff:
             eff[new] = eff[old]

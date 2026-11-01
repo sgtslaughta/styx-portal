@@ -2,6 +2,7 @@
 import json
 import os
 import subprocess
+import time
 from pathlib import Path
 
 from health import gw_state_path
@@ -43,6 +44,8 @@ def build_gateway_cmd(cfg: dict, upstream_port: int,
         "STYX_GW_IDLE_TIMEOUT_S": str(ss.get("idle_timeout_s", 0)),
         "STYX_GW_IDLE_WARN_S": str(ss.get("idle_warn_lead_s", 60)),
         "STYX_GW_IDLE_ENABLED": "1" if ss.get("idle_timeout_enabled") else "",
+        "STYX_GW_TRANSPORT": "webrtc" if ss.get("transport") == "webrtc" else "websockets",
+        "STYX_GW_MAX_SESSION_S": str(ss.get("max_session_s") or 0),
         "STYX_GW_SEAT_DIR": seat_dir,
         "STYX_GW_ICON_DIR": str(install),
     }
@@ -75,6 +78,37 @@ def _restart_engine(procs: dict) -> None:
     for key in ("selkies", "shell", "clipboard"):
         _terminate(procs.get(key))
         procs[key] = None
+
+
+KILL_SUFFIX = ".kill"     # gateway_webrtc writes <state file>.kill to ask for a selkies restart
+
+
+def kill_requested(state_path) -> bool:
+    return Path(str(state_path) + KILL_SUFFIX).exists()
+
+
+def cut_stream(state_path, procs: dict, seat: bool) -> bool:
+    """Honour the gateway's kill flag (idle/max-age WebRTC session): restart
+    selkies so the peer connection, and its TURN traffic, really ends."""
+    flag = Path(str(state_path) + KILL_SUFFIX)
+    try:
+        why = flag.read_text()
+        flag.unlink()
+    except OSError:
+        return False
+    print(f"gateway cut a WebRTC session ({why}); restarting selkies", flush=True)
+    if seat:                    # the loop respawns selkies; the GNOME seat stays up
+        _terminate(procs.get("selkies"), timeout=0)
+        procs["selkies"] = None
+    else:
+        _restart_engine(procs)
+    return True
+
+
+def sleep_or_kill(state_path, seconds: float, step: float = 0.5) -> None:
+    end = time.monotonic() + seconds
+    while time.monotonic() < end and not kill_requested(state_path):
+        time.sleep(min(step, max(0.0, end - time.monotonic())))
 
 
 def drop_clients(procs: dict) -> None:

@@ -27,13 +27,16 @@ import seat_scale
 import yarl
 from aiohttp import web
 from multidict import CIMultiDict
-from viewers import Viewers, split_vid
+from gateway_webrtc import KILL_SUFFIX, WebRTCGateway
+from gateway_ws import same_origin
+from viewers import StallClock, Viewers, split_vid  # noqa: F401
 from gateway_html import (  # noqa: F401  (re-exported for tests)
     CURSOR_HIDE_CSS,
     VIS_GRACE_MS,
     inject_cursor_hide,
     inject_touch_scroll,
     inject_idle_watchdog,
+    inject_webrtc,
     inject_title,
     inject_favicon,
     is_activity,
@@ -72,24 +75,6 @@ REFIT_WAIT_S = 5.0
 REFIT_POLL_S = 0.02
 # pings keep a hidden tab's quiet socket alive through proxies that drop idle connections (~139 s)
 WS_HEARTBEAT_S = 30.0
-STALL_LOG_S = 1.0       # client silent this long while video is on -> log it
-
-
-class StallClock:
-    """Per client socket: gap since its previous message while video is active."""
-    def __init__(self, now: float):
-        self.last = now
-        self.video = False
-
-    def tick(self, data, now: float):
-        gap = now - self.last
-        hit = gap if self.video and gap > STALL_LOG_S else None
-        self.last = now
-        if data == "START_VIDEO":
-            self.video = True
-        elif data == "STOP_VIDEO":
-            self.video = False
-        return hit
 
 
 def log(msg: str) -> None:
@@ -114,7 +99,8 @@ def create_app(user: str, password: str,
                upstream_port: int, files_dir: str = "",
                state_file: str = "", idle_timeout_s: int = 0,
                idle_lead_s: int = 60, idle_enabled: bool = False,
-               seat_dir: str = "", icon_dir: str = "") -> web.Application:
+               seat_dir: str = "", icon_dir: str = "",
+               transport: str = "", max_session_s: int = 0) -> web.Application:
     # The supervisor can promote a warm standby selkies on a refit: the live
     # port is then in <seat_dir>/selkies-port, re-read per request.
     port_file = os.path.join(seat_dir, "selkies-port") if seat_dir else ""
@@ -240,13 +226,36 @@ def create_app(user: str, password: str,
             if nxt is not None:
                 set_owner(nxt)
 
+    def attach(vid, ws, shared=False):
+        """Register a stream socket for `vid`; a controller claims or takes the size."""
+        rec = viewers.connect(vid, ws)
+        rec.vid, rec.shared = vid, shared
+        if seat_dir and not shared:
+            if size_owner.owner and size_owner.owner != vid:
+                set_owner(vid)
+            else:
+                size_owner.claim(vid)
+        return rec
+
+    def detach(vid, ws, rec):
+        if rec and viewers.disconnect(vid, ws):
+            rec.timer and rec.timer.cancel()
+            # Not released at once: a refit reconnect brings the same vid back.
+            rec.gone = asyncio.get_running_loop().call_later(OWNER_GRACE_S, expire, vid)
+
+    def submit_size(rec, req):
+        rec.size = req
+        if size_owner.claim(rec.vid):
+            rec.timer and rec.timer.cancel()
+            rec.timer = asyncio.get_running_loop().call_later(refit.SETTLE_S, fire_refit, rec)
+
     def _write_state():
         if not state_file:
             return
         try:
             tmp = state_file + ".tmp"
             with open(tmp, "w") as f:
-                json.dump({"active_connections": conns["n"],
+                json.dump({**wrtc.state(), "active_connections": conns["n"] + wrtc.n,
                            "last_input_ts": last_input["ts"],
                            "stream_starving": conns["n"] > 0
                            and not stream["got_frame"],
@@ -302,6 +311,9 @@ def create_app(user: str, password: str,
         if request.headers.get("Upgrade", "").lower() != "websocket":
             # 2.0 client probes api/websockets over plain HTTP (409 = mode flip)
             return await forward(request, "/api/websockets" + (f"?{qs}" if qs else ""))
+        if not same_origin(request):
+            log(f"ws reject: origin {request.headers.get('Origin')!r} != host {request.host!r}")
+            return web.Response(status=403, text="forbidden origin")
         t0 = time.monotonic()
         while refit_file and refit.pending(refit_file) and time.monotonic() - t0 < REFIT_WAIT_S:
             await asyncio.sleep(REFIT_POLL_S)
@@ -378,8 +390,6 @@ def create_app(user: str, password: str,
 
                 # client->upstream: input (idle tracking). upstream->client:
                 # video frames are BINARY -> mark_frame disarms the watchdog.
-                rec = viewers.connect(vid, ws_server)
-                rec.vid = vid
 
                 def on_client(data):
                     """Input tracking + settle-then-refit. Every seat `r,` is
@@ -422,23 +432,15 @@ def create_app(user: str, password: str,
                     req = refit.parse_resize(data)
                     if not req:
                         return False
-                    rec.size = req
-                    if size_owner.claim(vid):
-                        rec.timer and rec.timer.cancel()
-                        rec.timer = asyncio.get_running_loop().call_later(refit.SETTLE_S, fire_refit, rec)
+                    submit_size(rec, req)
                     return True
 
                 # selkies keeps one controller and kills the previous one, so a
                 # controller owns the size at once. Shared (`role=viewer`) sockets
                 # never send `r,` and never own.
-                rec.shared = shared
+                rec = attach(vid, ws_server, shared)
                 log(f"ws open vid={vid[:8]} role={'viewer' if shared else 'controller'} "
                     f"from={peer} (n={conns['n']})")
-                if seat_dir and not rec.shared:
-                    if size_owner.owner and size_owner.owner != vid:
-                        set_owner(vid)
-                    else:
-                        size_owner.claim(vid)
 
                 await asyncio.gather(pump(ws_server, ws_client, on_activity=on_client),
                                      pump(ws_client, ws_server, on_binary=mark_frame),
@@ -450,10 +452,7 @@ def create_app(user: str, password: str,
                     log(f"ws close vid={vid[:8]} code={ws_server.close_code} "
                         f"after {int(time.time() - opened)}s (n={conns['n']})")
                 transports.pop(ws_server, None)
-                if rec and viewers.disconnect(vid, ws_server):
-                    rec.timer and rec.timer.cancel()
-                    # Not released at once: a refit reconnect brings the same vid back.
-                    rec.gone = asyncio.get_running_loop().call_later(OWNER_GRACE_S, expire, vid)
+                detach(vid, ws_server, rec)
                 _write_state()
                 await ws_client.close()
         return ws_server
@@ -481,6 +480,7 @@ def create_app(user: str, password: str,
         if icon:
             html = inject_favicon(html, icon[2])
         html = inject_idle_watchdog(html, idle_timeout_s, idle_lead_s, idle_enabled)
+        html = inject_webrtc(html, wrtc.transport == "webrtc")
         html = inject_cursor_hide(html, bool(seat_dir))
         html = inject_touch_scroll(html)
         html = refit.inject_reload(html, bool(seat_dir))
@@ -578,11 +578,19 @@ def create_app(user: str, password: str,
                 f"<h2>{_html.escape(str(target))}</h2><ul>{up}{rows}</ul>")
         return web.Response(text=body, content_type="text/html")
 
+    wrtc = WebRTCGateway(
+        transport=transport, idle_s=idle_timeout_s, idle_enabled=idle_enabled,
+        max_session_s=max_session_s,
+        hold_s=idle_timeout_s if idle_enabled and idle_timeout_s > 0 else BUSY_HOLD_S,
+        viewers=viewers, seat=bool(seat_dir), live_port=live_port,
+        write_state=_write_state, touch=lambda ts: last_input.update(ts=ts),
+        kill_path=state_file and state_file + KILL_SUFFIX, attach=attach, detach=detach, submit_size=submit_size, log=log)
     _write_state()   # reset any stale count from a previous gateway run
 
     app = web.Application(middlewares=[auth_mw], client_max_size=0)
     for path in ("/api/websockets", "/websockets", "/websocket"):
         app.router.add_get(path, ws_proxy)
+    wrtc.install(app)
     app.router.add_get("/", index)
     app.router.add_get("/styx-favicon", styx_favicon)
     if files_dir and os.path.isdir(files_dir):
@@ -604,10 +612,13 @@ def main() -> None:
     idle_enabled = os.environ.get("STYX_GW_IDLE_ENABLED", "") == "1"
     seat_dir = os.environ.get("STYX_GW_SEAT_DIR", "")
     icon_dir = os.environ.get("STYX_GW_ICON_DIR", "")
+    transport = os.environ.get("STYX_GW_TRANSPORT", "")
+    max_session_s = int(os.environ.get("STYX_GW_MAX_SESSION_S", "0") or "0")
     web.run_app(create_app(user, password, upstream_port, files_dir,
                            state_file=state_file, idle_timeout_s=idle_timeout_s,
                            idle_lead_s=idle_lead_s, idle_enabled=idle_enabled,
-                           seat_dir=seat_dir, icon_dir=icon_dir),
+                           seat_dir=seat_dir, icon_dir=icon_dir,
+                           transport=transport, max_session_s=max_session_s),
                 host="0.0.0.0", port=listen_port)
 
 

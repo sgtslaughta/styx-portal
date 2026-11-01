@@ -22,6 +22,34 @@ def active_connections(cfg: dict, gateway_alive: bool) -> int:
         return 0
 
 
+_turn_seen = {"total": 0}
+
+
+def _gw_state(cfg: dict) -> dict:
+    try:
+        d = json.loads(gw_state_path(cfg).read_text())
+        return d if isinstance(d, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def turn_bytes(cfg: dict, gateway_alive: bool) -> int:
+    """TURN-relayed bytes since the previous call (>= 0). The gateway keeps a
+    running total; a total below the last one means the gateway restarted."""
+    total = _gw_state(cfg).get("turn_bytes_total") if gateway_alive else None
+    if not isinstance(total, int) or isinstance(total, bool) or total < 0:
+        return 0
+    last, _turn_seen["total"] = _turn_seen["total"], total
+    return total - last if total >= last else total
+
+
+def transport(cfg: dict, gateway_alive: bool) -> str:
+    """The transport the running gateway/selkies were launched with."""
+    t = _gw_state(cfg).get("transport") if gateway_alive else None
+    t = t or (cfg.get("stream_settings") or {}).get("transport")
+    return "webrtc" if t == "webrtc" else "websockets"
+
+
 def idle_seconds(cfg: dict, gateway_alive: bool) -> float | None:
     """Seconds since the last client->server input frame (per the gateway
     state file). None when the gateway is down or the state is unreadable.

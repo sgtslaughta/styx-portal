@@ -24,6 +24,9 @@ const ctx = await browser.newContext({
   httpCredentials: { username: process.env.STYX_USER, password: process.env.STYX_PASS },
   viewport: { width: VW, height: VH }, deviceScaleFactor: 2,
 });
+// Through the portal (real tunnel): STYX_PROXY_COOKIE = the styx_proxy cookie of a logged-in session.
+if (process.env.STYX_PROXY_COOKIE) await ctx.addCookies([{ name: 'styx_proxy',
+  value: process.env.STYX_PROXY_COOKIE, url: new URL(a.url).origin, secure: true, sameSite: 'Strict' }]);
 await ctx.addInitScript(([TOL]) => {
   const px = new OffscreenCanvas(1, 1).getContext('2d', { willReadFrequently: true });
   Object.assign(self, { __A: null, __rec: false, __pt: [], __nPres: 0, __nDec: 0 });
@@ -45,7 +48,7 @@ await ctx.addInitScript(([TOL]) => {
     }
     return write.call(this, chunk);
   };
-  const src = () => document.getElementById('videoStream') || document.getElementById('videoCanvas');
+  const src = () => document.getElementById('videoStream') || document.getElementById('stream') || document.getElementById('videoCanvas');
   const dims = s => [s.videoWidth || s.width, s.videoHeight || s.height];
   const onPresent = (now, md, s) => {
     self.__nPres++;
@@ -56,7 +59,7 @@ await ctx.addInitScript(([TOL]) => {
     if (A && A.t0 !== null && A.pres === null && hit(A, luma(s, ...dims(s), A.pt))) { A.pres = tp; A.presCb = now; A.done(); }
   };
   self.__startPresent = () => {                            // 'video' (rVFC) or 'raf' fallback
-    const v = document.getElementById('videoStream');
+    const v = document.getElementById('videoStream') || document.getElementById('stream');   // #stream = WebRTC mode
     if (v && v.tagName === 'VIDEO' && v.requestVideoFrameCallback) {
       const cb = (now, md) => { onPresent(now, md, v); v.requestVideoFrameCallback(cb); };
       v.requestVideoFrameCallback(cb);
@@ -89,13 +92,13 @@ await ctx.addInitScript(([TOL]) => {
 }, [TOL]);
 const page = await ctx.newPage();
 await page.goto(a.url);
-await page.waitForFunction(() => [...document.querySelectorAll('#videoStream, #videoCanvas')]
+await page.waitForFunction(() => [...document.querySelectorAll('#videoStream, #stream, #videoCanvas')]
   .some(e => e.offsetWidth > 0 && getComputedStyle(e).display !== 'none'), null, { timeout: 30000 });
 let sink = await page.evaluate(() => window.__startPresent());
 await sleep(4000);                                         // first frames + paint-over
 if (sink === 'video' && !(await page.evaluate(() => window.__nPres))) {
   sink = 'raf';                                            // video element never presented: sample from rAF
-  await page.evaluate(() => { document.getElementById('videoStream').requestVideoFrameCallback = undefined; window.__startPresent(); });
+  await page.evaluate(() => { (document.getElementById('videoStream') || document.getElementById('stream')).requestVideoFrameCallback = undefined; window.__startPresent(); });
 }
 
 const readNow = pts => page.evaluate(p => window.__read(p), pts);

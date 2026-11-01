@@ -41,6 +41,9 @@ export function WorkstationStreamSettings({
   const [bitrate, setBitrate] = useState<string>(
     ss.bitrate_kbps != null ? String(ss.bitrate_kbps) : ""
   );
+  const [transport, setTransport] = useState<string>(
+    typeof ss.transport === "string" ? ss.transport : "inherit"
+  );
   const [saving, setSaving] = useState(false);
 
   const save = async () => {
@@ -52,6 +55,7 @@ export function WorkstationStreamSettings({
       h264_streaming_mode: gaming,
       use_paint_over_quality: paintOver,
       video_fullcolor: fullColor,
+      transport,
     };
     const crfNum = parseInt(crf, 10);
     if (!Number.isNaN(crfNum) && crfNum >= 5 && crfNum <= 50) {
@@ -103,6 +107,22 @@ export function WorkstationStreamSettings({
                   {f}
                 </option>
               ))}
+            </select>
+          </label>
+          <label
+            className="flex items-center gap-1.5"
+            title="WebRTC is lower latency; through restrictive networks it needs a TURN relay configured in Admin → Settings (billed per GB)."
+          >
+            Transport
+            <select
+              aria-label="Transport"
+              className="rounded border border-border bg-surface px-1 py-0.5"
+              value={transport}
+              onChange={(e) => setTransport(e.target.value)}
+            >
+              <option value="inherit">Inherit (system default)</option>
+              <option value="websockets">WebSockets</option>
+              <option value="webrtc">WebRTC</option>
             </select>
           </label>
           <label
