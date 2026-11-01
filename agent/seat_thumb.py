@@ -29,6 +29,7 @@ _proc_bus = None
 # MAX_STARTS per seat bus; a seat restart (new bus) resets the count.
 MAX_STARTS = 3
 _starts = 0
+_gaveup_logged = False   # GaveUp repeats every minute; log it once per seat bus
 
 
 class GaveUp(RuntimeError):
@@ -45,9 +46,9 @@ def _kill() -> None:
 
 def _helper(install: Path, bus_addr: str):
     """The live grabber, (re)started only if dead or the seat bus changed."""
-    global _proc, _proc_bus, _starts
+    global _proc, _proc_bus, _starts, _gaveup_logged
     if _proc_bus != bus_addr:
-        _starts = 0
+        _starts, _gaveup_logged = 0, False
     if _proc is not None and (_proc.poll() is not None or _proc_bus != bus_addr):
         _kill()
     if _proc is None:
@@ -95,12 +96,16 @@ def upload(cfg: dict, data: bytes) -> None:
 
 
 def _run(cfg: dict) -> None:
-    global _busy
+    global _busy, _gaveup_logged
     try:
         install = Path(cfg["install_dir"])
         jpeg = capture(install, (install / "gnome-bus.addr").read_text().strip())
         if jpeg:
             upload(cfg, jpeg)
+    except GaveUp as e:
+        if not _gaveup_logged:
+            _gaveup_logged = True
+            print(f"seat thumbnail off: {e}", flush=True)
     except Exception as e:  # noqa: BLE001 - a thumbnail must never hurt the supervisor
         print(f"seat thumbnail failed: {type(e).__name__}: {e}", flush=True)
     finally:
