@@ -149,6 +149,7 @@ AGENT_UPDATE_FILES = [
     ("agent_procs.py", "agent_procs.py"),
     ("seat_systemd.py", "seat_systemd.py"),
     ("seat_gnome.py", "seat_gnome.py"),
+    ("xwl_eager.py", "xwl_eager.py"),
     ("seat_labwc.py", "seat_labwc.py"),
     ("health.py", "health.py"),
     ("refit.py", "refit.py"),
