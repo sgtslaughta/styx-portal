@@ -16,7 +16,7 @@ resources:
 # Tag must be >= v2.3.0 (first release with ROUTE_BACKEND=k8s); older tags boot
 # healthy but publish no IngressRoutes (404). Check: kubectl -n styx get ingressroutes
 images:
-  - name: ghcr.io/sgtslaughta/styx-backend
+  - name: ghcr.io/jmo-labs/styx-backend
     newTag: "2.7.0"
-  - name: ghcr.io/sgtslaughta/styx-frontend
+  - name: ghcr.io/jmo-labs/styx-frontend
     newTag: "2.7.0"

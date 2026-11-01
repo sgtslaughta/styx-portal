@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     ROUTE_BACKEND: str = "file"   # file | k8s
     K8S_NAMESPACE: str = "styx"
     K8S_INSTANCE_NAMESPACE: str = "styx-instances"
-    K8S_DESKTOP_IMAGE: str = "ghcr.io/sgtslaughta/styx-desktop:latest"
+    K8S_DESKTOP_IMAGE: str = "ghcr.io/jmo-labs/styx-desktop:latest"
     INSTANCE_STORAGE_CLASS: str = "longhorn"
     INSTANCE_VOLUME_SIZE: str = "20Gi"
     PROFILE_VOLUME_SIZE: str = "20Gi"

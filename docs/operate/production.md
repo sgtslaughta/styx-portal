@@ -51,7 +51,7 @@ Automate daily backups and test a restore.
 
 ## Hosted images and pinning
 
-The `backend` and `frontend` images are published to GHCR (`ghcr.io/sgtslaughta/styx-backend`, `styx-frontend`). Pin a tag in production:
+The `backend` and `frontend` images are published to GHCR (`ghcr.io/jmo-labs/styx-backend`, `styx-frontend`). Pin a tag in production:
 
 ```bash
 # .env
@@ -59,7 +59,7 @@ STYX_TAG=2.7.0
 docker compose pull && docker compose up -d
 ```
 
-See [Upgrade](upgrade.md). The desktop image is published as `ghcr.io/sgtslaughta/styx-desktop` for use in templates.
+See [Upgrade](upgrade.md). The desktop image is published as `ghcr.io/jmo-labs/styx-desktop` for use in templates.
 
 ## Host-level gates
 

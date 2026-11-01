@@ -33,7 +33,7 @@ spec:
         - {key: node.kubernetes.io/unreachable, operator: Exists, effect: NoExecute, tolerationSeconds: 30}
       containers:
         - name: frontend
-          image: ghcr.io/sgtslaughta/styx-frontend
+          image: ghcr.io/jmo-labs/styx-frontend
           ports: [{name: http, containerPort: 3000}]
           env:
             - name: NGINX_RESOLVER

@@ -50,7 +50,7 @@ def test_service_shape():
 
 
 def test_image_mapping():
-    assert _build()[3]["image"] == "ghcr.io/sgtslaughta/styx-desktop:latest"
+    assert _build()[3]["image"] == "ghcr.io/jmo-labs/styx-desktop:latest"
     assert _build(image="ghcr.io/x/y:1")[3]["image"] == "ghcr.io/x/y:1"
 
 

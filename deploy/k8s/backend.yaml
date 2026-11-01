@@ -36,7 +36,7 @@ spec:
         - {key: node.kubernetes.io/unreachable, operator: Exists, effect: NoExecute, tolerationSeconds: 30}
       containers:
         - name: backend
-          image: ghcr.io/sgtslaughta/styx-backend
+          image: ghcr.io/jmo-labs/styx-backend
           ports: [{name: http, containerPort: 8000}]
           envFrom:
             - configMapRef: {name: styx-config}
