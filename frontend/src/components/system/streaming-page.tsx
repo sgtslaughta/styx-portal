@@ -42,7 +42,10 @@ export function StreamingPage() {
       }
       for (const [id, mine] of Object.entries(wsEdits)) {
         const ws = workstations.find((w) => w.id === id);
-        if (!ws) continue;
+        if (!ws) {  // workstation gone: drop its stale edit
+          setWsEdits((p) => { const n = { ...p }; delete n[id]; return n; });
+          continue;
+        }
         try {
           await api.updateWorkstation(id, { stream_settings: mergedSettings(ws, mine) });
         } catch (e) {

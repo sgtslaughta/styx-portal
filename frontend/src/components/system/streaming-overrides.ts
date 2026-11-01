@@ -13,6 +13,7 @@ export const TRANSPORT_LABEL: Record<string, string> = { websockets: "WebSockets
 export function saved(ws: Workstation, f: Field): string {
   const v = ws.stream_settings?.[f];
   if (v == null || v === "") return "";
+  if (f === "encoder" && v === "auto") return "";  // auto = inherit
   if (f === "transport" && v !== "websockets" && v !== "webrtc") return "";
   return String(v);
 }

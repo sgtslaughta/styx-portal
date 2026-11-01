@@ -80,8 +80,10 @@ def _apply_defaults(eff: dict, sys: Mapping[str, Any]) -> None:
     default differs from the built-in (so unset/default output is unchanged)."""
     for skey, have, out, builtin in _DEFAULTS:
         v = sys.get(skey)
-        if v is None or v == builtin or any(h in eff for h in have):
+        if v is None or v == builtin:
             continue
+        if any(h in eff for h in have) and not (out == "encoder" and eff.get("encoder") == "auto"):
+            continue  # encoder "auto" means inherit
         eff[out] = v
 
 

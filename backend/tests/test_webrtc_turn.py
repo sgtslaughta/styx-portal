@@ -227,3 +227,12 @@ def test_system_stream_defaults_apply_override_wins_and_unset_unchanged():
     assert eff["video_streaming_mode"] is True
     eff = resolve_stream_settings({"encoder": "av1", "h264_crf": 18}, sysd, "0.9.30")
     assert eff["encoder"] == "av1" and eff["video_crf"] == 18
+
+
+def test_auto_encoder_inherits_system_default():
+    sysd = {**CF, "WORKSTATION_DEFAULT_ENCODER": "hevc"}
+    assert resolve_stream_settings({"encoder": "auto"}, sysd, "0.9.30")["encoder"] == "hevc"
+    assert resolve_stream_settings({"encoder": "av1"}, sysd, "0.9.30")["encoder"] == "av1"
+    same = resolve_stream_settings({"encoder": "auto"}, CF, "0.9.30")
+    assert same["encoder"] == "auto"
+    assert resolve_stream_settings({"encoder": "auto"}, {**CF, "WORKSTATION_DEFAULT_ENCODER": "auto"}, "0.9.30") == same
