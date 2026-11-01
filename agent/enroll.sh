@@ -262,7 +262,7 @@ if [[ "$UPGRADE" == 1 ]]; then
 fi
 mkdir -p "$INSTALL_DIR" "$CONFIG_DIR" "$UNIT_DIR" "$INSTALL_DIR/logs"
 for pair in "agent.py styx_agent.py" "engine.py engine.py" \
-            "gateway.py gateway.py" "gateway_html.py gateway_html.py" "gamemode.py gamemode.py" "gateway_ws.py gateway_ws.py" "gateway_webrtc.py gateway_webrtc.py" "agent_procs.py agent_procs.py" "seat_systemd.py seat_systemd.py" "seat_gnome.py seat_gnome.py" \
+            "gateway.py gateway.py" "gateway_html.py gateway_html.py" "gamemode.py gamemode.py" "gateway_ws.py gateway_ws.py" "gateway_webrtc.py gateway_webrtc.py" "agent_procs.py agent_procs.py" "seat_systemd.py seat_systemd.py" "seat_gnome.py seat_gnome.py" "xwl_eager.py xwl_eager.py" \
             "seat_labwc.py seat_labwc.py" "health.py health.py" \
             "refit.py refit.py" "seat_scale.py seat_scale.py" "shallow_pipe.py shallow_pipe.py" "viewers.py viewers.py" "seat_portal.py seat_portal.py" "seat_clipboard.py seat_clipboard.py" "portal_api.py portal_api.py" \
             "clipboard_bridge.py clipboard_bridge.py" "favicon.py favicon.py" "seat_thumb.py seat_thumb.py" "seat_thumb_grab.py seat_thumb_grab.py" "bundle_patch.py bundle_patch.py" \

@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 
 import refit
+import xwl_eager
 
 SOCKET = "wayland-70"   # snap AppArmor only allows wayland-[0-9]* sockets
 MIN_GNOME = 46
@@ -50,7 +51,8 @@ def write_portal_dir(d: Path, src: Path = PORTAL_SRC) -> None:
         (d / name).write_text(PORTALS_CONF)
 
 
-def build_launch_script(sink: str, bus_file: str, portal_dir: str, x11: bool = True) -> str:
+def build_launch_script(sink: str, bus_file: str, portal_dir: str, x11: bool = True,
+                        preload: str = "") -> str:
     sink, bus_file, portal_dir = (shlex.quote(v) for v in (sink, bus_file, portal_dir))
     return "\n".join([
         "#!/bin/bash",
@@ -65,13 +67,14 @@ def build_launch_script(sink: str, bus_file: str, portal_dir: str, x11: bool = T
         f"XDG_DESKTOP_PORTAL_DIR={portal_dir}",
         f'echo "$DBUS_SESSION_BUS_ADDRESS" > {bus_file}',
         # No --virtual-monitor: seat_portal.py owns the monitor and its size.
-        # Xwayland on demand (X11 apps: Steam, Wine). The shell's own libpulse
+        # Xwayland eager via LD_PRELOAD (mutter's on-demand path deadlocks) (X11 apps: Steam, Wine). The shell's own libpulse
         # (via libgvc) would xcb_connect to that Xwayland at startup and block
         # the main loop Xwayland needs -> deadlock (GNOME 50); with
         # auto-connect-display=no libpulse never touches X.
         'printf "auto-connect-display = no\\n" > "$XDG_RUNTIME_DIR/styx-shell-pulse.conf"',
         'export PULSE_CLIENTCONFIG="$XDG_RUNTIME_DIR/styx-shell-pulse.conf"',
-        f"exec gnome-shell --headless --wayland --wayland-display={SOCKET}"
+        (f"LD_PRELOAD={shlex.quote(preload)} " if x11 and preload else "")
+        + f"exec gnome-shell --headless --wayland --wayland-display={SOCKET}"
         + ("" if x11 else " --no-x11"),
         "",
     ])
@@ -169,9 +172,12 @@ class GnomeSeat:
     def x11_on(self) -> bool:
         return self._x11
 
+    def _marker_text(self) -> str:
+        return self._gnome_version() + "|eager"
+
     def _marked(self) -> bool:
         try:
-            return self.marker.read_text().strip() == self._gnome_version()
+            return self.marker.read_text().strip() == self._marker_text()
         except OSError:
             return False
 
@@ -180,7 +186,7 @@ class GnomeSeat:
         self._fell_back = True
         print("seat: GNOME main loop stopped answering with Xwayland on; "
               "falling back to --no-x11 (X11 apps disabled on this host)", flush=True)
-        self.marker.write_text(self._gnome_version() + "\n")
+        self.marker.write_text(self._marker_text() + "\n")
 
     def start(self, width: int, height: int) -> None:
         from engine import SEAT_SINK
@@ -204,8 +210,11 @@ class GnomeSeat:
         for n in (SOCKET, SOCKET + ".lock"):
             Path(self.runtime_dir, n).unlink(missing_ok=True)
         write_portal_dir(self.portal_dir)
+        preload = ""
+        if self._x11:
+            preload = str(xwl_eager.write_so(self.install_dir / "libstyx-xwl-eager.so"))
         self.script.write_text(build_launch_script(SEAT_SINK, str(self.bus_file),
-                                                   str(self.portal_dir), self._x11))
+                                                   str(self.portal_dir), self._x11, preload))
         self.script.chmod(0o700)
         env = {k: v for k, v in os.environ.items() if k not in _SCRUB}
         env["XDG_RUNTIME_DIR"] = self.runtime_dir
@@ -383,6 +392,13 @@ class GnomeSeat:
                 except subprocess.TimeoutExpired:
                     os.killpg(p.pid, signal.SIGKILL)
                     p.wait()
+            except ProcessLookupError:
+                pass
+        if p is not None:
+            try:
+                # a deadlocked gnome-shell ignores SIGTERM and outlives dbus-run-session
+                # (also when the leader had already exited and orphaned it)
+                os.killpg(p.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
         self._proc = None

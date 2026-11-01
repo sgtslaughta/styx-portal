@@ -105,11 +105,32 @@ def test_stop_kills_process_group(tmp_path, monkeypatch):
     seat = seat_gnome.GnomeSeat(tmp_path, str(tmp_path), log=subprocess.DEVNULL)
     seat._proc = _P()
     seat.stop()
-    assert calls == [(4242, signal.SIGTERM)]
+    assert calls == [(4242, signal.SIGTERM), (4242, signal.SIGKILL)]
     seat._proc = _P(timeout=True)
     calls.clear()
     seat.stop()
-    assert calls == [(4242, signal.SIGTERM), (4242, signal.SIGKILL)]
+    assert calls == [(4242, signal.SIGTERM), (4242, signal.SIGKILL), (4242, signal.SIGKILL)]
+
+
+def test_stop_sigkills_group_even_when_leader_exits_after_sigterm(tmp_path, monkeypatch):
+    calls = []
+    monkeypatch.setattr(seat_gnome.os, "killpg", lambda *a: calls.append(a))
+    seat = seat_gnome.GnomeSeat(tmp_path, str(tmp_path), log=subprocess.DEVNULL)
+    p = _P()
+    seat._proc = p
+    seat.stop()
+    assert calls[-1] == (4242, signal.SIGKILL) and p.waits == 1
+
+
+def test_stop_sigkill_ignores_missing_group(tmp_path, monkeypatch):
+    def killpg(pg, sig):
+        if sig == signal.SIGKILL:
+            raise ProcessLookupError
+    monkeypatch.setattr(seat_gnome.os, "killpg", killpg)
+    seat = seat_gnome.GnomeSeat(tmp_path, str(tmp_path), log=subprocess.DEVNULL)
+    seat._proc = _P()
+    seat.stop()
+    assert seat._proc is None
 
 
 def test_stop_tolerates_dead_group(tmp_path, monkeypatch):
@@ -307,17 +328,18 @@ def test_shell_probe_uses_main_loop_property_get(tmp_path, monkeypatch):
 def test_launch_script_no_x11_flag():
     on = seat_gnome.build_launch_script("s", "/b", "/p")
     off = seat_gnome.build_launch_script("s", "/b", "/p", x11=False)
-    exe_on = next(ln for ln in on.splitlines() if ln.startswith("exec gnome-shell"))
-    exe_off = next(ln for ln in off.splitlines() if ln.startswith("exec gnome-shell"))
+    exe_on = next(ln for ln in on.splitlines() if "exec gnome-shell" in ln)
+    exe_off = next(ln for ln in off.splitlines() if "exec gnome-shell" in ln)
     assert "--no-x11" not in exe_on and "--no-x11" in exe_off
     assert "export PULSE_CLIENTCONFIG=" in off
 
 
 def test_marker_with_current_version_turns_x11_off(tmp_path, monkeypatch):
     seat = _seat_with_version(tmp_path, monkeypatch)
-    (tmp_path / "seat-no-x11").write_text("GNOME Shell 50.1\n")
+    (tmp_path / "seat-no-x11").write_text("GNOME Shell 50.1|eager\n")
     seat.start(1920, 1080)
     assert "--no-x11" in seat.script.read_text()
+    assert "LD_PRELOAD" not in seat.script.read_text()
     assert seat.info()["x11"] == "fallback"
 
 
@@ -352,7 +374,7 @@ def test_unhealthy_while_alive_with_x11_writes_marker(tmp_path, monkeypatch, cap
         assert not (tmp_path / "seat-no-x11").exists() and not seat.fell_back
     assert not seat.healthy()
     assert seat.fell_back
-    assert (tmp_path / "seat-no-x11").read_text().strip() == "GNOME Shell 50.1"
+    assert (tmp_path / "seat-no-x11").read_text().strip() == "GNOME Shell 50.1|eager"
     assert seat.info()["x11"] == "fallback"
     assert "falling back to --no-x11" in capsys.readouterr().out
 
@@ -384,3 +406,25 @@ def test_stop_escalates_to_sigkill_within_seconds(tmp_path, monkeypatch):
     seat._proc = P()
     seat.stop()
     assert waits[0] <= 5
+
+
+def test_old_format_marker_is_ignored_and_x11_retried_eager(tmp_path, monkeypatch):
+    seat = _seat_with_version(tmp_path, monkeypatch)
+    (tmp_path / "seat-no-x11").write_text("GNOME Shell 50.1\n")
+    seat.start(1920, 1080)
+    assert seat.x11_on and "--no-x11" not in seat.script.read_text()
+
+
+def test_launch_script_preloads_eager_lib_when_x11_on(tmp_path, monkeypatch):
+    seat = _seat_with_version(tmp_path, monkeypatch)
+    seat.start(1920, 1080)
+    so = tmp_path / "libstyx-xwl-eager.so"
+    assert so.read_bytes().startswith(b"\x7fELF")
+    line = next(ln for ln in seat.script.read_text().splitlines() if "exec gnome-shell" in ln)
+    assert line.startswith(f"LD_PRELOAD={so} exec gnome-shell")
+
+
+def test_launch_script_preload_path_is_quoted():
+    s = seat_gnome.build_launch_script("s", "/b", "/p", preload="/a b/x.so")
+    assert "LD_PRELOAD='/a b/x.so' exec gnome-shell" in s
+    assert "LD_PRELOAD" not in seat_gnome.build_launch_script("s", "/b", "/p", x11=False)
