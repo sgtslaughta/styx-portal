@@ -123,65 +123,6 @@
   h1, h2, h3 { font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; font-variation-settings: "FLAR" 40; }
 }
 
-/* Styx Portal login brand panel — theme-aware, animated "river current" */
-.styx-brand {
-  position: relative;
-  overflow: hidden;
-  isolation: isolate; /* keeps z:-1 line layers above this panel's background */
-  /* Light theme: Mist -> pale Water, faint Current glow */
-  background: radial-gradient(60% 50% at 80% 15%, rgba(42, 118, 124, 0.25), transparent 70%),
-    linear-gradient(to top right, #EDF1EF 0%, #BFD6D6 60%, #9CC1C3 100%);
-  color: #0F1C22;
-  --brand-fg: #0F1C22;
-  --brand-fg-muted: #2F4A52;
-  --brand-ripple-r: 42;
-  --brand-ripple-g: 118;
-  --brand-ripple-b: 124;
-}
-/* Dark theme: Water with a faint Current glow */
-.dark .styx-brand {
-  background: radial-gradient(60% 50% at 80% 15%, rgba(111, 183, 188, 0.18), transparent 70%),
-    linear-gradient(to top right, #0F1C22 0%, #16323A 100%);
-  color: #EDF1EF;
-  --brand-fg: #EDF1EF;
-  --brand-fg-muted: #9FB0B4;
-  --brand-ripple-r: 111;
-  --brand-ripple-g: 183;
-  --brand-ripple-b: 188;
-}
-.styx-brand::before,
-.styx-brand::after {
-  content: "";
-  position: absolute;
-  inset: -40% -40%;
-  pointer-events: none;
-  /* No-WebGL fallback only: the opaque RippleCanvas (z:0) draws its own
-     refracted lines and covers these; they show when the canvas stays
-     transparent (no WebGL / reduced motion / shader failure). */
-  z-index: -1;
-  -webkit-mask: radial-gradient(150% 130% at 0% 100%, #000 30%, transparent 72%);
-          mask: radial-gradient(150% 130% at 0% 100%, #000 30%, transparent 72%);
-}
-.styx-brand::before {
-  background: repeating-linear-gradient(115deg, transparent 0 22px, rgb(var(--brand-ripple-r), var(--brand-ripple-g), var(--brand-ripple-b)) 22px 23px);
-  opacity: 0.15;
-  animation: styx-flow 14s linear infinite;
-}
-.styx-brand::after {
-  background: repeating-linear-gradient(115deg, transparent 0 40px, rgb(var(--brand-ripple-r), var(--brand-ripple-g), var(--brand-ripple-b)) 40px 41px);
-  opacity: 0.1;
-  animation: styx-flow 26s linear infinite;
-}
-@keyframes styx-flow {
-  from { transform: translate(0, 0); }
-  to   { transform: translate(-23px, -49px); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .styx-brand::before,
-  .styx-brand::after { animation: none; }
-}
-.styx-brand > * { position: relative; z-index: 1; }
-
 /* ── Styx Portal dashboard theming (immersive depth) ───────────────── */
 :root {
   --select-chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234A5A60' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
@@ -240,7 +181,7 @@
 :root:not(.dark) .styx-header::before { opacity: .12; }
 :root:not(.dark) .styx-header::after { opacity: .5; }
 /* Frosted patch behind logo + nav: blurs the gold lines under the labels, soft-edged */
-.styx-header > .styx-brand::before, .styx-header > .styx-tabs::before {
+.styx-header > .styx-logo::before, .styx-header > .styx-tabs::before {
   content: ""; position: absolute; inset: 4px -18px; z-index: -1; pointer-events: none;
   backdrop-filter: blur(5px) saturate(.9); -webkit-backdrop-filter: blur(5px) saturate(.9);
   background: color-mix(in srgb, var(--background) 35%, transparent);

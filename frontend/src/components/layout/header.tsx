@@ -40,7 +40,7 @@ export function Header({ activeTab, onTabChange }: { activeTab: HeaderTab; onTab
 
   return (
     <header className="styx-header flex h-[58px] items-center gap-6 border-b border-border px-6">
-      <div className="styx-brand flex items-center gap-2.5 text-[15px] font-extrabold tracking-[.08em]">
+      <div className="styx-logo flex items-center gap-2.5 text-[15px] font-extrabold tracking-[.08em]">
         <Waves className="h-5 w-5" style={{ color: "var(--brand-accent)" }} />
         STYX PORTAL
       </div>
