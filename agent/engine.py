@@ -85,6 +85,22 @@ def _probe_nvenc() -> tuple:
 _HW_ENCODERS: dict = {}
 
 
+_CODEC_ENCODER = {"av1": "av1enc", "hevc": "h265enc", "h264": "h264enc"}
+
+
+def encoder_order(pref, hw: tuple) -> list:
+    """Portal `encoder` (auto|av1|hevc|h264) moves that codec to the front of
+    the hardware list; the rest stay as fallbacks for browsers that cannot
+    decode it. A codec the GPU lacks is ignored: selkies would encode it in
+    software. auto/unknown keeps the default most-efficient-first order."""
+    order = [*hw, "h264enc"]
+    want = _CODEC_ENCODER.get(str(pref or "").lower())
+    if want in order:
+        order.remove(want)
+        order.insert(0, want)
+    return order
+
+
 def hw_encoders(node: str) -> tuple:
     """Hardware AV1/HEVC encoders on `node`, probed once. selkies falls back to
     a software encoder (SVT-AV1, x265) for a codec the GPU lacks, which would
@@ -431,8 +447,10 @@ def build_selkies_cmd(cfg: dict, internal_port: int,
         "--video-10bit=false|locked",
     ]
     dri = pick_dri_node()
-    # AV1 -> HEVC -> H.264: the first the browser decodes wins (selkies steps down).
-    cmd.insert(4, "--encoder=" + ",".join((*hw_encoders(dri), "h264enc")))
+    # AV1 -> HEVC -> H.264 unless the portal picks a codec: the first the
+    # browser decodes wins (selkies steps down).
+    cmd.insert(4, "--encoder=" + ",".join(
+        encoder_order(s.get("encoder"), hw_encoders(dri))))
     if dri:
         cmd += [f"--encode-dri={dri}", f"--render-dri={dri}"]
         # Client pushes use_cpu=true; "|locked" keeps the GPU encoder on.

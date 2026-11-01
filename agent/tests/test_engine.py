@@ -477,3 +477,20 @@ def test_turn_env_never_falls_back_to_public_demo_relay():
     for turn in (None, {}, {"provider": "cloudflare", "token_id": "i", "api_token": "t"}):
         env = engine.turn_env(turn)
         assert env["SELKIES_TURN_HOST"] == "" and env["SELKIES_TURN_SHARED_SECRET"] == ""
+
+
+def test_encoder_order_follows_portal_setting():
+    hw = ("av1enc", "h265enc")
+    assert engine.encoder_order("auto", hw) == ["av1enc", "h265enc", "h264enc"]
+    assert engine.encoder_order(None, hw) == ["av1enc", "h265enc", "h264enc"]
+    assert engine.encoder_order("hevc", hw) == ["h265enc", "av1enc", "h264enc"]
+    assert engine.encoder_order("H264", hw) == ["h264enc", "av1enc", "h265enc"]
+    assert engine.encoder_order("av1", ("h265enc",)) == ["h265enc", "h264enc"]  # no HW AV1: ignored
+
+
+def test_cmd_uses_portal_encoder(tmp_path, monkeypatch):
+    _stub(monkeypatch, dri="/dev/dri/renderD128", hw=("av1enc", "h265enc"))
+    cfg = _cfg(tmp_path)
+    cfg["stream_settings"] = {"encoder": "hevc"}
+    cmd, _ = engine.build_selkies_cmd(cfg, 9000)
+    assert "--encoder=h265enc,av1enc,h264enc" in cmd

@@ -65,10 +65,13 @@ def build_launch_script(sink: str, bus_file: str, portal_dir: str) -> str:
         f"XDG_DESKTOP_PORTAL_DIR={portal_dir}",
         f'echo "$DBUS_SESSION_BUS_ADDRESS" > {bus_file}',
         # No --virtual-monitor: seat_portal.py owns the monitor and its size.
-        # --no-x11: with Xwayland on demand, the shell's own libpulse (via
-        # libgvc) xcb_connects to the shell's Xwayland at startup and blocks
-        # the main loop that Xwayland needs -> shell deadlock (GNOME 50).
-        f"exec gnome-shell --headless --no-x11 --wayland --wayland-display={SOCKET}",
+        # Xwayland on demand (X11 apps: Steam, Wine). The shell's own libpulse
+        # (via libgvc) would xcb_connect to that Xwayland at startup and block
+        # the main loop Xwayland needs -> deadlock (GNOME 50); with
+        # auto-connect-display=no libpulse never touches X.
+        'printf "auto-connect-display = no\\n" > "$XDG_RUNTIME_DIR/styx-shell-pulse.conf"',
+        'export PULSE_CLIENTCONFIG="$XDG_RUNTIME_DIR/styx-shell-pulse.conf"',
+        f"exec gnome-shell --headless --wayland --wayland-display={SOCKET}",
         "",
     ])
 
