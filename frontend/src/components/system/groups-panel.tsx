@@ -76,10 +76,10 @@ export function GroupsPanel() {
       <form className="toolbar" onSubmit={(e) => { e.preventDefault(); if (name.trim()) void create(); }}>
         <Label htmlFor="group-name" className="sr-only">Group name</Label>
         <Input id="group-name" value={name} maxLength={64} autoComplete="off" placeholder="New group name"
-               className="max-w-56" onChange={(e) => setName(e.target.value)} />
+               className="w-full sm:max-w-56" onChange={(e) => setName(e.target.value)} />
         <Label htmlFor="group-desc" className="sr-only">Description (optional)</Label>
         <Input id="group-desc" value={desc} maxLength={255} autoComplete="off" placeholder="Description (optional)"
-               className="max-w-72" onChange={(e) => setDesc(e.target.value)} />
+               className="w-full sm:max-w-72" onChange={(e) => setDesc(e.target.value)} />
         <Button type="submit" aria-label="Add group" variant="secondary" disabled={!name.trim() || adding}>
           <Plus className="h-4 w-4" /> {adding ? "Adding..." : "Add group"}
         </Button>

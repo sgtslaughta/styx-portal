@@ -25,11 +25,11 @@ function Rows({ rows, onEdit, onDelete }: {
             <p className="truncate font-mono text-[11px] text-muted-foreground">{t.image} · {sizeOf(t)}</p>
           </div>
           <button type="button" onClick={() => onEdit(t)} aria-label={`Edit ${t.display_name || t.name}`}
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground">
+            className="rounded-md p-1.5 pointer-coarse:p-3 text-muted-foreground hover:bg-accent hover:text-foreground">
             <Pencil className="h-3.5 w-3.5" />
           </button>
           <button type="button" onClick={() => onDelete(t)} aria-label={`Delete ${t.display_name || t.name}`}
-            className="rounded-md p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
+            className="rounded-md p-1.5 pointer-coarse:p-3 text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
             <Trash2 className="h-3.5 w-3.5" />
           </button>
         </li>

@@ -3,6 +3,8 @@ type Props = { count: number; onSave: () => void; onDiscard: () => void; saving?
 export function SavePill({ count, onSave, onDiscard, saving }: Props) {
   if (count === 0) return null;
   return (
+    <>
+    <div aria-hidden="true" className="h-16" />
     <div className="save-pill" role="status" data-testid="save-pill">
       <span>
         <b className="tabular-nums">{count}</b> unsaved {count === 1 ? "change" : "changes"}
@@ -14,5 +16,6 @@ export function SavePill({ count, onSave, onDiscard, saving }: Props) {
         {saving ? "Saving..." : "Save changes"}
       </button>
     </div>
+    </>
   );
 }

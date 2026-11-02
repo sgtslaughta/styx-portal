@@ -114,7 +114,7 @@ function Images() {
                 <button
                   onClick={() => handleDelete(img.id, img.image)}
                   disabled={deleteMut.isPending}
-                  className="rounded-md p-1.5 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive hover:bg-destructive/10 transition-all"
+                  className="rounded-md p-1.5 pointer-coarse:p-3 text-muted-foreground opacity-0 pointer-coarse:opacity-100 group-hover:opacity-100 hover:text-destructive hover:bg-destructive/10 transition-all"
                   title="Remove image"
                 >
                   <Trash2 className="h-3.5 w-3.5" />

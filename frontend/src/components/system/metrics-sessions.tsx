@@ -54,7 +54,7 @@ export function MetricsSessions() {
             key={f}
             onClick={() => setFilter(f)}
             className={cn(
-              "rounded-md px-2.5 py-1 text-[11px] font-medium transition-colors",
+              "rounded-md px-2.5 py-1 pointer-coarse:py-2.5 text-[11px] font-medium transition-colors",
               filter === f
                 ? "bg-secondary text-foreground"
                 : "text-muted-foreground hover:text-foreground/80 hover:bg-muted/50"
@@ -75,11 +75,11 @@ export function MetricsSessions() {
       {/* Session Table */}
       <div className="styx-card rounded-lg overflow-hidden">
         {/* Header */}
-        <div className="grid grid-cols-[1fr_100px_80px_80px_140px] gap-2 px-4 py-2.5 border-b border-border/40 text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] sm:grid-cols-[1fr_100px_80px_80px_140px] gap-2 px-4 py-2.5 border-b border-border/40 text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium">
           <span>Instance</span>
           <span>Status</span>
-          <span>Uptime</span>
-          <span>Idle</span>
+          <span className="max-sm:hidden">Uptime</span>
+          <span className="max-sm:hidden">Idle</span>
           <span className="text-right">Actions</span>
         </div>
 
@@ -190,7 +190,7 @@ function SessionRow({
   return (
     <div>
       <div
-        className="grid grid-cols-[1fr_100px_80px_80px_140px] gap-2 px-4 py-2.5 items-center hover:bg-muted/20 transition-colors cursor-pointer"
+        className="grid grid-cols-[minmax(0,1fr)_auto_auto] sm:grid-cols-[1fr_100px_80px_80px_140px] gap-2 px-4 py-2.5 items-center hover:bg-muted/20 transition-colors cursor-pointer"
         onClick={onToggle}
       >
         <div className="flex items-center gap-2.5 min-w-0">
@@ -204,10 +204,10 @@ function SessionRow({
           <span className="text-[10px] text-muted-foreground/60 font-mono truncate">{instance.subdomain}</span>
         </div>
         <StatusBadge status={instance.status} />
-        <span className="text-xs text-muted-foreground tabular-nums">
+        <span className="text-xs text-muted-foreground tabular-nums max-sm:hidden">
           {uptimeSeconds != null ? formatDuration(uptimeSeconds) : "—"}
         </span>
-        <span className={cn("text-xs tabular-nums", idleSeconds && idleSeconds > 300 ? "text-warning-foreground" : "text-muted-foreground")}>
+        <span className={cn("text-xs tabular-nums max-sm:hidden", idleSeconds && idleSeconds > 300 ? "text-warning-foreground" : "text-muted-foreground")}>
           {idleSeconds != null ? formatDuration(idleSeconds) : "—"}
         </span>
         <div className="flex gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
