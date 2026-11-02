@@ -2,14 +2,14 @@ import { ChevronDown, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { useOpenPrefs, useSavePrefs } from "@/components/open-prompt";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
 const ROWS = [["open_workspaces", "Workspaces"], ["open_apps", "Apps"]] as const;
 
 /** Username dropdown: where Workspaces and Apps open (New tab / This tab / Ask). Saves on change. */
-export function OpeningMenu({ username }: { username: string }) {
+export function OpeningMenu({ username, onLogout, onToggleTheme }: { username: string; onLogout?: () => void; onToggleTheme?: () => void }) {
   const { data: me, isPending } = useOpenPrefs();
   const save = useSavePrefs();
   const set = (key: (typeof ROWS)[number][0], v: string) =>
@@ -21,7 +21,7 @@ export function OpeningMenu({ username }: { username: string }) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button aria-label={`Account menu, ${username}`} disabled={isPending}
-          className="inline-flex min-h-9 max-sm:min-h-11 items-center gap-1 rounded-md px-2 text-sm text-muted-foreground hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          className="inline-flex min-h-9 max-md:min-h-11 max-md:min-w-11 items-center gap-1 rounded-md px-2 text-sm text-muted-foreground hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring">
           <UserRound className="size-4" aria-hidden />
           <span className="max-sm:hidden">{username}</span>
           <ChevronDown className="size-3.5" aria-hidden />
@@ -40,6 +40,13 @@ export function OpeningMenu({ username }: { username: string }) {
             </DropdownMenuRadioGroup>
           </div>
         ))}
+        {(onLogout || onToggleTheme) && (
+          <div className="md:hidden">
+            <DropdownMenuSeparator />
+            {onToggleTheme && <DropdownMenuItem className="min-h-11" onSelect={onToggleTheme}>Toggle theme</DropdownMenuItem>}
+            {onLogout && <DropdownMenuItem className="min-h-11" onSelect={onLogout}>Log out</DropdownMenuItem>}
+          </div>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

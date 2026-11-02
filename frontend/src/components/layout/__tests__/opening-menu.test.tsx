@@ -31,3 +31,14 @@ test("Ask saves null", async () => {
   fireEvent.click(within(ws).getByRole("menuitemradio", { name: "Ask" }));
   await waitFor(() => expect(setOpenPrefs).toHaveBeenCalledWith({ open_workspaces: null }));
 });
+
+test("menu offers Log out and Toggle theme for narrow screens", async () => {
+  const onLogout = vi.fn();
+  render(<QueryClientProvider client={new QueryClient()}><OpeningMenu username="alice" onLogout={onLogout} onToggleTheme={vi.fn()} /></QueryClientProvider>);
+  const trigger = screen.getByRole("button", { name: /account menu/i });
+  await waitFor(() => expect(trigger).toBeEnabled());
+  fireEvent.keyDown(trigger, { key: "Enter" });
+  expect(await screen.findByRole("menuitem", { name: "Toggle theme" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("menuitem", { name: "Log out" }));
+  expect(onLogout).toHaveBeenCalled();
+});

@@ -81,7 +81,7 @@ function AdminRail({ forceCollapsed = false, onOpenAdmin, onWidthChange }: Props
   return (
     <aside
       aria-label="Server status"
-      className="fixed bottom-0 right-0 top-[58px] z-10 overflow-hidden border-l border-border bg-card transition-[width] duration-200 motion-reduce:transition-none"
+      className="fixed max-md:hidden bottom-0 right-0 top-[58px] z-10 overflow-hidden border-l border-border bg-card transition-[width] duration-200 motion-reduce:transition-none"
       style={{ width: collapsed ? RAIL_MIN : RAIL_W }}
     >
       <button
