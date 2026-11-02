@@ -30,3 +30,27 @@ table.dense tr:hover .acts button, table.dense .acts button:focus-visible { opac
   table.users-table :is(th, td):is(:nth-child(5), :nth-child(6)) { display: none; }
 }
 .seg-s.mini button { padding: 2px 8px; font-size: 12px; }
+
+/* Phones: users table becomes stacked rows (checkbox+name+actions / role+groups). */
+@media (max-width: 639px) {
+  table.users-table, table.users-table tbody { display: block; }
+  table.users-table thead { display: none; }
+  table.users-table tr { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "chk name acts" ". role acts" ". groups groups"; gap: 4px 8px; align-items: center; padding: 10px 0; border-top: 1px solid var(--border); }
+  table.users-table td { display: block; padding: 0; border: 0; min-width: 0; background: none !important; }
+  table.users-table td:nth-child(1) { grid-area: chk; }
+  table.users-table td:nth-child(2) { grid-area: name; overflow-wrap: anywhere; }
+  table.users-table td:nth-child(3) { grid-area: role; }
+  table.users-table td:nth-child(4) { grid-area: groups; }
+  table.users-table td:nth-child(7) { grid-area: acts; }
+  table.users-table td[colspan] { grid-column: 1 / -1; grid-area: auto; }
+  table.users-table tr.warn { background: color-mix(in srgb, var(--destructive) 7%, transparent); }
+}
+/* Touch devices: bigger hit areas, desktop density untouched. */
+@media (pointer: coarse) {
+  .seg-s button { min-height: 40px; padding-inline: 14px; }
+  .seg-s.mini button { min-height: 36px; padding-inline: 12px; }
+  table.dense select { min-height: 40px; }
+  table.dense input[type=checkbox] { width: 20px; height: 20px; margin: 10px; }
+  .toolbar select, .toolbar button:not(.btn-gold) { min-height: 40px; }
+}
+@media (max-width: 639px) { .toolbar input { flex-basis: 100%; max-width: none; } }

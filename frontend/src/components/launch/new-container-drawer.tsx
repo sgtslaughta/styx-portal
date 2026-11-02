@@ -59,20 +59,20 @@ export function NewContainerDrawer({ open, onClose }: { open: boolean; onClose: 
           aria-describedby={undefined}
           onOpenAutoFocus={(e) => { e.preventDefault(); returnTo.current = document.activeElement as HTMLElement | null; searchRef.current?.focus(); }}
           onCloseAutoFocus={(e) => { e.preventDefault(); returnTo.current?.focus(); }}
-          className="w-[min(760px,100vw)] max-w-none min-w-0 bg-background dark:bg-background motion-reduce:animate-none motion-reduce:duration-0"
+          className="w-screen max-w-none min-w-0 md:[@media(min-height:501px)]:w-[min(760px,100vw)] bg-background dark:bg-background motion-reduce:animate-none motion-reduce:duration-0"
         >
-          <div className="flex items-center gap-3 border-b border-border px-6 py-[18px]">
+          <div className="flex items-center gap-3 border-b border-border px-4 py-3 md:px-6 md:py-[18px]">
             {target && (
-              <button type="button" aria-label="Back to catalog" onClick={() => setTarget(null)} className="inline-flex items-center rounded-md px-1.5 py-1 text-sm text-muted-foreground hover:text-foreground"><ChevronLeft className="size-4" aria-hidden />Back</button>
+              <button type="button" aria-label="Back to catalog" onClick={() => setTarget(null)} className="inline-flex min-h-10 items-center rounded-md px-1.5 py-1 text-sm focus-visible:outline-2 focus-visible:outline-ring text-muted-foreground hover:text-foreground"><ChevronLeft className="size-4" aria-hidden />Back</button>
             )}
-            <DrawerTitle className="flex-1 text-[19px]">{title}</DrawerTitle>
+            <DrawerTitle className="min-w-0 flex-1 truncate text-[19px]">{title}</DrawerTitle>
             <DrawerDescription className="sr-only">Pick an image, then choose a size and launch.</DrawerDescription>
-            <button type="button" aria-label="Close" onClick={close} className="rounded-md p-1.5 text-muted-foreground hover:text-foreground"><X className="size-4" aria-hidden /></button>
+            <button type="button" aria-label="Close" onClick={close} className="inline-flex size-10 items-center justify-center rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"><X className="size-4" aria-hidden /></button>
           </div>
           {target ? (
             <LaunchStep key={target.image?.name ?? target.template?.id ?? target.custom} target={target} onClose={close} />
           ) : (
-            <div className="flex-1 overflow-y-auto px-6 py-5">
+            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-5">
               <CatalogGrid setups={setups} searchRef={searchRef} isAdmin={user?.role === "admin"}
                 onPickImage={(image) => setTarget({ image })} onPickSetup={(template) => setTarget({ template })}
                 onLaunchSetup={quickLaunch} onEditSetup={setEditing} onCustom={(custom) => setTarget({ custom })} />

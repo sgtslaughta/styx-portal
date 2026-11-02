@@ -53,3 +53,15 @@ export const INSTANCES = [
   inst(4, "Old build", "stopped", { started_at: null }),
   inst(5, "Broken app", "error", { error_message: "Container exited with code 1" }),
 ];
+
+const ws = (n: number, name: string, more: object = {}) => ({
+  id: `mock-ws-${n}`, name, subdomain: `ws${n}`, hostname: `ws${n}.lan`, lan_ip: `10.0.0.${n}`, port: 8080,
+  status: "online", display_server: "wayland", gpu_info: {}, os_info: {}, agent_version: "0.9.31", agent_outdated: false,
+  stream_settings: {}, all_users: true, last_heartbeat: "2026-10-13T09:40:00Z", last_error: null, created_at: "2026-10-01T00:00:00Z",
+  allowed_user_ids: [], in_use: false, in_use_by: null, in_use_self: false, icon_kind: "auto", icon_etag: "", ...more,
+});
+/** Online desktops: one in use by me (Recent + Resume), one by someone else, one offline. */
+export const WORKSTATIONS = [
+  ws(1, "Studio PC", { in_use: true, in_use_self: true }), ws(2, "Gaming rig", { in_use: true, in_use_by: "bob" }),
+  ws(3, "Office mini"), ws(4, "Old laptop", { status: "offline" }),
+];

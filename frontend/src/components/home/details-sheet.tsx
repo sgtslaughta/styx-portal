@@ -9,7 +9,7 @@ export type Detail = { kind: "desktop"; ws: Workstation } | { kind: "container";
 export function DetailsSheet({ detail, onClose }: { detail: Detail | null; onClose: () => void }) {
   return (
     <Drawer open={detail !== null} onOpenChange={(o) => !o && onClose()}>
-      <DrawerContent className="w-[min(560px,100vw)] max-w-none">
+      <DrawerContent className="w-screen max-w-none md:w-[min(560px,100vw)] md:[@media(min-height:501px)]:w-[min(560px,100vw)]">
         <DrawerTitle className="sr-only">{detail ? `${detail.kind === "desktop" ? detail.ws.name : detail.name} details` : "Details"}</DrawerTitle>
         <div className="min-h-0 flex-1 overflow-y-auto pt-10">
           {detail?.kind === "desktop" && <WorkstationPreview key={detail.ws.id} ws={detail.ws} />}

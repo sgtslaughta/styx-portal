@@ -39,3 +39,25 @@ input[role=switch]:focus-visible { outline: 2px solid #C9A04E; outline-offset: 2
 .save-pill-ghost:disabled { opacity: .55; cursor: not-allowed; }
 @keyframes save-pill-in { from { opacity: 0; transform: translateY(20px); } }
 @media (prefers-reduced-motion: reduce) { .save-pill { animation: none; } .in, input[role=switch], input[role=switch]::after { transition: none; } }
+
+/* Phones: single column, wrapping labels, narrower inputs, reachable save pill. */
+@media (max-width: 639px) {
+  .groups { grid-template-columns: minmax(0, 1fr); }
+  .row { grid-template-columns: minmax(0, 1fr) 116px 22px; min-height: 44px; }
+  .row > span:first-child { white-space: normal; overflow: visible; line-height: 1.25; padding: 4px 0; }
+  .in em { min-width: 0; padding-right: 8px; }
+  .row.wide { grid-template-columns: minmax(0, 1fr) minmax(0, 150px) 22px; }
+  .save-pill { width: max-content; max-width: calc(100vw - 24px); bottom: 12px; padding-left: 12px; gap: 4px; }
+  .save-pill > span { margin-right: 2px; font-size: 13px; }
+  .save-pill .btn-gold { padding: 7px 12px; }
+  .save-pill-ghost { padding: 7px 8px; }
+}
+@media (pointer: coarse) {
+  .row .help { position: relative; }
+  .row .help::before { content: ""; position: absolute; inset: -14px; }
+  .in { height: 40px; }
+  .row .linkbtn { height: 40px; padding-inline: 10px; }
+  .reset { width: 32px; height: 32px; }
+  .save-pill .btn-gold, .save-pill-ghost { min-height: 40px; }
+  .row.sw input[role=switch] { margin: 6px 0; }
+}

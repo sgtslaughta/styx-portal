@@ -55,7 +55,13 @@ export async function getNoRedirect(req: APIRequestContext, url: string, headers
 export async function setTheme(page: Page, want: "light" | "dark") {
   for (let i = 0; i < 3; i++) {
     if ((await page.evaluate(() => localStorage.getItem("theme"))) === want) break;
-    await page.getByRole("button", { name: "Toggle theme" }).click();
+    const btn = page.getByRole("button", { name: "Toggle theme" });
+    await page.getByRole("button", { name: /Account menu/ }).waitFor(); // header rendered; isVisible() doesn't wait
+    if (await btn.isVisible()) await btn.click();
+    else { // phones: the toggle lives in the account menu
+      await page.getByRole("button", { name: /Account menu/ }).click();
+      await page.getByRole("menuitem", { name: "Toggle theme" }).click();
+    }
   }
   expect(await page.evaluate(() => localStorage.getItem("theme"))).toBe(want);
   await expect(page.locator("html")).toHaveClass(want === "dark" ? /dark/ : /^(?!.*dark).*$/);

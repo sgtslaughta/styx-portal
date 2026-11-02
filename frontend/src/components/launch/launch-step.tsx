@@ -80,7 +80,7 @@ export function LaunchStep({ target, onClose }: { target: LaunchTarget; onClose:
 
   return (
     <>
-      <div className="flex-1 overflow-y-auto px-6 py-5">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 md:px-6 md:py-5">
         <div className="grid max-w-[560px] gap-[18px]">
           <div className="flex items-center gap-3.5">
             <Glyph name={cfg.name || "?"} icon={cfg.icon} size={52} />
@@ -133,7 +133,7 @@ export function LaunchStep({ target, onClose }: { target: LaunchTarget; onClose:
           )}
         </div>
       </div>
-      <div className="flex justify-end gap-2.5 border-t border-border px-6 py-3.5">
+      <div className="flex justify-end gap-2.5 border-t border-border px-4 py-3 md:px-6 md:py-3.5">
         <Button variant="secondary" onClick={onClose}>Cancel</Button>
         <button type="button" className="btn-gold" onClick={launch} disabled={busy}>{busy ? "Launching…" : "Launch"}</button>
       </div>

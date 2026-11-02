@@ -46,7 +46,7 @@ export function HomePage({ onNewContainer, onOpenSettings }: { onNewContainer: (
   }
 
   return (
-    <div className="mx-auto max-w-[1200px] space-y-9 pb-16">
+    <div className="mx-auto max-w-[1200px] space-y-6 pb-16 md:space-y-9">
       <section aria-label="Recent">
         <SectionHead title="Recent" />
         <RecentStrip items={recents} onAct={actOnRecent} />
@@ -63,15 +63,16 @@ export function HomePage({ onNewContainer, onOpenSettings }: { onNewContainer: (
       <section aria-label="Containers">
         <SectionHead
           title="Containers"
-          note="stop on their own after 30 min idle"
+          note={<span className="max-sm:hidden">stop on their own after 30 min idle</span>}
           action={
             <button type="button" onClick={onNewContainer}
-              className="inline-flex items-center gap-2 rounded-[9px] bg-[#2A767C] py-2 pr-3.5 pl-2.5 text-sm font-semibold text-[#F7F9F8] shadow-[inset_0_1px_0_rgba(255,255,255,.18),0_1px_2px_rgba(0,0,0,.25),0_0_0_1px_rgba(111,183,188,.35)] hover:bg-[#318890] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+              className="inline-flex shrink-0 whitespace-nowrap max-sm:ml-auto max-sm:min-h-10 items-center gap-2 rounded-[9px] bg-[#2A767C] py-2 pr-3.5 pl-2.5 text-sm font-semibold text-[#F7F9F8] shadow-[inset_0_1px_0_rgba(255,255,255,.18),0_1px_2px_rgba(0,0,0,.25),0_0_0_1px_rgba(111,183,188,.35)] hover:bg-[#318890] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
               <span aria-hidden="true" className="grid size-[22px] place-items-center rounded-md bg-white/15"><Plus className="size-4" /></span>
               New container
             </button>
           }
         />
+        <p className="-mt-2 mb-3 text-[13px] text-muted-foreground sm:hidden">Stop on their own after 30 min idle.</p>
         <ContainerRows instances={instances} icons={icons} onOpen={openInstance} onDetails={(i) => setDetail({ kind: "container", id: i.id, name: i.name })} />
       </section>
       <DetailsSheet detail={detail} onClose={() => setDetail(null)} />

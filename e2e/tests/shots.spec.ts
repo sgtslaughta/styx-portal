@@ -406,7 +406,7 @@ test("empty states: services, discover, home tiles", async () => {
     await each(async (_w, t, file) => {
       await setTheme(m, t);
       await m.goto("/");
-      await expect(m.getByRole("button", { name: "Log out" })).toBeVisible();
+      await expect(m.getByRole("button", { name: /Account menu/ })).toBeVisible();
       await expect(m.getByText("No apps shared with you yet.")).toBeVisible(); // the real empty state, not the skeleton
       await m.screenshot({ path: file("home-no-tiles-member") });
     });

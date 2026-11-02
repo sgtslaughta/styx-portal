@@ -44,9 +44,9 @@ function statusLine(r: RecentItem): string {
 export function RecentStrip({ items, onAct }: { items: RecentItem[]; onAct: (r: RecentItem) => void }) {
   if (items.length === 0) return <p className="text-sm text-muted-foreground">Desktops and containers you open show up here.</p>;
   return (
-    <ul className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-[18px]">
+    <ul className="-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-[repeat(auto-fill,minmax(260px,1fr))] sm:gap-[18px] sm:overflow-visible sm:px-0 sm:pb-0 [&::-webkit-scrollbar]:hidden max-sm:[scroll-padding-inline:1rem]">
       {items.map((r) => (
-        <li key={r.id} className="grid gap-2" data-testid="recent">
+        <li key={r.id} className="grid min-w-0 shrink-0 basis-[85%] snap-start content-start gap-2 sm:basis-auto" data-testid="recent">
           <div className="recent-shot aspect-[16/10] bg-secondary outline outline-1 -outline-offset-1 outline-border">
             <Shot item={r} />
             <GlassButton onClick={() => onAct(r)} aria-label={`${r.action} ${r.name}`}>{r.action}</GlassButton>

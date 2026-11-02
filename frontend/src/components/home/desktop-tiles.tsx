@@ -19,27 +19,27 @@ interface Props {
 export function DesktopTiles({ workstations, onConnect, onDetails }: Props) {
   if (workstations.length === 0) return <p className="text-sm text-muted-foreground">No desktops shared with you yet.</p>;
   return (
-    <ul className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2.5">
+    <ul className="grid grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(220px,1fr))]">
       {workstations.map((ws) => {
         const online = ws.status === "online";
         return (
-          <li key={ws.id} className="glass-reveal group relative flex items-center gap-3 rounded-xl border border-border bg-card p-3 hover:bg-secondary/60"
+          <li key={ws.id} className="glass-reveal group relative flex items-center gap-3 rounded-xl border border-border bg-card p-3 hover:bg-secondary/60 max-sm:grid max-sm:grid-cols-[1fr_auto] max-sm:gap-2 max-sm:[&_.glass]:min-h-10"
            >
             <span className="grid size-10 shrink-0 place-items-center rounded-[10px] bg-secondary text-primary">
               <WorkstationIcon ws={ws} className="size-6" />
             </span>
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 max-sm:col-span-2">
               <strong className="block truncate text-sm font-semibold">{ws.name}</strong>
               <small className="block truncate text-[12.5px] text-muted-foreground transition-opacity group-hover:opacity-35 [@media(hover:none)]:group-hover:opacity-100">{wsStatus(ws)}</small>
             </div>
             {online && (
-              <span className="absolute right-12 top-1/2 -translate-y-1/2">
+              <span className="absolute right-12 top-1/2 -translate-y-1/2 max-sm:static max-sm:col-span-2 max-sm:translate-y-0">
                 <GlassButton tone="teal" onClick={() => onConnect(ws)} aria-label={`${ws.in_use_self ? "Resume" : "Connect"} ${ws.name}`}>
                   {ws.in_use_self ? "Resume" : "Connect"}
                 </GlassButton>
               </span>
             )}
-            <RowMenu name={ws.name} onDetails={() => onDetails(ws)} />
+            <div className="max-sm:col-start-2 max-sm:row-start-1 max-sm:-mr-1.5 max-sm:-mt-1.5"><RowMenu name={ws.name} onDetails={() => onDetails(ws)} /></div>
           </li>
         );
       })}

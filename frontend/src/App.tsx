@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { toast } from "sonner";
 import { AlertTriangle } from "lucide-react";
 import { Header, type HeaderTab } from "@/components/layout/header";
@@ -44,7 +44,7 @@ export default function App() {
     <TooltipProvider>
     <div className="flex h-dvh flex-col bg-background styx-app-bg">
       <Header activeTab={activeTab} onTabChange={setActiveTab} />
-      <main className="min-h-0 flex-1 overflow-y-auto p-6 transition-[padding] motion-reduce:transition-none" style={{ paddingRight: 24 + railPad }}>
+      <main className="min-h-0 flex-1 overflow-y-auto p-6 md:pr-[var(--rail-pad)] transition-[padding] motion-reduce:transition-none" style={{ "--rail-pad": `${24 + railPad}px` } as CSSProperties}>
         <div className={activeTab === "home" ? "" : "hidden"}>
           <HomePage onNewContainer={() => setLaunchOpen(true)} onOpenSettings={() => setActiveTab("admin")} />
         </div>

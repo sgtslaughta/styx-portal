@@ -62,7 +62,7 @@ export function OverviewTiles({ stats, metrics, diag }: { stats: OverviewStats |
   const passing = checks.filter((c) => c.ok).length;
   const liveMax = Math.max(0, ...(t?.live.series.filter(known) ?? []));
   return (
-    <div className="mb-6 grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-3">
+    <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fit,minmax(170px,1fr))]">
       <Tile title="CPU" value={pct(t?.cpu.now)} note={peak(t?.cpu.series ?? [], fmtPct)}>
         <Sparkline data={t?.cpu.series ?? []} name="CPU" slot="s1" labels={lb} fmt={fmtPct} min={0} max={100} />
       </Tile>

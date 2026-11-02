@@ -57,7 +57,7 @@ export function MetricsLogs() {
         <select
           value={selectedId ?? ""}
           onChange={(e) => { setSelectedId(e.target.value); setLiveTail(false); }}
-          className="rounded-md border border-border bg-background px-3 py-1.5 text-xs text-foreground outline-none focus:border-border min-w-[180px]"
+          className="rounded-md border border-border bg-background px-3 py-1.5 pointer-coarse:py-2.5 text-xs text-foreground outline-none focus:border-border min-w-[180px]"
         >
           <option value="" disabled>Select instance…</option>
           {instances?.map((inst) => (
@@ -72,7 +72,7 @@ export function MetricsLogs() {
           onClick={() => setLiveTail(!liveTail)}
           disabled={!selectedId}
           className={cn(
-            "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] font-medium transition-colors border",
+            "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 pointer-coarse:py-3 text-[11px] font-medium transition-colors border",
             liveTail
               ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
               : "border-border text-muted-foreground hover:text-foreground/80 hover:border-border"
