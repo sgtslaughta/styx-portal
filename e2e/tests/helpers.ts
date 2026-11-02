@@ -56,6 +56,7 @@ export async function setTheme(page: Page, want: "light" | "dark") {
   for (let i = 0; i < 3; i++) {
     if ((await page.evaluate(() => localStorage.getItem("theme"))) === want) break;
     const btn = page.getByRole("button", { name: "Toggle theme" });
+    await page.getByRole("button", { name: /Account menu/ }).waitFor(); // header rendered; isVisible() doesn't wait
     if (await btn.isVisible()) await btn.click();
     else { // phones: the toggle lives in the account menu
       await page.getByRole("button", { name: /Account menu/ }).click();
