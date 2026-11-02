@@ -133,7 +133,7 @@ test("service drawer: consent, running, rolled back (waits for the job to finish
   test.setTimeout(480_000);
   const p = admin.page;
   const drawer = async () => {
-    await openSettings(p, "Services");
+    await openSettings(p, "Apps");
     await p.getByRole("button", { name: "Edit Shot app" }).click();
     const d = p.getByRole("dialog").filter({ has: p.locator("#ack-origin") });
     await expect(d.getByRole("region", { name: "Base path" })).toBeVisible({ timeout: 30_000 });
@@ -186,7 +186,7 @@ const svcId = async (slug: string) => ((await apiCall(admin.ctx, "GET", "/api/se
 /** Settings > Services > Edit <name>; resolves to the form drawer. */
 async function editDrawer(name: string, region = true) {
   const p = admin.page;
-  await openSettings(p, "Services");
+  await openSettings(p, "Apps");
   await p.getByRole("button", { name: `Edit ${name}` }).click();
   const d = p.getByRole("dialog").filter({ has: p.locator("#ack-origin") });
   if (region) await expect(d.getByRole("region", { name: "Base path" })).toBeVisible({ timeout: 30_000 });
@@ -197,7 +197,7 @@ async function editDrawer(name: string, region = true) {
 /** Settings > Services > Add service, with a URL service filled in. */
 async function addDrawer() {
   const p = admin.page;
-  await openSettings(p, "Services");
+  await openSettings(p, "Apps");
   await p.getByRole("button", { name: "Add service" }).click();
   const d = p.getByRole("dialog").filter({ has: p.locator("#ack-origin") });
   await d.locator("#name").fill("Example");
@@ -361,7 +361,7 @@ test("service rows with mount chips", async () => {
     await mockApi(p, "GET", new RegExp(`/api/services/${b}/mount/jobs/latest$`), CHIP_JOBS.failed);
     await each(async (_w, t, file) => {
       await setTheme(p, t);
-      await openSettings(p, "Services");
+      await openSettings(p, "Apps");
       for (const chip of ["Base path set", "Rolled back", "Needs attention"]) await expect(p.getByText(chip, { exact: true }).first()).toBeVisible();
       await p.screenshot({ path: file("services-chips") });
     });
@@ -374,7 +374,7 @@ test("empty states: services, discover, home tiles", async () => {
   try {
     await each(async (_w, t, file) => {
       await setTheme(p, t);
-      await openSettings(p, "Services");
+      await openSettings(p, "Apps");
       await p.getByRole("button", { name: "Add from running container" }).first().click();
       const dlg = p.getByRole("dialog", { name: "Running containers" });
       await expect(dlg).toBeVisible();
@@ -386,7 +386,7 @@ test("empty states: services, discover, home tiles", async () => {
     await mockApi(p, "GET", "/api/services", []);
     await each(async (_w, t, file) => {
       await setTheme(p, t);
-      await openSettings(p, "Services");
+      await openSettings(p, "Apps");
       await expect(p.getByText("No services yet", { exact: true })).toBeVisible();
       await p.screenshot({ path: file("services-empty") });
       await p.getByRole("button", { name: "Add from running container" }).first().click();

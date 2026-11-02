@@ -31,8 +31,7 @@ test("home with running, paused, stopped and errored instances", async ({ page }
     await page.evaluate((v) => localStorage.setItem("theme", v), t);
     await page.emulateMedia({ colorScheme: t, reducedMotion: "reduce" });
     await page.goto("/");
-    await page.getByRole("tab", { name: "Workspaces" }).click(); // instances live on the Workspaces tab
-    await expect(page.getByText("Dev desktop")).toBeVisible();
+    await expect(page.getByText("Dev desktop").first()).toBeVisible();
     await page.screenshot({ path: `${SHOTS}/home-instances-${sz.w}-${t}.png` });
     expect(await overflow(page), `${sz.w}px ${t}`).toBeLessThanOrEqual(0);
   }
@@ -55,11 +54,11 @@ test("users table at 390 stays inside its card", async ({ page }) => {
   for (const t of THEMES) {
     await page.evaluate((v) => localStorage.setItem("theme", v), t);
     await page.emulateMedia({ colorScheme: t, reducedMotion: "reduce" });
-    await openSettings(page, "Users");
+    await openSettings(page, "Users and groups");
     await expect(page.getByRole("row").filter({ hasText: MEMBER.username })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     // The table's own wrapper must not scroll sideways: actions collapse into the More menu.
-    expect(await page.locator("table").evaluate((t) => t.parentElement!.scrollWidth <= t.parentElement!.clientWidth)).toBe(true);
+    expect(await page.locator("table.users-table").evaluate((t) => t.parentElement!.scrollWidth <= t.parentElement!.clientWidth)).toBe(true);
     await page.screenshot({ path: `${SHOTS}/users-390-${t}.png`, fullPage: true });
   }
 });

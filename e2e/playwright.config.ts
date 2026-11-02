@@ -14,8 +14,6 @@ export default defineConfig({
     baseURL: BASE,
     viewport: { width: 1440, height: 900 },
     reducedMotion: "reduce", // screenshots are never caught mid-fade
-    // Existing specs assert app tiles on home: start every context on the Apps tab.
-    storageState: { cookies: [], origins: [{ origin: BASE, localStorage: [{ name: "styx.home.tab", value: "apps" }] }] },
     trace: "retain-on-failure",
   },
   // services.spec bootstraps the admin on a fresh DB, so it must run first; mounts.spec

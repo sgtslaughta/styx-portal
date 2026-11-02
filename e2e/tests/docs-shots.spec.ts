@@ -39,7 +39,7 @@ async function themed(browser: import("@playwright/test").Browser, theme: "dark"
 /** Open Settings > section (no heading assertions: some sections render two h2s). */
 async function openSettings(p: Page, section: string) {
   await p.goto("/");
-  await p.getByRole("button", { name: "Settings", exact: true }).or(p.getByText("Settings", { exact: true })).first().click();
+  await p.getByRole("button", { name: "Admin", exact: true }).first().click();
   await p.getByRole("button", { name: section, exact: true }).filter({ visible: true }).last().click();
   await p.waitForTimeout(500);
 }
@@ -104,7 +104,6 @@ test("dashboard, desktops, workstations", async ({ browser }) => {
   ]);
   await step("workstations tab", async () => {
     await p.goto("/");
-    await p.getByRole("tab", { name: "Workspaces" }).click();
     await p.getByText("studio-pc").first().waitFor();
     await p.waitForTimeout(1500);
     await shot(p, browser, "ui-desktops");
@@ -116,7 +115,6 @@ test("dashboard, desktops, workstations", async ({ browser }) => {
     const p = await themed(browser, "light");
     await mockInstances(p, browser, [inst(1, "Dev desktop", t(1), "running"), inst(2, "Web browser", t(0), "running")]);
     await p.goto("/");
-    await p.getByRole("tab", { name: "Workspaces" }).click();
     await p.getByText("studio-pc").first().waitFor();
     await p.waitForTimeout(1500);
     await shot(p, browser, "ui-dashboard-light");
@@ -136,12 +134,11 @@ test("services + shell", async ({ browser }) => {
   const p = await themed(browser, "dark");
   await step("ui-services", async () => {
     await p.goto("/");
-    await p.getByRole("tab", { name: "Apps" }).click();
     await p.waitForTimeout(3500);
     await shot(p, browser, "ui-services");
   });
   await step("ui-service-form", async () => {
-    await openSettings(p, "Services");
+    await openSettings(p, "Apps");
     await p.waitForTimeout(800);
     await p.getByRole("button", { name: "Add service" }).click();
     await p.getByRole("dialog").waitFor();
@@ -173,7 +170,7 @@ test("services + shell", async ({ browser }) => {
 
 test("admin", async ({ browser }) => {
   const p = await themed(browser, "dark");
-  for (const [section, name, hero] of [["Users", "ui-admin-users"], ["Groups", "ui-admin-groups"], ["Settings", "ui-admin-settings", "hero-admin"],
+  for (const [section, name, hero] of [["Users and groups", "ui-admin-users"], ["Users and groups", "ui-admin-groups"], ["Security and limits", "ui-admin-settings", "hero-admin"],
     ["SSO Providers", "ui-admin-sso"], ["Health", "ui-health"], ["Workstations", "ui-workstation-settings"]] as const) {
     await step(name, async () => {
       await openSettings(p, section);
