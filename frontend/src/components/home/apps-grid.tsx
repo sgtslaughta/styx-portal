@@ -13,10 +13,10 @@ import { cn } from "@/lib/utils";
 const TIP_KEY = "styx.serviceTipDismissed";
 const TIP = "Open apps with a non-admin account: proxied apps run with your Styx rights.";
 const tileCls =
-  "flex min-h-16 min-w-0 flex-1 items-center justify-center gap-2.5 rounded-lg border border-border bg-card px-3 py-3 text-sm " +
+  "flex min-h-12 min-w-0 flex-1 items-center justify-center gap-2.5 rounded-lg border border-border bg-card px-3 py-3 text-sm " +
   "transition-colors hover:bg-accent outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const dockCls =
-  "relative grid w-20 justify-items-center gap-2 rounded-xl border border-transparent p-1 text-center text-[13px] text-muted-foreground " +
+  "relative grid w-20 justify-items-center max-sm:w-full gap-2 rounded-xl border border-transparent p-1 text-center text-[13px] text-muted-foreground " +
   "transition-colors hover:text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 function readDismissed(): boolean {
@@ -126,9 +126,9 @@ export function AppsGrid({ onOpenSettings }: { onOpenSettings?: () => void }) {
           </button>
         </div>
       )}
-      <ul className="flex flex-wrap gap-[18px]">
+      <ul className="grid grid-cols-4 gap-x-2 gap-y-3 sm:flex sm:flex-wrap sm:gap-[18px]">
         {tiles.map((s) => <li key={s.id}><Tile s={s} focused={!!focus?.slug && focus.slug === s.slug} choose={choose} isAdmin={isAdmin} /></li>)}
-        {isAdmin && <li className="flex"><AddAppTile onClick={onOpenSettings} /></li>}
+        {isAdmin && <li className="col-span-4 flex sm:col-span-1"><AddAppTile onClick={onOpenSettings} /></li>}
       </ul>
     </section>
   );

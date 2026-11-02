@@ -23,9 +23,9 @@ export function SetupsRow({ setups, isAdmin, onLaunch, onCustomise, onEdit }: Pr
               <span className="min-w-0"><strong className="block truncate text-sm font-semibold">{s.display_name}</strong><small className="block truncate text-[12.5px] text-muted-foreground" title={s.image}>{s.image.split("/").pop()}</small></span>
             </button>
             {isAdmin && (
-              <button type="button" aria-label={`Edit ${s.display_name}`} onClick={() => onEdit(s)} className="rounded-md p-1.5 text-muted-foreground hover:text-foreground"><Pencil className="size-3.5" aria-hidden /></button>
+              <button type="button" aria-label={`Edit ${s.display_name}`} onClick={() => onEdit(s)} className="rounded-md p-1.5 text-muted-foreground hover:text-foreground max-sm:grid max-sm:size-10 max-sm:place-items-center"><Pencil className="size-3.5" aria-hidden /></button>
             )}
-            <button type="button" aria-label={`Launch ${s.display_name}`} onClick={() => onLaunch(s)} className="rounded-md px-1.5 py-1 text-[13px] font-semibold text-[var(--gold-text)] hover:underline">Launch</button>
+            <button type="button" aria-label={`Launch ${s.display_name}`} onClick={() => onLaunch(s)} className="rounded-md px-2 py-1 text-[13px] font-semibold max-sm:min-h-10 text-[var(--gold-text)] hover:underline">Launch</button>
           </div>
         ))}
       </div>

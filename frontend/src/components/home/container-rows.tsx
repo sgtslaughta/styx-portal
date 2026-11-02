@@ -37,14 +37,14 @@ export function ContainerRows({ instances, icons, onOpen, onDetails }: Props) {
           : g === "transition" ? null
           : { label: "Start", run: () => { recordOpened(i.id); start.mutate(i.id, fail("Start")); } };
         return (
-          <li key={i.id} className="glass-reveal flex items-center gap-3 rounded-[10px] px-3 py-2.5 hover:bg-card">
-            <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-secondary"><Icon icon={icons[i.template_id] ?? null} /></span>
-            <strong className="min-w-0 flex-1 truncate font-semibold" title={i.name}>{i.name}</strong>
-            <span className="ml-auto w-40 text-[13.5px] max-sm:w-auto"><StatusBadge status={i.status} /></span>
-            {act && <GlassButton tone="teal" onClick={act.run} aria-label={`${act.label} ${i.name}`}>{act.label}</GlassButton>}
-            <RowMenu name={i.name} onDetails={() => onDetails(i)}>
+          <li key={i.id} className="glass-reveal flex items-center gap-3 rounded-[10px] px-3 py-2.5 hover:bg-card max-sm:grid max-sm:grid-cols-[2rem_minmax(0,1fr)_auto_auto] max-sm:gap-x-2.5 max-sm:gap-y-0 max-sm:[&_.glass]:min-h-10">
+            <span className="grid size-8 shrink-0 max-sm:row-span-2 place-items-center rounded-lg bg-secondary"><Icon icon={icons[i.template_id] ?? null} /></span>
+            <strong className="min-w-0 flex-1 truncate max-sm:col-start-2 max-sm:row-start-1 max-sm:self-end font-semibold" title={i.name}>{i.name}</strong>
+            <span className="ml-auto w-40 text-[13.5px] max-sm:col-start-2 max-sm:row-start-2 max-sm:w-auto"><StatusBadge status={i.status} /></span>
+            {act && <span className="max-sm:col-start-3 max-sm:row-span-2 max-sm:row-start-1"><GlassButton tone="teal" onClick={act.run} aria-label={`${act.label} ${i.name}`}>{act.label}</GlassButton></span>}
+            <span className="max-sm:col-start-4 max-sm:row-span-2 max-sm:row-start-1"><RowMenu name={i.name} onDetails={() => onDetails(i)}>
               {(g === "running" || g === "paused") && <DropdownMenuItem onSelect={() => stop.mutate(i.id, fail("Stop"))}>Stop</DropdownMenuItem>}
-            </RowMenu>
+            </RowMenu></span>
           </li>
         );
       })}
