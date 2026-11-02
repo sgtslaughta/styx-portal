@@ -38,17 +38,20 @@ test("home with running, paused, stopped and errored instances", async ({ page }
   }
 });
 
-test("header user controls are right-aligned at 390", async ({ page }) => {
-  await login(page, MEMBER);
+test("phone 390: header fits, Log out in account menu, New container tappable", async ({ page }) => {
+  await login(page, ADMIN);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
-  // The theme toggle trails Log out, so the cluster's right edge is the toggle; Log out sits in the right half.
-  const toggle = (await page.getByRole("button", { name: "Toggle theme" }).boundingBox())!;
-  const logout = (await page.getByRole("button", { name: "Log out" }).boundingBox())!;
-  expect(toggle.x + toggle.width, "controls right edge").toBeGreaterThanOrEqual(390 - 24);
-  expect(logout.x, "Log out starts in the right half").toBeGreaterThan(195);
+  // Nothing may stick out past the right edge (header used to push Log out off-screen).
+  const widest = await page.evaluate(() => Math.max(...[...document.querySelectorAll("header *")].map((e) => e.getBoundingClientRect().right)));
+  expect(widest, "header right edge").toBeLessThanOrEqual(390);
+  // The status rail is hidden on phones, so it can't swallow taps on content.
+  await expect(page.getByRole("complementary", { name: "Server status" })).toBeHidden();
+  await page.getByRole("button", { name: "New container" }).click();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: /Account menu/ }).click();
+  await expect(page.getByRole("menuitem", { name: "Log out" })).toBeVisible();
 });
-
 test("users table at 390 stays inside its card", async ({ page }) => {
   await login(page, ADMIN);
   await page.setViewportSize({ width: 390, height: 844 });
