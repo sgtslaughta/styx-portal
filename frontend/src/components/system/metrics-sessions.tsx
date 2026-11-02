@@ -298,9 +298,11 @@ function ActionBtn({
   };
   return (
     <button
+      type="button"
       onClick={onClick}
       title={title}
-      className={cn("rounded p-1 transition-colors", colors[color])}
+      aria-label={title}
+      className={cn("rounded p-1 pointer-coarse:p-2.5 transition-colors", colors[color])}
     >
       <Icon className="h-3.5 w-3.5" />
     </button>

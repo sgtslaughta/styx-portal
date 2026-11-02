@@ -47,8 +47,8 @@ table.dense tr:hover .acts button, table.dense .acts button:focus-visible { opac
 }
 /* Touch devices: bigger hit areas, desktop density untouched. */
 @media (pointer: coarse) {
-  .seg-s button { min-height: 36px; padding-inline: 14px; }
-  .seg-s.mini button { min-height: 32px; }
+  .seg-s button { min-height: 40px; padding-inline: 14px; }
+  .seg-s.mini button { min-height: 36px; padding-inline: 12px; }
   table.dense select { min-height: 40px; }
   table.dense input[type=checkbox] { width: 20px; height: 20px; margin: 10px; }
   .toolbar select, .toolbar button:not(.btn-gold) { min-height: 40px; }

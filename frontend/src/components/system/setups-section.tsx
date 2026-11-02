@@ -55,7 +55,7 @@ export function SetupsSection({ only }: { only?: "mine" }) {
       {showShared && <div>
         <SectionHead title="Setups" note="Shared launch presets" action={
           <button type="button" onClick={() => setEditing({ mode: "new", template: null })}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent">
+            className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 pointer-coarse:min-h-10 text-xs hover:bg-accent">
             <Plus className="h-3 w-3" />New setup
           </button>} />
         {shared.length === 0

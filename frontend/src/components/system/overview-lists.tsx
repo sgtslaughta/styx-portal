@@ -11,7 +11,7 @@ import { ConfirmDialog } from "@/components/common/confirm-dialog";
 import { Dot } from "@/components/common/dot";
 import { LoadError } from "@/components/common/load-error";
 
-const GHOST = "rounded-lg border border-border px-3 py-1 text-[13px] hover:bg-muted";
+const GHOST = "rounded-lg border border-border px-3 py-1 pointer-coarse:min-h-10 text-[13px] hover:bg-muted";
 
 type ListProps = { rows: RailRow[]; ready: boolean; error?: boolean; retry: () => void };
 
