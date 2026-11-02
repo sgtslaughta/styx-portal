@@ -1,7 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { ADMIN, setupCode, uiLogin } from "./helpers";
-import { INSTANCES, mockApi } from "./shots-mocks";
+import { INSTANCES, WORKSTATIONS, mockApi } from "./shots-mocks";
 
 const OUT = "screenshots/audit";
 const SIZES = [{ n: "390", w: 390, h: 844 }, { n: "412", w: 412, h: 915 }, { n: "844l", w: 844, h: 390 }, { n: "1440", w: 1440, h: 900 }];
@@ -54,6 +54,9 @@ test("mobile audit", async ({ browser }) => {
   await snap(page, "after-login-390");
   writeFileSync(`${OUT}/after-login.txt`, await page.locator("body").ariaSnapshot());
   await mockApi(page, "GET", "/api/instances", INSTANCES);
+  await mockApi(page, "GET", "/api/workstations/mine", WORKSTATIONS);
+  // Recent shows items opened before: seed two containers + one desktop.
+  await page.evaluate(() => localStorage.setItem("styxOpened", JSON.stringify({ "mock-inst-1": Date.now(), "mock-inst-2": Date.now() - 1e5, "mock-ws-3": Date.now() - 2e5 })));
   for (const s of SIZES) {
     await page.setViewportSize({ width: s.w, height: s.h });
     for (const theme of s.n === "390" ? ["dark", "light"] : ["dark"]) {
