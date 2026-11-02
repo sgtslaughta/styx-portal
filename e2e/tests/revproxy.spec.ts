@@ -6,8 +6,8 @@ test("url service behind a name-based reverse proxy gets its own hostname as Hos
   const ctx = await browser.newContext();
   const p = await ctx.newPage();
   await uiLogin(p, ADMIN);
-  await expect(p.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
-  await openSettings(p, "Services");
+  await expect(p.getByRole("button", { name: "Admin", exact: true })).toBeVisible();
+  await openSettings(p, "Apps");
   await p.getByRole("button", { name: "Add service" }).first().click();
   const form = p.getByRole("dialog").filter({ has: p.locator("#ack-origin") });
   await form.locator("#name").fill("Behind proxy");

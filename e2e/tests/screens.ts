@@ -22,7 +22,7 @@ async function scrollDialogs(page: Page) {
 }
 
 async function serviceDrawer(page: Page, tag: string) {
-  await openSettings(page, "Services");
+  await openSettings(page, "Apps");
   await shot(page, `services-list-${tag}`);
   await page.getByRole("button", { name: "Add from running container" }).first().click();
   await expect(page.getByRole("dialog", { name: "Running containers" })).toBeVisible();
@@ -51,9 +51,9 @@ async function serviceDrawer(page: Page, tag: string) {
 }
 
 async function groupsScreens(page: Page, tag: string) {
-  await openSettings(page, "Groups");
+  await openSettings(page, "Users and groups");
   await shot(page, `groups-panel-${tag}`);
-  await openSettings(page, "Users");
+  await openSettings(page, "Users and groups");
   await page.getByRole("row").filter({ hasText: MEMBER.username }).getByRole("button", { name: "More" }).click();
   await page.getByRole("menuitem", { name: /Groups/ }).click();
   await expect(page.getByRole("dialog", { name: `Groups for ${MEMBER.username}` })).toBeVisible();

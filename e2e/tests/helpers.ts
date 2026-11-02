@@ -28,7 +28,7 @@ export async function uiLogin(page: Page, u: { username: string; password: strin
 
 export async function openSettings(page: Page, section: string) {
   await page.goto("/");
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Admin", exact: true }).click();
   await page.getByRole("button", { name: section, exact: true }).filter({ visible: true }).first().click();
   await expect(page.getByRole("heading", { level: 2, name: section })).toBeVisible();
 }

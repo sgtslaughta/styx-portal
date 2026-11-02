@@ -17,8 +17,8 @@ async function fresh(browser: Browser) {
 }
 
 async function invite(page: Page, browser: Browser, u: { username: string; password: string }) {
-  await openSettings(page, "Users");
-  await page.getByRole("button", { name: "Generate invite" }).click();
+  await openSettings(page, "Users and groups");
+  await page.getByRole("button", { name: "Invite someone" }).click();
   const url = (await page.locator("code", { hasText: "/accept-invite/" }).textContent())!.trim();
   const s = await fresh(browser);
   await s.page.goto(url);
@@ -56,31 +56,31 @@ test("a. admin bootstraps, creates group, users and membership", async ({ browse
     test.info().annotations.push({ type: "app-bug", description: "post-setup redirect lands on /login" });
     await p.goto("/");
   }
-  await expect(p.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
+  await expect(p.getByRole("button", { name: "Admin", exact: true })).toBeVisible();
 
-  await openSettings(p, "Groups");
+  await openSettings(p, "Users and groups");
   await p.locator("#group-name").fill("media");
   await p.locator("#group-desc").fill("Media apps");
   await p.getByRole("button", { name: "Add group" }).click();
-  await expect(p.getByRole("listitem").filter({ hasText: "media" })).toContainText("0 members");
+  await expect(p.getByRole("table").filter({ hasText: "Allow GPU" }).getByRole("row").filter({ hasText: "media" })).toContainText("0 members");
 
   member = await invite(p, browser, MEMBER);
   outsider = await invite(p, browser, OUTSIDER);
 
-  await openSettings(p, "Users");
+  await openSettings(p, "Users and groups");
   await p.getByRole("row").filter({ hasText: MEMBER.username }).getByRole("button", { name: "More" }).click();
   await p.getByRole("menuitem", { name: /Groups/ }).click();
   const dlg = p.getByRole("dialog", { name: `Groups for ${MEMBER.username}` });
   await dlg.getByLabel("media").check();
   await dlg.getByRole("button", { name: "Save" }).click();
   await expect(dlg).toBeHidden();
-  await openSettings(p, "Groups");
-  await expect(p.getByRole("listitem").filter({ hasText: "media" })).toContainText("1 member");
+  await openSettings(p, "Users and groups");
+  await expect(p.getByRole("table").filter({ hasText: "Allow GPU" }).getByRole("row").filter({ hasText: "media" })).toContainText("1 member");
 });
 
 test("b. admin adds a path-mode SSO service from a discovered container", async () => {
   const p = admin.page;
-  await openSettings(p, "Services");
+  await openSettings(p, "Apps");
   await p.getByRole("button", { name: "Add from running container" }).first().click();
   const picker = p.getByRole("dialog", { name: "Running containers" });
   await expect(picker).toContainText("styx-e2e-whoami-1");
@@ -182,7 +182,7 @@ test("c. member opens the tile; upstream sees identity headers but no Styx cooki
 test("d. non-member: no tile, direct access denied", async () => {
   const p = outsider.page;
   await p.goto("/");
-  await expect(p.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
+  await expect(p.getByRole("button", { name: "Log out" })).toBeVisible();
   await expect(p.getByRole("link", { name: "Open Whoami" })).toHaveCount(0);
   const res = await p.goto("/whoami/");
   expect(res!.status()).toBe(403);
@@ -237,7 +237,7 @@ test("g. slug boundary: /whoamix and /assets never reach whoami", async () => {
 
 test("h. cookie-root service: enter, takeover, Styx API via X-Styx-Client, exit", async () => {
   const p = admin.page;
-  await openSettings(p, "Services");
+  await openSettings(p, "Apps");
   await p.getByRole("button", { name: "Add service" }).click();
   const form = p.getByRole("dialog").filter({ has: p.locator("#ack-origin") });
   await form.locator("#name").fill("Echo Root");
@@ -360,7 +360,7 @@ test("h3. focus: an expired Styx session renews or signs in again, never loops",
 
 test("i. bypass rule: only the exact prefix on a segment boundary skips login", async ({ browser }) => {
   const p = admin.page;
-  await openSettings(p, "Services");
+  await openSettings(p, "Apps");
   await p.getByRole("button", { name: "Edit Whoami" }).click();
   const form = p.getByRole("dialog").filter({ has: p.locator("#ack-origin") });
   await form.getByText("Advanced", { exact: true }).click();
@@ -395,7 +395,7 @@ test("k. screenshots of the new admin screens", async () => {
 
 test("j. disabling a service denies members within one route refresh", async () => {
   const p = admin.page;
-  await openSettings(p, "Services");
+  await openSettings(p, "Apps");
   await p.getByRole("switch", { name: "Enable Whoami" }).click();
   await expect(p.getByRole("switch", { name: "Enable Whoami" })).not.toBeChecked();
   const t0 = Date.now();

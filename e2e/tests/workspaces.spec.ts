@@ -26,19 +26,6 @@ test("first app open asks, remember new tab, second open goes straight to a new 
   await ctx.close();
 });
 
-test("home tab persists across reload", async ({ browser }) => {
-  const ctx = await browser.newContext();
-  const p = await ctx.newPage();
-  await uiLogin(p, ADMIN);
-  await p.getByRole("tab", { name: "Workspaces" }).click();
-  await p.reload();
-  await expect(p.getByRole("tab", { name: "Workspaces" })).toHaveAttribute("aria-selected", "true");
-  await p.getByRole("tab", { name: "Apps" }).click();
-  await p.reload();
-  await expect(p.getByRole("tab", { name: "Apps" })).toHaveAttribute("aria-selected", "true");
-  await ctx.close();
-});
-
 test("dock switches between Apps and Workspaces", async ({ browser }) => {
   const ctx = await browser.newContext();
   const p = await ctx.newPage();
@@ -68,7 +55,7 @@ async function stubDesk(ctx: BrowserContext) {
   await ctx.route("**/i/desk/**", (r) => r.fulfill({ contentType: "text/html", body: "<title>desk</title><p>desk stream</p>" }));
 }
 
-test("workspace Connect: prompt, new tab goes via /connecting to the stream; dock does the same", async ({ browser }) => {
+test("workspace Connect: prompt, new tab goes via /connecting to the desktop page; dock does the same", async ({ browser }) => {
   const ctx = await browser.newContext();
   const p = await ctx.newPage();
   await uiLogin(p, ADMIN);
@@ -78,12 +65,12 @@ test("workspace Connect: prompt, new tab goes via /connecting to the stream; doc
     await stubDesk(ctx);
     // a) home
     await p.goto("/");
-    await p.getByRole("tab", { name: "Workspaces" }).click();
     await p.getByRole("button", { name: "Connect" }).first().click();
     const dlg = p.getByRole("dialog", { name: "Open Desk" });
     const [tab] = await Promise.all([ctx.waitForEvent("page"), dlg.getByRole("button", { name: "Open in new tab" }).click()]);
-    await expect(tab).toHaveURL(/\/i\/desk\/$/, { timeout: 15_000 });
-    await expect(tab.getByText("desk stream")).toBeVisible();
+    // /desktop/<sub> frames /i/<sub>/ so the portal can thumbnail the stream.
+    await expect(tab).toHaveURL(/\/desktop\/desk$/, { timeout: 15_000 });
+    await expect(tab.frameLocator("iframe").getByText("desk stream")).toBeVisible();
     await expect(p).toHaveURL(/\/$/);
     await tab.close();
     // b) dock; prefs back to Ask first

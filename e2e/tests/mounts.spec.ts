@@ -25,9 +25,9 @@ test.beforeAll(async ({ browser }) => {
     await uiLogin(page, ADMIN);
   }
   // After setup the SPA may land on /login while already signed in; re-enter from "/".
-  await expect(page.getByRole("button", { name: "Settings", exact: true })).toBeVisible().catch(async () => {
+  await expect(page.getByRole("button", { name: "Admin", exact: true })).toBeVisible().catch(async () => {
     await page.goto("/");
-    await expect(page.getByRole("button", { name: "Settings", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Admin", exact: true })).toBeVisible();
   });
 });
 test.afterAll(async () => { await ctx?.close(); });
@@ -37,7 +37,7 @@ test.afterAll(async () => { await ctx?.close(); });
  * drawer in setup mode and the consent dialog already open (the drawer re-plans until the app has written its settings file).
  */
 async function addFromContainer(container: string, preset: string, name: string, slug: string) {
-  await openSettings(page, "Services");
+  await openSettings(page, "Apps");
   await page.getByRole("button", { name: "Add from running container" }).first().click();
   await page.getByRole("dialog", { name: "Running containers" })
     .getByRole("button", { name: `Expose ${container}` }).click();
@@ -57,7 +57,7 @@ async function addFromContainer(container: string, preset: string, name: string,
 }
 
 async function openDrawer(name: string) {
-  await openSettings(page, "Services");
+  await openSettings(page, "Apps");
   await page.getByRole("button", { name: `Edit ${name}` }).click();
   const drawer = page.getByRole("dialog").filter({ has: page.locator("#ack-origin") });
   await expect(drawer.getByRole("region", { name: "Base path" })).toBeVisible({ timeout: 30_000 });
