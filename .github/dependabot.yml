@@ -21,6 +21,8 @@ updates:
     directory: /backend
     schedule:
       interval: weekly
+    # deps are >= floors: only open a PR when a new release falls outside them
+    versioning-strategy: increase-if-necessary
     groups:
       pip-minor:
         update-types: [minor, patch]

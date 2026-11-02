@@ -23,7 +23,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: "22"
+          node-version: "24"
       - run: npm ci --no-audit --no-fund
       - name: commitlint (PR commits)
         env:
